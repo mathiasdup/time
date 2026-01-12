@@ -153,10 +153,10 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease;
         }
         .hero-card:hover .hero-card-inner {
-            transform: scale(1.06);
+            transform: scale(1.04);
         }
         .side-panel.left .hero-card { border-color: #4a9a4a; background: linear-gradient(135deg, #2a4a3a, #1a3a2a); }
         .side-panel.left .hero-card-inner { background: linear-gradient(135deg, #2a5a3a, #1a4a2a); }
@@ -192,10 +192,10 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease;
         }
         .deck-box:hover .deck-box-inner {
-            transform: scale(1.06);
+            transform: scale(1.04);
         }
         .grave-box { 
             width: 100px; 
@@ -210,9 +210,7 @@
             border: 3px solid #6a6a7a;
             position: relative;
             cursor: pointer;
-            overflow: hidden;
             padding: 5px;
-            transition: all 0.2s ease;
         }
         .grave-box:hover { border-color: #9a9aba; }
         .grave-top-card {
@@ -225,10 +223,10 @@
             border-radius: 4px;
             position: relative;
             overflow: hidden;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease;
         }
         .grave-box:hover .grave-top-card {
-            transform: scale(1.06);
+            transform: scale(1.04);
         }
         .grave-top-card.empty {
             background: linear-gradient(135deg, #2a2a3a, #1a1a25);
@@ -397,15 +395,17 @@
             color: rgba(255,255,255,0.4);
             position: relative;
         }
-        /* Icône dents de piège simple */
+        /* Icône piège à ours */
         .trap-slot::before {
             content: '';
             width: 28px;
-            height: 20px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 20' fill='none' stroke='rgba(255,255,255,0.35)' stroke-width='1.5'%3E%3Cpath d='M2 10 L6 2 L10 10 L14 2 L18 10 L22 2 L26 10'/%3E%3Cpath d='M2 10 L6 18 L10 10 L14 18 L18 10 L22 18 L26 10'/%3E%3C/svg%3E");
+            height: 28px;
+            background-image: url('beartrap.png');
             background-repeat: no-repeat;
             background-position: center;
             background-size: contain;
+            opacity: 0.35;
+            filter: brightness(0) invert(1);
         }
         .trap-slot.has-trap::before {
             display: none;
