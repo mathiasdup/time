@@ -238,14 +238,14 @@
         .grave-top-card .mini-card {
             width: 100%;
             height: 100%;
-            background: linear-gradient(180deg, #2a2a3a 0%, #1a1a25 100%);
-            border: 2px solid rgba(200,180,140,0.6);
+            background: linear-gradient(135deg, rgba(50,50,70,0.8), rgba(30,30,50,0.8));
+            border: none;
             border-radius: 4px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: space-between;
-            padding: 5px;
+            padding: 8px 5px;
             box-sizing: border-box;
             transition: transform 0.2s ease;
         }
@@ -253,7 +253,7 @@
             transform: scale(1.04);
         }
         .grave-top-card .mini-card .card-icon {
-            font-size: 2em;
+            font-size: 2.5em;
             flex: 1;
             display: flex;
             align-items: center;
@@ -370,10 +370,6 @@
             cursor: default;
             transition: none;
         }
-        .card-slot.has-card .card:hover {
-            transform: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
-        }
         .card-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.25) !important; box-shadow: 0 0 15px rgba(46,204,113,0.5); animation: validPulse 1s infinite; }
         .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
         @keyframes crossPulse { 0%,100% { box-shadow: 0 0 10px rgba(243,156,18,0.4); } 50% { box-shadow: 0 0 25px rgba(243,156,18,0.8); } }
@@ -458,9 +454,8 @@
         .card.creature { border: 3px solid #3498db; }
         .card.spell { border: 3px solid #9b59b6; }
         .card.trap-card { border: 3px solid #e74c3c; }
-        .card.just-played { opacity: 0.6; }
         .card.just-played::after { content: '💤'; position: absolute; top: 2px; right: 2px; font-size: 0.7em; }
-        .card.can-attack { box-shadow: 0 0 10px rgba(231,76,60,0.6); }
+        .card.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
         .card.field-selected { box-shadow: 0 0 15px rgba(52,152,219,0.9); border-color: #3498db !important; }
         
         /* ANIMATIONS */
