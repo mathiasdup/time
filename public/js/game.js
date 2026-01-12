@@ -967,9 +967,42 @@ function updateGraveTopCard(owner, graveyard) {
     
     if (graveyard && graveyard.length > 0) {
         const topCard = graveyard[graveyard.length - 1];
-        container.innerHTML = topCard.icon || '💀';
-        container.style.background = 'linear-gradient(135deg, #3a3a4a, #2a2a3a)';
+        container.classList.remove('empty');
+        
+        if (topCard.type === 'creature') {
+            container.innerHTML = `
+                <div class="mini-card">
+                    <div class="card-icon">${topCard.icon || '❓'}</div>
+                    <div class="card-name">${topCard.name || 'Inconnu'}</div>
+                    <div class="card-stats">
+                        <span class="atk">⚔️${topCard.atk}</span>
+                        <span class="hp">❤️${topCard.hp}</span>
+                    </div>
+                </div>
+            `;
+        } else if (topCard.type === 'spell') {
+            container.innerHTML = `
+                <div class="mini-card" style="border-color: rgba(155,89,182,0.8);">
+                    <div class="card-icon">${topCard.icon || '✨'}</div>
+                    <div class="card-name">${topCard.name || 'Sort'}</div>
+                    <div class="card-stats">
+                        <span style="color:#9b59b6;">🔮 Sort</span>
+                    </div>
+                </div>
+            `;
+        } else if (topCard.type === 'trap') {
+            container.innerHTML = `
+                <div class="mini-card" style="border-color: rgba(231,76,60,0.8);">
+                    <div class="card-icon">${topCard.icon || '⚠️'}</div>
+                    <div class="card-name">${topCard.name || 'Piège'}</div>
+                    <div class="card-stats">
+                        <span style="color:#e74c3c;">💥 Piège</span>
+                    </div>
+                </div>
+            `;
+        }
     } else {
+        container.classList.add('empty');
         container.innerHTML = '';
     }
 }

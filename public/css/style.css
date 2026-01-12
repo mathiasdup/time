@@ -3,7 +3,7 @@
         
         body {
             font-family: 'Cinzel', serif;
-            background: url('background.png') no-repeat center center fixed;
+            background: url('../background.png') no-repeat center center fixed;
             background-size: cover;
             min-height: 100vh;
             color: white;
@@ -28,7 +28,7 @@
         
         .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: rgba(20,20,40,0.95); border-bottom: 2px solid #5a4a3a; z-index: 50; }
         .player-info-bar { display: flex; align-items: center; gap: 12px; }
-        .rank-badge { background: #5a5a7a; padding: 4px 12px; border-radius: 4px; font-size: 0.75em; }
+        .rank-badge { background: #5a5a7a; padding: 6px 12px; border-radius: 5px; font-size: 0.8em; border: 2px solid #7a7a9a; }
         .player-name { font-size: 0.9em; padding: 6px 15px; border-radius: 5px; }
         .player-name.me { background: linear-gradient(135deg, #2a4a6a, #1a3a5a); border: 2px solid #4a7c9a; }
         .player-name.opp { background: linear-gradient(135deg, #6a2a4a, #5a1a3a); border: 2px solid #9a4a7c; }
@@ -81,29 +81,31 @@
         
         .phase-indicator { 
             position: absolute;
-            top: 80px;
+            top: 120px;
             left: 50%;
             transform: translateX(-50%);
-            padding: 8px 25px; 
-            background: rgba(46,204,113,0.9); 
-            border-radius: 15px; 
+            padding: 10px 30px; 
+            background: rgba(46,204,113,0.95); 
+            border-radius: 20px; 
             border: 2px solid #58d68d; 
-            font-size: 0.85em; 
+            font-size: 0.9em; 
+            font-weight: bold;
             white-space: nowrap; 
             opacity: 1; 
             transition: opacity 0.5s ease-out; 
-            display: none;
             z-index: 200;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            display: none;
         }
         .phase-indicator.visible { display: block; }
         .phase-indicator.fade-out { opacity: 0; }
-        .phase-indicator.redeploy { background: rgba(52,152,219,0.9); border-color: #5dade2; }
-        .phase-indicator.deploy { background: rgba(46,204,113,0.9); border-color: #58d68d; }
-        .phase-indicator.resolution { background: rgba(231,76,60,0.9); border-color: #ec7063; }
+        .phase-indicator.redeploy { background: rgba(52,152,219,0.95); border-color: #5dade2; }
+        .phase-indicator.deploy { background: rgba(46,204,113,0.95); border-color: #58d68d; }
+        .phase-indicator.resolution { background: rgba(231,76,60,0.95); border-color: #ec7063; }
         
         .side-panel { 
             position: absolute; 
-            top: 50%; 
+            top: 45%; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
@@ -112,11 +114,11 @@
         }
         .side-panel.left { 
             left: 80px; 
-            transform: translateY(-50%) perspective(800px) rotateX(15deg); 
+            transform: translateY(-50%) perspective(1000px) rotateX(20deg); 
         }
         .side-panel.right { 
             right: 80px; 
-            transform: translateY(-50%) perspective(800px) rotateX(15deg); 
+            transform: translateY(-50%) perspective(1000px) rotateX(20deg); 
         }
         
         .hero-card { 
@@ -168,41 +170,85 @@
             position: relative;
             cursor: pointer;
             overflow: hidden;
+            padding: 5px;
         }
         .grave-box:hover { border-color: #9a9aba; }
         .grave-top-card {
-            width: 90%;
-            height: 85%;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        .grave-top-card.empty {
+            background: linear-gradient(135deg, #2a2a3a, #1a1a25);
+            border: 2px dashed rgba(100,100,120,0.5);
+        }
+        .grave-top-card.empty::after {
+            content: '☠️';
+            font-size: 2em;
+            opacity: 0.3;
+        }
+        .grave-top-card .mini-card {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #2a2a3a 0%, #1a1a25 100%);
+            border: 2px solid rgba(200,180,140,0.6);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        .grave-top-card .mini-card .card-icon {
+            font-size: 2em;
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.5em;
-            background: linear-gradient(135deg, #2a2a3a, #1a1a25);
-            border-radius: 4px;
-            border: 2px solid rgba(100,100,120,0.5);
         }
-        .grave-top-card:empty::after {
-            content: '☠️';
-            opacity: 0.3;
+        .grave-top-card .mini-card .card-name {
+            font-size: 0.55em;
+            text-align: center;
+            color: #ffd700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
         }
+        .grave-top-card .mini-card .card-stats {
+            font-size: 0.6em;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .grave-top-card .mini-card .card-stats .atk { color: #f39c12; }
+        .grave-top-card .mini-card .card-stats .hp { color: #e74c3c; }
         .grave-count {
             position: absolute;
-            bottom: 5px;
-            right: 5px;
-            background: rgba(0,0,0,0.7);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.9em;
+            bottom: 3px;
+            right: 3px;
+            background: rgba(0,0,0,0.8);
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 0.75em;
             font-weight: bold;
+            z-index: 5;
         }
         .deck-icon { font-size: 2.5em; margin-bottom: 5px; }
         .deck-count { font-size: 1.4em; font-weight: bold; }
         
         .battlefield { 
             position: absolute; 
-            top: 50%; 
+            top: 45%; 
             left: 50%; 
-            transform: translate(-50%, -50%) perspective(800px) rotateX(15deg); 
+            transform: translate(-50%, -50%) perspective(1000px) rotateX(20deg); 
             display: flex; 
             gap: 12px; 
             padding: 25px 35px; 
