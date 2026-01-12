@@ -178,10 +178,10 @@
             pointer-events: auto;
         }
         
-        .field-side { display: grid; grid-template-columns: repeat(2, 115px); grid-template-rows: repeat(4, 155px); gap: 6px; }
+        .field-side { display: grid; grid-template-columns: repeat(2, 115px); grid-template-rows: repeat(4, 155px); gap: 6px; pointer-events: auto; }
         
-        .trap-center { display: flex; gap: 8px; }
-        .trap-col { display: grid; grid-template-rows: repeat(4, 155px); gap: 6px; }
+        .trap-center { display: flex; gap: 8px; pointer-events: auto; }
+        .trap-col { display: grid; grid-template-rows: repeat(4, 155px); gap: 6px; pointer-events: auto; }
         
         .card-slot {
             width: 115px;
@@ -362,6 +362,7 @@
             background: transparent;
             max-width: calc(50% - 150px);
             z-index: 5;
+            pointer-events: none;
         }
         .my-hand .card {
             margin-left: -50px;
@@ -370,6 +371,7 @@
             position: relative;
             z-index: 1;
             transform-origin: bottom center;
+            pointer-events: auto;
         }
         .my-hand .card:first-child { margin-left: 0; }
         .my-hand .card:hover:not(.dragging), .my-hand .card.dragging {
@@ -391,6 +393,7 @@
             padding: 10px 15px 0 15px;
             background: transparent;
             z-index: 5;
+            pointer-events: none;
         }
         .opp-card-back {
             width: 110px;
@@ -408,6 +411,7 @@
             transition: transform 0.2s ease-out;
             position: relative;
             z-index: 1;
+            pointer-events: auto;
         }
         .opp-card-back:first-child { margin-left: 0; }
         .opp-card-back:hover {
