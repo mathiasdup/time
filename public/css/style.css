@@ -50,11 +50,6 @@
         .options-btn:hover { background: #7a6a5a; }
         
         .header-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
-        .header-timer { font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 0 0 15px rgba(231,76,60,0.8); min-width: 50px; text-align: center; display: none; }
-        .header-timer.visible { display: block; }
-        .header-timer.urgent { animation: timerPulse 0.5s infinite; }
-        @keyframes timerPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); color: #ff4444; } }
-        
         .energy-display { display: flex; align-items: center; gap: 8px; }
         .mana-orb { min-width: 40px; height: 36px; padding: 0 12px; border-radius: 18px; background: radial-gradient(circle at 30% 30%, #7ec8f3, #1e90ff, #0066cc); border: 3px solid #87ceeb; box-shadow: 0 0 15px rgba(30,144,255,0.6); display: flex; align-items: center; justify-content: center; font-size: 1em; font-weight: bold; }
         
@@ -78,6 +73,21 @@
         }
         .end-turn-btn:hover:not(.waiting) { transform: scale(1.08); box-shadow: 0 6px 25px rgba(255,107,53,0.5); }
         .end-turn-btn.waiting { background: radial-gradient(circle at 30% 30%, #666, #444); border-color: #888; cursor: default; }
+        .end-turn-btn.has-timer { 
+            background: radial-gradient(circle at 30% 30%, #e74c3c, #a51e00); 
+            animation: timerPulse 1s infinite;
+        }
+        .end-turn-btn.has-timer.urgent { 
+            background: radial-gradient(circle at 30% 30%, #ff4444, #cc0000); 
+            animation: timerPulseUrgent 0.5s infinite;
+        }
+        .end-turn-btn .btn-timer {
+            font-size: 2em;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        @keyframes timerPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes timerPulseUrgent { 0%, 100% { transform: scale(1); box-shadow: 0 4px 15px rgba(255,0,0,0.4); } 50% { transform: scale(1.1); box-shadow: 0 6px 25px rgba(255,0,0,0.8); } }
         
         .phase-indicator { 
             position: absolute;
@@ -686,11 +696,18 @@
         /* Card hover preview flottante */
         .card-preview {
             position: fixed;
+            top: 70px;
+            right: 20px;
             z-index: 2000;
             pointer-events: none;
-            transform: scale(1.8);
-            transform-origin: center center;
+            transform: scale(1.5);
+            transform-origin: top right;
             filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .card-preview.visible {
+            opacity: 1;
         }
         
         /* Zone de drop pour sorts globaux */

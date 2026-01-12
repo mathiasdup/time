@@ -63,9 +63,11 @@ function initSocket() {
         if(state) state.phase = p; 
         updatePhaseDisplay();
         
-        // Cacher le timer pendant la résolution
+        // Réinitialiser le bouton pendant la résolution
         if (p === 'resolution') {
-            document.getElementById('header-timer').classList.remove('visible', 'urgent');
+            const endTurnBtn = document.getElementById('end-turn-btn');
+            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
+            endTurnBtn.classList.remove('has-timer', 'urgent');
         }
     });
     
@@ -79,15 +81,20 @@ function initSocket() {
         const isMe = n === myNum;
         if (isMe) {
             meReady = true;
-            document.getElementById('end-turn-btn').classList.add('waiting');
+            const endTurnBtn = document.getElementById('end-turn-btn');
+            endTurnBtn.classList.add('waiting');
+            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
+            endTurnBtn.classList.remove('has-timer', 'urgent');
         } else {
             oppReady = true;
         }
         log(isMe ? 'Vous êtes prêt' : 'Adversaire prêt', 'action');
         
-        // Cacher le timer si les deux joueurs sont prêts
+        // Réinitialiser le bouton si les deux joueurs sont prêts
         if (meReady && oppReady) {
-            document.getElementById('header-timer').classList.remove('visible', 'urgent');
+            const endTurnBtn = document.getElementById('end-turn-btn');
+            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
+            endTurnBtn.classList.remove('has-timer', 'urgent');
         }
     });
     
@@ -95,9 +102,10 @@ function initSocket() {
         currentTimer = 90;
         meReady = false;
         oppReady = false;
-        document.getElementById('end-turn-btn').classList.remove('waiting');
+        const endTurnBtn = document.getElementById('end-turn-btn');
+        endTurnBtn.classList.remove('waiting', 'has-timer', 'urgent');
+        endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
         clearSel();
-        updateTimerDisplay(90);
         log(`🎮 Tour ${d.turn} — ⚡${d.maxEnergy} énergie`, 'phase');
         
         // Message éphémère de phase - seulement s'il y a des créatures à repositionner
@@ -473,16 +481,19 @@ function canPlay() {
 }
 
 function updateTimerDisplay(t) {
-    const timerEl = document.getElementById('header-timer');
     const endTurnBtn = document.getElementById('end-turn-btn');
     
-    if (t > 0 && t <= 15 && state && state.phase === 'planning') {
-        timerEl.classList.add('visible');
-        timerEl.textContent = t;
-        timerEl.classList.toggle('urgent', t <= 5);
+    if (t > 0 && t <= 15 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {
+        // Afficher le compteur dans le bouton
+        endTurnBtn.innerHTML = `<span class="btn-timer">${t}</span>`;
+        endTurnBtn.classList.add('has-timer');
+        endTurnBtn.classList.toggle('urgent', t <= 5);
     } else {
-        // À 0 ou hors phase planning, cacher le timer
-        timerEl.classList.remove('visible', 'urgent');
+        // Remettre "FIN DU TOUR"
+        if (endTurnBtn.classList.contains('has-timer') || endTurnBtn.innerHTML.includes('btn-timer')) {
+            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
+            endTurnBtn.classList.remove('has-timer', 'urgent');
+        }
         
         // À 0, griser immédiatement le bouton comme si on avait cliqué
         if (t <= 0 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {
@@ -1064,15 +1075,14 @@ function showCardPreview(card, e) {
     hideCardPreview();
     previewEl = makeCard(card, false);
     previewEl.classList.add('card-preview');
-    previewEl.style.left = (e.clientX + 20) + 'px';
-    previewEl.style.top = (e.clientY - 100) + 'px';
     document.body.appendChild(previewEl);
+    // Utiliser requestAnimationFrame pour le fade-in
+    requestAnimationFrame(() => {
+        previewEl.classList.add('visible');
+    });
 }
 function moveCardPreview(e) {
-    if (previewEl) {
-        previewEl.style.left = (e.clientX + 20) + 'px';
-        previewEl.style.top = Math.max(10, e.clientY - 100) + 'px';
-    }
+    // Plus besoin de suivre la souris - position fixe
 }
 function hideCardPreview() {
     if (previewEl) {
