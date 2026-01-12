@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚔️ Bataille des Héros</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="lobby" id="lobby">
+        <h1 class="lobby-title">⚔️ Bataille des Héros</h1>
+        <div class="lobby-box" id="lobby-menu">
+            <h2 style="margin-bottom:25px;color:#ffd700;">Multijoueur</h2>
+            <button class="lobby-btn btn-create" onclick="createRoom()">🎮 Créer une partie</button>
+            <div style="margin:18px 0;color:#666;">— ou —</div>
+            <input type="text" class="room-code-input" id="room-code-input" placeholder="CODE" maxlength="6">
+            <button class="lobby-btn btn-join" onclick="joinRoom()">🚪 Rejoindre</button>
+        </div>
+        <div class="lobby-box hidden" id="lobby-waiting">
+            <h2 style="color:#ffd700;margin-bottom:15px;">Partie créée !</h2>
+            <p style="color:#aaa;margin-bottom:8px;">Partagez ce code :</p>
+            <div class="room-code-display" id="room-code-display">------</div>
+            <p class="waiting-text">⏳ En attente d'un adversaire...</p>
+        </div>
+    </div>
+    
+    <!-- Mulligan Overlay -->
+    <div class="mulligan-overlay hidden" id="mulligan-overlay">
+        <div class="mulligan-timer" id="mulligan-timer">15</div>
+        <div class="mulligan-title">🎴 Votre Main de Départ</div>
+        <div class="mulligan-subtitle">Gardez cette main ou piochez 7 nouvelles cartes</div>
+        <div class="mulligan-hand" id="mulligan-hand"></div>
+        <div class="mulligan-buttons" id="mulligan-buttons">
+            <button class="mulligan-btn keep" onclick="keepHand()">✅ Garder</button>
+            <button class="mulligan-btn reroll" onclick="doMulligan()">🔄 Mulligan</button>
+        </div>
+        <div class="mulligan-waiting hidden" id="mulligan-waiting">⏳ En attente de l'adversaire...</div>
+    </div>
+
+    <div class="game-container" id="game-container">
+        <div class="top-bar">
+            <div class="player-info-bar">
+                <div class="rank-badge">Platine</div>
+                <div class="player-name me" id="me-name">Joueur 1</div>
+                <div class="energy-display">
+                    <div class="mana-orb" id="me-energy">1</div>
+                </div>
+            </div>
+            <div class="header-center">
+                <span class="header-timer" id="header-timer">15</span>
+                <div class="phase-indicator deploy" id="phase-indicator">🔄 Phase de repositionnement</div>
+            </div>
+            <div class="player-info-bar">
+                <div class="energy-display">
+                    <div class="mana-orb" id="opp-energy">1</div>
+                </div>
+                <div class="player-name opp" id="opp-name">Joueur 2</div>
+                <div class="rank-badge">Platine</div>
+                <button class="options-btn">⚙️</button>
+            </div>
+        </div>
+        
+        <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
+            <span>FIN DU</span>
+            <span>TOUR</span>
+        </button>
+        
+        <div class="side-panel left">
+            <div class="hero-card" id="hero-me">
+                <div class="hero-label" id="me-hero-name">Aldric</div>
+                <div class="hero-icon" id="me-icon">🧙‍♂️</div>
+                <div class="hero-hp" id="me-hp">20</div>
+            </div>
+            <div class="deck-grave-row">
+                <div class="deck-box">
+                    <div class="deck-icon">🎴</div>
+                    <div class="deck-count" id="me-deck">33</div>
+                    <div>DECK</div>
+                </div>
+                <div class="grave-box clickable" id="me-grave-box" onclick="openGraveyard('me')">
+                    <div class="deck-icon">☠️</div>
+                    <div class="deck-count" id="me-grave">0</div>
+                    <div>CIMETIÈRE</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="side-panel right">
+            <div class="hero-card" id="hero-opp">
+                <div class="hero-label" id="opp-hero-name">Lyra</div>
+                <div class="hero-icon" id="opp-icon">⚔️</div>
+                <div class="hero-hp" id="opp-hp">20</div>
+            </div>
+            <div class="deck-grave-row">
+                <div class="deck-box">
+                    <div class="deck-icon">🎴</div>
+                    <div class="deck-count" id="opp-deck">33</div>
+                    <div>DECK</div>
+                </div>
+                <div class="grave-box clickable" id="opp-grave-box" onclick="openGraveyard('opp')">
+                    <div class="deck-icon">☠️</div>
+                    <div class="deck-count" id="opp-grave">0</div>
+                    <div>CIMETIÈRE</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="battlefield" id="battlefield">
+            <div class="global-spell-zone" id="global-spell-zone"></div>
+        </div>
+        
+        <div class="my-hand" id="my-hand"></div>
+        <div class="opp-hand" id="opp-hand"></div>
+        
+        <div class="log-btn" onclick="toggleLog()">📜 Journal de bataille</div>
+        <div class="log-popup" id="log-popup">
+            <h3>📜 Journal de Bataille</h3>
+            <div class="log-content" id="log-content"></div>
+        </div>
+    </div>
+    
+    <!-- Popup Cimetière -->
+    <div class="graveyard-popup" id="graveyard-popup">
+        <div class="graveyard-popup-header">
+            <span class="graveyard-popup-title" id="graveyard-popup-title">☠️ Cimetière</span>
+            <button class="graveyard-popup-close" onclick="closeGraveyard()">✕</button>
+        </div>
+        <div class="graveyard-cards" id="graveyard-cards">
+            <div class="graveyard-empty">Aucune carte au cimetière</div>
+        </div>
+    </div>
+
+    <div class="game-over hidden" id="game-over">
+        <div class="game-over-box">
+            <div class="game-over-title">🏆 Fin de Partie</div>
+            <div class="game-over-result" id="result">Victoire !</div>
+            <button class="lobby-btn btn-create" onclick="location.reload()">🔄 Rejouer</button>
+        </div>
+    </div>
+
+    <script src="/js/game.js"></script>
+</body>
+</html>

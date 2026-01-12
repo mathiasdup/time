@@ -1,0 +1,578 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            min-height: 100vh;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .lobby.hidden { display: none; }
+        .lobby-title { font-size: 3em; color: #ffd700; text-shadow: 0 0 30px rgba(255,215,0,0.5); margin-bottom: 30px; }
+        .lobby-box { background: rgba(20,20,40,0.95); padding: 35px; border-radius: 15px; border: 3px solid #8b7355; text-align: center; min-width: 380px; }
+        .lobby-btn { display: block; width: 100%; padding: 16px; margin: 12px 0; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; font-family: 'Cinzel', serif; }
+        .lobby-btn:hover { transform: scale(1.05); }
+        .btn-create { background: linear-gradient(135deg, #8b4513, #cd853f); color: white; }
+        .btn-join { background: linear-gradient(135deg, #2e4a2e, #4a7c4a); color: white; }
+        .room-code-input { width: 100%; padding: 14px; font-size: 1.6em; text-align: center; border: 3px solid #8b7355; border-radius: 8px; background: rgba(0,0,0,0.5); color: #ffd700; margin: 12px 0; text-transform: uppercase; letter-spacing: 8px; }
+        .room-code-display { font-size: 2.5em; color: #ffd700; letter-spacing: 10px; margin: 15px 0; padding: 15px; background: rgba(0,0,0,0.5); border-radius: 8px; }
+        .waiting-text { color: #aaa; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .game-container { width: 100vw; height: 100vh; display: none; position: relative; }
+        .game-container.active { display: block; }
+        
+        .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: rgba(20,20,40,0.95); border-bottom: 2px solid #5a4a3a; z-index: 50; }
+        .player-info-bar { display: flex; align-items: center; gap: 12px; }
+        .rank-badge { background: #5a5a7a; padding: 4px 12px; border-radius: 4px; font-size: 0.75em; }
+        .player-name { font-size: 0.9em; padding: 6px 15px; border-radius: 5px; }
+        .player-name.me { background: linear-gradient(135deg, #2a4a6a, #1a3a5a); border: 2px solid #4a7c9a; }
+        .player-name.opp { background: linear-gradient(135deg, #6a2a4a, #5a1a3a); border: 2px solid #9a4a7c; }
+        .options-btn { width: 35px; height: 35px; border-radius: 50%; background: #5a4a3a; border: 2px solid #8b7355; cursor: pointer; font-size: 1em; }
+        
+        .header-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+        .header-timer { font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 0 0 15px rgba(231,76,60,0.8); min-width: 50px; text-align: center; display: none; }
+        .header-timer.visible { display: block; }
+        .header-timer.urgent { animation: timerPulse 0.5s infinite; }
+        @keyframes timerPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); color: #ff4444; } }
+        
+        .energy-display { display: flex; align-items: center; gap: 8px; }
+        .mana-orb { min-width: 40px; height: 36px; padding: 0 12px; border-radius: 18px; background: radial-gradient(circle at 30% 30%, #7ec8f3, #1e90ff, #0066cc); border: 3px solid #87ceeb; box-shadow: 0 0 15px rgba(30,144,255,0.6); display: flex; align-items: center; justify-content: center; font-size: 1em; font-weight: bold; }
+        
+        .end-turn-btn { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ff6b35, #c41e00); border: 4px solid #ffd700; cursor: pointer; font-size: 0.65em; font-weight: bold; color: white; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+        .end-turn-btn:hover:not(.waiting) { transform: translateX(-50%) scale(1.08); box-shadow: 0 6px 25px rgba(255,107,53,0.5); }
+        .end-turn-btn.waiting { background: radial-gradient(circle at 30% 30%, #666, #444); border-color: #888; cursor: default; }
+        
+        .phase-indicator { padding: 6px 20px; background: rgba(46,204,113,0.9); border-radius: 15px; border: 2px solid #58d68d; font-size: 0.75em; white-space: nowrap; opacity: 1; transition: opacity 0.5s ease-out; display: none; margin-top: 5px; }
+        .phase-indicator.visible { display: block; }
+        .phase-indicator.fade-out { opacity: 0; }
+        .phase-indicator.redeploy { background: rgba(52,152,219,0.9); border-color: #5dade2; }
+        .phase-indicator.deploy { background: rgba(46,204,113,0.9); border-color: #58d68d; }
+        .phase-indicator.resolution { background: rgba(231,76,60,0.9); border-color: #ec7063; }
+        
+        .side-panel { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .side-panel.left { left: 15px; }
+        .side-panel.right { right: 15px; }
+        
+        .hero-card { width: 110px; height: 150px; border-radius: 10px; background: linear-gradient(135deg, #3a3a5a, #2a2a4a); border: 4px solid #5a5a8a; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; box-shadow: 0 5px 20px rgba(0,0,0,0.5); transition: all 0.3s; }
+        .side-panel.left .hero-card { border-color: #4a9a4a; background: linear-gradient(135deg, #2a4a3a, #1a3a2a); }
+        .side-panel.right .hero-card { border-color: #9a4a4a; background: linear-gradient(135deg, #4a2a3a, #3a1a2a); }
+        .hero-card.hit { animation: heroHit 0.5s ease-out; }
+        @keyframes heroHit { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); box-shadow: 0 0 30px rgba(255,0,0,0.8); } }
+        .hero-label { font-size: 0.7em; margin-bottom: 5px; color: #ffd700; font-weight: bold; }
+        .hero-icon { font-size: 3em; }
+        .hero-hp { position: absolute; bottom: -15px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21); width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.3em; font-weight: bold; border: 3px solid #f5b7b1; box-shadow: 0 3px 10px rgba(0,0,0,0.4); transition: all 0.3s; }
+        
+        .deck-grave-row { display: flex; gap: 8px; margin-top: 15px; }
+        .deck-box, .grave-box { width: 90px; height: 120px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.7em; }
+        .deck-box { background: linear-gradient(135deg, #4a3a2a, #2a2015); border: 3px solid #8b7355; }
+        .grave-box { background: linear-gradient(135deg, #3a3a4a, #2a2a3a); border: 3px dashed #6a6a7a; }
+        .deck-icon { font-size: 2em; margin-bottom: 5px; }
+        .deck-count { font-size: 1.2em; font-weight: bold; }
+        
+        .battlefield {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) perspective(1500px) rotateX(8deg);
+            transform-style: preserve-3d;
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            background: url('/css/background.png') center center / cover no-repeat, rgba(0,0,0,0.3);
+            border-radius: 12px;
+            border: 2px solid rgba(139,115,85,0.3);
+        }
+        
+        .field-side { display: grid; grid-template-columns: repeat(2, 90px); grid-template-rows: repeat(4, 120px); gap: 5px; }
+        
+        .trap-center { display: flex; gap: 6px; }
+        .trap-col { display: grid; grid-template-rows: repeat(4, 120px); gap: 5px; }
+        
+        .card-slot {
+            width: 90px;
+            height: 120px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-slot::before {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 2px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            transform: rotate(45deg);
+            pointer-events: none;
+        }
+        .card-slot .slot-label {
+            position: absolute;
+            font-size: 0.65em;
+            color: rgba(255,255,255,0.25);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .card-slot:not(.has-card):hover {
+            border-color: rgba(255,255,255,0.6);
+            background: rgba(255,255,255,0.08);
+        }
+        .card-slot:not(.has-card):hover::before {
+            border-color: rgba(255,255,255,0.7);
+        }
+        .card-slot.me-slot { border-color: rgba(255,255,255,0.3); }
+        .card-slot.opp-slot { border-color: rgba(255,255,255,0.3); }
+        .card-slot.has-card { border-color: transparent; background: transparent; }
+        .card-slot.has-card::before { display: none; }
+        .card-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.25) !important; box-shadow: 0 0 15px rgba(46,204,113,0.5); animation: validPulse 1s infinite; }
+        .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
+        @keyframes crossPulse { 0%,100% { box-shadow: 0 0 10px rgba(243,156,18,0.4); } 50% { box-shadow: 0 0 25px rgba(243,156,18,0.8); } }
+        .card-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.35) !important; box-shadow: 0 0 25px rgba(241,196,15,0.8); }
+        .card-slot.moveable { border-color: #3498db !important; background: rgba(52,152,219,0.25) !important; box-shadow: 0 0 15px rgba(52,152,219,0.5); }
+        @keyframes validPulse { 0%,100% { box-shadow: 0 0 10px rgba(46,204,113,0.4); } 50% { box-shadow: 0 0 25px rgba(46,204,113,0.8); } }
+        
+        .trap-slot { width: 50px; height: 50px; margin: auto 0; border: 2px dashed rgba(200,150,200,0.4); border-radius: 50%; background: rgba(200,150,200,0.1); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 0.55em; color: rgba(255,255,255,0.4); }
+        .trap-slot:hover { border-color: #ffd700; background: rgba(255,215,0,0.2); }
+        .trap-slot.has-trap { border-style: solid; background: rgba(231,76,60,0.3); border-color: #e74c3c; font-size: 1.3em; color: white; }
+        .trap-slot.has-trap.mine { background: rgba(46,204,113,0.3); border-color: #27ae60; }
+        .trap-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.3) !important; }
+        .trap-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.4) !important; }
+        .trap-slot.triggered { animation: trapExplode 0.6s ease-out; }
+        @keyframes trapExplode { 0% { transform: scale(1); } 50% { transform: scale(1.8); background: rgba(255,100,0,0.8); } 100% { transform: scale(0); opacity: 0; } }
+        
+        .card { width: 86px; height: 116px; border-radius: 6px; position: relative; cursor: grab; overflow: hidden; transition: transform 0.3s, box-shadow 0.2s; background: #111; flex-shrink: 0; }
+        .card.dragging { cursor: grabbing; }
+        .card-cost { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; background: radial-gradient(circle at 30% 30%, #4fc3f7, #0277bd); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; border: 2px solid #81d4fa; z-index: 5; }
+        .card-type-icon { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7em; z-index: 5; }
+        .card-type-icon.spell-icon { background: rgba(155,89,182,0.9); border: 2px solid #bb8fce; }
+        .card-type-icon.trap-icon { background: rgba(231,76,60,0.9); border: 2px solid #ec7063; }
+        .card-art { width: 100%; height: 55px; display: flex; align-items: center; justify-content: center; font-size: 2em; }
+        .card.creature .card-art { background: linear-gradient(180deg, #2a3a5a, #151d2e); }
+        .card.spell .card-art { background: linear-gradient(180deg, #5a2a6a, #2d1535); }
+        .card.trap-card .card-art { background: linear-gradient(180deg, #6a2a2a, #351515); }
+        .card-body { background: #0a0a0a; padding: 3px; height: 61px; }
+        .card-name { font-size: 0.5em; font-weight: bold; text-align: center; color: #ffd700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .card-abilities { display: flex; gap: 2px; justify-content: center; font-size: 0.7em; margin: 2px 0; }
+        .card-stats { display: flex; justify-content: space-between; padding: 0 5px; margin-top: 2px; }
+        .stat { font-size: 0.8em; font-weight: bold; padding: 2px 7px; border-radius: 3px; }
+        .stat-atk { background: linear-gradient(135deg, #c0392b, #8e2222); }
+        .stat-hp { background: linear-gradient(135deg, #2980b9, #1a5276); }
+        .stat-hp.damaged { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .stat-atk.boosted, .stat-hp.boosted { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.8); }
+        .card.creature { border: 3px solid #3498db; }
+        .card.spell { border: 3px solid #9b59b6; }
+        .card.trap-card { border: 3px solid #e74c3c; }
+        .card.just-played { opacity: 0.6; }
+        .card.just-played::after { content: '💤'; position: absolute; top: 2px; right: 2px; font-size: 0.7em; }
+        .card.can-attack { box-shadow: 0 0 10px rgba(231,76,60,0.6); }
+        .card.field-selected { box-shadow: 0 0 15px rgba(52,152,219,0.9); border-color: #3498db !important; }
+        
+        /* ANIMATIONS */
+        .card.attacking { animation: attackAnim 0.4s ease-out; }
+        @keyframes attackAnim { 0% { transform: translateX(0); } 50% { transform: translateX(30px) scale(1.1); } 100% { transform: translateX(0); } }
+        
+        .card.taking-damage { animation: damageAnim 0.4s ease-out; }
+        @keyframes damageAnim { 0%, 100% { filter: none; } 50% { filter: brightness(2) saturate(0); box-shadow: 0 0 20px red; } }
+        
+        .card.dying { animation: deathAnim 0.6s ease-out forwards; }
+        @keyframes deathAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0) rotate(180deg); opacity: 0; } }
+        
+        /* Animation de pop pour invocation (overlay fixe) */
+        .card.summon-overlay { 
+            animation: summonPop 0.5s ease-out forwards; 
+        }
+        @keyframes summonPop { 
+            0% { transform: scale(0); opacity: 0; } 
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; } 
+        }
+        
+        /* Fondu de sortie pour l'overlay */
+        .card.summon-overlay.fade-out {
+            animation: none;
+            opacity: 0;
+            transition: opacity 0.15s ease-out;
+        }
+        
+        .card.healing { animation: healAnim 0.5s ease-out; }
+        @keyframes healAnim { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 30px rgba(46,204,113,0.9); } }
+        
+        /* Carte fantôme pour animation de déplacement */
+        .card-moving {
+            position: fixed;
+            z-index: 3000;
+            pointer-events: none;
+            transition: left 0.5s ease-in-out, top 0.5s ease-in-out;
+        }
+        
+        /* Carte affichée lors des sorts/pièges */
+        .card-showcase { 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%) scale(2); 
+            z-index: 2000; 
+            animation: showcaseAnim 1.5s ease-out forwards;
+            pointer-events: none;
+        }
+        @keyframes showcaseAnim { 
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } 
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(2.2); }
+            70% { opacity: 1; transform: translate(-50%, -50%) scale(2); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); } 
+        }
+        
+        /* Vibration pour carte non jouable */
+        .card.shake { animation: shakeAnim 0.4s ease-out; }
+        @keyframes shakeAnim {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-10px); }
+            40% { transform: translateX(10px); }
+            60% { transform: translateX(-10px); }
+            80% { transform: translateX(10px); }
+        }
+        
+        /* Retour smooth dans la main */
+        .card.returning { 
+            transition: transform 0.3s ease-out, left 0.3s ease-out, top 0.3s ease-out;
+        }
+        
+        .attack-projectile { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; transition: all 0.3s ease-out; }
+        
+        .spell-effect { position: fixed; z-index: 1000; font-size: 3em; pointer-events: none; animation: spellAnim 0.6s ease-out forwards; }
+        @keyframes spellAnim { 0% { transform: scale(0); opacity: 1; } 50% { transform: scale(1.5); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
+        
+        .spell-miss { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; animation: missAnim 0.8s ease-out forwards; }
+        @keyframes missAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.5) translateY(-30px); opacity: 0; } }
+        
+        .damage-number { position: fixed; z-index: 1001; font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 2px 2px 4px black; pointer-events: none; animation: damageFloat 1s ease-out forwards; }
+        .damage-number.heal { color: #2ecc71; }
+        @keyframes damageFloat { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-50px) scale(1.5); } }
+        
+        /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
+        .my-hand { 
+            position: absolute; 
+            bottom: -35px; /* Cache 30% de la carte (116px * 0.3) */
+            left: 140px; 
+            display: flex; 
+            padding: 10px 15px 0 15px;
+            background: transparent; 
+            max-width: calc(50% - 150px); 
+            z-index: 20;
+        }
+        .my-hand .card { 
+            margin-left: -40px; 
+            transition: transform 0.2s ease-out, z-index 0s; 
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
+            transform-origin: bottom center;
+        }
+        .my-hand .card:first-child { margin-left: 0; }
+        .my-hand .card:hover:not(.dragging), .my-hand .card.dragging { 
+            transform: translateY(-50px) scale(1.3); 
+            z-index: 100 !important;
+        }
+        .my-hand .card.selected { 
+            transform: translateY(-55px) scale(1.35); 
+            z-index: 101 !important; 
+            box-shadow: 0 0 25px rgba(255,215,0,0.8); 
+        }
+        
+        /* MAIN ADVERSE - 30% cachée */
+        .opp-hand { 
+            position: absolute; 
+            bottom: -35px; /* 30% cachée */
+            right: 140px; 
+            display: flex; 
+            padding: 10px 15px 0 15px;
+            background: transparent;
+            z-index: 20;
+        }
+        .opp-card-back { 
+            width: 86px;
+            height: 116px; 
+            margin-left: -40px; 
+            border-radius: 6px; 
+            background: linear-gradient(135deg, #4a3a2a, #2a2015); 
+            border: 3px solid #8b7355; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 1.8em;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            flex-shrink: 0;
+            transition: transform 0.2s ease-out;
+            position: relative;
+            z-index: 1;
+        }
+        .opp-card-back:first-child { margin-left: 0; }
+        .opp-card-back:hover {
+            transform: translateY(-50px) scale(1.15);
+            z-index: 100 !important;
+        }
+        
+        .log-btn { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); padding: 8px 20px; background: rgba(60,50,40,0.9); border: 2px solid #8b7355; border-radius: 20px; cursor: pointer; font-size: 0.75em; z-index: 30; }
+        .log-popup { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); width: 400px; max-height: 280px; background: rgba(20,20,40,0.98); border: 2px solid #8b7355; border-radius: 12px; padding: 12px; display: none; z-index: 100; }
+        .log-popup.active { display: block; }
+        .log-popup h3 { color: #ffd700; margin-bottom: 8px; font-size: 0.85em; text-align: center; }
+        .log-content { max-height: 220px; overflow-y: auto; font-size: 0.7em; }
+        .log-entry { padding: 4px 8px; margin: 3px 0; border-radius: 4px; }
+        .log-phase { background: rgba(255,215,0,0.2); color: #ffd700; }
+        .log-action { background: rgba(52,152,219,0.2); color: #5dade2; }
+        .log-damage { background: rgba(231,76,60,0.2); color: #ec7063; }
+        .log-heal { background: rgba(46,204,113,0.2); color: #58d68d; }
+        .log-trap { background: rgba(155,89,182,0.2); color: #bb8fce; }
+        
+        /* Cimetière cliquable */
+        .grave-box.clickable { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .grave-box.clickable:hover { transform: scale(1.1); box-shadow: 0 0 15px rgba(255,215,0,0.5); }
+        
+        /* Popup cimetière */
+        .graveyard-popup { 
+            position: fixed; 
+            bottom: 80px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            background: rgba(20, 20, 40, 0.85); 
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 2px solid rgba(139, 115, 85, 0.6); 
+            border-radius: 15px; 
+            padding: 15px 20px; 
+            z-index: 500;
+            display: none;
+            max-width: 90vw;
+        }
+        .graveyard-popup.active { display: block; }
+        .graveyard-popup-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(139, 115, 85, 0.4);
+        }
+        .graveyard-popup-title { 
+            color: #ffd700; 
+            font-size: 1em; 
+            font-weight: bold;
+        }
+        .graveyard-popup-close { 
+            background: rgba(231, 76, 60, 0.8); 
+            border: none; 
+            color: white; 
+            width: 28px; 
+            height: 28px; 
+            border-radius: 50%; 
+            cursor: pointer; 
+            font-size: 1em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .graveyard-popup-close:hover { background: #e74c3c; }
+        .graveyard-cards { 
+            display: flex; 
+            gap: 10px; 
+            overflow-x: auto; 
+            padding: 10px 5px;
+            min-height: 140px;
+        }
+        .graveyard-cards::-webkit-scrollbar { height: 8px; }
+        .graveyard-cards::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 4px; }
+        .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(139, 115, 85, 0.6); border-radius: 4px; }
+        .graveyard-cards .card { flex-shrink: 0; }
+        .graveyard-empty { 
+            color: #888; 
+            font-style: italic; 
+            text-align: center; 
+            padding: 40px;
+            width: 300px;
+        }
+        
+        .game-over { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .game-over.hidden { display: none; }
+        .game-over-box { text-align: center; padding: 40px; background: rgba(30,30,50,0.98); border-radius: 15px; border: 4px solid #ffd700; }
+        .game-over-title { font-size: 2.5em; color: #ffd700; margin-bottom: 15px; }
+        .game-over-result { font-size: 1.3em; margin-bottom: 25px; }
+        .game-over-result.victory { color: #2ecc71; }
+        .game-over-result.defeat { color: #e74c3c; }
+        
+        /* Card hover preview flottante */
+        .card-preview {
+            position: fixed;
+            z-index: 2000;
+            pointer-events: none;
+            transform: scale(1.8);
+            transform-origin: center center;
+            filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
+        }
+        
+        /* Zone de drop pour sorts globaux */
+        .global-spell-zone {
+            position: absolute;
+            inset: 0;
+            border: 4px dashed transparent;
+            border-radius: 15px;
+            pointer-events: none;
+            transition: all 0.3s;
+            z-index: 5;
+        }
+        .global-spell-zone.active {
+            border-color: rgba(46, 204, 113, 0.8);
+            background: rgba(46, 204, 113, 0.1);
+            pointer-events: auto;
+        }
+        
+        /* Highlight des sorts */
+        .card-slot.spell-highlight {
+            animation: spellFlash 1.5s ease-out;
+        }
+        @keyframes spellFlash {
+            0% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.9); }
+            100% { box-shadow: none; }
+        }
+        .card-slot.spell-highlight-damage {
+            animation: spellFlashDamage 1.5s ease-out;
+        }
+        @keyframes spellFlashDamage {
+            0% { box-shadow: 0 0 30px rgba(231, 76, 60, 0.9); }
+            100% { box-shadow: none; }
+        }
+        .card-slot.spell-highlight-heal {
+            animation: spellFlashHeal 1.5s ease-out;
+        }
+        @keyframes spellFlashHeal {
+            0% { box-shadow: 0 0 30px rgba(46, 204, 113, 0.9); }
+            100% { box-shadow: none; }
+        }
+        
+        /* Buff animation */
+        .buff-indicator {
+            position: fixed;
+            z-index: 1001;
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #f1c40f;
+            text-shadow: 2px 2px 4px black;
+            pointer-events: none;
+            animation: buffFloat 1s ease-out forwards;
+        }
+        @keyframes buffFloat {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-40px) scale(1.3); }
+        }
+        
+        /* Mulligan Overlay */
+        .mulligan-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .mulligan-overlay.hidden { display: none; }
+        .mulligan-title {
+            font-size: 2em;
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+        }
+        .mulligan-subtitle {
+            color: #aaa;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .mulligan-hand {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 90%;
+        }
+        .mulligan-hand .card {
+            transform: scale(1.1);
+            transition: transform 0.2s;
+        }
+        .mulligan-hand .card:hover {
+            transform: scale(1.25) translateY(-10px);
+        }
+        .mulligan-buttons {
+            display: flex;
+            gap: 30px;
+        }
+        .mulligan-btn {
+            padding: 18px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .mulligan-btn.keep {
+            background: linear-gradient(135deg, #27ae60, #1e8449);
+            color: white;
+        }
+        .mulligan-btn.keep:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(39,174,96,0.6);
+        }
+        .mulligan-btn.reroll {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+        .mulligan-btn.reroll:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(231,76,60,0.6);
+        }
+        .mulligan-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        .mulligan-waiting {
+            color: #ffd700;
+            font-size: 1.2em;
+            margin-top: 20px;
+            animation: pulse 1.5s infinite;
+        }
+        .mulligan-timer {
+            position: absolute;
+            top: 30px;
+            right: 50px;
+            font-size: 3em;
+            font-weight: bold;
+            color: #ffd700;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .mulligan-timer.visible {
+            opacity: 1;
+        }
+        .mulligan-timer.urgent {
+            color: #e74c3c;
+            animation: timerPulse 0.5s infinite;
+        }
+        @keyframes timerPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
