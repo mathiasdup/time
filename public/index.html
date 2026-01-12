@@ -48,10 +48,12 @@
                 </div>
             </div>
             <div class="header-center">
-                <span class="header-timer" id="header-timer">15</span>
                 <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
-                    <span>FIN DU</span>
-                    <span>TOUR</span>
+                    <span class="end-turn-text" id="end-turn-text">
+                        <span>FIN DU</span>
+                        <span>TOUR</span>
+                    </span>
+                    <span class="header-timer" id="header-timer">15</span>
                 </button>
             </div>
             <div class="player-info-bar">
@@ -63,7 +65,7 @@
             </div>
         </div>
 
-        <div class="phase-indicator deploy" id="phase-indicator">🔄 Phase de repositionnement</div>
+        <div class="phase-indicator deploy" id="phase-indicator">Phase de repositionnement</div>
         
         <div class="side-panel left">
             <div class="hero-card" id="hero-me">
@@ -78,9 +80,11 @@
                     <div>DECK</div>
                 </div>
                 <div class="grave-box clickable" id="me-grave-box" onclick="openGraveyard('me')">
-                    <div class="deck-icon">☠️</div>
-                    <div class="deck-count" id="me-grave">0</div>
-                    <div>CIMETIÈRE</div>
+                    <div class="grave-card-preview" id="me-grave-preview"></div>
+                    <div class="grave-overlay">
+                        <div class="deck-count" id="me-grave">0</div>
+                        <div class="grave-label">CIMETIÈRE</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -98,9 +102,11 @@
                     <div>DECK</div>
                 </div>
                 <div class="grave-box clickable" id="opp-grave-box" onclick="openGraveyard('opp')">
-                    <div class="deck-icon">☠️</div>
-                    <div class="deck-count" id="opp-grave">0</div>
-                    <div>CIMETIÈRE</div>
+                    <div class="grave-card-preview" id="opp-grave-preview"></div>
+                    <div class="grave-overlay">
+                        <div class="deck-count" id="opp-grave">0</div>
+                        <div class="grave-label">CIMETIÈRE</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -112,7 +118,7 @@
         <div class="my-hand" id="my-hand"></div>
         <div class="opp-hand" id="opp-hand"></div>
 
-        <div class="log-btn" onclick="toggleLog()">📜 Journal de bataille</div>
+        <div class="log-btn" onclick="toggleLog()">Journal de bataille</div>
         <button class="options-btn">⚙️</button>
         <div class="log-popup" id="log-popup">
             <h3>📜 Journal de Bataille</h3>

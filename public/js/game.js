@@ -49,7 +49,7 @@ function initSocket() {
         
         // Message éphémère si on vient de passer en phase de déploiement
         if (!wasInDeployPhase && state.me.inDeployPhase && state.phase === 'planning') {
-            showPhaseMessage('🎴 Phase principale', 'deploy');
+            showPhaseMessage('Phase principale', 'deploy');
         }
     });
     
@@ -102,7 +102,7 @@ function initSocket() {
         
         // Message éphémère de phase - seulement s'il y a des créatures à repositionner
         if (hasCreaturesOnMyField()) {
-            showPhaseMessage('🔄 Phase de repositionnement', 'redeploy');
+            showPhaseMessage('Phase de repositionnement', 'redeploy');
         }
     });
     
@@ -474,16 +474,20 @@ function canPlay() {
 
 function updateTimerDisplay(t) {
     const timerEl = document.getElementById('header-timer');
+    const endTurnText = document.getElementById('end-turn-text');
     const endTurnBtn = document.getElementById('end-turn-btn');
-    
+
     if (t > 0 && t <= 15 && state && state.phase === 'planning') {
+        // Afficher le timer, cacher le texte "FIN DU TOUR"
         timerEl.classList.add('visible');
         timerEl.textContent = t;
         timerEl.classList.toggle('urgent', t <= 5);
+        endTurnText.classList.add('hidden');
     } else {
-        // À 0 ou hors phase planning, cacher le timer
+        // Cacher le timer, afficher le texte "FIN DU TOUR"
         timerEl.classList.remove('visible', 'urgent');
-        
+        endTurnText.classList.remove('hidden');
+
         // À 0, griser immédiatement le bouton comme si on avait cliqué
         if (t <= 0 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {
             endTurnBtn.classList.add('waiting');
@@ -933,6 +937,28 @@ function clearHighlights() {
     if (zone) zone.classList.remove('active');
 }
 
+function renderGraveyardPreviews() {
+    if (!state) return;
+
+    // Rendre la prévisualisation du cimetière du joueur
+    const meGravePreview = document.getElementById('me-grave-preview');
+    meGravePreview.innerHTML = '';
+    if (state.me.graveyard && state.me.graveyard.length > 0) {
+        const lastCard = state.me.graveyard[state.me.graveyard.length - 1];
+        const cardEl = makeCard(lastCard, false);
+        meGravePreview.appendChild(cardEl);
+    }
+
+    // Rendre la prévisualisation du cimetière adverse
+    const oppGravePreview = document.getElementById('opp-grave-preview');
+    oppGravePreview.innerHTML = '';
+    if (state.opponent.graveyard && state.opponent.graveyard.length > 0) {
+        const lastCard = state.opponent.graveyard[state.opponent.graveyard.length - 1];
+        const cardEl = makeCard(lastCard, false);
+        oppGravePreview.appendChild(cardEl);
+    }
+}
+
 function render() {
     if (!state) return;
     const me = state.me, opp = state.opponent;
@@ -945,7 +971,8 @@ function render() {
     document.getElementById('opp-deck').textContent = opp.deckCount;
     document.getElementById('me-grave').textContent = me.graveyardCount || 0;
     document.getElementById('opp-grave').textContent = opp.graveyardCount || 0;
-    
+
+    renderGraveyardPreviews();
     renderField('me', me.field);
     renderField('opp', opp.field);
     renderTraps();
