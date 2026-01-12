@@ -166,8 +166,7 @@
             position: absolute;
             top: 38%;
             left: 50%;
-            transform: translate(-50%, -50%) perspective(1500px) rotateX(25deg);
-            transform-style: preserve-3d;
+            transform: translate(-50%, -50%);
             display: flex;
             gap: 10px;
             padding: 15px;
@@ -175,6 +174,11 @@
             border-radius: 12px;
             border: 2px solid rgba(139,115,85,0.3);
             z-index: 10;
+            perspective: 1500px;
+        }
+        .battlefield > * {
+            transform: rotateX(25deg);
+            transform-style: preserve-3d;
         }
         
         .field-side {
@@ -529,12 +533,13 @@
             border-radius: 15px;
             pointer-events: none;
             transition: all 0.3s;
-            z-index: 5;
+            z-index: -1;
         }
         .global-spell-zone.active {
             border-color: rgba(46, 204, 113, 0.8);
             background: rgba(46, 204, 113, 0.1);
             pointer-events: auto;
+            z-index: 5;
         }
         
         /* Highlight des sorts */
