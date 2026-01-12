@@ -3,7 +3,7 @@
         
         body {
             font-family: 'Cinzel', serif;
-            background: url('../background.png') no-repeat center center fixed;
+            background: url('background.png') no-repeat center center fixed;
             background-size: cover;
             min-height: 100vh;
             color: white;
@@ -81,9 +81,8 @@
         
         .phase-indicator { 
             position: absolute;
-            top: 120px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: 140px;
+            right: 100px;
             padding: 10px 30px; 
             background: rgba(46,204,113,0.95); 
             border-radius: 20px; 
@@ -102,23 +101,22 @@
         .phase-indicator.redeploy { background: rgba(52,152,219,0.95); border-color: #5dade2; }
         .phase-indicator.deploy { background: rgba(46,204,113,0.95); border-color: #58d68d; }
         .phase-indicator.resolution { background: rgba(231,76,60,0.95); border-color: #ec7063; }
+        .phase-indicator.revelation { background: rgba(155,89,182,0.95); border-color: #a569bd; }
+        .phase-indicator.protection { background: rgba(46,204,113,0.95); border-color: #58d68d; }
+        .phase-indicator.attack { background: rgba(230,126,34,0.95); border-color: #e67e22; }
+        .phase-indicator.combat { background: rgba(231,76,60,0.95); border-color: #ec7063; }
         
         .side-panel { 
-            position: absolute; 
-            top: 45%; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
             gap: 12px;
-            transform-style: preserve-3d;
         }
         .side-panel.left { 
-            left: 80px; 
-            transform: translateY(-50%) perspective(1000px) rotateX(20deg); 
+            margin-right: 20px;
         }
         .side-panel.right { 
-            right: 80px; 
-            transform: translateY(-50%) perspective(1000px) rotateX(20deg); 
+            margin-left: 20px;
         }
         
         .hero-card { 
@@ -244,11 +242,23 @@
         .deck-icon { font-size: 2.5em; margin-bottom: 5px; }
         .deck-count { font-size: 1.4em; font-weight: bold; }
         
+        .game-board-wrapper {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            perspective: 1000px;
+        }
+        
+        .game-board {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform: rotateX(20deg);
+            transform-style: preserve-3d;
+        }
+        
         .battlefield { 
-            position: absolute; 
-            top: 45%; 
-            left: 50%; 
-            transform: translate(-50%, -50%) perspective(1000px) rotateX(20deg); 
             display: flex; 
             gap: 12px; 
             padding: 25px 35px; 
