@@ -177,7 +177,15 @@
             z-index: 10;
         }
         
-        .field-side { display: grid; grid-template-columns: repeat(2, 115px); grid-template-rows: repeat(4, 155px); gap: 6px; }
+        .field-side {
+            display: grid;
+            grid-template-columns: repeat(2, 115px);
+            grid-template-rows: repeat(4, 155px);
+            gap: 6px;
+        }
+        .field-side > * {
+            pointer-events: auto;
+        }
 
         .trap-center { display: flex; gap: 8px; }
         .trap-col { display: grid; grid-template-rows: repeat(4, 155px); gap: 6px; }
@@ -194,6 +202,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            pointer-events: auto;
         }
         .card-slot::before {
             content: '';
