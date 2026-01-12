@@ -652,6 +652,9 @@ async function applySpell(room, action, log, sleep) {
         }
     }
     
+    // Mettre le sort au cimetière après utilisation
+    addToGraveyard(player, spell);
+    
     emitStateToBoth(room);
     await sleep(600);
 }

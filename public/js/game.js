@@ -992,7 +992,7 @@ function updateGraveTopCard(owner, graveyard) {
             `;
         } else if (topCard.type === 'spell') {
             container.innerHTML = `
-                <div class="mini-card" style="border-color: rgba(155,89,182,0.8);">
+                <div class="mini-card">
                     <div class="card-icon">${topCard.icon || '✨'}</div>
                     <div class="card-name">${topCard.name || 'Sort'}</div>
                     <div class="card-stats">
@@ -1002,7 +1002,7 @@ function updateGraveTopCard(owner, graveyard) {
             `;
         } else if (topCard.type === 'trap') {
             container.innerHTML = `
-                <div class="mini-card" style="border-color: rgba(231,76,60,0.8);">
+                <div class="mini-card">
                     <div class="card-icon">${topCard.icon || '⚠️'}</div>
                     <div class="card-name">${topCard.name || 'Piège'}</div>
                     <div class="card-stats">

@@ -412,7 +412,7 @@
         .trap-slot.has-trap::before {
             display: none;
         }
-        .trap-slot:hover { border-color: rgba(255,215,0,0.6); background: rgba(255,215,0,0.15); }
+        .trap-slot:hover { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.15); }
         .trap-slot.has-trap { border-style: solid; background: rgba(231,76,60,0.3); border-color: #e74c3c; font-size: 1.4em; color: white; }
         .trap-slot.has-trap.mine { background: rgba(46,204,113,0.3); border-color: #27ae60; }
         .trap-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.3) !important; }
@@ -454,6 +454,7 @@
         .card.creature { border: 3px solid #3498db; }
         .card.spell { border: 3px solid #9b59b6; }
         .card.trap-card { border: 3px solid #e74c3c; }
+        .card.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.just-played::after { content: '💤'; position: absolute; top: 2px; right: 2px; font-size: 0.7em; }
         .card.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
         .card.field-selected { box-shadow: 0 0 15px rgba(52,152,219,0.9); border-color: #3498db !important; }
@@ -573,7 +574,7 @@
         /* MAIN ADVERSE - 30% cachée */
         .opp-hand { 
             position: absolute; 
-            bottom: -35px; /* 30% cachée */
+            bottom: -58px; /* 50% cachée */
             right: 140px; 
             display: flex; 
             padding: 10px 15px 0 15px;
@@ -583,7 +584,7 @@
         .opp-card-back { 
             width: 86px;
             height: 116px; 
-            margin-left: -40px; 
+            margin-left: -55px; 
             border-radius: 6px; 
             background: linear-gradient(135deg, #4a3a2a, #2a2015); 
             border: 3px solid #8b7355; 
@@ -593,15 +594,10 @@
             font-size: 1.8em;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             flex-shrink: 0;
-            transition: transform 0.2s ease-out;
             position: relative;
             z-index: 1;
         }
         .opp-card-back:first-child { margin-left: 0; }
-        .opp-card-back:hover {
-            transform: translateY(-50px) scale(1.15);
-            z-index: 100 !important;
-        }
         
         .log-btn { 
             position: absolute; 
