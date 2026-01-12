@@ -795,7 +795,6 @@ function makeTrapSlot(owner, row) {
     el.className = 'trap-slot';
     el.dataset.owner = owner;
     el.dataset.row = row;
-    el.textContent = 'Piège';
     
     el.onclick = () => clickTrap(owner, row);
     el.ondragover = (e) => { 
@@ -1099,7 +1098,7 @@ function renderTraps() {
                     slot.onmousemove = (e) => moveCardPreview(e);
                 }
             } else {
-                slot.textContent = 'Piège';
+                slot.textContent = '';
                 slot.onmouseenter = null;
                 slot.onmouseleave = null;
                 slot.onmousemove = null;
@@ -1115,7 +1114,7 @@ function renderTraps() {
                 slot.classList.add('has-trap');
                 slot.textContent = '❓';
             } else {
-                slot.textContent = 'Piège';
+                slot.textContent = '';
             }
         }
     });

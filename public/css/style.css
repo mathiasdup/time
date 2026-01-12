@@ -132,15 +132,31 @@
             justify-content: center; 
             position: relative; 
             box-shadow: 0 5px 20px rgba(0,0,0,0.5); 
-            transition: all 0.3s; 
+            transition: all 0.3s;
+            padding: 6px;
+        }
+        .hero-card-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .hero-card:hover .hero-card-inner {
+            transform: scale(1.06);
         }
         .side-panel.left .hero-card { border-color: #4a9a4a; background: linear-gradient(135deg, #2a4a3a, #1a3a2a); }
+        .side-panel.left .hero-card-inner { background: linear-gradient(135deg, #2a5a3a, #1a4a2a); }
         .side-panel.right .hero-card { border-color: #9a4a4a; background: linear-gradient(135deg, #4a2a3a, #3a1a2a); }
+        .side-panel.right .hero-card-inner { background: linear-gradient(135deg, #5a2a3a, #4a1a2a); }
         .hero-card.hit { animation: heroHit 0.5s ease-out; }
         @keyframes heroHit { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); box-shadow: 0 0 30px rgba(255,0,0,0.8); } }
         .hero-label { font-size: 0.8em; margin-bottom: 5px; color: #ffd700; font-weight: bold; }
         .hero-icon { font-size: 3.5em; }
-        .hero-hp { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5em; font-weight: bold; border: 3px solid #f5b7b1; box-shadow: 0 3px 10px rgba(0,0,0,0.4); transition: all 0.3s; }
+        .hero-hp { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5em; font-weight: bold; border: 3px solid #f5b7b1; box-shadow: 0 3px 10px rgba(0,0,0,0.4); transition: all 0.3s; z-index: 5; }
         
         .deck-grave-row { display: flex; gap: 10px; margin-top: 20px; }
         .deck-box { 
@@ -152,8 +168,24 @@
             align-items: center; 
             justify-content: center; 
             font-size: 0.75em;
-            background: linear-gradient(135deg, #4a3a2a, #2a2015); 
+            background: linear-gradient(135deg, #3a2a1a, #2a2015); 
             border: 3px solid #8b7355;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .deck-box-inner {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #4a3a2a, #3a2a1a); 
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .deck-box:hover .deck-box-inner {
+            transform: scale(1.06);
         }
         .grave-box { 
             width: 100px; 
@@ -164,7 +196,7 @@
             align-items: center; 
             justify-content: center; 
             font-size: 0.75em;
-            background: linear-gradient(135deg, #3a3a4a, #2a2a3a); 
+            background: linear-gradient(135deg, #2a2a3a, #1a1a2a); 
             border: 3px solid #6a6a7a;
             position: relative;
             cursor: pointer;
@@ -182,6 +214,10 @@
             border-radius: 4px;
             position: relative;
             overflow: hidden;
+            transition: all 0.2s ease;
+        }
+        .grave-box:hover .grave-top-card {
+            transform: scale(1.06);
         }
         .grave-top-card.empty {
             background: linear-gradient(135deg, #2a2a3a, #1a1a25);
@@ -245,7 +281,7 @@
         
         .game-board-wrapper {
             position: absolute;
-            top: 42%;
+            top: 46%;
             left: 50%;
             transform: translate(-50%, -50%);
             perspective: 1500px;
@@ -311,8 +347,22 @@
         .card-slot:not(.has-card):hover::before { border-color: rgba(255,255,255,0.5); }
         .card-slot.me-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
         .card-slot.opp-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
-        .card-slot.has-card { border-color: transparent; background: transparent; }
+        .card-slot.has-card { 
+            border-color: rgba(100,80,60,0.5); 
+            background: rgba(20,15,10,0.6);
+            padding: 4px;
+        }
         .card-slot.has-card::before { display: none; }
+        .card-slot.has-card .card {
+            width: 95px;
+            height: 128px;
+            transition: all 0.2s ease;
+        }
+        .card-slot.has-card:hover .card {
+            width: 101px;
+            height: 136px;
+            z-index: 10;
+        }
         .card-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.25) !important; box-shadow: 0 0 15px rgba(46,204,113,0.5); animation: validPulse 1s infinite; }
         .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
         @keyframes crossPulse { 0%,100% { box-shadow: 0 0 10px rgba(243,156,18,0.4); } 50% { box-shadow: 0 0 25px rgba(243,156,18,0.8); } }
@@ -335,6 +385,20 @@
             font-size: 0.6em; 
             color: rgba(255,255,255,0.4);
             position: relative;
+        }
+        /* Icône bear trap SVG */
+        .trap-slot::before {
+            content: '';
+            width: 24px;
+            height: 24px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.35)' stroke-width='1.5'%3E%3Cpath d='M4 16l2-2m0 0l2 2m-2-2v4m14-2l-2-2m0 0l-2 2m2-2v4'/%3E%3Cpath d='M5 8h14v2c0 1-1 2-3 2h-1v1h-2v-1h-2v1H9v-1H8c-2 0-3-1-3-2V8z'/%3E%3Cpath d='M6 8V6c0-1 2-2 6-2s6 1 6 2v2'/%3E%3Cpath d='M8 12v2m8-2v2'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            opacity: 0.8;
+        }
+        .trap-slot.has-trap::before {
+            display: none;
         }
         .trap-slot:hover { border-color: rgba(255,215,0,0.6); background: rgba(255,215,0,0.15); }
         .trap-slot.has-trap { border-style: solid; background: rgba(231,76,60,0.3); border-color: #e74c3c; font-size: 1.4em; color: white; }

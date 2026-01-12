@@ -70,15 +70,19 @@
             <div class="game-board">
                 <div class="side-panel left">
                     <div class="hero-card" id="hero-me">
-                        <div class="hero-label" id="me-hero-name">Aldric</div>
-                        <div class="hero-icon" id="me-icon">🧙‍♂️</div>
+                        <div class="hero-card-inner">
+                            <div class="hero-label" id="me-hero-name">Aldric</div>
+                            <div class="hero-icon" id="me-icon">🧙‍♂️</div>
+                        </div>
                         <div class="hero-hp" id="me-hp">20</div>
                     </div>
                     <div class="deck-grave-row">
                         <div class="deck-box">
-                            <div class="deck-icon">🎴</div>
-                            <div class="deck-count" id="me-deck">33</div>
-                            <div>DECK</div>
+                            <div class="deck-box-inner">
+                                <div class="deck-icon">🎴</div>
+                                <div class="deck-count" id="me-deck">33</div>
+                                <div>DECK</div>
+                            </div>
                         </div>
                         <div class="grave-box clickable" id="me-grave-box" onclick="openGraveyard('me')">
                             <div class="grave-top-card empty" id="me-grave-top"></div>
@@ -93,15 +97,19 @@
                 
                 <div class="side-panel right">
                     <div class="hero-card" id="hero-opp">
-                        <div class="hero-label" id="opp-hero-name">Lyra</div>
-                        <div class="hero-icon" id="opp-icon">⚔️</div>
+                        <div class="hero-card-inner">
+                            <div class="hero-label" id="opp-hero-name">Lyra</div>
+                            <div class="hero-icon" id="opp-icon">⚔️</div>
+                        </div>
                         <div class="hero-hp" id="opp-hp">20</div>
                     </div>
                     <div class="deck-grave-row">
                         <div class="deck-box">
-                            <div class="deck-icon">🎴</div>
-                            <div class="deck-count" id="opp-deck">33</div>
-                            <div>DECK</div>
+                            <div class="deck-box-inner">
+                                <div class="deck-icon">🎴</div>
+                                <div class="deck-count" id="opp-deck">33</div>
+                                <div>DECK</div>
+                            </div>
                         </div>
                         <div class="grave-box clickable" id="opp-grave-box" onclick="openGraveyard('opp')">
                             <div class="grave-top-card empty" id="opp-grave-top"></div>
