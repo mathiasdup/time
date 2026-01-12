@@ -360,20 +360,14 @@
         .card-slot.me-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
         .card-slot.opp-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
         .card-slot.has-card { 
-            border-color: rgba(100,80,60,0.5); 
-            background: rgba(20,15,10,0.6);
-            padding: 4px;
+            border-color: transparent; 
+            background: transparent;
+            padding: 0;
         }
         .card-slot.has-card::before { display: none; }
         .card-slot.has-card .card {
-            width: 95px;
-            height: 128px;
-            transition: all 0.2s ease;
-        }
-        .card-slot.has-card:hover .card {
-            width: 101px;
-            height: 136px;
-            z-index: 10;
+            width: 105px;
+            height: 140px;
         }
         .card-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.25) !important; box-shadow: 0 0 15px rgba(46,204,113,0.5); animation: validPulse 1s infinite; }
         .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
@@ -643,10 +637,6 @@
         .log-damage { background: rgba(231,76,60,0.2); color: #ec7063; }
         .log-heal { background: rgba(46,204,113,0.2); color: #58d68d; }
         .log-trap { background: rgba(155,89,182,0.2); color: #bb8fce; }
-        
-        /* Cimetière cliquable */
-        .grave-box.clickable { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
-        .grave-box.clickable:hover { transform: scale(1.1); box-shadow: 0 0 15px rgba(255,215,0,0.5); }
         
         /* Popup cimetière */
         .graveyard-popup { 
