@@ -164,7 +164,7 @@
         
         .battlefield {
             position: absolute;
-            top: 45%;
+            top: 42%;
             left: 50%;
             transform: translate(-50%, -50%) perspective(1500px) rotateX(25deg);
             transform-style: preserve-3d;
