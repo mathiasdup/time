@@ -113,10 +113,10 @@
             gap: 12px;
         }
         .side-panel.left { 
-            margin-right: 20px;
+            margin-right: 25px;
         }
         .side-panel.right { 
-            margin-left: 20px;
+            margin-left: 25px;
         }
         
         .hero-card { 
@@ -244,18 +244,31 @@
         
         .game-board-wrapper {
             position: absolute;
-            top: 45%;
+            top: 42%;
             left: 50%;
             transform: translate(-50%, -50%);
-            perspective: 1000px;
         }
         
         .game-board {
             display: flex;
             align-items: center;
             justify-content: center;
-            transform: rotateX(20deg);
-            transform-style: preserve-3d;
+            position: relative;
+        }
+        
+        /* Fond avec effet 3D - séparé des éléments interactifs */
+        .game-board::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -30px;
+            right: -30px;
+            bottom: -40px;
+            background: rgba(0,0,0,0.4);
+            border-radius: 15px;
+            transform: perspective(1000px) rotateX(25deg);
+            z-index: -1;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
         }
         
         .battlefield { 
@@ -265,7 +278,10 @@
             background: rgba(0,0,0,0.5); 
             border-radius: 12px; 
             border: 2px solid rgba(100,80,60,0.6);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 30px rgba(0,0,0,0.3);
+            box-shadow: 
+                0 20px 40px rgba(0,0,0,0.4),
+                inset 0 0 30px rgba(0,0,0,0.3),
+                0 5px 0 rgba(60,50,40,0.5);
         }
         
         .field-side { 
@@ -273,11 +289,10 @@
             grid-template-columns: repeat(2, 105px); 
             grid-template-rows: repeat(4, 140px); 
             gap: 8px;
-            transform-style: preserve-3d;
         }
         
-        .trap-center { display: flex; gap: 8px; transform-style: preserve-3d; }
-        .trap-col { display: grid; grid-template-rows: repeat(4, 140px); gap: 8px; transform-style: preserve-3d; }
+        .trap-center { display: flex; gap: 8px; }
+        .trap-col { display: grid; grid-template-rows: repeat(4, 140px); gap: 8px; }
         
         .card-slot { 
             width: 105px; 
@@ -290,7 +305,7 @@
             position: relative; 
             display: flex; 
             align-items: center; 
-            justify-content: center; 
+            justify-content: center;
         }
         /* Losange intérieur */
         .card-slot::before {
