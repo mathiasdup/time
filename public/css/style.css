@@ -215,7 +215,8 @@
             height: 45px;
             border: 2px solid rgba(255,255,255,0.4);
             border-radius: 4px;
-            transform: rotate(45deg);
+            transform: rotateX(25deg) rotateZ(45deg);
+            transform-style: preserve-3d;
             pointer-events: none;
         }
         .card-slot .slot-label {
