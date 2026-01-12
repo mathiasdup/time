@@ -49,7 +49,10 @@
             </div>
             <div class="header-center">
                 <span class="header-timer" id="header-timer">15</span>
-                <div class="phase-indicator deploy" id="phase-indicator">🔄 Phase de repositionnement</div>
+                <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
+                    <span>FIN DU</span>
+                    <span>TOUR</span>
+                </button>
             </div>
             <div class="player-info-bar">
                 <div class="energy-display">
@@ -57,14 +60,10 @@
                 </div>
                 <div class="player-name opp" id="opp-name">Joueur 2</div>
                 <div class="rank-badge">Platine</div>
-                <button class="options-btn">⚙️</button>
             </div>
         </div>
-        
-        <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
-            <span>FIN DU</span>
-            <span>TOUR</span>
-        </button>
+
+        <div class="phase-indicator deploy" id="phase-indicator">🔄 Phase de repositionnement</div>
         
         <div class="side-panel left">
             <div class="hero-card" id="hero-me">
@@ -112,8 +111,9 @@
         
         <div class="my-hand" id="my-hand"></div>
         <div class="opp-hand" id="opp-hand"></div>
-        
+
         <div class="log-btn" onclick="toggleLog()">📜 Journal de bataille</div>
+        <button class="options-btn">⚙️</button>
         <div class="log-popup" id="log-popup">
             <h3>📜 Journal de Bataille</h3>
             <div class="log-content" id="log-content"></div>
