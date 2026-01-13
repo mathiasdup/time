@@ -119,7 +119,22 @@
         .options-btn:hover { background: #7a6a5a; }
         
         .header-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
-        .mana-orb { min-width: 40px; height: 36px; padding: 0 12px; border-radius: 18px; background: radial-gradient(circle at 30% 30%, #7ec8f3, #1e90ff, #0066cc); border: 3px solid #87ceeb; box-shadow: 0 0 15px rgba(30,144,255,0.6); display: flex; align-items: center; justify-content: center; font-size: 1em; font-weight: bold; }
+        .mana-orb { 
+            min-width: 50px; 
+            height: 45px; 
+            padding: 0 8px;
+            background-image: url('mana.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 1em; 
+            font-weight: bold;
+            text-shadow: 0 0 5px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5);
+            color: #fff;
+        }
         
         .end-turn-btn { 
             width: 80px; 
@@ -668,7 +683,7 @@
         }
         .opp-card-back:first-child { margin-left: 0; }
         .opp-card-back:hover {
-            transform: translateY(-50px) scale(1.3);
+            transform: translateY(-50px);
             z-index: 100 !important;
         }
         
