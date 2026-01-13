@@ -728,14 +728,54 @@
             transform: translateX(-50%) scale(1.05);
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
-        .log-popup { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); width: 400px; max-height: 280px; background: rgba(20,20,40,0.98); border: 2px solid #8b7355; border-radius: 12px; padding: 12px; display: none; z-index: 100; }
+        .log-popup { 
+            position: absolute; 
+            bottom: 120px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            width: 400px; 
+            max-height: 280px; 
+            background: rgba(0,0,0,0.7); 
+            border: 2px solid rgba(255,255,255,0.3); 
+            border-radius: 12px; 
+            padding: 15px; 
+            display: none; 
+            z-index: 100; 
+        }
         .log-popup.active { display: block; }
-        .log-popup h3 { color: #ffd700; margin-bottom: 8px; font-size: 0.85em; text-align: center; }
-        .log-content { max-height: 220px; overflow-y: auto; font-size: 0.7em; }
+        .log-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .log-popup h3 { color: #fff; font-size: 0.9em; margin: 0; }
+        .popup-close-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.5);
+            background: transparent;
+            color: white;
+            font-size: 0.9em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .popup-close-btn:hover {
+            border-color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .log-content { max-height: 200px; overflow-y: auto; font-size: 0.7em; }
         .log-content::-webkit-scrollbar { width: 8px; }
-        .log-content::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 4px; }
-        .log-content::-webkit-scrollbar-thumb { background: rgba(139, 115, 85, 0.8); border-radius: 4px; }
-        .log-content::-webkit-scrollbar-thumb:hover { background: rgba(139, 115, 85, 1); }
+        .log-content::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .log-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+        .log-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
         .log-entry { padding: 4px 8px; margin: 3px 0; border-radius: 4px; }
         .log-phase { background: rgba(255,215,0,0.2); color: #ffd700; }
         .log-action { background: rgba(52,152,219,0.2); color: #5dade2; }
@@ -749,10 +789,10 @@
             bottom: 80px; 
             left: 50%; 
             transform: translateX(-50%); 
-            background: rgba(20, 20, 40, 0.85); 
+            background: rgba(0,0,0,0.7); 
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            border: 2px solid rgba(139, 115, 85, 0.6); 
+            border: 2px solid rgba(255,255,255,0.3); 
             border-radius: 15px; 
             padding: 15px 20px; 
             z-index: 500;
@@ -766,27 +806,15 @@
             align-items: center; 
             margin-bottom: 10px;
             padding-bottom: 10px;
-            border-bottom: 1px solid rgba(139, 115, 85, 0.4);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            gap: 15px;
         }
         .graveyard-popup-title { 
-            color: #ffd700; 
+            color: #fff; 
             font-size: 1em; 
             font-weight: bold;
+            flex: 1;
         }
-        .graveyard-popup-close { 
-            background: rgba(231, 76, 60, 0.8); 
-            border: none; 
-            color: white; 
-            width: 28px; 
-            height: 28px; 
-            border-radius: 50%; 
-            cursor: pointer; 
-            font-size: 1em;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .graveyard-popup-close:hover { background: #e74c3c; }
         .graveyard-cards { 
             display: flex; 
             gap: 10px; 
@@ -795,8 +823,9 @@
             min-height: 140px;
         }
         .graveyard-cards::-webkit-scrollbar { height: 8px; }
-        .graveyard-cards::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 4px; }
-        .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(139, 115, 85, 0.6); border-radius: 4px; }
+        .graveyard-cards::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+        .graveyard-cards::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
         .graveyard-cards .card { flex-shrink: 0; }
         .graveyard-empty { 
             color: #888; 
@@ -881,6 +910,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            align-items: flex-end;
         }
         .preview-container .preview-card {
             /* La carte garde sa taille normale, le scale est sur le container parent */
@@ -924,19 +954,26 @@
             left: 50%;
             transform: translateX(-50%);
             width: 280px;
-            background: rgba(20,20,40,0.98);
-            border: 2px solid #8b7355;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid rgba(255,255,255,0.3);
             border-radius: 12px;
             padding: 15px;
             display: none;
             z-index: 100;
         }
         .settings-popup.active { display: block; }
-        .settings-popup h3 {
-            color: #ffd700;
+        .settings-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .settings-popup h3 {
+            color: #fff;
             font-size: 0.9em;
-            text-align: center;
+            margin: 0;
         }
         .settings-row {
             display: flex;
@@ -952,7 +989,7 @@
             width: 120px;
             height: 6px;
             -webkit-appearance: none;
-            background: rgba(139,115,85,0.4);
+            background: rgba(255,255,255,0.2);
             border-radius: 3px;
             outline: none;
         }
@@ -960,19 +997,19 @@
             -webkit-appearance: none;
             width: 14px;
             height: 14px;
-            background: #8b7355;
+            background: rgba(255,255,255,0.8);
             border-radius: 50%;
             cursor: pointer;
         }
         .settings-row input[type="range"]::-webkit-slider-thumb:hover {
-            background: #a08465;
+            background: white;
         }
         .surrender-btn {
             width: 100%;
             padding: 10px;
             margin-top: 10px;
-            background: linear-gradient(180deg, #cc3300 0%, #aa2200 50%, #881100 100%);
-            border: 2px solid #8b7355;
+            background: transparent;
+            border: 2px solid rgba(255,255,255,0.3);
             border-radius: 8px;
             color: white;
             font-weight: bold;
@@ -981,7 +1018,8 @@
             transition: all 0.2s;
         }
         .surrender-btn:hover {
-            background: linear-gradient(180deg, #dd4411 0%, #bb3311 50%, #992211 100%);
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.5);
         }
         
         /* Zone de drop pour sorts globaux */

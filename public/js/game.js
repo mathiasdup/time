@@ -1529,9 +1529,7 @@ function setSfxVolume(val) {
 }
 
 function surrender() {
-    if (confirm('Êtes-vous sûr de vouloir capituler ?')) {
-        socket.emit('surrender');
-    }
+    socket.emit('surrender');
 }
 
 function log(msg, type = 'action') {

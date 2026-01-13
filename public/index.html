@@ -135,11 +135,17 @@
         <div class="log-btn" onclick="toggleLog()">Journal de bataille</div>
         <button class="options-btn" id="options-btn" onclick="toggleSettings()">⚙️</button>
         <div class="log-popup" id="log-popup">
-            <h3>Journal de Bataille</h3>
+            <div class="log-popup-header">
+                <h3>Journal de Bataille</h3>
+                <button class="popup-close-btn" onclick="toggleLog()">✕</button>
+            </div>
             <div class="log-content" id="log-content"></div>
         </div>
         <div class="settings-popup" id="settings-popup">
-            <h3>⚙️ Paramètres</h3>
+            <div class="settings-popup-header">
+                <h3>Paramètres</h3>
+                <button class="popup-close-btn" onclick="toggleSettings()">✕</button>
+            </div>
             <div class="settings-row">
                 <label>🎵 Musique</label>
                 <input type="range" min="0" max="100" value="50" onchange="setMusicVolume(this.value)">
@@ -148,15 +154,15 @@
                 <label>🔊 Effets sonores</label>
                 <input type="range" min="0" max="100" value="50" onchange="setSfxVolume(this.value)">
             </div>
-            <button class="surrender-btn" onclick="surrender()">🏳️ Capituler</button>
+            <button class="surrender-btn" onclick="surrender()">Capituler</button>
         </div>
     </div>
     
     <!-- Popup Cimetière -->
     <div class="graveyard-popup" id="graveyard-popup">
         <div class="graveyard-popup-header">
-            <span class="graveyard-popup-title" id="graveyard-popup-title">☠️ Cimetière</span>
-            <button class="graveyard-popup-close" onclick="closeGraveyard()">✕</button>
+            <span class="graveyard-popup-title" id="graveyard-popup-title">Cimetière</span>
+            <button class="popup-close-btn" onclick="closeGraveyard()">✕</button>
         </div>
         <div class="graveyard-cards" id="graveyard-cards">
             <div class="graveyard-empty">Aucune carte au cimetière</div>
