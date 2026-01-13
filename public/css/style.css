@@ -290,15 +290,20 @@
         .hero-icon { font-size: 3.5em; }
         .hero-hp { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5em; font-weight: bold; border: 3px solid #f5b7b1; box-shadow: 0 3px 10px rgba(0,0,0,0.4); transition: all 0.3s; z-index: 5; }
         
-        .deck-grave-row { display: flex; gap: 10px; margin-top: 20px; }
+        .deck-grave-row { 
+            display: flex; 
+            gap: 15px; 
+            margin-top: 20px; 
+            align-items: flex-start;
+        }
         .deck-box { 
             width: 100px; 
-            height: 140px; 
+            height: 120px; 
             border-radius: 8px; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: flex-end; 
+            justify-content: flex-start; 
             font-size: 0.75em;
             background: transparent; 
             border: none;
@@ -311,6 +316,9 @@
             width: 85px;
             height: 115px;
         }
+        /* Compenser le décalage des couches */
+        .side-panel.left .deck-stack { margin-right: 12px; }
+        .side-panel.right .deck-stack { margin-left: 12px; }
         /* Cartes empilées style Magic Arena */
         .deck-card-layer {
             position: absolute;
@@ -368,12 +376,12 @@
         /* Cimetière avec pile de cartes */
         .grave-box { 
             width: 100px; 
-            height: 140px; 
+            height: 120px; 
             border-radius: 8px; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: flex-end; 
+            justify-content: flex-start; 
             font-size: 0.75em;
             background: transparent; 
             border: none;
@@ -386,6 +394,9 @@
             width: 85px;
             height: 115px;
         }
+        /* Compenser le décalage des couches */
+        .side-panel.left .grave-stack { margin-right: 6px; }
+        .side-panel.right .grave-stack { margin-left: 6px; }
         /* Cartes empilées du cimetière style Magic Arena */
         .grave-card-layer {
             position: absolute;
@@ -436,9 +447,20 @@
         }
         .grave-count {
             position: absolute;
-            bottom: -20px;
-            font-size: 0.9em;
-            color: #aaa;
+            bottom: -5px;
+            right: -5px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.8);
+            border: 2px solid rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            font-weight: bold;
+            color: #fff;
+            z-index: 20;
         }
         .grave-top-card .mini-card {
             width: 100%;
