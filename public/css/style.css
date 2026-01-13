@@ -27,11 +27,61 @@
         .game-container.active { display: block; }
         
         .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: rgba(20,20,40,0.95); border-bottom: 2px solid #5a4a3a; z-index: 50; }
-        .player-info-bar { display: flex; align-items: center; gap: 12px; }
-        .rank-badge { background: #5a5a7a; padding: 6px 12px; border-radius: 5px; font-size: 0.8em; border: 2px solid #7a7a9a; }
-        .player-name { font-size: 0.9em; padding: 6px 15px; border-radius: 5px; }
-        .player-name.me { background: linear-gradient(135deg, #2a4a6a, #1a3a5a); border: 2px solid #4a7c9a; }
-        .player-name.opp { background: linear-gradient(135deg, #6a2a4a, #5a1a3a); border: 2px solid #9a4a7c; }
+        .player-info-bar { display: flex; align-items: center; gap: 15px; }
+        .player-info-bar.left { flex-direction: row; }
+        .player-info-bar.right { flex-direction: row; }
+        
+        .rank-icon-container {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #5a4a3a, #3a2a1a);
+            border: 3px solid #8b7355;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+            z-index: 2;
+        }
+        .rank-icon {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+        }
+        
+        .player-name-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 6px 20px 6px 15px;
+            background: rgba(0,0,0,0.7);
+            position: relative;
+            min-width: 100px;
+        }
+        /* Flèche vers la droite pour joueur gauche */
+        .player-info-bar.left .player-name-arrow {
+            margin-left: -10px;
+            clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 50%, calc(100% - 15px) 100%, 0 100%);
+            padding-right: 25px;
+        }
+        /* Flèche vers la gauche pour joueur droite (miroir) */
+        .player-info-bar.right .player-name-arrow {
+            margin-right: -10px;
+            clip-path: polygon(15px 0, 100% 0, 100% 100%, 15px 100%, 0 50%);
+            padding-left: 25px;
+            padding-right: 15px;
+            align-items: flex-end;
+        }
+        
+        .player-name-text {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .player-rank-title {
+            font-size: 0.65em;
+            color: #aaa;
+        }
         .options-btn { 
             position: absolute;
             bottom: 35px;
