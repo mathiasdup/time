@@ -157,13 +157,15 @@ async function startResolution(room) {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
     
-    // Fonction pour vérifier la victoire
+    // Fonction pour vérifier la victoire (retourne 1 ou 2 pour un gagnant, 0 pour draw, null si pas fini)
     const checkVictory = () => {
         const p1hp = room.gameState.players[1].hp;
         const p2hp = room.gameState.players[2].hp;
-        if (p1hp <= 0 || p2hp <= 0) {
-            return p1hp <= 0 ? 2 : 1;
+        if (p1hp <= 0 && p2hp <= 0) {
+            return 0; // Draw
         }
+        if (p1hp <= 0) return 2;
+        if (p2hp <= 0) return 1;
         return null;
     };
     
@@ -305,10 +307,15 @@ async function startResolution(room) {
             
             // Vérifier victoire après chaque sort offensif
             const winner = checkVictory();
-            if (winner) {
+            if (winner !== null) {
                 await sleep(800);
-                log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
-                io.to(room.code).emit('gameOver', { winner });
+                if (winner === 0) {
+                    log(`🤝 Match nul! Les deux héros sont tombés!`, 'phase');
+                    io.to(room.code).emit('gameOver', { winner: 0, draw: true });
+                } else {
+                    log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
+                    io.to(room.code).emit('gameOver', { winner });
+                }
                 return;
             }
         }
@@ -338,10 +345,15 @@ async function startResolution(room) {
                 
                 if (gameEnded) {
                     const winner = checkVictory();
-                    if (winner) {
+                    if (winner !== null) {
                         await sleep(800);
-                        log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
-                        io.to(room.code).emit('gameOver', { winner });
+                        if (winner === 0) {
+                            log(`🤝 Match nul! Les deux héros sont tombés!`, 'phase');
+                            io.to(room.code).emit('gameOver', { winner: 0, draw: true });
+                        } else {
+                            log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
+                            io.to(room.code).emit('gameOver', { winner });
+                        }
                         return;
                     }
                 }
@@ -373,30 +385,44 @@ async function startResolution(room) {
     }
     
     // 6. PIOCHE
+    // Vérifier d'abord si les deux joueurs peuvent piocher
+    const player1CanDraw = room.gameState.players[1].deck.length > 0;
+    const player2CanDraw = room.gameState.players[2].deck.length > 0;
+    
+    if (!player1CanDraw && !player2CanDraw) {
+        // Les deux joueurs ne peuvent pas piocher = DRAW
+        log(`💀 Les deux joueurs n'ont plus de cartes dans leur deck!`, 'damage');
+        log(`🤝 Match nul par épuisement simultané!`, 'phase');
+        io.to(room.code).emit('gameOver', { winner: 0, draw: true });
+        return;
+    } else if (!player1CanDraw) {
+        log(`💀 ${room.gameState.players[1].heroName} n'a plus de cartes dans son deck!`, 'damage');
+        log(`🏆 ${room.gameState.players[2].heroName} GAGNE par épuisement du deck!`, 'phase');
+        io.to(room.code).emit('gameOver', { winner: 2 });
+        return;
+    } else if (!player2CanDraw) {
+        log(`💀 ${room.gameState.players[2].heroName} n'a plus de cartes dans son deck!`, 'damage');
+        log(`🏆 ${room.gameState.players[1].heroName} GAGNE par épuisement du deck!`, 'phase');
+        io.to(room.code).emit('gameOver', { winner: 1 });
+        return;
+    }
+    
+    // Les deux joueurs piochent
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
-        if (player.deck.length > 0) {
-            const card = player.deck.pop();
-            if (card.type === 'creature') {
-                card.currentHp = card.hp;
-                card.canAttack = false;
-                card.turnsOnField = 0;
-                card.movedThisTurn = false;
-            }
-            
-            if (player.hand.length >= 9) {
-                addToGraveyard(player, card);
-                log(`📦 ${player.heroName} a la main pleine, la carte va au cimetière`, 'damage');
-            } else {
-                player.hand.push(card);
-            }
+        const card = player.deck.pop();
+        if (card.type === 'creature') {
+            card.currentHp = card.hp;
+            card.canAttack = false;
+            card.turnsOnField = 0;
+            card.movedThisTurn = false;
+        }
+        
+        if (player.hand.length >= 9) {
+            addToGraveyard(player, card);
+            log(`📦 ${player.heroName} a la main pleine, la carte va au cimetière`, 'damage');
         } else {
-            // Deck vide = défaite immédiate
-            const winner = p === 1 ? 2 : 1;
-            log(`💀 ${player.heroName} n'a plus de cartes dans son deck!`, 'damage');
-            log(`🏆 ${room.gameState.players[winner].heroName} GAGNE par épuisement du deck!`, 'phase');
-            io.to(room.code).emit('gameOver', { winner: winner });
-            return;
+            player.hand.push(card);
         }
     }
     log('📦 Les joueurs piochent une carte', 'action');
@@ -561,12 +587,58 @@ async function applySpell(room, action, log, sleep) {
         }
         await sleep(400);
     }
-    // SORT SUR LE HÉROS ADVERSE
+    // SORT SUR UN HÉROS (peut être allié ou adverse selon targetPlayer)
     else if (spell.pattern === 'hero') {
-        opponent.hp -= spell.damage;
-        log(`  👊 ${action.heroName}: ${spell.name} → ${opponent.heroName} (-${spell.damage})`, 'damage');
-        emitAnimation(room, 'heroHit', { defender: playerNum === 1 ? 2 : 1, damage: spell.damage });
-        io.to(room.code).emit('directDamage', { defender: playerNum === 1 ? 2 : 1, damage: spell.damage });
+        const targetHero = room.gameState.players[action.targetPlayer];
+        const targetName = targetHero.heroName;
+        
+        if (spell.damage) {
+            // Dégâts au héros ciblé
+            targetHero.hp -= spell.damage;
+            log(`  👊 ${action.heroName}: ${spell.name} → ${targetName} (-${spell.damage})`, 'damage');
+            emitAnimation(room, 'heroHit', { defender: action.targetPlayer, damage: spell.damage });
+            io.to(room.code).emit('directDamage', { defender: action.targetPlayer, damage: spell.damage });
+        } else if (spell.effect === 'draw') {
+            // Le héros ciblé pioche
+            let drawn = 0;
+            for (let i = 0; i < spell.amount; i++) {
+                if (targetHero.deck.length > 0 && targetHero.hand.length < 9) {
+                    const card = targetHero.deck.pop();
+                    if (card.type === 'creature') {
+                        card.currentHp = card.hp;
+                        card.canAttack = false;
+                        card.turnsOnField = 0;
+                        card.movedThisTurn = false;
+                    }
+                    targetHero.hand.push(card);
+                    drawn++;
+                }
+            }
+            log(`  📜 ${action.heroName}: ${spell.name} → ${targetName} pioche ${drawn} carte(s)`, 'action');
+        } else if (spell.effect === 'mana') {
+            // Le héros ciblé gagne un mana
+            if (targetHero.maxEnergy < 10) {
+                targetHero.maxEnergy++;
+                targetHero.energy++;
+                log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} gagne un cristal de mana (${targetHero.maxEnergy}/10)`, 'action');
+            } else if (targetHero.deck.length > 0 && targetHero.hand.length < 9) {
+                const card = targetHero.deck.pop();
+                if (card.type === 'creature') {
+                    card.currentHp = card.hp;
+                    card.canAttack = false;
+                }
+                targetHero.hand.push(card);
+                log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} mana max, pioche une carte`, 'action');
+            }
+        } else if (spell.heal) {
+            // Soin au héros ciblé
+            const oldHp = targetHero.hp;
+            targetHero.hp = Math.min(20, targetHero.hp + spell.heal);
+            const healed = targetHero.hp - oldHp;
+            if (healed > 0) {
+                log(`  💚 ${action.heroName}: ${spell.name} → ${targetName} (+${healed} PV)`, 'heal');
+            }
+        }
     }
     // SORT EN CROIX
     else if (spell.pattern === 'cross') {
@@ -607,55 +679,74 @@ async function applySpell(room, action, log, sleep) {
     }
     // SORT CIBLÉ SIMPLE
     else {
-        const targetField = action.targetPlayer === playerNum ? player.field : opponent.field;
-        const target = targetField[action.row][action.col];
-        
-        // Highlight la zone touchée
-        io.to(room.code).emit('spellHighlight', { 
-            targets: [{ row: action.row, col: action.col, player: action.targetPlayer }], 
-            type: spell.offensive ? 'damage' : 'heal' 
-        });
-        
-        if (target) {
-            // Dégâts
-            if (spell.offensive && spell.damage) {
-                target.currentHp -= spell.damage;
-                log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${spell.damage})`, 'damage');
-                emitAnimation(room, 'damage', { player: action.targetPlayer, row: action.row, col: action.col, amount: spell.damage });
-                
-                if (target.currentHp > 0 && target.abilities.includes('power')) {
-                    target.atk += 1;
-                }
-                
-                if (target.currentHp <= 0) {
-                    const targetOwner = action.targetPlayer === playerNum ? player : opponent;
-                    addToGraveyard(targetOwner, target);
-                    targetField[action.row][action.col] = null;
-                    log(`  ☠️ ${target.name} détruit!`, 'damage');
-                    emitAnimation(room, 'death', { player: action.targetPlayer, row: action.row, col: action.col });
-                }
-            }
-            // Soin
-            if (!spell.offensive && spell.heal) {
-                const oldHp = target.currentHp;
-                target.currentHp = Math.min(target.hp, target.currentHp + spell.heal);
-                const healed = target.currentHp - oldHp;
+        // Vérifier si on cible un héros (row = -1)
+        if (action.row === -1) {
+            const targetHero = room.gameState.players[action.targetPlayer];
+            const targetName = targetHero.heroName;
+            
+            // Highlight le héros
+            io.to(room.code).emit('heroHighlight', { player: action.targetPlayer, type: spell.offensive ? 'damage' : 'heal' });
+            
+            if (spell.heal) {
+                // Soin au héros
+                const oldHp = targetHero.hp;
+                targetHero.hp = Math.min(20, targetHero.hp + spell.heal);
+                const healed = targetHero.hp - oldHp;
                 if (healed > 0) {
-                    log(`  💚 ${action.heroName}: ${spell.name} → ${target.name} (+${healed} PV)`, 'heal');
-                    emitAnimation(room, 'heal', { player: action.targetPlayer, row: action.row, col: action.col, amount: healed });
+                    log(`  💚 ${action.heroName}: ${spell.name} → ${targetName} (+${healed} PV)`, 'heal');
                 }
-            }
-            // Buff (+ATK/+HP)
-            if (!spell.offensive && spell.buff) {
-                target.atk += spell.buff.atk;
-                target.hp += spell.buff.hp;
-                target.currentHp += spell.buff.hp;
-                log(`  💪 ${action.heroName}: ${spell.name} → ${target.name} (+${spell.buff.atk}/+${spell.buff.hp})`, 'action');
-                emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.buff.atk, hp: spell.buff.hp });
             }
         } else {
-            log(`  💨 ${action.heroName}: ${spell.name} n'a rien touché`, 'action');
-            emitAnimation(room, 'spellMiss', { targetPlayer: action.targetPlayer, row: action.row, col: action.col });
+            const targetField = action.targetPlayer === playerNum ? player.field : opponent.field;
+            const target = targetField[action.row][action.col];
+            
+            // Highlight la zone touchée
+            io.to(room.code).emit('spellHighlight', { 
+                targets: [{ row: action.row, col: action.col, player: action.targetPlayer }], 
+                type: spell.offensive ? 'damage' : 'heal' 
+            });
+            
+            if (target) {
+                // Dégâts
+                if (spell.offensive && spell.damage) {
+                    target.currentHp -= spell.damage;
+                    log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${spell.damage})`, 'damage');
+                    emitAnimation(room, 'damage', { player: action.targetPlayer, row: action.row, col: action.col, amount: spell.damage });
+                    
+                    if (target.currentHp > 0 && target.abilities.includes('power')) {
+                        target.atk += 1;
+                    }
+                    
+                    if (target.currentHp <= 0) {
+                        const targetOwner = action.targetPlayer === playerNum ? player : opponent;
+                        addToGraveyard(targetOwner, target);
+                        targetField[action.row][action.col] = null;
+                        log(`  ☠️ ${target.name} détruit!`, 'damage');
+                        emitAnimation(room, 'death', { player: action.targetPlayer, row: action.row, col: action.col });
+                    }
+                }
+                // Soin
+                if (!spell.offensive && spell.heal) {
+                    const oldHp = target.currentHp;
+                    target.currentHp = Math.min(target.hp, target.currentHp + spell.heal);
+                    const healed = target.currentHp - oldHp;
+                    if (healed > 0) {
+                        log(`  💚 ${action.heroName}: ${spell.name} → ${target.name} (+${healed} PV)`, 'heal');
+                        emitAnimation(room, 'heal', { player: action.targetPlayer, row: action.row, col: action.col, amount: healed });
+                    }
+                }
+                // Buff (+ATK/+HP)
+                if (!spell.offensive && spell.buff) {
+                    target.atk += spell.buff.atk;
+                    target.hp += spell.buff.hp;
+                    target.currentHp += spell.buff.hp;
+                    log(`  💪 ${action.heroName}: ${spell.name} → ${target.name} (+${spell.buff.atk}/+${spell.buff.hp})`, 'action');
+                    emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.buff.atk, hp: spell.buff.hp });
+                }
+            } else {
+                log(`  💨 ${action.heroName}: ${spell.name} n'a rien touché`, 'action');
+                emitAnimation(room, 'spellMiss', { targetPlayer: action.targetPlayer, row: action.row, col: action.col });
+            }
         }
     }
     

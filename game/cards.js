@@ -46,10 +46,10 @@ const CardDB = {
         { id: 'earthquake', name: 'Séisme', damage: 2, cost: 4, type: 'spell', offensive: true, icon: '🌋', pattern: 'all' },
         
         // === SORTS DÉFENSIFS/UTILITAIRES (4) ===
-        { id: 'heal', name: 'Soin', heal: 3, cost: 1, type: 'spell', offensive: false, icon: '💚', pattern: 'single' },
+        { id: 'heal', name: 'Soin', heal: 3, cost: 1, type: 'spell', offensive: false, icon: '💚', pattern: 'single', canTargetHero: true },
         { id: 'buff', name: 'Renforcement', buff: { atk: 2, hp: 2 }, cost: 2, type: 'spell', offensive: false, icon: '💪', pattern: 'single' },
-        { id: 'draw2', name: 'Inspiration', effect: 'draw', amount: 2, cost: 2, type: 'spell', offensive: false, icon: '📜', pattern: 'global' },
-        { id: 'manacrystal', name: 'Cristal de mana', effect: 'mana', cost: 3, type: 'spell', offensive: false, icon: '💎', pattern: 'global' }
+        { id: 'draw2', name: 'Inspiration', effect: 'draw', amount: 2, cost: 2, type: 'spell', offensive: false, icon: '📜', pattern: 'hero' },
+        { id: 'manacrystal', name: 'Cristal de mana', effect: 'mana', cost: 3, type: 'spell', offensive: false, icon: '💎', pattern: 'hero' }
     ],
     traps: [
         { id: 'spike', name: 'Piques', damage: 2, cost: 1, type: 'trap', icon: '📌' },

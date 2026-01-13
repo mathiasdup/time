@@ -158,9 +158,17 @@ function initSocket() {
     });
     
     socket.on('gameOver', (d) => {
-        const won = d.winner === myNum;
-        document.getElementById('result').textContent = won ? '🎉 Victoire !' : '😢 Défaite';
-        document.getElementById('result').className = 'game-over-result ' + (won ? 'victory' : 'defeat');
+        let resultText, resultClass;
+        if (d.draw) {
+            resultText = '🤝 Match nul !';
+            resultClass = 'draw';
+        } else {
+            const won = d.winner === myNum;
+            resultText = won ? '🎉 Victoire !' : '😢 Défaite';
+            resultClass = won ? 'victory' : 'defeat';
+        }
+        document.getElementById('result').textContent = resultText;
+        document.getElementById('result').className = 'game-over-result ' + resultClass;
         document.getElementById('game-over').classList.remove('hidden');
     });
     
@@ -663,8 +671,74 @@ function setupHeroes() {
     heroOpp.onmouseenter = () => showHeroPreview(state.opponent.heroName, oppIcon, state.opponent.hp);
     heroOpp.onmouseleave = hideCardPreview;
     
+    // Drag/drop sur les héros pour les sorts
+    setupHeroDragDrop(heroMe, 'me');
+    setupHeroDragDrop(heroOpp, 'opp');
+    
     // Stocker les icônes pour réutilisation
     window.heroIcons = { me: meIcon, opp: oppIcon };
+}
+
+function setupHeroDragDrop(heroEl, owner) {
+    heroEl.ondragover = (e) => {
+        e.preventDefault();
+        if (!dragged || dragged.type !== 'spell') return;
+        // Vérifier si le sort peut cibler ce héros
+        if (dragged.pattern === 'hero' || dragged.canTargetHero) {
+            heroEl.classList.add('hero-drag-over');
+        }
+    };
+    
+    heroEl.ondragleave = () => {
+        heroEl.classList.remove('hero-drag-over');
+    };
+    
+    heroEl.ondrop = (e) => {
+        e.preventDefault();
+        heroEl.classList.remove('hero-drag-over');
+        
+        if (!dragged || dragged.type !== 'spell') return;
+        if (dragged.pattern !== 'hero' && !dragged.canTargetHero) return;
+        if (!canPlay()) return;
+        if (dragged.cost > state.me.energy) {
+            dragged.triedToDrop = true;
+            return;
+        }
+        
+        const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+        
+        // Envoyer le sort sur le héros (row = -1 pour indiquer un héros)
+        socket.emit('castSpell', { 
+            idx: dragged.idx, 
+            targetPlayer: targetPlayer, 
+            row: -1, 
+            col: -1 
+        });
+        
+        clearSel();
+        dragged = null;
+    };
+    
+    // Click pour lancer le sort sélectionné
+    heroEl.onclick = (e) => {
+        if (!selected || !selected.fromHand || selected.type !== 'spell') return;
+        if (selected.pattern !== 'hero' && !selected.canTargetHero) return;
+        if (!canPlay()) return;
+        if (selected.cost > state.me.energy) return;
+        
+        e.stopPropagation();
+        
+        const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+        
+        socket.emit('castSpell', { 
+            idx: selected.idx, 
+            targetPlayer: targetPlayer, 
+            row: -1, 
+            col: -1 
+        });
+        
+        clearSel();
+    };
 }
 
 function createRoom() {
@@ -740,7 +814,8 @@ function buildBattlefield() {
         globalZone.style.borderColor = '';
         globalZone.style.background = '';
         
-        if (dragged && dragged.type === 'spell' && ['global', 'all', 'hero'].includes(dragged.pattern)) {
+        // Les sorts 'hero' ne passent plus par ici, ils ciblent les héros directement
+        if (dragged && dragged.type === 'spell' && ['global', 'all'].includes(dragged.pattern)) {
             if (dragged.tooExpensive) {
                 dragged.triedToDrop = true;
             } else {
@@ -862,16 +937,28 @@ function getValidSlots(card) {
             if (!state.me.traps[row]) valid.push({ trap: true, row });
         }
     } else if (card.type === 'spell') {
-        // Sorts globaux : zone spéciale (bordure du battlefield)
-        if (['global', 'all', 'hero'].includes(card.pattern)) {
+        // Sorts globaux
+        if (card.pattern === 'global' || card.pattern === 'all') {
             valid.push({ global: true });
-        } else {
-            // Sorts ciblés : toutes les cases
+        } 
+        // Sorts qui ciblent un héros (peut être allié ou adverse)
+        else if (card.pattern === 'hero') {
+            valid.push({ hero: true, owner: 'me' });
+            valid.push({ hero: true, owner: 'opp' });
+        } 
+        // Sorts ciblés normaux
+        else {
+            // Toutes les cases créatures
             for (let row = 0; row < 4; row++) {
                 for (let col = 0; col < 2; col++) {
                     valid.push({ owner: 'me', row, col });
                     valid.push({ owner: 'opp', row, col });
                 }
+            }
+            // Si le sort peut aussi cibler les héros
+            if (card.canTargetHero) {
+                valid.push({ hero: true, owner: 'me' });
+                valid.push({ hero: true, owner: 'opp' });
             }
         }
     }
@@ -891,6 +978,11 @@ function highlightValidSlots(card, forceShow = false) {
             // Activer la zone globale
             const zone = document.querySelector('.global-spell-zone');
             if (zone) zone.classList.add('active');
+        } else if (v.hero) {
+            // Highlight le héros ciblable
+            const heroId = v.owner === 'me' ? 'hero-me' : 'hero-opp';
+            const hero = document.getElementById(heroId);
+            if (hero) hero.classList.add('hero-targetable');
         } else if (v.trap) {
             const slot = document.querySelector(`.trap-slot[data-owner="me"][data-row="${v.row}"]`);
             if (slot) slot.classList.add('valid-target');
@@ -954,6 +1046,10 @@ function clearHighlights() {
     document.querySelectorAll('.card-slot, .trap-slot').forEach(s => {
         s.classList.remove('valid-target', 'drag-over', 'moveable', 'cross-target');
     });
+    // Enlever le highlight des héros
+    document.querySelectorAll('.hero-card').forEach(h => {
+        h.classList.remove('hero-targetable', 'hero-drag-over');
+    });
     const zone = document.querySelector('.global-spell-zone');
     if (zone) zone.classList.remove('active');
 }
@@ -971,6 +1067,10 @@ function render() {
     document.getElementById('me-grave').textContent = me.graveyardCount || 0;
     document.getElementById('opp-grave').textContent = opp.graveyardCount || 0;
     
+    // Afficher/cacher le contenu du deck selon le nombre de cartes
+    updateDeckDisplay('me', me.deckCount);
+    updateDeckDisplay('opp', opp.deckCount);
+    
     // Afficher la dernière carte du cimetière
     updateGraveTopCard('me', me.graveyard);
     updateGraveTopCard('opp', opp.graveyard);
@@ -983,6 +1083,17 @@ function render() {
     
     if (me.ready) {
         document.getElementById('end-turn-btn').classList.add('waiting');
+    }
+}
+
+function updateDeckDisplay(owner, deckCount) {
+    const inner = document.getElementById(`${owner}-deck-inner`);
+    if (!inner) return;
+    
+    if (deckCount <= 0) {
+        inner.style.opacity = '0';
+    } else {
+        inner.style.opacity = '1';
     }
 }
 
@@ -1088,13 +1199,13 @@ function renderField(owner, field) {
 let previewEl = null;
 // Descriptions des capacités
 const ABILITY_DESCRIPTIONS = {
-    fly: { name: 'Vol', icon: '🦅', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
-    shooter: { name: 'Tireur', icon: '🎯', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
-    haste: { name: 'Célérité', icon: '⚡', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
-    intangible: { name: 'Intangible', icon: '👻', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
-    trample: { name: 'Piétinement', icon: '🦏', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
-    initiative: { name: 'Initiative', icon: '🗡️', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
-    power: { name: 'Puissance', icon: '💪', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' }
+    fly: { name: 'Vol', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
+    shooter: { name: 'Tireur', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
+    haste: { name: 'Célérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
+    intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
+    trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
+    initiative: { name: 'Initiative', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
+    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' }
 };
 
 function showCardPreview(card, e) {
@@ -1120,10 +1231,7 @@ function showCardPreview(card, e) {
                 const abilityEl = document.createElement('div');
                 abilityEl.className = 'preview-ability';
                 abilityEl.innerHTML = `
-                    <div class="ability-header">
-                        <span class="ability-icon">${abilityInfo.icon}</span>
-                        <span class="ability-name">${abilityInfo.name}</span>
-                    </div>
+                    <div class="ability-name">${abilityInfo.name}</div>
                     <div class="ability-desc">${abilityInfo.desc}</div>
                 `;
                 abilitiesContainer.appendChild(abilityEl);
@@ -1331,8 +1439,10 @@ function makeCard(card, inHand) {
     let patternInfo = '';
     if (card.pattern === 'cross') {
         patternInfo = '<div style="font-size:0.5em;color:#ff9800;">✝️ Zone</div>';
-    } else if (card.pattern === 'global' || card.pattern === 'all' || card.pattern === 'hero') {
+    } else if (card.pattern === 'global' || card.pattern === 'all') {
         patternInfo = '<div style="font-size:0.5em;color:#3498db;">🌍 Global</div>';
+    } else if (card.pattern === 'hero') {
+        patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">🎯 Héros</div>';
     }
     
     el.innerHTML = `
