@@ -381,7 +381,7 @@
         }
         .grave-stack {
             position: absolute;
-            top: 0;
+            top: 3px;
             left: 50%;
             transform: translateX(-50%);
             width: 85px;
