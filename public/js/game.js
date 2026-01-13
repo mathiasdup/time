@@ -152,6 +152,12 @@ function initSocket() {
             const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${t.row}"][data-col="${t.col}"]`);
             if (slot) {
                 slot.classList.add('spell-highlight-' + data.type);
+                // Si la case contient une carte, ajouter une classe à la carte aussi
+                const cardInSlot = slot.querySelector('.card');
+                if (cardInSlot) {
+                    cardInSlot.classList.add('spell-target-' + data.type);
+                    setTimeout(() => cardInSlot.classList.remove('spell-target-' + data.type), 1500);
+                }
                 setTimeout(() => slot.classList.remove('spell-highlight-' + data.type), 1500);
             }
         });
@@ -1091,6 +1097,10 @@ function render() {
     updateGraveTopCard('me', me.graveyard);
     updateGraveTopCard('opp', opp.graveyard);
     
+    // Mettre à jour l'affichage de la pile du cimetière
+    updateGraveDisplay('me', me.graveyard);
+    updateGraveDisplay('opp', opp.graveyard);
+    
     renderField('me', me.field);
     renderField('opp', opp.field);
     renderTraps();
@@ -1103,13 +1113,42 @@ function render() {
 }
 
 function updateDeckDisplay(owner, deckCount) {
-    const inner = document.getElementById(`${owner}-deck-inner`);
-    if (!inner) return;
+    const stack = document.getElementById(`${owner}-deck-stack`);
+    if (!stack) return;
     
+    // Gérer l'état vide
     if (deckCount <= 0) {
-        inner.style.opacity = '0';
+        stack.classList.add('empty');
     } else {
-        inner.style.opacity = '1';
+        stack.classList.remove('empty');
+    }
+    
+    // Ajuster le nombre de couches visibles selon le nombre de cartes
+    const layers = stack.querySelectorAll('.deck-card-layer');
+    const visibleLayers = Math.min(5, Math.ceil(deckCount / 8)); // 1 couche par 8 cartes, max 5
+    
+    layers.forEach((layer, i) => {
+        if (i < visibleLayers) {
+            layer.style.display = 'block';
+        } else {
+            layer.style.display = 'none';
+        }
+    });
+}
+
+function updateGraveDisplay(owner, graveyard) {
+    const stack = document.getElementById(`${owner}-grave-stack`);
+    if (!stack) return;
+    
+    const count = graveyard ? graveyard.length : 0;
+    
+    // Réinitialiser les classes
+    stack.classList.remove('has-cards', 'cards-1', 'cards-2');
+    
+    if (count > 0) {
+        stack.classList.add('has-cards');
+        if (count === 1) stack.classList.add('cards-1');
+        else if (count === 2) stack.classList.add('cards-2');
     }
 }
 
@@ -1270,7 +1309,7 @@ function showCardPreview(card, e) {
             const effectEl = document.createElement('div');
             effectEl.className = 'preview-effect';
             effectEl.innerHTML = `
-                <div class="effect-name">${effect.icon || '✨'} ${effect.name}</div>
+                <div class="effect-name">${effect.name}</div>
                 <div class="effect-desc">${effect.description}</div>
             `;
             effectsContainer.appendChild(effectEl);

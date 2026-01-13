@@ -298,27 +298,69 @@
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: center; 
+            justify-content: flex-end; 
             font-size: 0.75em;
-            background: rgba(255,255,255,0.05); 
-            border: 2px solid rgba(255,255,255,0.3);
-            padding: 5px;
+            background: transparent; 
+            border: none;
+            padding: 0;
             cursor: pointer;
+            position: relative;
         }
-        .deck-box-inner {
+        .deck-stack {
+            position: relative;
+            width: 85px;
+            height: 115px;
+        }
+        /* Cartes empilées (couches visuelles) */
+        .deck-card-layer {
+            position: absolute;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, rgba(80,60,40,0.8), rgba(50,35,20,0.8)); 
-            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(80,60,40,0.95), rgba(50,35,20,0.95));
+            border: 2px solid rgba(139, 115, 85, 0.6);
+            border-radius: 6px;
+            transition: transform 0.2s ease;
+        }
+        .deck-card-layer:nth-child(1) { transform: translateY(0px); z-index: 5; }
+        .deck-card-layer:nth-child(2) { transform: translateY(-3px) translateX(1px); z-index: 4; opacity: 0.9; }
+        .deck-card-layer:nth-child(3) { transform: translateY(-6px) translateX(2px); z-index: 3; opacity: 0.8; }
+        .deck-card-layer:nth-child(4) { transform: translateY(-9px) translateX(3px); z-index: 2; opacity: 0.7; }
+        .deck-card-layer:nth-child(5) { transform: translateY(-12px) translateX(4px); z-index: 1; opacity: 0.6; }
+        
+        .deck-box:hover .deck-card-layer:nth-child(1) { transform: translateY(-2px); }
+        
+        .deck-card-top {
+            position: absolute;
+            width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            transition: transform 0.2s ease;
+            z-index: 10;
         }
-        .deck-box:hover .deck-box-inner {
-            transform: scale(1.04);
+        .deck-icon { font-size: 2em; margin-bottom: 5px; }
+        .deck-count { 
+            font-weight: bold; 
+            font-size: 1.1em;
+            color: #ffd700;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         }
+        .deck-label {
+            font-size: 0.7em;
+            color: rgba(255,255,255,0.7);
+            margin-top: 2px;
+        }
+        
+        /* Deck vide */
+        .deck-stack.empty .deck-card-layer { display: none; }
+        .deck-stack.empty .deck-card-top { 
+            background: rgba(255,255,255,0.05);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 6px;
+        }
+        
+        /* Cimetière avec pile de cartes */
         .grave-box { 
             width: 100px; 
             height: 140px; 
@@ -326,33 +368,70 @@
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: center; 
+            justify-content: flex-end; 
             font-size: 0.75em;
-            background: rgba(255,255,255,0.05); 
-            border: 2px solid rgba(255,255,255,0.3);
+            background: transparent; 
+            border: none;
             position: relative;
             cursor: pointer;
-            padding: 5px;
+            padding: 0;
         }
-        .grave-box:hover { border-color: rgba(255,255,255,0.5); }
+        .grave-stack {
+            position: relative;
+            width: 85px;
+            height: 115px;
+        }
+        /* Cartes empilées du cimetière */
+        .grave-card-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(50,50,70,0.95), rgba(30,30,50,0.95));
+            border: 2px solid rgba(100, 80, 120, 0.6);
+            border-radius: 6px;
+            display: none;
+        }
+        .grave-card-layer:nth-child(1) { transform: translateY(-6px) translateX(2px); z-index: 1; opacity: 0.6; }
+        .grave-card-layer:nth-child(2) { transform: translateY(-3px) translateX(1px); z-index: 2; opacity: 0.8; }
+        .grave-card-layer:nth-child(3) { transform: translateY(0px); z-index: 3; opacity: 0.9; }
+        
+        /* Afficher les couches selon le nombre de cartes */
+        .grave-stack.has-cards .grave-card-layer { display: block; }
+        .grave-stack.cards-1 .grave-card-layer:nth-child(1),
+        .grave-stack.cards-1 .grave-card-layer:nth-child(2) { display: none; }
+        .grave-stack.cards-2 .grave-card-layer:nth-child(1) { display: none; }
+        
         .grave-top-card {
+            position: absolute;
             width: 100%;
             height: 100%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            border-radius: 4px;
-            background: linear-gradient(135deg, rgba(50,50,70,0.8), rgba(30,30,50,0.8));
+            border-radius: 6px;
+            background: linear-gradient(135deg, rgba(50,50,70,0.95), rgba(30,30,50,0.95));
+            border: 2px solid rgba(100, 80, 120, 0.6);
             transition: transform 0.2s ease;
+            z-index: 5;
         }
         .grave-box:hover .grave-top-card {
-            transform: scale(1.04);
+            transform: translateY(-2px);
+        }
+        .grave-top-card.empty {
+            background: rgba(255,255,255,0.05);
+            border: 2px dashed rgba(255,255,255,0.2);
         }
         .grave-top-card.empty::after {
             content: '☠️';
             font-size: 2em;
             opacity: 0.3;
+        }
+        .grave-count {
+            position: absolute;
+            bottom: -20px;
+            font-size: 0.9em;
+            color: #aaa;
         }
         .grave-top-card .mini-card {
             width: 100%;
@@ -1092,6 +1171,32 @@
         @keyframes spellFlashHeal {
             0% { box-shadow: 0 0 30px rgba(46, 204, 113, 0.9); }
             100% { box-shadow: none; }
+        }
+        
+        /* Bordure jaune sur les cartes ciblées par un sort */
+        .card.spell-target-damage {
+            border-color: #e74c3c !important;
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.8) !important;
+            animation: cardTargetFlash 1.5s ease-out;
+        }
+        .card.spell-target-heal {
+            border-color: #2ecc71 !important;
+            box-shadow: 0 0 15px rgba(46, 204, 113, 0.8) !important;
+            animation: cardTargetFlashHeal 1.5s ease-out;
+        }
+        @keyframes cardTargetFlash {
+            0%, 50% { border-color: #e74c3c; box-shadow: 0 0 20px rgba(231, 76, 60, 0.9); }
+            100% { border-color: transparent; box-shadow: none; }
+        }
+        @keyframes cardTargetFlashHeal {
+            0%, 50% { border-color: #2ecc71; box-shadow: 0 0 20px rgba(46, 204, 113, 0.9); }
+            100% { border-color: transparent; box-shadow: none; }
+        }
+        
+        /* Bordure jaune sur les cartes pendant le drag-over */
+        .card-slot.drag-over .card {
+            border-color: #f1c40f !important;
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.8) !important;
         }
         
         /* Buff animation */
