@@ -49,7 +49,7 @@ function initSocket() {
         
         // Message éphémère si on vient de passer en phase de déploiement
         if (!wasInDeployPhase && state.me.inDeployPhase && state.phase === 'planning') {
-            showPhaseMessage('🎴 Phase principale', 'deploy');
+            showPhaseMessage('Phase principale', 'deploy');
         }
     });
     
@@ -110,7 +110,7 @@ function initSocket() {
         
         // Message éphémère de phase - seulement s'il y a des créatures à repositionner
         if (hasCreaturesOnMyField()) {
-            showPhaseMessage('🔄 Phase de repositionnement', 'redeploy');
+            showPhaseMessage('Phase de repositionnement', 'redeploy');
         }
     });
     

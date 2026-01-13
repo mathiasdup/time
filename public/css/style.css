@@ -212,28 +212,22 @@
             position: absolute;
             bottom: 140px;
             right: 100px;
-            padding: 10px 30px; 
-            background: rgba(46,204,113,0.95); 
-            border-radius: 20px; 
-            border: 2px solid #58d68d; 
+            padding: 12px 35px; 
+            background: rgba(0,0,0,0.7); 
+            border-radius: 25px; 
+            border: 2px solid rgba(255,255,255,0.3); 
             font-size: 0.9em; 
             font-weight: bold;
+            color: #fff;
             white-space: nowrap; 
             opacity: 1; 
             transition: opacity 0.5s ease-out; 
             z-index: 200;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             display: none;
         }
         .phase-indicator.visible { display: block; }
         .phase-indicator.fade-out { opacity: 0; }
-        .phase-indicator.redeploy { background: rgba(52,152,219,0.95); border-color: #5dade2; }
-        .phase-indicator.deploy { background: rgba(46,204,113,0.95); border-color: #58d68d; }
-        .phase-indicator.resolution { background: rgba(231,76,60,0.95); border-color: #ec7063; }
-        .phase-indicator.revelation { background: rgba(155,89,182,0.95); border-color: #a569bd; }
-        .phase-indicator.protection { background: rgba(46,204,113,0.95); border-color: #58d68d; }
-        .phase-indicator.attack { background: rgba(230,126,34,0.95); border-color: #e67e22; }
-        .phase-indicator.combat { background: rgba(231,76,60,0.95); border-color: #ec7063; }
         
         .side-panel { 
             display: flex; 
@@ -328,7 +322,8 @@
             border: 2px solid rgba(255,255,255,0.3);
             position: relative;
             cursor: pointer;
-            padding: 5px;
+            padding: 0;
+            overflow: hidden;
         }
         .grave-box:hover { border-color: rgba(255,255,255,0.5); }
         .grave-top-card {
@@ -338,20 +333,20 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            border-radius: 4px;
+            border-radius: 6px;
             position: relative;
             overflow: hidden;
+            transition: transform 0.2s ease;
         }
         .grave-top-card.empty {
             background: linear-gradient(135deg, rgba(50,50,70,0.8), rgba(30,30,50,0.8));
-            transition: transform 0.2s ease;
         }
-        .grave-box:hover .grave-top-card.empty {
-            transform: scale(1.04);
+        .grave-box:hover .grave-top-card {
+            transform: scale(1.06);
         }
         .grave-top-card.empty::after {
             content: '☠️';
-            font-size: 2em;
+            font-size: 2.5em;
             opacity: 0.3;
         }
         .grave-top-card .mini-card {
@@ -359,20 +354,16 @@
             height: 100%;
             background: linear-gradient(135deg, rgba(50,50,70,0.8), rgba(30,30,50,0.8));
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 5px;
+            padding: 12px 8px;
             box-sizing: border-box;
-            transition: transform 0.2s ease;
-        }
-        .grave-box:hover .grave-top-card .mini-card {
-            transform: scale(1.04);
         }
         .grave-top-card .mini-card .card-icon {
-            font-size: 2.5em;
+            font-size: 2.8em;
             flex: 1;
             display: flex;
             align-items: center;

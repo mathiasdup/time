@@ -238,7 +238,7 @@ async function startResolution(room) {
     
     // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS
     if (allActions.moves.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: '↔️ Révélation des déplacements', type: 'revelation' });
+        io.to(room.code).emit('phaseMessage', { text: 'Révélation des déplacements', type: 'revelation' });
         log('↔️ Phase de révélation des déplacements', 'phase');
         await sleep(600);
         
@@ -260,7 +260,7 @@ async function startResolution(room) {
     
     // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES
     if (allActions.places.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: '🎴 Révélation des invocations', type: 'revelation' });
+        io.to(room.code).emit('phaseMessage', { text: 'Révélation des invocations', type: 'revelation' });
         log('🎴 Phase de révélation des invocations', 'phase');
         await sleep(600);
         
@@ -285,7 +285,7 @@ async function startResolution(room) {
     
     // 3. PHASE DES SORTS DÉFENSIFS (sur soi)
     if (allActions.spellsDefensive.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: '💚 Sorts défensifs', type: 'protection' });
+        io.to(room.code).emit('phaseMessage', { text: 'Sorts défensifs', type: 'protection' });
         log('💚 Phase des sorts défensifs', 'phase');
         await sleep(600);
         
@@ -296,7 +296,7 @@ async function startResolution(room) {
     
     // 4. PHASE DES SORTS OFFENSIFS (sur l'adversaire)
     if (allActions.spellsOffensive.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: '🔥 Sorts offensifs', type: 'attack' });
+        io.to(room.code).emit('phaseMessage', { text: 'Sorts offensifs', type: 'attack' });
         log('🔥 Phase des sorts offensifs', 'phase');
         await sleep(600);
         
@@ -319,7 +319,7 @@ async function startResolution(room) {
     
     // 5. PHASE DE COMBAT - seulement s'il y a des créatures ou des pièges
     if (hasCreaturesOnField() || hasTraps()) {
-        io.to(room.code).emit('phaseMessage', { text: '⚔️ Phase de combat', type: 'combat' });
+        io.to(room.code).emit('phaseMessage', { text: 'Phase de combat', type: 'combat' });
         log('⚔️ Phase de combat', 'phase');
         await sleep(800);
         
