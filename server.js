@@ -1924,18 +1924,37 @@ io.on('connection', (socket) => {
         const player = room.gameState.players[info.playerNum];
         if (player.ready) return;
         
-        const { handIndex, targetPlayer, row, col } = data;
-        if (handIndex < 0 || handIndex >= player.hand.length) return;
+        const { idx, targetPlayer, row, col } = data;
+        const handIndex = idx !== undefined ? idx : data.handIndex;
+        
+        if (handIndex === undefined || handIndex < 0 || handIndex >= player.hand.length) return;
         
         const spell = player.hand[handIndex];
         if (!spell || spell.type !== 'spell' || spell.cost > player.energy) return;
-        if (row < 0 || row > 3 || col < 0 || col > 1) return;
+        
+        // Validation des coordonnées
+        // row = -1 signifie qu'on cible un héros
+        if (row === -1) {
+            // Vérifier que le sort peut cibler un héros
+            if (spell.pattern !== 'hero' && !spell.canTargetHero) return;
+        } else {
+            // Sort ciblé normal sur une créature
+            if (row < 0 || row > 3 || col < 0 || col > 1) return;
+        }
         
         player.energy -= spell.cost;
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
         
-        player.pendingActions.push({ type: 'spell', spell: deepClone(spell), targetPlayer, row, col });
+        player.pendingActions.push({ 
+            type: 'spell', 
+            spell: deepClone(spell), 
+            targetPlayer, 
+            row, 
+            col,
+            heroName: player.heroName,
+            playerNum: info.playerNum
+        });
         
         emitStateToPlayer(room, info.playerNum);
     });
