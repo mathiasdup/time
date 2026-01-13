@@ -26,61 +26,74 @@
         .game-container { width: 100vw; height: 100vh; display: none; position: relative; }
         .game-container.active { display: block; }
         
-        .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: rgba(20,20,40,0.95); border-bottom: 2px solid #5a4a3a; z-index: 50; }
-        .player-info-bar { display: flex; align-items: center; gap: 15px; }
+        .top-bar { position: absolute; top: 10px; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: transparent; z-index: 50; }
+        .player-info-bar { display: flex; align-items: center; gap: 0; }
         .player-info-bar.left { flex-direction: row; }
         .player-info-bar.right { flex-direction: row; }
         
         .rank-icon-container {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #5a4a3a, #3a2a1a);
-            border: 3px solid #8b7355;
+            width: 55px;
+            height: 55px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.5);
             z-index: 2;
+            flex-shrink: 0;
         }
         .rank-icon {
-            width: 32px;
-            height: 32px;
+            width: 55px;
+            height: 55px;
             object-fit: contain;
         }
         
         .player-name-arrow {
             display: flex;
             flex-direction: column;
-            align-items: flex-start;
-            padding: 6px 20px 6px 15px;
-            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            padding: 8px 20px 8px 15px;
+            background: rgba(0,0,0,0.75);
             position: relative;
             min-width: 100px;
+            height: 40px;
         }
         /* Flèche vers la droite pour joueur gauche */
         .player-info-bar.left .player-name-arrow {
-            margin-left: -10px;
-            clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 50%, calc(100% - 15px) 100%, 0 100%);
+            margin-left: -8px;
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
             padding-right: 25px;
+            border-radius: 3px 0 0 3px;
         }
         /* Flèche vers la gauche pour joueur droite (miroir) */
         .player-info-bar.right .player-name-arrow {
-            margin-right: -10px;
-            clip-path: polygon(15px 0, 100% 0, 100% 100%, 15px 100%, 0 50%);
+            margin-right: -8px;
+            clip-path: polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%);
             padding-left: 25px;
             padding-right: 15px;
             align-items: flex-end;
+            border-radius: 0 3px 3px 0;
         }
         
         .player-name-text {
-            font-size: 0.9em;
+            font-size: 0.85em;
             font-weight: bold;
             color: #fff;
+            line-height: 1.2;
         }
         .player-rank-title {
-            font-size: 0.65em;
-            color: #aaa;
+            font-size: 0.6em;
+            color: #999;
+            line-height: 1.2;
+        }
+        
+        .energy-display { 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+            margin-left: 10px;
+        }
+        .player-info-bar.right .energy-display {
+            margin-left: 0;
+            margin-right: 10px;
         }
         .options-btn { 
             position: absolute;
@@ -100,7 +113,6 @@
         .options-btn:hover { background: #7a6a5a; }
         
         .header-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
-        .energy-display { display: flex; align-items: center; gap: 8px; }
         .mana-orb { min-width: 40px; height: 36px; padding: 0 12px; border-radius: 18px; background: radial-gradient(circle at 30% 30%, #7ec8f3, #1e90ff, #0066cc); border: 3px solid #87ceeb; box-shadow: 0 0 15px rgba(30,144,255,0.6); display: flex; align-items: center; justify-content: center; font-size: 1em; font-weight: bold; }
         
         .end-turn-btn { 
