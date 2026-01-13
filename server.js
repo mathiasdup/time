@@ -240,8 +240,8 @@ async function startResolution(room) {
     
     // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS
     if (allActions.moves.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: 'Révélation des déplacements', type: 'revelation' });
-        log('↔️ Phase de révélation des déplacements', 'phase');
+        io.to(room.code).emit('phaseMessage', { text: 'Déplacements', type: 'revelation' });
+        log('↔️ Phase des déplacements', 'phase');
         await sleep(600);
         
         for (const action of allActions.moves) {
@@ -260,12 +260,14 @@ async function startResolution(room) {
         }
     }
     
-    // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES
-    if (allActions.places.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: 'Révélation des invocations', type: 'revelation' });
-        log('🎴 Phase de révélation des invocations', 'phase');
+    // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES ET PIÈGES
+    const hasPlacesOrTraps = allActions.places.length > 0 || allActions.traps.length > 0;
+    if (hasPlacesOrTraps) {
+        io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
+        log('🎴 Phase de révélation', 'phase');
         await sleep(600);
         
+        // Révéler les créatures
         for (const action of allActions.places) {
             log(`  🎴 ${action.heroName}: ${action.card.name} en ${slotNames[action.row][action.col]}`, 'action');
             emitAnimation(room, 'summon', { player: action.playerNum, row: action.row, col: action.col, card: action.card, animateForOpponent: true });
@@ -273,16 +275,16 @@ async function startResolution(room) {
             emitStateToBoth(room);
             await sleep(700);
         }
-    }
-    
-    // Pièges posés (révélés silencieusement)
-    if (allActions.traps.length > 0) {
+        
+        // Révéler les pièges
         for (const action of allActions.traps) {
             log(`  🪤 ${action.heroName}: Piège en rangée ${action.row + 1}`, 'action');
             emitAnimation(room, 'trapPlace', { player: action.playerNum, row: action.row });
             await sleep(400);
         }
-        emitStateToBoth(room);
+        if (allActions.traps.length > 0) {
+            emitStateToBoth(room);
+        }
     }
     
     // 3. PHASE DES SORTS DÉFENSIFS (sur soi)

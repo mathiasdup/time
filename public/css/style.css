@@ -310,7 +310,6 @@
             position: relative;
             width: 85px;
             height: 115px;
-            margin-left: -6px; /* Compenser le décalage visuel des couches */
         }
         /* Cartes empilées style Magic Arena */
         .deck-card-layer {
@@ -321,12 +320,19 @@
             border: 2px solid rgba(139, 115, 85, 0.6);
             border-radius: 6px;
         }
-        /* Couches empilées vers la droite et légèrement vers le bas */
-        .deck-card-layer:nth-child(1) { transform: translate(0px, 0px); z-index: 5; }
-        .deck-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 4; }
-        .deck-card-layer:nth-child(3) { transform: translate(6px, 2px); z-index: 3; }
-        .deck-card-layer:nth-child(4) { transform: translate(9px, 3px); z-index: 2; }
-        .deck-card-layer:nth-child(5) { transform: translate(12px, 4px); z-index: 1; }
+        /* Couches empilées vers la droite pour le joueur (panneau gauche) */
+        .side-panel.left .deck-card-layer:nth-child(1) { transform: translate(0px, 0px); z-index: 5; }
+        .side-panel.left .deck-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 4; }
+        .side-panel.left .deck-card-layer:nth-child(3) { transform: translate(6px, 2px); z-index: 3; }
+        .side-panel.left .deck-card-layer:nth-child(4) { transform: translate(9px, 3px); z-index: 2; }
+        .side-panel.left .deck-card-layer:nth-child(5) { transform: translate(12px, 4px); z-index: 1; }
+        
+        /* Couches empilées vers la gauche pour l'adversaire (panneau droite) */
+        .side-panel.right .deck-card-layer:nth-child(1) { transform: translate(0px, 0px); z-index: 5; }
+        .side-panel.right .deck-card-layer:nth-child(2) { transform: translate(-3px, 1px); z-index: 4; }
+        .side-panel.right .deck-card-layer:nth-child(3) { transform: translate(-6px, 2px); z-index: 3; }
+        .side-panel.right .deck-card-layer:nth-child(4) { transform: translate(-9px, 3px); z-index: 2; }
+        .side-panel.right .deck-card-layer:nth-child(5) { transform: translate(-12px, 4px); z-index: 1; }
         
         .deck-card-top {
             position: absolute;
@@ -379,7 +385,6 @@
             position: relative;
             width: 85px;
             height: 115px;
-            margin-left: -3px; /* Compenser le décalage visuel des couches */
         }
         /* Cartes empilées du cimetière style Magic Arena */
         .grave-card-layer {
@@ -391,10 +396,15 @@
             border-radius: 6px;
             display: none;
         }
-        /* Couches empilées vers la droite */
-        .grave-card-layer:nth-child(1) { transform: translate(6px, 2px); z-index: 1; }
-        .grave-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 2; }
-        .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
+        /* Couches empilées vers la droite pour le joueur (panneau gauche) */
+        .side-panel.left .grave-card-layer:nth-child(1) { transform: translate(6px, 2px); z-index: 1; }
+        .side-panel.left .grave-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 2; }
+        .side-panel.left .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
+        
+        /* Couches empilées vers la gauche pour l'adversaire (panneau droite) */
+        .side-panel.right .grave-card-layer:nth-child(1) { transform: translate(-6px, 2px); z-index: 1; }
+        .side-panel.right .grave-card-layer:nth-child(2) { transform: translate(-3px, 1px); z-index: 2; }
+        .side-panel.right .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
         
         /* Afficher les couches selon le nombre de cartes */
         .grave-stack.has-cards .grave-card-layer { display: block; }
