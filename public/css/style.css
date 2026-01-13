@@ -451,8 +451,8 @@
         .card-slot::before {
             content: '';
             position: absolute;
-            width: 35px;
-            height: 35px;
+            width: 45px;
+            height: 45px;
             border: 2px solid rgba(255,255,255,0.25);
             background: transparent;
             transform: rotate(45deg);
@@ -732,6 +732,10 @@
         .log-popup.active { display: block; }
         .log-popup h3 { color: #ffd700; margin-bottom: 8px; font-size: 0.85em; text-align: center; }
         .log-content { max-height: 220px; overflow-y: auto; font-size: 0.7em; }
+        .log-content::-webkit-scrollbar { width: 8px; }
+        .log-content::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 4px; }
+        .log-content::-webkit-scrollbar-thumb { background: rgba(139, 115, 85, 0.8); border-radius: 4px; }
+        .log-content::-webkit-scrollbar-thumb:hover { background: rgba(139, 115, 85, 1); }
         .log-entry { padding: 4px 8px; margin: 3px 0; border-radius: 4px; }
         .log-phase { background: rgba(255,215,0,0.2); color: #ffd700; }
         .log-action { background: rgba(52,152,219,0.2); color: #5dade2; }

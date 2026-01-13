@@ -390,6 +390,13 @@ async function startResolution(room) {
             } else {
                 player.hand.push(card);
             }
+        } else {
+            // Deck vide = défaite immédiate
+            const winner = p === 1 ? 2 : 1;
+            log(`💀 ${player.heroName} n'a plus de cartes dans son deck!`, 'damage');
+            log(`🏆 ${room.gameState.players[winner].heroName} GAGNE par épuisement du deck!`, 'phase');
+            io.to(room.code).emit('gameOver', { winner: winner });
+            return;
         }
     }
     log('📦 Les joueurs piochent une carte', 'action');
