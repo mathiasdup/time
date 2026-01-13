@@ -311,7 +311,7 @@
             width: 85px;
             height: 115px;
         }
-        /* Cartes empilées (couches visuelles) */
+        /* Cartes empilées style Magic Arena */
         .deck-card-layer {
             position: absolute;
             width: 100%;
@@ -319,15 +319,13 @@
             background: linear-gradient(135deg, rgba(80,60,40,0.95), rgba(50,35,20,0.95));
             border: 2px solid rgba(139, 115, 85, 0.6);
             border-radius: 6px;
-            transition: transform 0.2s ease;
         }
-        .deck-card-layer:nth-child(1) { transform: translateY(0px); z-index: 5; }
-        .deck-card-layer:nth-child(2) { transform: translateY(-3px) translateX(1px); z-index: 4; opacity: 0.9; }
-        .deck-card-layer:nth-child(3) { transform: translateY(-6px) translateX(2px); z-index: 3; opacity: 0.8; }
-        .deck-card-layer:nth-child(4) { transform: translateY(-9px) translateX(3px); z-index: 2; opacity: 0.7; }
-        .deck-card-layer:nth-child(5) { transform: translateY(-12px) translateX(4px); z-index: 1; opacity: 0.6; }
-        
-        .deck-box:hover .deck-card-layer:nth-child(1) { transform: translateY(-2px); }
+        /* Couches empilées vers la droite et légèrement vers le bas */
+        .deck-card-layer:nth-child(1) { transform: translate(0px, 0px); z-index: 5; }
+        .deck-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 4; }
+        .deck-card-layer:nth-child(3) { transform: translate(6px, 2px); z-index: 3; }
+        .deck-card-layer:nth-child(4) { transform: translate(9px, 3px); z-index: 2; }
+        .deck-card-layer:nth-child(5) { transform: translate(12px, 4px); z-index: 1; }
         
         .deck-card-top {
             position: absolute;
@@ -381,7 +379,7 @@
             width: 85px;
             height: 115px;
         }
-        /* Cartes empilées du cimetière */
+        /* Cartes empilées du cimetière style Magic Arena */
         .grave-card-layer {
             position: absolute;
             width: 100%;
@@ -391,9 +389,10 @@
             border-radius: 6px;
             display: none;
         }
-        .grave-card-layer:nth-child(1) { transform: translateY(-6px) translateX(2px); z-index: 1; opacity: 0.6; }
-        .grave-card-layer:nth-child(2) { transform: translateY(-3px) translateX(1px); z-index: 2; opacity: 0.8; }
-        .grave-card-layer:nth-child(3) { transform: translateY(0px); z-index: 3; opacity: 0.9; }
+        /* Couches empilées vers la droite */
+        .grave-card-layer:nth-child(1) { transform: translate(6px, 2px); z-index: 1; }
+        .grave-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 2; }
+        .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
         
         /* Afficher les couches selon le nombre de cartes */
         .grave-stack.has-cards .grave-card-layer { display: block; }
@@ -412,11 +411,7 @@
             border-radius: 6px;
             background: linear-gradient(135deg, rgba(50,50,70,0.95), rgba(30,30,50,0.95));
             border: 2px solid rgba(100, 80, 120, 0.6);
-            transition: transform 0.2s ease;
             z-index: 5;
-        }
-        .grave-box:hover .grave-top-card {
-            transform: translateY(-2px);
         }
         .grave-top-card.empty {
             background: rgba(255,255,255,0.05);
@@ -540,8 +535,8 @@
         .card-slot::before {
             content: '';
             position: absolute;
-            width: 38px;
-            height: 38px;
+            width: 42px;
+            height: 42px;
             border: 2px solid rgba(255,255,255,0.25);
             background: transparent;
             transform: rotate(45deg);
