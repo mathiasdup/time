@@ -42,14 +42,14 @@ const CardDB = {
         { id: 'lightning', name: 'Éclair', damage: 2, cost: 1, type: 'spell', offensive: true, icon: '⚡', pattern: 'single' },
         { id: 'fireball', name: 'Boule de feu', damage: 3, cost: 2, type: 'spell', offensive: true, icon: '🔥', pattern: 'single' },
         { id: 'cross', name: 'Croix de feu', damage: 2, cost: 3, type: 'spell', offensive: true, icon: '✝️', pattern: 'cross' },
-        { id: 'directhit', name: 'Frappe directe', damage: 3, cost: 2, type: 'spell', offensive: true, icon: '👊', pattern: 'hero' },
+        { id: 'directhit', name: 'Frappe directe', damage: 3, cost: 2, type: 'spell', offensive: true, icon: '👊', pattern: 'hero', targetEnemy: true },
         { id: 'earthquake', name: 'Séisme', damage: 2, cost: 4, type: 'spell', offensive: true, icon: '🌋', pattern: 'all' },
         
         // === SORTS DÉFENSIFS/UTILITAIRES (4) ===
         { id: 'heal', name: 'Soin', heal: 3, cost: 1, type: 'spell', offensive: false, icon: '💚', pattern: 'single', canTargetHero: true },
-        { id: 'buff', name: 'Renforcement', buff: { atk: 2, hp: 2 }, cost: 2, type: 'spell', offensive: false, icon: '💪', pattern: 'single' },
+        { id: 'buff', name: 'Renforcement', buff: { atk: 2, hp: 2 }, cost: 2, type: 'spell', offensive: false, icon: '💪', pattern: 'single', description: 'La créature ciblée gagne +2 ATK et +2 PV.' },
         { id: 'draw2', name: 'Inspiration', effect: 'draw', amount: 2, cost: 2, type: 'spell', offensive: false, icon: '📜', pattern: 'hero' },
-        { id: 'manacrystal', name: 'Cristal de mana', effect: 'mana', cost: 3, type: 'spell', offensive: false, icon: '💎', pattern: 'hero' }
+        { id: 'manacrystal', name: 'Cristal de mana', effect: 'mana', cost: 3, type: 'spell', offensive: false, icon: '💎', pattern: 'hero', targetSelf: true }
     ],
     traps: [
         { id: 'spike', name: 'Piques', damage: 2, cost: 1, type: 'trap', icon: '📌' },

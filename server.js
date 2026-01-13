@@ -731,6 +731,13 @@ async function applySpell(room, action, log, sleep) {
                     target.currentHp = Math.min(target.hp, target.currentHp + spell.heal);
                     const healed = target.currentHp - oldHp;
                     if (healed > 0) {
+                        // Stocker l'effet appliqué sur la carte
+                        if (!target.appliedEffects) target.appliedEffects = [];
+                        target.appliedEffects.push({
+                            name: spell.name,
+                            icon: spell.icon,
+                            description: `+${healed} ❤️ restauré`
+                        });
                         log(`  💚 ${action.heroName}: ${spell.name} → ${target.name} (+${healed} PV)`, 'heal');
                         emitAnimation(room, 'heal', { player: action.targetPlayer, row: action.row, col: action.col, amount: healed });
                     }
@@ -740,6 +747,13 @@ async function applySpell(room, action, log, sleep) {
                     target.atk += spell.buff.atk;
                     target.hp += spell.buff.hp;
                     target.currentHp += spell.buff.hp;
+                    // Stocker l'effet appliqué sur la carte
+                    if (!target.appliedEffects) target.appliedEffects = [];
+                    target.appliedEffects.push({
+                        name: spell.name,
+                        icon: spell.icon,
+                        description: spell.description || `+${spell.buff.atk} ⚔️ +${spell.buff.hp} ❤️`
+                    });
                     log(`  💪 ${action.heroName}: ${spell.name} → ${target.name} (+${spell.buff.atk}/+${spell.buff.hp})`, 'action');
                     emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.buff.atk, hp: spell.buff.hp });
                 }
@@ -1937,6 +1951,11 @@ io.on('connection', (socket) => {
         if (row === -1) {
             // Vérifier que le sort peut cibler un héros
             if (spell.pattern !== 'hero' && !spell.canTargetHero) return;
+            
+            // Vérifier les restrictions targetEnemy / targetSelf
+            const isTargetingSelf = targetPlayer === info.playerNum;
+            if (spell.targetEnemy && isTargetingSelf) return; // Frappe directe = adversaire seulement
+            if (spell.targetSelf && !isTargetingSelf) return; // Cristal de mana = soi-même seulement
         } else {
             // Sort ciblé normal sur une créature
             if (row < 0 || row > 3 || col < 0 || col > 1) return;

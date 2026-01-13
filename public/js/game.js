@@ -680,13 +680,22 @@ function setupHeroes() {
 }
 
 function setupHeroDragDrop(heroEl, owner) {
+    // Fonction pour vérifier si le sort peut cibler ce héros
+    const canTargetThisHero = (spell) => {
+        if (!spell || spell.type !== 'spell') return false;
+        if (spell.pattern === 'hero') {
+            if (spell.targetEnemy && owner === 'me') return false; // Frappe directe = adversaire seulement
+            if (spell.targetSelf && owner === 'opp') return false; // Cristal de mana = soi-même seulement
+            return true;
+        }
+        if (spell.canTargetHero) return true;
+        return false;
+    };
+    
     heroEl.ondragover = (e) => {
         e.preventDefault();
-        if (!dragged || dragged.type !== 'spell') return;
-        // Vérifier si le sort peut cibler ce héros
-        if (dragged.pattern === 'hero' || dragged.canTargetHero) {
-            heroEl.classList.add('hero-drag-over');
-        }
+        if (!dragged || !canTargetThisHero(dragged)) return;
+        heroEl.classList.add('hero-drag-over');
     };
     
     heroEl.ondragleave = () => {
@@ -697,8 +706,7 @@ function setupHeroDragDrop(heroEl, owner) {
         e.preventDefault();
         heroEl.classList.remove('hero-drag-over');
         
-        if (!dragged || dragged.type !== 'spell') return;
-        if (dragged.pattern !== 'hero' && !dragged.canTargetHero) return;
+        if (!dragged || !canTargetThisHero(dragged)) return;
         if (!canPlay()) return;
         if (dragged.cost > state.me.energy) {
             dragged.triedToDrop = true;
@@ -721,8 +729,7 @@ function setupHeroDragDrop(heroEl, owner) {
     
     // Click pour lancer le sort sélectionné
     heroEl.onclick = (e) => {
-        if (!selected || !selected.fromHand || selected.type !== 'spell') return;
-        if (selected.pattern !== 'hero' && !selected.canTargetHero) return;
+        if (!selected || !selected.fromHand || !canTargetThisHero(selected)) return;
         if (!canPlay()) return;
         if (selected.cost > state.me.energy) return;
         
@@ -941,10 +948,19 @@ function getValidSlots(card) {
         if (card.pattern === 'global' || card.pattern === 'all') {
             valid.push({ global: true });
         } 
-        // Sorts qui ciblent un héros (peut être allié ou adverse)
+        // Sorts qui ciblent un héros
         else if (card.pattern === 'hero') {
-            valid.push({ hero: true, owner: 'me' });
-            valid.push({ hero: true, owner: 'opp' });
+            // targetEnemy = seulement héros adverse (ex: Frappe directe)
+            // targetSelf = seulement notre héros (ex: Cristal de mana)
+            // sinon = les deux héros (ex: Inspiration)
+            if (card.targetEnemy) {
+                valid.push({ hero: true, owner: 'opp' });
+            } else if (card.targetSelf) {
+                valid.push({ hero: true, owner: 'me' });
+            } else {
+                valid.push({ hero: true, owner: 'me' });
+                valid.push({ hero: true, owner: 'opp' });
+            }
         } 
         // Sorts ciblés normaux
         else {
@@ -1220,6 +1236,10 @@ function showCardPreview(card, e) {
     cardEl.classList.add('preview-card');
     previewEl.appendChild(cardEl);
     
+    // Container pour capacités + effets
+    const infoContainer = document.createElement('div');
+    infoContainer.className = 'preview-info-container';
+    
     // Ajouter les capacités si c'est une créature avec des abilities
     if (card.type === 'creature' && card.abilities && card.abilities.length > 0) {
         const abilitiesContainer = document.createElement('div');
@@ -1238,7 +1258,29 @@ function showCardPreview(card, e) {
             }
         });
         
-        previewEl.appendChild(abilitiesContainer);
+        infoContainer.appendChild(abilitiesContainer);
+    }
+    
+    // Ajouter les effets appliqués (sorts) si présents
+    if (card.appliedEffects && card.appliedEffects.length > 0) {
+        const effectsContainer = document.createElement('div');
+        effectsContainer.className = 'preview-effects';
+        
+        card.appliedEffects.forEach(effect => {
+            const effectEl = document.createElement('div');
+            effectEl.className = 'preview-effect';
+            effectEl.innerHTML = `
+                <div class="effect-name">${effect.icon || '✨'} ${effect.name}</div>
+                <div class="effect-desc">${effect.description}</div>
+            `;
+            effectsContainer.appendChild(effectEl);
+        });
+        
+        infoContainer.appendChild(effectsContainer);
+    }
+    
+    if (infoContainer.children.length > 0) {
+        previewEl.appendChild(infoContainer);
     }
     
     document.body.appendChild(previewEl);
@@ -1582,7 +1624,7 @@ function openGraveyard(owner) {
     const graveyard = owner === 'me' ? state.me.graveyard : state.opponent.graveyard;
     const playerName = owner === 'me' ? state.me.heroName : state.opponent.heroName;
     
-    title.textContent = `☠️ Cimetière de ${playerName}`;
+    title.textContent = `Cimetière de ${playerName}`;
     container.innerHTML = '';
     
     if (!graveyard || graveyard.length === 0) {
@@ -1590,6 +1632,9 @@ function openGraveyard(owner) {
     } else {
         graveyard.forEach(card => {
             const cardEl = makeCard(card, false);
+            // Ajouter le preview au hover
+            cardEl.onmouseenter = (e) => showCardPreview(card, e);
+            cardEl.onmouseleave = hideCardPreview;
             container.appendChild(cardEl);
         });
     }
