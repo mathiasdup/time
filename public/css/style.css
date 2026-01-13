@@ -137,40 +137,99 @@
         }
         
         .end-turn-btn { 
-            width: 80px; 
-            height: 45px; 
-            border-radius: 8px; 
-            background: radial-gradient(circle at 30% 30%, #ff6b35, #c41e00); 
-            border: 3px solid #ffd700; 
+            width: 120px; 
+            height: 55px; 
+            border-radius: 30px; 
+            background: linear-gradient(180deg, #4a7a3a 0%, #2d5a1f 50%, #1a3a10 100%);
+            border: 4px solid #8b7355;
+            border-top-color: #c9a86c;
+            border-bottom-color: #5a4a30;
             cursor: pointer; 
-            font-size: 0.55em; 
+            font-size: 0.7em; 
             font-weight: bold; 
-            color: white; 
+            color: #ffeedd; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: center; 
-            transition: all 0.3s; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            justify-content: center;
+            line-height: 1.1;
+            transition: all 0.15s ease; 
+            box-shadow: 
+                0 4px 0 #1a2a10,
+                0 6px 10px rgba(0,0,0,0.5),
+                inset 0 2px 3px rgba(255,255,255,0.2),
+                inset 0 -2px 3px rgba(0,0,0,0.3);
             font-family: 'Cinzel', serif;
+            text-shadow: 0 2px 3px rgba(0,0,0,0.8);
+            position: relative;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .end-turn-btn:hover:not(.waiting) { transform: scale(1.08); box-shadow: 0 6px 25px rgba(255,107,53,0.5); }
-        .end-turn-btn.waiting { background: radial-gradient(circle at 30% 30%, #666, #444); border-color: #888; cursor: default; }
+        .end-turn-btn::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 10%;
+            right: 10%;
+            height: 8px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.4), transparent);
+            border-radius: 50%;
+        }
+        .end-turn-btn:hover:not(.waiting) { 
+            transform: translateY(-2px);
+            background: linear-gradient(180deg, #5a9a4a 0%, #3d7a2f 50%, #2a5a20 100%);
+            box-shadow: 
+                0 6px 0 #1a2a10,
+                0 8px 15px rgba(0,0,0,0.5),
+                0 0 20px rgba(100,180,80,0.4),
+                inset 0 2px 3px rgba(255,255,255,0.3),
+                inset 0 -2px 3px rgba(0,0,0,0.3);
+        }
+        .end-turn-btn:active:not(.waiting) {
+            transform: translateY(2px);
+            box-shadow: 
+                0 2px 0 #1a2a10,
+                0 3px 5px rgba(0,0,0,0.5),
+                inset 0 2px 3px rgba(0,0,0,0.3);
+        }
+        .end-turn-btn.waiting { 
+            background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 50%, #2a2a2a 100%);
+            border-color: #666;
+            border-top-color: #888;
+            border-bottom-color: #444;
+            color: #999;
+            cursor: default;
+            box-shadow: 
+                0 4px 0 #1a1a1a,
+                0 6px 10px rgba(0,0,0,0.5),
+                inset 0 2px 3px rgba(255,255,255,0.1),
+                inset 0 -2px 3px rgba(0,0,0,0.3);
+        }
         .end-turn-btn.has-timer { 
-            background: radial-gradient(circle at 30% 30%, #e74c3c, #a51e00); 
-            animation: timerPulse 1s infinite;
+            background: linear-gradient(180deg, #c4a000 0%, #a08000 50%, #705800 100%);
+            border-top-color: #ffd700;
+            border-bottom-color: #8a6800;
+            animation: timerGlow 1s infinite;
         }
         .end-turn-btn.has-timer.urgent { 
-            background: radial-gradient(circle at 30% 30%, #ff4444, #cc0000); 
-            animation: timerPulseUrgent 0.5s infinite;
+            background: linear-gradient(180deg, #cc3300 0%, #aa2200 50%, #881100 100%);
+            border-top-color: #ff6644;
+            border-bottom-color: #661100;
+            animation: timerGlowUrgent 0.5s infinite;
         }
         .end-turn-btn .btn-timer {
-            font-size: 2em;
+            font-size: 1.8em;
             font-weight: bold;
-            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
-        @keyframes timerPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        @keyframes timerPulseUrgent { 0%, 100% { transform: scale(1); box-shadow: 0 4px 15px rgba(255,0,0,0.4); } 50% { transform: scale(1.1); box-shadow: 0 6px 25px rgba(255,0,0,0.8); } }
+        @keyframes timerGlow { 
+            0%, 100% { box-shadow: 0 4px 0 #504000, 0 6px 10px rgba(0,0,0,0.5), 0 0 15px rgba(255,200,0,0.3); } 
+            50% { box-shadow: 0 4px 0 #504000, 0 6px 10px rgba(0,0,0,0.5), 0 0 25px rgba(255,200,0,0.6); } 
+        }
+        @keyframes timerGlowUrgent { 
+            0%, 100% { box-shadow: 0 4px 0 #440000, 0 6px 10px rgba(0,0,0,0.5), 0 0 15px rgba(255,50,0,0.4); } 
+            50% { box-shadow: 0 4px 0 #440000, 0 6px 10px rgba(0,0,0,0.5), 0 0 30px rgba(255,50,0,0.8); } 
+        }
         
         .phase-indicator { 
             position: absolute;
