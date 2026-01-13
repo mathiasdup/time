@@ -133,10 +133,22 @@
         <div class="opp-hand" id="opp-hand"></div>
         
         <div class="log-btn" onclick="toggleLog()">Journal de bataille</div>
-        <button class="options-btn" id="options-btn">⚙️</button>
+        <button class="options-btn" id="options-btn" onclick="toggleSettings()">⚙️</button>
         <div class="log-popup" id="log-popup">
             <h3>Journal de Bataille</h3>
             <div class="log-content" id="log-content"></div>
+        </div>
+        <div class="settings-popup" id="settings-popup">
+            <h3>⚙️ Paramètres</h3>
+            <div class="settings-row">
+                <label>🎵 Musique</label>
+                <input type="range" min="0" max="100" value="50" onchange="setMusicVolume(this.value)">
+            </div>
+            <div class="settings-row">
+                <label>🔊 Effets sonores</label>
+                <input type="range" min="0" max="100" value="50" onchange="setSfxVolume(this.value)">
+            </div>
+            <button class="surrender-btn" onclick="surrender()">🏳️ Capituler</button>
         </div>
     </div>
     

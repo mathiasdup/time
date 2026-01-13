@@ -1086,12 +1086,54 @@ function renderField(owner, field) {
 
 // Preview flottante d'une carte
 let previewEl = null;
+// Descriptions des capacités
+const ABILITY_DESCRIPTIONS = {
+    fly: { name: 'Vol', icon: '🦅', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
+    shooter: { name: 'Tireur', icon: '🎯', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
+    haste: { name: 'Célérité', icon: '⚡', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
+    intangible: { name: 'Intangible', icon: '👻', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
+    trample: { name: 'Piétinement', icon: '🦏', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
+    initiative: { name: 'Initiative', icon: '🗡️', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
+    power: { name: 'Puissance', icon: '💪', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' }
+};
+
 function showCardPreview(card, e) {
     hideCardPreview();
-    previewEl = makeCard(card, false);
-    previewEl.classList.add('card-preview');
+    
+    // Créer le container
+    previewEl = document.createElement('div');
+    previewEl.className = 'preview-container card-preview';
+    
+    // Ajouter la carte
+    const cardEl = makeCard(card, false);
+    cardEl.classList.add('preview-card');
+    previewEl.appendChild(cardEl);
+    
+    // Ajouter les capacités si c'est une créature avec des abilities
+    if (card.type === 'creature' && card.abilities && card.abilities.length > 0) {
+        const abilitiesContainer = document.createElement('div');
+        abilitiesContainer.className = 'preview-abilities';
+        
+        card.abilities.forEach(ability => {
+            const abilityInfo = ABILITY_DESCRIPTIONS[ability];
+            if (abilityInfo) {
+                const abilityEl = document.createElement('div');
+                abilityEl.className = 'preview-ability';
+                abilityEl.innerHTML = `
+                    <div class="ability-header">
+                        <span class="ability-icon">${abilityInfo.icon}</span>
+                        <span class="ability-name">${abilityInfo.name}</span>
+                    </div>
+                    <div class="ability-desc">${abilityInfo.desc}</div>
+                `;
+                abilitiesContainer.appendChild(abilityEl);
+            }
+        });
+        
+        previewEl.appendChild(abilitiesContainer);
+    }
+    
     document.body.appendChild(previewEl);
-    // Utiliser requestAnimationFrame pour le fade-in
     requestAnimationFrame(() => {
         previewEl.classList.add('visible');
     });
@@ -1472,6 +1514,26 @@ function toggleLog() {
     document.getElementById('log-popup').classList.toggle('active');
 }
 
+function toggleSettings() {
+    document.getElementById('settings-popup').classList.toggle('active');
+}
+
+function setMusicVolume(val) {
+    // TODO: Connecter à un système audio
+    console.log('Music volume:', val);
+}
+
+function setSfxVolume(val) {
+    // TODO: Connecter à un système audio
+    console.log('SFX volume:', val);
+}
+
+function surrender() {
+    if (confirm('Êtes-vous sûr de vouloir capituler ?')) {
+        socket.emit('surrender');
+    }
+}
+
 function log(msg, type = 'action') {
     const el = document.createElement('div');
     el.className = `log-entry log-${type}`;
@@ -1487,6 +1549,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') joinRoom();
     });
     document.addEventListener('click', (e) => {
+        // Fermer le log si on clique en dehors
+        if (!e.target.closest('.log-popup') && !e.target.closest('.log-btn')) {
+            document.getElementById('log-popup').classList.remove('active');
+        }
+        // Fermer settings si on clique en dehors
+        if (!e.target.closest('.settings-popup') && !e.target.closest('.options-btn')) {
+            document.getElementById('settings-popup')?.classList.remove('active');
+        }
+        // Désélectionner les cartes
         if (!e.target.closest('.card') && !e.target.closest('.card-slot') && !e.target.closest('.trap-slot')) {
             clearSel();
         }

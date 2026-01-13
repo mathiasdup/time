@@ -1917,6 +1917,17 @@ io.on('connection', (socket) => {
         checkBothReady(room);
     });
     
+    socket.on('surrender', () => {
+        const info = playerRooms.get(socket.id);
+        if (!info) return;
+        const room = rooms.get(info.code);
+        if (!room) return;
+        
+        const winner = info.playerNum === 1 ? 2 : 1;
+        
+        io.to(room.code).emit('gameOver', { winner: winner, surrender: true });
+    });
+    
     socket.on('disconnect', () => {
         const info = playerRooms.get(socket.id);
         if (info) {
