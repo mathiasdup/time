@@ -299,9 +299,6 @@
         .deck-box { 
             width: 100px; 
             height: 120px; 
-            display: flex; 
-            align-items: flex-start; 
-            justify-content: center; 
             font-size: 0.75em;
             background: transparent; 
             border: none;
@@ -310,7 +307,10 @@
             position: relative;
         }
         .deck-stack {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
             width: 85px;
             height: 115px;
         }
@@ -372,9 +372,6 @@
         .grave-box { 
             width: 100px; 
             height: 120px; 
-            display: flex; 
-            align-items: flex-start; 
-            justify-content: center; 
             font-size: 0.75em;
             background: transparent; 
             border: none;
@@ -383,7 +380,10 @@
             padding: 0;
         }
         .grave-stack {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
             width: 85px;
             height: 115px;
         }
