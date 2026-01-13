@@ -648,8 +648,23 @@ function setupHeroes() {
     document.getElementById('opp-name').textContent = state.opponent.heroName;
     document.getElementById('me-hero-name').textContent = state.me.heroName;
     document.getElementById('opp-hero-name').textContent = state.opponent.heroName;
-    document.getElementById('me-icon').textContent = myNum === 1 ? '🧙‍♂️' : '⚔️';
-    document.getElementById('opp-icon').textContent = myNum === 1 ? '⚔️' : '🧙‍♂️';
+    const meIcon = myNum === 1 ? '🧙‍♂️' : '⚔️';
+    const oppIcon = myNum === 1 ? '⚔️' : '🧙‍♂️';
+    document.getElementById('me-icon').textContent = meIcon;
+    document.getElementById('opp-icon').textContent = oppIcon;
+    
+    // Preview au survol des héros
+    const heroMe = document.getElementById('hero-me');
+    const heroOpp = document.getElementById('hero-opp');
+    
+    heroMe.onmouseenter = () => showHeroPreview(state.me.heroName, meIcon, state.me.hp);
+    heroMe.onmouseleave = hideCardPreview;
+    
+    heroOpp.onmouseenter = () => showHeroPreview(state.opponent.heroName, oppIcon, state.opponent.hp);
+    heroOpp.onmouseleave = hideCardPreview;
+    
+    // Stocker les icônes pour réutilisation
+    window.heroIcons = { me: meIcon, opp: oppIcon };
 }
 
 function createRoom() {
@@ -1081,6 +1096,33 @@ function showCardPreview(card, e) {
         previewEl.classList.add('visible');
     });
 }
+
+function showCardBackPreview() {
+    hideCardPreview();
+    previewEl = document.createElement('div');
+    previewEl.className = 'card-back-preview card-preview';
+    previewEl.innerHTML = '<div class="card-back-inner">🎴</div>';
+    document.body.appendChild(previewEl);
+    requestAnimationFrame(() => {
+        previewEl.classList.add('visible');
+    });
+}
+
+function showHeroPreview(heroName, heroIcon, hp) {
+    hideCardPreview();
+    previewEl = document.createElement('div');
+    previewEl.className = 'hero-preview card-preview';
+    previewEl.innerHTML = `
+        <div class="hero-preview-icon">${heroIcon}</div>
+        <div class="hero-preview-name">${heroName}</div>
+        <div class="hero-preview-hp">❤️ ${hp}</div>
+    `;
+    document.body.appendChild(previewEl);
+    requestAnimationFrame(() => {
+        previewEl.classList.add('visible');
+    });
+}
+
 function moveCardPreview(e) {
     // Plus besoin de suivre la souris - position fixe
 }
@@ -1144,6 +1186,10 @@ function renderHand(hand, energy) {
         // Toujours draggable
         el.draggable = true;
         
+        // Preview au survol
+        el.onmouseenter = (e) => showCardPreview(card, e);
+        el.onmouseleave = hideCardPreview;
+        
         el.onclick = (e) => { e.stopPropagation(); selectCard(i); };
         
         el.ondragstart = (e) => {
@@ -1155,6 +1201,7 @@ function renderHand(hand, energy) {
             dragged = { ...card, idx: i, tooExpensive };
             draggedFromField = null;
             el.classList.add('dragging');
+            hideCardPreview(); // Cacher le preview quand on drag
             
             // Highlight même si trop cher (pour montrer où ça irait)
             highlightValidSlots(card);
@@ -1184,6 +1231,11 @@ function renderOppHand(count) {
         el.className = 'opp-card-back';
         el.textContent = '🎴';
         el.style.zIndex = i + 1; // Z-index incrémental
+        
+        // Preview dos de carte au survol
+        el.onmouseenter = () => showCardBackPreview();
+        el.onmouseleave = hideCardPreview;
+        
         panel.appendChild(el);
     }
 }

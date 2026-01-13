@@ -827,6 +827,51 @@
             opacity: 1;
         }
         
+        /* Preview dos de carte */
+        .card-back-preview {
+            width: 100px;
+            height: 135px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #4a3a2a, #2a2015);
+            border: 3px solid #8b7355;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-back-inner {
+            font-size: 3em;
+        }
+        
+        /* Preview héros */
+        .hero-preview {
+            width: 120px;
+            height: 160px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(60,60,80,0.95), rgba(40,40,60,0.95));
+            border: 3px solid rgba(255,255,255,0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        .hero-preview-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        .hero-preview-name {
+            font-size: 1em;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+        .hero-preview-hp {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        
         /* Zone de drop pour sorts globaux */
         .global-spell-zone {
             position: absolute;
