@@ -770,12 +770,12 @@
         .spell-miss { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; animation: missAnim 0.8s ease-out forwards; }
         @keyframes missAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.5) translateY(-30px); opacity: 0; } }
         
-        /* Splash de dégâts avec image - durée 2 secondes */
+        /* Splash de dégâts avec image - 2x plus grand, durée 2 secondes */
         .damage-splash {
             position: fixed;
-            z-index: 1001;
-            width: 90px;
-            height: 90px;
+            z-index: 10001;
+            width: 180px;
+            height: 180px;
             pointer-events: none;
             display: flex;
             align-items: center;
@@ -794,24 +794,25 @@
         .damage-splash-text {
             position: relative;
             z-index: 2;
-            font-size: 1.8em;
+            font-size: 2.8em;
             font-weight: bold;
             color: #fff;
             text-shadow: 
-                -2px -2px 0 #000,
-                2px -2px 0 #000,
-                -2px 2px 0 #000,
-                2px 2px 0 #000,
-                0 0 10px rgba(0,0,0,0.9);
+                -3px -3px 0 #000,
+                3px -3px 0 #000,
+                -3px 3px 0 #000,
+                3px 3px 0 #000,
+                0 0 15px rgba(0,0,0,0.9),
+                0 0 25px rgba(0,0,0,0.7);
         }
         @keyframes damageSplashAnim { 
-            0% { opacity: 0; transform: scale(0.2); } 
-            5% { opacity: 1; transform: scale(1.3); } 
-            10% { transform: scale(0.95); }
-            15% { transform: scale(1.05); }
-            20% { transform: scale(1); }
-            80% { opacity: 1; transform: scale(1); }
-            100% { opacity: 0; transform: scale(1) translateY(-15px); } 
+            0% { opacity: 0; transform: scale(0.3); } 
+            8% { opacity: 1; transform: scale(1.4); } 
+            15% { transform: scale(0.9); }
+            22% { transform: scale(1.1); }
+            30% { transform: scale(1); }
+            75% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.05) translateY(-20px); } 
         }
         
         /* Animation de flamme pour les sorts */
@@ -837,40 +838,33 @@
             z-index: 1000;
             font-size: 2em;
             pointer-events: none;
-            transition: all 0.5s ease-out;
+            transition: all 0.3s ease-out;
             filter: drop-shadow(0 0 5px rgba(255,200,0,0.8));
         }
         
-        /* Créature qui charge (mêlée/vol) - animation fluide */
+        /* Créature qui charge (mêlée/vol) */
         .card.charging {
             z-index: 1000 !important;
-            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transition: transform 0.25s ease-in-out;
         }
         
-        /* Créature en retour après charge */
-        .card.returning {
-            z-index: 1000 !important;
-            transition: transform 0.3s ease-out;
-        }
-        
-        /* Impact au centre - plus visible */
+        /* Impact au centre */
         .combat-impact {
             position: fixed;
-            z-index: 1002;
-            width: 100px;
-            height: 100px;
+            z-index: 1001;
+            width: 80px;
+            height: 80px;
             pointer-events: none;
-            font-size: 3.5em;
+            font-size: 3em;
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: impactAnim 0.6s ease-out forwards;
+            animation: impactAnim 0.4s ease-out forwards;
         }
         @keyframes impactAnim {
-            0% { opacity: 0; transform: scale(0.2) rotate(0deg); }
-            25% { opacity: 1; transform: scale(1.8) rotate(15deg); }
-            50% { transform: scale(1.4) rotate(-10deg); }
-            100% { opacity: 0; transform: scale(2.2) rotate(5deg); }
+            0% { opacity: 0; transform: scale(0.3); }
+            30% { opacity: 1; transform: scale(1.5); }
+            100% { opacity: 0; transform: scale(2); }
         }
         
         .damage-number { position: fixed; z-index: 1001; font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 2px 2px 4px black; pointer-events: none; animation: damageFloat 1s ease-out forwards; }
