@@ -1257,40 +1257,88 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         mutualCombat = atk1TargetsAtk2 && atk2TargetsAtk1;
     }
     
-    // Animer les attaques
-    for (const atk of attacks) {
-        emitAnimation(room, 'attack', {
-            attacker: atk.attackerPlayer,
-            row: atk.attackerRow,
-            col: atk.attackerCol,
-            targetPlayer: atk.targetPlayer,
-            targetRow: atk.targetRow,
-            targetCol: atk.targetIsHero ? -1 : atk.targetCol,
-            isFlying: atk.isFlying,
-            isShooter: atk.isShooter
-        });
-    }
-    await sleep(400);
-    
+    // Déterminer le type de combat et émettre l'animation appropriée
     if (mutualCombat) {
-        // Combat mutuel - les deux créatures peuvent attaquer et se ciblent
         const atk1 = attacks[0];
         const atk2 = attacks[1];
         
+        const bothShooters = atk1.isShooter && atk2.isShooter;
+        const shooterVsFlyer = (atk1.isShooter && !atk2.isShooter) || (!atk1.isShooter && atk2.isShooter);
+        
+        const dmg1 = atk1.attacker.atk;
+        const dmg2 = atk2.attacker.atk;
+        
+        if (shooterVsFlyer) {
+            // Tireur vs non-tireur (volant ou mêlée)
+            const shooter = atk1.isShooter ? atk1 : atk2;
+            const other = atk1.isShooter ? atk2 : atk1;
+            const shooterDmg = shooter.attacker.atk;
+            const otherDmg = other.attacker.atk;
+            
+            emitAnimation(room, 'attack', {
+                combatType: 'shooter_vs_flyer',
+                attacker: shooter.attackerPlayer,
+                row: shooter.attackerRow,
+                col: shooter.attackerCol,
+                targetPlayer: other.attackerPlayer,
+                targetRow: other.attackerRow,
+                targetCol: other.attackerCol,
+                shooterDamage: shooterDmg,
+                flyerDamage: otherDmg,
+                isShooter: true
+            });
+        } else if (bothShooters) {
+            // Deux tireurs - projectiles croisés
+            emitAnimation(room, 'attack', {
+                combatType: 'shooter',
+                attacker: atk1.attackerPlayer,
+                row: atk1.attackerRow,
+                col: atk1.attackerCol,
+                targetPlayer: atk2.attackerPlayer,
+                targetRow: atk2.attackerRow,
+                targetCol: atk2.attackerCol,
+                damage: dmg1,
+                isShooter: true
+            });
+            emitAnimation(room, 'attack', {
+                combatType: 'shooter',
+                attacker: atk2.attackerPlayer,
+                row: atk2.attackerRow,
+                col: atk2.attackerCol,
+                targetPlayer: atk1.attackerPlayer,
+                targetRow: atk1.attackerRow,
+                targetCol: atk1.attackerCol,
+                damage: dmg2,
+                isShooter: true
+            });
+        } else {
+            // Combat mêlée mutuel - les deux vont au milieu
+            emitAnimation(room, 'attack', {
+                combatType: 'mutual_melee',
+                attacker: atk1.attackerPlayer,
+                row: atk1.attackerRow,
+                col: atk1.attackerCol,
+                targetPlayer: atk2.attackerPlayer,
+                targetRow: atk2.attackerRow,
+                targetCol: atk2.attackerCol,
+                damage1: dmg1, // Dégâts infligés par atk1
+                damage2: dmg2, // Dégâts infligés par atk2
+                isMutual: true
+            });
+        }
+        await sleep(600);
+        
+        // Maintenant résoudre les dégâts
         const bothInit = atk1.hasInitiative && atk2.hasInitiative;
         const neitherInit = !atk1.hasInitiative && !atk2.hasInitiative;
         
         if (bothInit || neitherInit) {
             // Dégâts simultanés
-            const dmg1 = atk1.attacker.atk;
-            const dmg2 = atk2.attacker.atk;
-            
             atk2.attacker.currentHp -= dmg1;
             atk1.attacker.currentHp -= dmg2;
             
             log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1} / -${dmg2})`, 'damage');
-            emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: dmg1 });
-            emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: dmg2 });
+            // Les griffures sont déjà affichées par l'animation de combat
             
             // Power
             if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
@@ -1309,23 +1357,15 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             const dmgFirst = first.attacker.atk;
             second.attacker.currentHp -= dmgFirst;
             log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-            emitAnimation(room, 'damage', { player: second.attackerPlayer, row: second.attackerRow, col: second.attackerCol, amount: dmgFirst });
             
             if (second.attacker.currentHp > 0) {
                 if (second.attacker.abilities.includes('power')) {
                     second.attacker.atk += 1;
                     log(`💪 ${second.attacker.name} gagne +1 ATK!`, 'buff');
                 }
-                // Second contre-attaque
                 const dmgSecond = second.attacker.atk;
                 first.attacker.currentHp -= dmgSecond;
                 log(`↩️ ${second.attacker.name} → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-                emitAnimation(room, 'damage', { player: first.attackerPlayer, row: first.attackerRow, col: first.attackerCol, amount: dmgSecond });
-                
-                if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                    first.attacker.atk += 1;
-                    log(`💪 ${first.attacker.name} gagne +1 ATK!`, 'buff');
-                }
             }
         }
     } else {
@@ -1336,12 +1376,29 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             if (!attackerCard || attackerCard.currentHp <= 0) continue;
             
             if (atk.targetIsHero) {
-                // Attaque le héros
+                // Attaque le héros - émettre l'animation avec les dégâts
                 const targetPlayer = room.gameState.players[atk.targetPlayer];
-                targetPlayer.hp -= attackerCard.atk;
-                log(`⚔️ ${attackerCard.name} → ${targetPlayer.heroName} (-${attackerCard.atk})`, 'damage');
-                emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk });
-                io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: attackerCard.atk });
+                const damage = attackerCard.atk;
+                
+                // Animation d'attaque (tireur = projectile, sinon = charge)
+                emitAnimation(room, 'attack', {
+                    combatType: atk.isShooter ? 'shooter' : 'solo',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetPlayer: atk.targetPlayer,
+                    targetRow: atk.targetRow,
+                    targetCol: -1,
+                    damage: damage,
+                    isFlying: atk.isFlying,
+                    isShooter: atk.isShooter
+                });
+                await sleep(500);
+                
+                targetPlayer.hp -= damage;
+                log(`⚔️ ${attackerCard.name} → ${targetPlayer.heroName} (-${damage})`, 'damage');
+                emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: damage });
+                io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: damage });
                 
                 if (targetPlayer.hp <= 0) {
                     emitStateToBoth(room);
@@ -1353,9 +1410,24 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 if (!targetCard || targetCard.currentHp <= 0) continue;
                 
                 const damage = attackerCard.atk;
+                
+                // Animation d'attaque avec dégâts (griffures intégrées)
+                emitAnimation(room, 'attack', {
+                    combatType: atk.isShooter ? 'shooter' : 'solo',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetPlayer: atk.targetPlayer,
+                    targetRow: atk.targetRow,
+                    targetCol: atk.targetCol,
+                    damage: damage,
+                    isFlying: atk.isFlying,
+                    isShooter: atk.isShooter
+                });
+                await sleep(500);
+                
                 targetCard.currentHp -= damage;
                 log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
-                emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
                 
                 // Power pour la cible
                 if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
@@ -1378,6 +1450,8 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     const riposteDmg = targetCard.atk;
                     attackerCard.currentHp -= riposteDmg;
                     log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDmg})`, 'damage');
+                    // Afficher les griffures de riposte
+                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDmg });
                     emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDmg });
                     
                     if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {

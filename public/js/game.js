@@ -90,42 +90,61 @@ async function handlePixiAttack(data) {
     const attackerOwner = data.attacker === myNum ? 'me' : 'opp';
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
     
-    // Tireur = projectile (ne se déplace pas)
-    if (data.isShooter) {
+    // Cas spécial : Tireur vs Volant (2 temps)
+    if (data.combatType === 'shooter_vs_flyer') {
+        await CombatAnimations.animateShooterVsFlyer({
+            shooter: { owner: attackerOwner, row: data.row, col: data.col },
+            flyer: { owner: targetOwner, row: data.targetRow, col: data.targetCol },
+            shooterDamage: data.shooterDamage,
+            flyerDamage: data.flyerDamage
+        });
+        return;
+    }
+    
+    // Combat mutuel mêlée = les deux se rencontrent au milieu (50/50)
+    if (data.combatType === 'mutual_melee' || data.isMutual) {
+        await CombatAnimations.animateMutualMelee({
+            attacker1: { owner: attackerOwner, row: data.row, col: data.col },
+            attacker2: { owner: targetOwner, row: data.targetRow, col: data.targetCol },
+            damage1: data.damage1 || data.attackerDamage,
+            damage2: data.damage2 || data.targetDamage
+        });
+        return;
+    }
+    
+    // Tireur simple = projectile avec griffure à l'impact
+    if (data.isShooter || data.combatType === 'shooter') {
         await CombatAnimations.animateProjectile({
             startOwner: attackerOwner,
             startRow: data.row,
             startCol: data.col,
             targetOwner: targetOwner,
             targetRow: data.targetRow,
-            targetCol: data.targetCol
+            targetCol: data.targetCol,
+            damage: data.damage
         });
         return;
     }
     
-    // Combat mutuel = les deux se rencontrent au milieu (50/50)
-    if (data.isMutual) {
-        await CombatAnimations.animateMutualAttack({
-            attacker1: { owner: attackerOwner, row: data.row, col: data.col },
-            attacker2: { owner: targetOwner, row: data.targetRow, col: data.targetCol }
-        });
-        return;
-    }
-    
-    // Attaque normale = la créature va vers la cible
-    await CombatAnimations.animateAttack({
+    // Attaque solo (volant ou mêlée) = charge vers la cible avec griffure
+    await CombatAnimations.animateSoloAttack({
         attackerOwner: attackerOwner,
         attackerRow: data.row,
         attackerCol: data.col,
         targetOwner: targetOwner,
         targetRow: data.targetRow,
         targetCol: data.targetCol,
+        damage: data.damage,
         isFlying: data.isFlying
     });
 }
 
 async function handlePixiDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
+    
+    // Si les griffures ont déjà été affichées par l'animation de combat, skip
+    if (data.skipScratch) return;
+    
     await CombatAnimations.animateDamage({
         owner: owner,
         row: data.row,
