@@ -431,13 +431,18 @@ async function startResolution(room) {
         }
     }
     
-    // Émettre l'animation de pioche
+    // D'abord mettre à jour l'état (la carte apparaît dans la main)
+    emitStateToBoth(room);
+    
+    // Petit délai pour que le DOM soit mis à jour
+    await sleep(100);
+    
+    // Puis émettre l'animation de pioche
     emitAnimation(room, 'draw', { cards: drawnCards });
     log('📦 Les joueurs piochent une carte', 'action');
-    await sleep(800);
+    await sleep(700);
     
-    emitStateToBoth(room);
-    await sleep(500);
+    await sleep(300);
     startNewTurn(room);
 }
 

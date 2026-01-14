@@ -3,8 +3,6 @@
  * Animations style Hearthstone / Magic Arena
  */
 
-console.log('📜 animations.js chargé');
-
 // Variables globales
 let pixiApp = null;
 let pixiReady = false;
@@ -13,7 +11,7 @@ let pixiReady = false;
 const ANIM_CONFIG = {
     cardWidth: 90,
     cardHeight: 130,
-    drawDuration: 800,
+    drawDuration: 600,
     glowColor: 0xffd700,
     cardBackColor: 0x4a3728,
     cardBorderColor: 0x8b7355
@@ -23,20 +21,13 @@ const ANIM_CONFIG = {
  * Initialise PixiJS 8.x (syntaxe async)
  */
 async function initPixiApp() {
-    console.log('🔧 initPixiApp() appelé');
-    
-    if (pixiReady) {
-        console.log('⚠️ PixiJS déjà initialisé');
-        return;
-    }
+    if (pixiReady) return;
     
     try {
         if (typeof PIXI === 'undefined') {
-            console.error('❌ PIXI est undefined !');
+            console.error('❌ PIXI non chargé');
             return;
         }
-        
-        console.log('✅ PIXI existe, version:', PIXI.VERSION);
         
         // PixiJS 8.x - Création async
         pixiApp = new PIXI.Application();
@@ -50,11 +41,7 @@ async function initPixiApp() {
             autoDensity: true
         });
         
-        console.log('✅ PIXI.Application initialisée');
-        console.log('✅ pixiApp.canvas:', pixiApp.canvas);
-        console.log('✅ pixiApp.stage:', pixiApp.stage);
-        
-        // Configurer le canvas (PixiJS 8 utilise .canvas au lieu de .view)
+        // Configurer le canvas
         const canvas = pixiApp.canvas;
         canvas.style.position = 'fixed';
         canvas.style.top = '0';
@@ -64,9 +51,7 @@ async function initPixiApp() {
         canvas.style.pointerEvents = 'none';
         canvas.style.zIndex = '9999';
         
-        // Ajouter au body
         document.body.appendChild(canvas);
-        console.log('✅ Canvas ajouté au body');
         
         // Redimensionnement
         window.addEventListener('resize', () => {
@@ -76,11 +61,10 @@ async function initPixiApp() {
         });
         
         pixiReady = true;
-        console.log('🎮 PixiJS 8 initialisé avec succès !');
+        console.log('🎮 PixiJS initialisé');
         
     } catch (e) {
-        console.error('❌ Erreur initialisation PixiJS:', e);
-        console.error(e.stack);
+        console.error('❌ Erreur PixiJS:', e);
     }
 }
 
@@ -88,8 +72,6 @@ async function initPixiApp() {
  * Crée une carte graphique (syntaxe PixiJS 8.x)
  */
 function createAnimCard(card, showBack = true) {
-    console.log('🃏 createAnimCard() - showBack:', showBack, 'card:', card?.name);
-    
     const container = new PIXI.Container();
     
     // Ombre
@@ -156,24 +138,33 @@ function createAnimCard(card, showBack = true) {
             name.y = ANIM_CONFIG.cardHeight - 30;
             container.addChild(name);
         }
+        
+        // Stats pour créatures
+        if (card?.type === 'creature' && card.atk !== undefined) {
+            const stats = new PIXI.Text({
+                text: `⚔${card.atk} ❤${card.hp}`,
+                style: { fontSize: 12, fill: 0xffffff, fontWeight: 'bold' }
+            });
+            stats.anchor.set(0.5);
+            stats.x = ANIM_CONFIG.cardWidth / 2;
+            stats.y = ANIM_CONFIG.cardHeight - 12;
+            container.addChild(stats);
+        }
     }
     
     container.addChildAt(cardBg, 0);
     container.pivot.set(ANIM_CONFIG.cardWidth / 2, ANIM_CONFIG.cardHeight / 2);
     
-    console.log('🃏 Carte créée');
     return container;
 }
 
 /**
- * Crée un effet de glow (syntaxe PixiJS 8.x)
+ * Crée un effet de glow
  */
 function createAnimGlow(color = ANIM_CONFIG.glowColor) {
     const glow = new PIXI.Graphics();
     glow.roundRect(-15, -15, ANIM_CONFIG.cardWidth + 30, ANIM_CONFIG.cardHeight + 30, 14);
     glow.fill({ color: color, alpha: 0.5 });
-    
-    // PixiJS 8 - BlurFilter
     glow.filters = [new PIXI.BlurFilter({ strength: 12 })];
     return glow;
 }
@@ -186,7 +177,7 @@ function easeOutBack(t) {
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-// Bézier
+// Bézier quadratique
 function bezierQuad(t, p0, p1, p2) {
     return {
         x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x,
@@ -194,13 +185,12 @@ function bezierQuad(t, p0, p1, p2) {
     };
 }
 
-// Position DOM
-function getElementPos(selector) {
+/**
+ * Obtient la position du centre d'un élément DOM
+ */
+function getElementCenter(selector) {
     const el = document.querySelector(selector);
-    if (!el) {
-        console.warn('⚠️ Element non trouvé:', selector);
-        return null;
-    }
+    if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
@@ -209,46 +199,47 @@ function getElementPos(selector) {
  * Animation de pioche
  */
 async function animateCardDraw(card, owner, handIndex) {
-    console.log('🎬 animateCardDraw() appelé:', owner, card?.name, 'index:', handIndex);
-    console.log('🎬 pixiReady:', pixiReady, 'pixiApp:', !!pixiApp);
-    
     if (!pixiReady || !pixiApp) {
-        console.warn('⚠️ PixiJS non prêt, tentative d\'init...');
         await initPixiApp();
-        if (!pixiReady) {
-            console.error('❌ Impossible d\'initialiser PixiJS');
+        if (!pixiReady) return;
+    }
+    
+    // Position de départ (deck)
+    const deckSelector = owner === 'me' ? '#me-deck-stack' : '#opp-deck-stack';
+    const deckPos = getElementCenter(deckSelector);
+    
+    if (!deckPos) return;
+    
+    // Trouver la carte dans la main et la cacher temporairement
+    const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
+    const handEl = document.querySelector(handSelector);
+    const cards = handEl?.querySelectorAll('.card');
+    const targetCard = cards?.[cards.length - 1]; // La dernière carte ajoutée
+    
+    let handPos;
+    
+    if (targetCard) {
+        // Cacher la carte pendant l'animation
+        targetCard.style.opacity = '0';
+        targetCard.style.transition = 'none';
+        
+        const rect = targetCard.getBoundingClientRect();
+        handPos = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+    } else {
+        // Fallback au centre de la main
+        const handRect = handEl?.getBoundingClientRect();
+        if (handRect) {
+            handPos = {
+                x: handRect.left + handRect.width / 2,
+                y: handRect.top + handRect.height / 2
+            };
+        } else {
             return;
         }
     }
-    
-    // Position du deck
-    const deckSelector = `#${owner}-deck-stack`;
-    console.log('🔍 Recherche deck:', deckSelector);
-    const deckPos = getElementPos(deckSelector);
-    
-    if (!deckPos) {
-        console.error('❌ Position du deck non trouvée pour:', owner);
-        return;
-    }
-    
-    console.log('📍 Position deck:', deckPos);
-    
-    // Position d'arrivée
-    let handPos;
-    if (owner === 'me') {
-        handPos = { 
-            x: window.innerWidth / 2 + (handIndex - 4) * 85, 
-            y: window.innerHeight - 100 
-        };
-    } else {
-        handPos = { 
-            x: window.innerWidth / 2 + (handIndex - 4) * 50, 
-            y: 100 
-        };
-    }
-    
-    console.log('📍 Position main:', handPos);
-    console.log('🚀 Démarrage animation...');
     
     // Container principal
     const mainContainer = new PIXI.Container();
@@ -256,81 +247,78 @@ async function animateCardDraw(card, owner, handIndex) {
     mainContainer.y = deckPos.y;
     pixiApp.stage.addChild(mainContainer);
     
-    console.log('✅ Container ajouté au stage, enfants:', pixiApp.stage.children.length);
-    
     // Glow
     const glow = createAnimGlow();
     glow.alpha = 0;
     mainContainer.addChild(glow);
     
-    // Carte
+    // Carte (dos pour commencer)
     let cardSprite = createAnimCard(card, true);
     mainContainer.addChild(cardSprite);
     
     // État initial
-    mainContainer.scale.set(0.7);
+    const startScale = owner === 'me' ? 0.8 : 0.5;
+    const endScale = owner === 'me' ? 1.0 : 0.5;
+    mainContainer.scale.set(startScale);
     mainContainer.alpha = 0;
     
-    // Point de contrôle
+    // Point de contrôle pour la courbe (arc vers le centre)
     const controlPoint = {
         x: (deckPos.x + handPos.x) / 2,
-        y: Math.min(deckPos.y, handPos.y) - 100
+        y: Math.min(deckPos.y, handPos.y) - 80
     };
     
     // Animation
-    let startTime = performance.now();
+    const startTime = performance.now();
     let hasFlipped = false;
-    let frameCount = 0;
     
     const tickerCallback = (ticker) => {
-        frameCount++;
         const elapsed = performance.now() - startTime;
         const progress = Math.min(elapsed / ANIM_CONFIG.drawDuration, 1);
-        
-        if (frameCount <= 3) {
-            console.log(`🎞️ Frame ${frameCount}: progress=${progress.toFixed(2)}`);
-        }
-        
-        // Position
         const easedProgress = easeOutCubic(progress);
+        
+        // Position sur la courbe de Bézier
         const pos = bezierQuad(easedProgress, deckPos, controlPoint, handPos);
         mainContainer.x = pos.x;
         mainContainer.y = pos.y;
         
-        // Alpha
+        // Alpha (apparition rapide)
         mainContainer.alpha = Math.min(progress * 4, 1);
         
-        // Scale
+        // Scale avec effet "pop"
         const scaleProgress = easeOutBack(Math.min(progress * 1.3, 1));
-        const baseScale = owner === 'me' ? 1.0 : 0.6;
-        mainContainer.scale.set(0.5 + scaleProgress * (baseScale - 0.5));
+        mainContainer.scale.set(startScale + scaleProgress * (endScale - startScale));
         
-        // Rotation
-        mainContainer.rotation = Math.sin(progress * Math.PI) * 0.12;
+        // Légère rotation
+        mainContainer.rotation = Math.sin(progress * Math.PI) * 0.1;
         
-        // Glow
-        glow.alpha = Math.sin(progress * Math.PI) * 0.8;
+        // Glow qui pulse
+        glow.alpha = Math.sin(progress * Math.PI) * 0.6;
         
-        // Flip
+        // Flip à mi-parcours (seulement pour le joueur, pas l'adversaire)
         if (owner === 'me' && progress > 0.5 && !hasFlipped && card) {
             hasFlipped = true;
-            console.log('🔄 Flip de la carte');
             mainContainer.removeChild(cardSprite);
             cardSprite = createAnimCard(card, false);
             mainContainer.addChild(cardSprite);
         }
         
-        // Fin
+        // Fin de l'animation
         if (progress >= 1) {
-            console.log('✅ Animation terminée, démarrage fade out');
-            let fadeStart = performance.now();
+            // Révéler la vraie carte dans la main
+            if (targetCard) {
+                targetCard.style.transition = 'opacity 0.15s ease';
+                targetCard.style.opacity = '1';
+            }
+            
+            // Fade out rapide de l'animation
+            const fadeStart = performance.now();
             
             const fadeCallback = (ticker) => {
-                const fadeProgress = (performance.now() - fadeStart) / 300;
+                const fadeProgress = (performance.now() - fadeStart) / 150;
                 mainContainer.alpha = 1 - fadeProgress;
                 
                 if (fadeProgress >= 1) {
-                    console.log('✅ Fade out terminé, nettoyage');
                     pixiApp.ticker.remove(fadeCallback);
                     pixiApp.stage.removeChild(mainContainer);
                     mainContainer.destroy({ children: true });
@@ -342,7 +330,6 @@ async function animateCardDraw(card, owner, handIndex) {
         }
     };
     
-    console.log('▶️ Ajout du ticker');
     pixiApp.ticker.add(tickerCallback);
 }
 
@@ -351,12 +338,10 @@ async function animateCardDraw(card, owner, handIndex) {
  */
 const GameAnimations = {
     init: async function() {
-        console.log('🔧 GameAnimations.init() appelé');
         await initPixiApp();
     },
     
     animateDraw: async function(card, owner, handIndex = 0) {
-        console.log('🎬 GameAnimations.animateDraw() appelé');
         await animateCardDraw(card, owner, handIndex);
     },
     
@@ -373,8 +358,5 @@ const GameAnimations = {
 
 // Auto-init
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('📄 DOMContentLoaded - init GameAnimations');
     await initPixiApp();
 });
-
-console.log('📜 animations.js fin de chargement');
