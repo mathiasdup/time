@@ -1,12 +1,6 @@
 /**
  * Combat Animations System - Style Magic Arena / Hearthstone
- * Animations fluides avec PixiJS
- * 
- * Types de combat :
- * - Tireur : projectile → griffure à l'impact
- * - Tireur vs Volant : projectile (griffure) puis charge du volant (griffure)
- * - Mêlée mutuel : entrechoc au milieu + griffures
- * - Solo (volant/mêlée) : charge vers cible + griffure
+ * Version fonctionnelle avec DOM + Canvas
  */
 
 class CombatAnimationSystem {
@@ -15,22 +9,19 @@ class CombatAnimationSystem {
         this.container = null;
         this.initialized = false;
         
-        // Timing des animations (en ms)
         this.TIMINGS = {
-            PROJECTILE_FLIGHT: 350,      // Durée vol du projectile
-            ATTACK_MOVE: 280,            // Mouvement vers la cible
-            ATTACK_RETURN: 220,          // Retour après attaque
-            SCRATCH_DISPLAY: 1600,       // Durée affichage griffures
-            IMPACT_DURATION: 350,        // Durée effet d'impact
-            BETWEEN_PHASES: 150,         // Délai entre phases d'animation
-            CLASH_PAUSE: 80,             // Pause lors de l'entrechoc
+            PROJECTILE_FLIGHT: 400,
+            ATTACK_MOVE: 300,
+            ATTACK_RETURN: 250,
+            SCRATCH_DISPLAY: 2000,
+            BETWEEN_PHASES: 200,
         };
     }
     
     async init() {
         if (this.initialized) return;
         
-        // Créer le conteneur canvas
+        // Container pour les animations canvas
         this.container = document.createElement('div');
         this.container.id = 'combat-animation-layer';
         this.container.style.cssText = `
@@ -45,19 +36,21 @@ class CombatAnimationSystem {
         document.body.appendChild(this.container);
         
         // Initialiser PixiJS
-        this.app = new PIXI.Application();
-        await this.app.init({
-            width: window.innerWidth,
-            height: window.innerHeight,
-            backgroundAlpha: 0,
-            antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true,
-        });
-        
-        this.container.appendChild(this.app.canvas);
-        
-        window.addEventListener('resize', () => this.handleResize());
+        try {
+            this.app = new PIXI.Application();
+            await this.app.init({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                backgroundAlpha: 0,
+                antialias: true,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+            });
+            this.container.appendChild(this.app.canvas);
+            window.addEventListener('resize', () => this.handleResize());
+        } catch (e) {
+            console.warn('PixiJS init failed, using DOM fallback', e);
+        }
         
         this.initialized = true;
         console.log('✅ Combat Animation System ready');
@@ -76,12 +69,8 @@ class CombatAnimationSystem {
         return slot?.querySelector('.card');
     }
     
-    getSlotElement(owner, row, col) {
-        return document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${row}"][data-col="${col}"]`);
-    }
-    
     getSlotCenter(owner, row, col) {
-        const slot = this.getSlotElement(owner, row, col);
+        const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${row}"][data-col="${col}"]`);
         if (!slot) return null;
         const rect = slot.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -98,314 +87,113 @@ class CombatAnimationSystem {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     
-    easeOutBack(t) {
-        const c1 = 1.70158;
-        const c3 = c1 + 1;
-        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-    }
-    
-    easeOutQuad(t) {
-        return t * (2 - t);
-    }
-    
-    // ==================== ANIMATION DE GRIFFURE (SCRATCH) ====================
+    // ==================== ANIMATION DE GRIFFURE/DÉGÂTS (DOM) ====================
     
     /**
-     * Crée l'animation de griffure sur une carte/héros
-     * @param {number} x - Position X
-     * @param {number} y - Position Y
-     * @param {number} damage - Montant des dégâts
+     * Affiche une animation de griffure avec le nombre de dégâts
      */
-    createScratchEffect(x, y, damage) {
-        const container = new PIXI.Container();
-        container.position.set(x, y);
-        this.app.stage.addChild(container);
+    showScratchDamage(x, y, damage) {
+        // Conteneur principal
+        const container = document.createElement('div');
+        container.className = 'scratch-damage-container';
+        container.style.cssText = `
+            position: fixed;
+            left: ${x}px;
+            top: ${y}px;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            pointer-events: none;
+        `;
         
-        // Créer 3 griffures rouges
-        const scratches = new PIXI.Graphics();
+        // SVG des griffures
+        const scratchSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        scratchSvg.setAttribute('width', '120');
+        scratchSvg.setAttribute('height', '120');
+        scratchSvg.setAttribute('viewBox', '-60 -60 120 120');
+        scratchSvg.style.cssText = `
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        `;
         
-        // Griffure 1 - principale (plus épaisse)
-        scratches.moveTo(-20, -35);
-        scratches.bezierCurveTo(-15, -10, 10, 10, 20, 35);
-        scratches.stroke({ width: 6, color: 0xff2222, cap: 'round' });
+        // 3 griffures rouges
+        const paths = [
+            'M-30,-45 Q-20,-15 -10,15 T10,50',
+            'M-5,-50 Q5,-20 0,10 T5,55',
+            'M20,-40 Q30,-10 25,20 T30,45'
+        ];
         
-        // Griffure 2
-        scratches.moveTo(-5, -38);
-        scratches.bezierCurveTo(0, -15, 5, 15, 10, 38);
-        scratches.stroke({ width: 5, color: 0xff3333, cap: 'round' });
-        
-        // Griffure 3
-        scratches.moveTo(-35, -25);
-        scratches.bezierCurveTo(-25, 0, 20, 5, 30, 30);
-        scratches.stroke({ width: 4, color: 0xff4444, cap: 'round' });
-        
-        // Highlights blancs pour effet de profondeur
-        const highlights = new PIXI.Graphics();
-        highlights.moveTo(-18, -33);
-        highlights.bezierCurveTo(-13, -8, 12, 12, 22, 33);
-        highlights.stroke({ width: 2, color: 0xffaaaa, alpha: 0.6, cap: 'round' });
-        
-        container.addChild(scratches);
-        container.addChild(highlights);
-        
-        // Particules de sang/énergie
-        const particles = [];
-        for (let i = 0; i < 10; i++) {
-            const particle = new PIXI.Graphics();
-            particle.circle(0, 0, 2 + Math.random() * 4);
-            particle.fill({ color: 0xff3333, alpha: 0.8 });
-            particle.position.set(
-                (Math.random() - 0.5) * 50,
-                (Math.random() - 0.5) * 70
-            );
-            particle.vx = (Math.random() - 0.5) * 5;
-            particle.vy = (Math.random() - 0.5) * 5;
-            container.addChild(particle);
-            particles.push(particle);
-        }
-        
-        // Texte des dégâts - rouge vif sans contour noir
-        const damageText = new PIXI.Text({
-            text: `-${damage}`,
-            style: {
-                fontFamily: 'Arial Black, Arial, sans-serif',
-                fontSize: 48,
-                fontWeight: 'bold',
-                fill: 0xff0000,
-                dropShadow: {
-                    color: 0x880000,
-                    blur: 3,
-                    distance: 2,
-                    angle: Math.PI / 4,
-                    alpha: 0.6
-                }
-            }
+        paths.forEach((d, i) => {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            path.setAttribute('stroke', i === 0 ? '#ff0000' : i === 1 ? '#dd0000' : '#bb0000');
+            path.setAttribute('stroke-width', 6 - i);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke-linecap', 'round');
+            path.style.filter = 'drop-shadow(0 0 3px rgba(255,0,0,0.8))';
+            scratchSvg.appendChild(path);
         });
-        damageText.anchor.set(0.5);
-        damageText.position.set(0, -55);
-        container.addChild(damageText);
         
-        // Animation
-        container.scale.set(0.3);
-        container.alpha = 0;
+        container.appendChild(scratchSvg);
         
-        const duration = this.TIMINGS.SCRATCH_DISPLAY;
-        const startTime = performance.now();
+        // Nombre de dégâts
+        const damageText = document.createElement('div');
+        damageText.className = 'scratch-damage-number';
+        damageText.textContent = `-${damage}`;
+        damageText.style.cssText = `
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Arial Black', Arial, sans-serif;
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff0000;
+            text-shadow: 
+                0 0 10px rgba(255,0,0,0.8),
+                2px 2px 4px rgba(0,0,0,0.5);
+            animation: damageNumberPop 0.3s ease-out;
+        `;
+        container.appendChild(damageText);
         
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = elapsed / duration;
-            
-            if (progress < 0.12) {
-                // Apparition rapide avec overshoot
-                const p = progress / 0.12;
-                const scale = this.easeOutBack(p);
-                container.scale.set(0.3 + 0.8 * scale);
-                container.alpha = p;
-            } else if (progress < 0.75) {
-                // Stable
-                container.scale.set(1.1);
-                container.alpha = 1;
-                scratches.rotation = Math.sin(elapsed * 0.008) * 0.02;
-            } else {
-                // Fade out en montant
-                const p = (progress - 0.75) / 0.25;
-                container.alpha = 1 - p;
-                container.y = y - 35 * p;
-                container.scale.set(1.1 - 0.15 * p);
-            }
-            
-            // Animer les particules
-            particles.forEach(particle => {
-                particle.x += particle.vx;
-                particle.y += particle.vy;
-                particle.vy += 0.15; // gravité légère
-                particle.alpha = Math.max(0, 0.8 - progress * 1.2);
-            });
-            
-            // Texte monte légèrement
-            damageText.y = -55 - progress * 20;
-            
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                this.app.stage.removeChild(container);
-                container.destroy({ children: true });
-            }
-        };
-        
-        requestAnimationFrame(animate);
-    }
-    
-    // ==================== EFFET D'IMPACT ====================
-    
-    createImpactEffect(x, y, type = 'default') {
-        const container = new PIXI.Container();
-        container.position.set(x, y);
-        this.app.stage.addChild(container);
-        
-        if (type === 'projectile') {
-            // Impact de projectile - étoile dorée
-            const burst = new PIXI.Graphics();
-            for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const outerRadius = 25;
-                const innerRadius = 10;
-                
-                if (i === 0) {
-                    burst.moveTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
-                } else {
-                    burst.lineTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
-                }
-                const midAngle = angle + Math.PI / 8;
-                burst.lineTo(Math.cos(midAngle) * innerRadius, Math.sin(midAngle) * innerRadius);
-            }
-            burst.closePath();
-            burst.fill({ color: 0xffdd00, alpha: 0.9 });
-            container.addChild(burst);
-            
-            // Shockwave
-            const ring = new PIXI.Graphics();
-            ring.circle(0, 0, 15);
-            ring.stroke({ width: 3, color: 0xffaa00, alpha: 0.7 });
-            container.addChild(ring);
-        } else {
-            // Impact par défaut - éclats
-            for (let i = 0; i < 12; i++) {
-                const spark = new PIXI.Graphics();
-                const angle = (Math.PI * 2 * i) / 12;
-                const length = 15 + Math.random() * 12;
-                
-                spark.moveTo(0, 0);
-                spark.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
-                spark.stroke({ width: 3, color: 0xffdd00, cap: 'round' });
-                container.addChild(spark);
-            }
-            
-            const ring = new PIXI.Graphics();
-            ring.circle(0, 0, 20);
-            ring.stroke({ width: 4, color: 0xffaa00 });
-            container.addChild(ring);
+        // Particules de sang
+        for (let i = 0; i < 8; i++) {
+            const particle = document.createElement('div');
+            const angle = (i / 8) * Math.PI * 2;
+            const distance = 30 + Math.random() * 20;
+            particle.style.cssText = `
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: ${6 + Math.random() * 6}px;
+                height: ${6 + Math.random() * 6}px;
+                background: #ff3333;
+                border-radius: 50%;
+                transform: translate(-50%, -50%);
+                animation: bloodParticle 0.6s ease-out forwards;
+                --tx: ${Math.cos(angle) * distance}px;
+                --ty: ${Math.sin(angle) * distance}px;
+            `;
+            container.appendChild(particle);
         }
         
-        // Animation
-        const duration = this.TIMINGS.IMPACT_DURATION;
-        const startTime = performance.now();
+        document.body.appendChild(container);
         
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = elapsed / duration;
-            
-            container.scale.set(1 + progress * 1.5);
-            container.alpha = 1 - progress;
-            container.rotation = progress * 0.3;
-            
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                this.app.stage.removeChild(container);
-                container.destroy({ children: true });
-            }
-        };
+        // Animation d'entrée
+        container.style.animation = 'scratchAppear 0.15s ease-out';
         
-        requestAnimationFrame(animate);
-    }
-    
-    // ==================== EFFET DE CHOC (CLASH) ====================
-    
-    createClashEffect(x, y) {
-        const container = new PIXI.Container();
-        container.position.set(x, y);
-        this.app.stage.addChild(container);
-        
-        // Grande étoile d'énergie
-        const star = new PIXI.Graphics();
-        for (let i = 0; i < 12; i++) {
-            const angle = (i / 12) * Math.PI * 2;
-            const outerRadius = 40;
-            const innerRadius = 18;
-            
-            if (i === 0) {
-                star.moveTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
-            } else {
-                star.lineTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
-            }
-            const midAngle = angle + Math.PI / 12;
-            star.lineTo(Math.cos(midAngle) * innerRadius, Math.sin(midAngle) * innerRadius);
-        }
-        star.closePath();
-        star.fill({ color: 0xffdd00, alpha: 0.9 });
-        container.addChild(star);
-        
-        // Cercle de shockwave
-        const shockwave = new PIXI.Graphics();
-        shockwave.circle(0, 0, 25);
-        shockwave.stroke({ width: 5, color: 0xffffff, alpha: 0.8 });
-        container.addChild(shockwave);
-        
-        // Étincelles
-        const sparks = [];
-        for (let i = 0; i < 18; i++) {
-            const spark = new PIXI.Graphics();
-            spark.circle(0, 0, 3 + Math.random() * 3);
-            spark.fill({ color: i % 2 === 0 ? 0xffff00 : 0xff8800 });
-            
-            const angle = (i / 18) * Math.PI * 2;
-            spark.vx = Math.cos(angle) * (4 + Math.random() * 3);
-            spark.vy = Math.sin(angle) * (4 + Math.random() * 3);
-            container.addChild(spark);
-            sparks.push(spark);
-        }
-        
-        // Animation
-        container.scale.set(0.2);
-        const duration = 450;
-        const startTime = performance.now();
-        
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = elapsed / duration;
-            
-            if (progress < 0.2) {
-                // Expansion rapide
-                const p = progress / 0.2;
-                container.scale.set(0.2 + 1.0 * this.easeOutBack(p));
-                container.alpha = 1;
-            } else {
-                // Fade out
-                const p = (progress - 0.2) / 0.8;
-                container.scale.set(1.2 + p * 0.5);
-                container.alpha = 1 - p;
-            }
-            
-            star.rotation = progress * Math.PI;
-            
-            shockwave.scale.set(1 + progress * 3);
-            shockwave.alpha = 0.8 * (1 - progress);
-            
-            sparks.forEach(spark => {
-                spark.x += spark.vx;
-                spark.y += spark.vy;
-                spark.vy += 0.2;
-                spark.alpha = 1 - progress;
-            });
-            
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                this.app.stage.removeChild(container);
-                container.destroy({ children: true });
-            }
-        };
-        
-        requestAnimationFrame(animate);
+        // Suppression après l'animation
+        setTimeout(() => {
+            container.style.animation = 'scratchDisappear 0.4s ease-out forwards';
+            setTimeout(() => container.remove(), 400);
+        }, this.TIMINGS.SCRATCH_DISPLAY);
     }
     
     // ==================== ANIMATION DE PROJECTILE ====================
     
     /**
-     * Anime un projectile + griffure à l'impact
-     * @returns {Promise}
+     * Anime un projectile qui part d'une carte vers une cible
      */
     async animateProjectile(data) {
         const { startOwner, startRow, startCol, targetOwner, targetRow, targetCol, damage } = data;
@@ -417,46 +205,30 @@ class CombatAnimationSystem {
         
         if (!startPos || !endPos) return;
         
-        // Créer le projectile
-        const projectile = new PIXI.Container();
+        // Créer le projectile (DOM)
+        const projectile = document.createElement('div');
+        projectile.className = 'combat-projectile';
+        projectile.innerHTML = `
+            <div class="projectile-core"></div>
+            <div class="projectile-trail"></div>
+            <div class="projectile-glow"></div>
+        `;
         
-        // Trainée lumineuse
-        const trail = new PIXI.Graphics();
-        trail.moveTo(-35, 0);
-        trail.lineTo(0, 0);
-        trail.stroke({ width: 6, color: 0xffaa00, alpha: 0.6 });
-        trail.moveTo(-55, 0);
-        trail.lineTo(-35, 0);
-        trail.stroke({ width: 4, color: 0xff6600, alpha: 0.3 });
-        projectile.addChild(trail);
-        
-        // Corps (flèche d'énergie)
-        const arrow = new PIXI.Graphics();
-        arrow.moveTo(18, 0);
-        arrow.lineTo(0, -6);
-        arrow.lineTo(0, 6);
-        arrow.closePath();
-        arrow.fill({ color: 0xffdd44 });
-        arrow.circle(0, 0, 7);
-        arrow.fill({ color: 0xffff88 });
-        arrow.circle(0, 0, 3);
-        arrow.fill({ color: 0xffffff });
-        projectile.addChild(arrow);
-        
-        // Glow
-        const glow = new PIXI.Graphics();
-        glow.circle(0, 0, 14);
-        glow.fill({ color: 0xffaa00, alpha: 0.35 });
-        projectile.addChildAt(glow, 0);
-        
-        // Angle vers la cible
+        // Calculer l'angle
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
-        projectile.rotation = angle;
-        projectile.position.set(startPos.x, startPos.y);
         
-        this.app.stage.addChild(projectile);
+        projectile.style.cssText = `
+            position: fixed;
+            left: ${startPos.x}px;
+            top: ${startPos.y}px;
+            transform: translate(-50%, -50%) rotate(${angle}rad);
+            z-index: 10001;
+            pointer-events: none;
+        `;
         
-        // Animation du projectile
+        document.body.appendChild(projectile);
+        
+        // Animation du vol
         const duration = this.TIMINGS.PROJECTILE_FLIGHT;
         const startTime = performance.now();
         
@@ -466,24 +238,23 @@ class CombatAnimationSystem {
                 const progress = Math.min(elapsed / duration, 1);
                 
                 // Easing
-                const eased = 1 - Math.pow(1 - progress, 2.5);
+                const eased = 1 - Math.pow(1 - progress, 3);
                 
-                projectile.x = startPos.x + (endPos.x - startPos.x) * eased;
-                projectile.y = startPos.y + (endPos.y - startPos.y) * eased;
+                const currentX = startPos.x + (endPos.x - startPos.x) * eased;
+                const currentY = startPos.y + (endPos.y - startPos.y) * eased;
                 
-                // Pulsation du glow
-                glow.scale.set(1 + Math.sin(progress * Math.PI * 5) * 0.15);
+                projectile.style.left = currentX + 'px';
+                projectile.style.top = currentY + 'px';
                 
                 if (progress < 1) {
                     requestAnimationFrame(animate);
                 } else {
-                    this.app.stage.removeChild(projectile);
-                    projectile.destroy({ children: true });
+                    projectile.remove();
                     
-                    // IMPACT + GRIFFURE
-                    this.createImpactEffect(endPos.x, endPos.y, 'projectile');
+                    // Impact + griffures
+                    this.showImpactEffect(endPos.x, endPos.y);
                     if (damage !== undefined) {
-                        this.createScratchEffect(endPos.x, endPos.y, damage);
+                        this.showScratchDamage(endPos.x, endPos.y, damage);
                     }
                     
                     resolve();
@@ -493,50 +264,28 @@ class CombatAnimationSystem {
         });
     }
     
-    // ==================== ANIMATION DE CHARGE (MOUVEMENT) ====================
-    
     /**
-     * Anime une carte qui charge vers une cible
-     * @returns {Promise}
+     * Effet d'impact à l'arrivée du projectile
      */
-    async animateCharge(cardElement, targetPos, returnToOrigin = true) {
-        if (!cardElement) return;
-        
-        const rect = cardElement.getBoundingClientRect();
-        const startX = rect.left + rect.width / 2;
-        const startY = rect.top + rect.height / 2;
-        
-        const dx = targetPos.x - startX;
-        const dy = targetPos.y - startY;
-        
-        return new Promise(resolve => {
-            // Phase 1: Charge vers la cible
-            cardElement.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
-            cardElement.style.transform = `translate(${dx}px, ${dy}px) scale(1.12)`;
-            cardElement.style.zIndex = '1000';
-            
-            setTimeout(() => {
-                if (returnToOrigin) {
-                    // Phase 2: Retour
-                    cardElement.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
-                    cardElement.style.transform = 'translate(0, 0) scale(1)';
-                    
-                    setTimeout(() => {
-                        cardElement.style.transition = '';
-                        cardElement.style.zIndex = '';
-                        resolve();
-                    }, this.TIMINGS.ATTACK_RETURN);
-                } else {
-                    resolve();
-                }
-            }, this.TIMINGS.ATTACK_MOVE);
-        });
+    showImpactEffect(x, y) {
+        const impact = document.createElement('div');
+        impact.className = 'projectile-impact';
+        impact.style.cssText = `
+            position: fixed;
+            left: ${x}px;
+            top: ${y}px;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            pointer-events: none;
+        `;
+        document.body.appendChild(impact);
+        setTimeout(() => impact.remove(), 500);
     }
     
-    // ==================== ATTAQUE SOLO (volant/mêlée seul) ====================
+    // ==================== ANIMATION DE CHARGE (solo) ====================
     
     /**
-     * Une créature charge vers sa cible et inflige des dégâts
+     * Une créature charge vers sa cible
      */
     async animateSoloAttack(data) {
         const { attackerOwner, attackerRow, attackerCol, targetOwner, targetRow, targetCol, damage, isFlying } = data;
@@ -553,20 +302,41 @@ class CombatAnimationSystem {
         
         if (!targetPos) return;
         
-        // Charge vers la cible
-        await this.animateCharge(attackerCard, targetPos, true);
+        const rect = attackerCard.getBoundingClientRect();
+        const startX = rect.left + rect.width / 2;
+        const startY = rect.top + rect.height / 2;
         
-        // Impact + Griffure
-        this.createImpactEffect(targetPos.x, targetPos.y, isFlying ? 'default' : 'default');
+        const dx = targetPos.x - startX;
+        const dy = targetPos.y - startY;
+        
+        // Phase 1: Charge vers la cible
+        attackerCard.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
+        attackerCard.style.transform = `translate(${dx}px, ${dy}px) scale(1.15)`;
+        attackerCard.style.zIndex = '1000';
+        
+        await this.wait(this.TIMINGS.ATTACK_MOVE);
+        
+        // Afficher les griffures à l'impact
+        this.showImpactEffect(targetPos.x, targetPos.y);
         if (damage !== undefined) {
-            this.createScratchEffect(targetPos.x, targetPos.y, damage);
+            this.showScratchDamage(targetPos.x, targetPos.y, damage);
         }
+        
+        // Phase 2: Retour
+        attackerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
+        attackerCard.style.transform = 'translate(0, 0) scale(1)';
+        
+        await this.wait(this.TIMINGS.ATTACK_RETURN);
+        
+        attackerCard.style.transition = '';
+        attackerCard.style.zIndex = '';
     }
     
-    // ==================== COMBAT MUTUEL MÊLÉE (entrechoc au milieu) ====================
+    // ==================== COMBAT MUTUEL MÊLÉE ====================
     
     /**
      * Deux créatures de mêlée s'entrechoquent au milieu
+     * LES DEUX BOUGENT EN MÊME TEMPS
      */
     async animateMutualMelee(data) {
         const { attacker1, attacker2, damage1, damage2 } = data;
@@ -574,73 +344,120 @@ class CombatAnimationSystem {
         const card1 = this.getCardElement(attacker1.owner, attacker1.row, attacker1.col);
         const card2 = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
         
-        if (!card1 || !card2) return;
+        if (!card1 || !card2) {
+            console.warn('Cards not found for mutual combat', attacker1, attacker2);
+            return;
+        }
         
-        const pos1 = this.getSlotCenter(attacker1.owner, attacker1.row, attacker1.col);
-        const pos2 = this.getSlotCenter(attacker2.owner, attacker2.row, attacker2.col);
+        const rect1 = card1.getBoundingClientRect();
+        const rect2 = card2.getBoundingClientRect();
         
-        if (!pos1 || !pos2) return;
+        const pos1 = { x: rect1.left + rect1.width / 2, y: rect1.top + rect1.height / 2 };
+        const pos2 = { x: rect2.left + rect2.width / 2, y: rect2.top + rect2.height / 2 };
         
-        // Point de rencontre au milieu
+        // Point de rencontre au MILIEU
         const midX = (pos1.x + pos2.x) / 2;
         const midY = (pos1.y + pos2.y) / 2;
         
-        // Déplacements (50% du chemin chacun)
-        const delta1X = midX - pos1.x;
-        const delta1Y = midY - pos1.y;
-        const delta2X = midX - pos2.x;
-        const delta2Y = midY - pos2.y;
+        // Déplacements pour chaque carte (50% du chemin)
+        const dx1 = midX - pos1.x;
+        const dy1 = midY - pos1.y;
+        const dx2 = midX - pos2.x;
+        const dy2 = midY - pos2.y;
         
-        return new Promise(resolve => {
-            // Phase 1: Les deux vont au milieu
-            card1.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
-            card2.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
-            
-            card1.style.transform = `translate(${delta1X}px, ${delta1Y}px) scale(1.08)`;
-            card2.style.transform = `translate(${delta2X}px, ${delta2Y}px) scale(1.08)`;
-            
-            card1.style.zIndex = '1000';
-            card2.style.zIndex = '1001';
-            
+        // Phase 1: LES DEUX cartes vont au milieu EN MÊME TEMPS
+        card1.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
+        card2.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
+        
+        card1.style.zIndex = '1000';
+        card2.style.zIndex = '1001';
+        
+        // Appliquer les transformations SIMULTANÉMENT
+        card1.style.transform = `translate(${dx1}px, ${dy1}px) scale(1.1)`;
+        card2.style.transform = `translate(${dx2}px, ${dy2}px) scale(1.1)`;
+        
+        await this.wait(this.TIMINGS.ATTACK_MOVE);
+        
+        // Effet de CLASH au milieu
+        this.showClashEffect(midX, midY);
+        
+        // Afficher les griffures pour les deux (décalées pour visibilité)
+        if (damage1 !== undefined) {
+            this.showScratchDamage(midX - 60, midY, damage1);
+        }
+        if (damage2 !== undefined) {
             setTimeout(() => {
-                // CLASH au milieu
-                this.createClashEffect(midX, midY);
-                
-                // Griffures sur les deux (légèrement décalées pour visibilité)
-                if (damage1 !== undefined) {
-                    this.createScratchEffect(midX - 50, midY, damage1);
-                }
-                if (damage2 !== undefined) {
-                    this.createScratchEffect(midX + 50, midY, damage2);
-                }
-                
-                // Pause à l'impact
-                setTimeout(() => {
-                    // Phase 2: Retour
-                    card1.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
-                    card2.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
-                    
-                    card1.style.transform = 'translate(0, 0) scale(1)';
-                    card2.style.transform = 'translate(0, 0) scale(1)';
-                    
-                    setTimeout(() => {
-                        card1.style.transition = '';
-                        card2.style.transition = '';
-                        card1.style.zIndex = '';
-                        card2.style.zIndex = '';
-                        resolve();
-                    }, this.TIMINGS.ATTACK_RETURN);
-                }, this.TIMINGS.CLASH_PAUSE);
-            }, this.TIMINGS.ATTACK_MOVE);
-        });
+                this.showScratchDamage(midX + 60, midY, damage2);
+            }, 100);
+        }
+        
+        await this.wait(100);
+        
+        // Phase 2: Les deux retournent EN MÊME TEMPS
+        card1.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
+        card2.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms cubic-bezier(0.2, 0, 0.4, 1)`;
+        
+        card1.style.transform = 'translate(0, 0) scale(1)';
+        card2.style.transform = 'translate(0, 0) scale(1)';
+        
+        await this.wait(this.TIMINGS.ATTACK_RETURN);
+        
+        card1.style.transition = '';
+        card2.style.transition = '';
+        card1.style.zIndex = '';
+        card2.style.zIndex = '';
+    }
+    
+    /**
+     * Effet de choc au point de rencontre
+     */
+    showClashEffect(x, y) {
+        const clash = document.createElement('div');
+        clash.className = 'clash-effect';
+        clash.innerHTML = `
+            <div class="clash-star">✦</div>
+            <div class="clash-ring"></div>
+        `;
+        clash.style.cssText = `
+            position: fixed;
+            left: ${x}px;
+            top: ${y}px;
+            transform: translate(-50%, -50%);
+            z-index: 10002;
+            pointer-events: none;
+        `;
+        document.body.appendChild(clash);
+        
+        // Étincelles
+        for (let i = 0; i < 12; i++) {
+            const spark = document.createElement('div');
+            const angle = (i / 12) * Math.PI * 2;
+            spark.className = 'clash-spark';
+            spark.style.cssText = `
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: 8px;
+                height: 8px;
+                background: ${i % 2 === 0 ? '#ffff00' : '#ff8800'};
+                border-radius: 50%;
+                transform: translate(-50%, -50%);
+                animation: sparkFly 0.5s ease-out forwards;
+                --angle: ${angle}rad;
+                --distance: ${40 + Math.random() * 30}px;
+            `;
+            clash.appendChild(spark);
+        }
+        
+        setTimeout(() => clash.remove(), 600);
     }
     
     // ==================== TIREUR VS VOLANT (2 temps) ====================
     
     /**
-     * Combat tireur vs volant en 2 temps :
-     * 1. Le tireur tire (projectile → griffure sur volant)
-     * 2. Le volant charge (mouvement → griffure sur tireur)
+     * Combat tireur vs volant/mêlée en 2 temps :
+     * 1. Le tireur tire (projectile → griffure)
+     * 2. L'autre charge (mouvement → griffure)
      */
     async animateShooterVsFlyer(data) {
         const { shooter, flyer, shooterDamage, flyerDamage } = data;
@@ -651,7 +468,7 @@ class CombatAnimationSystem {
         
         if (!shooterPos || !flyerPos) return;
         
-        // Phase 1: Le tireur tire sur le volant
+        // Phase 1: Le tireur tire sur l'autre
         await this.animateProjectile({
             startOwner: shooter.owner,
             startRow: shooter.row,
@@ -662,18 +479,36 @@ class CombatAnimationSystem {
             damage: shooterDamage
         });
         
-        // Délai entre les deux phases
         await this.wait(this.TIMINGS.BETWEEN_PHASES);
         
-        // Phase 2: Le volant charge sur le tireur
+        // Phase 2: L'autre charge sur le tireur
         if (flyerCard) {
-            await this.animateCharge(flyerCard, shooterPos, true);
+            const rect = flyerCard.getBoundingClientRect();
+            const startX = rect.left + rect.width / 2;
+            const startY = rect.top + rect.height / 2;
             
-            // Griffure sur le tireur
-            this.createImpactEffect(shooterPos.x, shooterPos.y, 'default');
+            const dx = shooterPos.x - startX;
+            const dy = shooterPos.y - startY;
+            
+            flyerCard.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
+            flyerCard.style.transform = `translate(${dx}px, ${dy}px) scale(1.15)`;
+            flyerCard.style.zIndex = '1000';
+            
+            await this.wait(this.TIMINGS.ATTACK_MOVE);
+            
+            // Griffures sur le tireur
+            this.showImpactEffect(shooterPos.x, shooterPos.y);
             if (flyerDamage !== undefined) {
-                this.createScratchEffect(shooterPos.x, shooterPos.y, flyerDamage);
+                this.showScratchDamage(shooterPos.x, shooterPos.y, flyerDamage);
             }
+            
+            flyerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms ease-out`;
+            flyerCard.style.transform = 'translate(0, 0) scale(1)';
+            
+            await this.wait(this.TIMINGS.ATTACK_RETURN);
+            
+            flyerCard.style.transition = '';
+            flyerCard.style.zIndex = '';
         }
     }
     
@@ -685,15 +520,13 @@ class CombatAnimationSystem {
         const pos = this.getHeroCenter(owner);
         if (!pos) return;
         
-        // Shake sur le héros
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (heroEl) {
             heroEl.classList.add('hit');
             setTimeout(() => heroEl.classList.remove('hit'), 500);
         }
         
-        // Griffure sur le héros
-        this.createScratchEffect(pos.x, pos.y, damage);
+        this.showScratchDamage(pos.x, pos.y, damage);
     }
     
     // ==================== DÉGÂTS SUR CRÉATURE (standalone) ====================
@@ -704,43 +537,27 @@ class CombatAnimationSystem {
         const pos = this.getSlotCenter(owner, row, col);
         if (!pos) return;
         
-        // Shake sur la carte
         const cardElement = this.getCardElement(owner, row, col);
         if (cardElement) {
             cardElement.classList.add('taking-damage');
             setTimeout(() => cardElement.classList.remove('taking-damage'), 400);
         }
         
-        // Griffure
-        this.createScratchEffect(pos.x, pos.y, amount);
+        this.showScratchDamage(pos.x, pos.y, amount);
     }
     
-    // ==================== ANCIENNES MÉTHODES (compatibilité) ====================
+    // ==================== COMPATIBILITÉ ====================
     
-    // Pour compatibilité avec l'ancien système
     async animateAttack(data) {
-        const { attackerOwner, attackerRow, attackerCol, targetOwner, targetRow, targetCol, isFlying, damage } = data;
-        
-        await this.animateSoloAttack({
-            attackerOwner,
-            attackerRow,
-            attackerCol,
-            targetOwner,
-            targetRow,
-            targetCol,
-            damage,
-            isFlying
-        });
+        await this.animateSoloAttack(data);
     }
     
     async animateMutualAttack(data) {
-        const { attacker1, attacker2, damage1, damage2 } = data;
-        
         await this.animateMutualMelee({
-            attacker1,
-            attacker2,
-            damage1: damage2, // Les dégâts que attacker1 inflige à attacker2
-            damage2: damage1  // Les dégâts que attacker2 inflige à attacker1
+            attacker1: data.attacker1,
+            attacker2: data.attacker2,
+            damage1: data.damage2,
+            damage2: data.damage1
         });
     }
 }
@@ -748,29 +565,179 @@ class CombatAnimationSystem {
 // Instance globale
 const CombatAnimations = new CombatAnimationSystem();
 
-// CSS pour les animations DOM
-const combatAnimStyle = document.createElement('style');
-combatAnimStyle.textContent = `
+// ==================== CSS DES ANIMATIONS ====================
+const combatAnimStyles = document.createElement('style');
+combatAnimStyles.textContent = `
+/* Animation d'apparition des griffures */
+@keyframes scratchAppear {
+    0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+@keyframes scratchDisappear {
+    0% { transform: translate(-50%, -50%) scale(1) translateY(0); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0.8) translateY(-30px); opacity: 0; }
+}
+
+@keyframes damageNumberPop {
+    0% { transform: translate(-50%, -50%) scale(0.5); }
+    50% { transform: translate(-50%, -50%) scale(1.2); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes bloodParticle {
+    0% { 
+        transform: translate(-50%, -50%) translate(0, 0); 
+        opacity: 1; 
+    }
+    100% { 
+        transform: translate(-50%, -50%) translate(var(--tx), var(--ty)); 
+        opacity: 0; 
+    }
+}
+
+/* Projectile */
+.combat-projectile {
+    width: 60px;
+    height: 20px;
+}
+
+.projectile-core {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 20px solid #ffdd00;
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+    filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.9));
+}
+
+.projectile-trail {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 45px;
+    height: 8px;
+    background: linear-gradient(to left, #ffaa00, #ff6600 50%, transparent);
+    border-radius: 4px;
+    filter: blur(2px);
+}
+
+.projectile-glow {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 25px;
+    height: 25px;
+    background: radial-gradient(circle, rgba(255,220,0,0.8), transparent 70%);
+    border-radius: 50%;
+    animation: glowPulse 0.1s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse {
+    0% { transform: translateY(-50%) scale(1); opacity: 0.8; }
+    100% { transform: translateY(-50%) scale(1.3); opacity: 1; }
+}
+
+/* Impact */
+.projectile-impact {
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle, rgba(255,200,0,0.9) 0%, rgba(255,100,0,0.5) 40%, transparent 70%);
+    border-radius: 50%;
+    animation: impactBurst 0.4s ease-out forwards;
+}
+
+@keyframes impactBurst {
+    0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+}
+
+/* Clash (entrechoc) */
+.clash-effect {
+    width: 100px;
+    height: 100px;
+}
+
+.clash-star {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 80px;
+    color: #ffdd00;
+    text-shadow: 0 0 20px rgba(255, 200, 0, 1), 0 0 40px rgba(255, 150, 0, 0.8);
+    animation: starBurst 0.5s ease-out forwards;
+}
+
+@keyframes starBurst {
+    0% { transform: translate(-50%, -50%) scale(0.3) rotate(0deg); opacity: 1; }
+    50% { transform: translate(-50%, -50%) scale(1.2) rotate(180deg); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1.5) rotate(360deg); opacity: 0; }
+}
+
+.clash-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border: 4px solid #ffffff;
+    border-radius: 50%;
+    animation: ringExpand 0.5s ease-out forwards;
+}
+
+@keyframes ringExpand {
+    0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(4); opacity: 0; }
+}
+
+@keyframes sparkFly {
+    0% { 
+        transform: translate(-50%, -50%) translate(0, 0); 
+        opacity: 1; 
+    }
+    100% { 
+        transform: translate(-50%, -50%) 
+                   translate(calc(cos(var(--angle)) * var(--distance)), 
+                             calc(sin(var(--angle)) * var(--distance))); 
+        opacity: 0; 
+    }
+}
+
+.clash-spark {
+    box-shadow: 0 0 6px currentColor;
+}
+
+/* Cartes qui prennent des dégâts */
 .taking-damage {
-    animation: takeDamage 0.4s ease-out;
+    animation: cardShake 0.4s ease-out !important;
 }
 
-@keyframes takeDamage {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-8px) rotate(-2deg); }
-    40% { transform: translateX(8px) rotate(2deg); }
-    60% { transform: translateX(-5px) rotate(-1deg); }
-    80% { transform: translateX(5px) rotate(1deg); }
+@keyframes cardShake {
+    0%, 100% { transform: translateX(0) rotate(0); }
+    20% { transform: translateX(-10px) rotate(-3deg); }
+    40% { transform: translateX(10px) rotate(3deg); }
+    60% { transform: translateX(-6px) rotate(-2deg); }
+    80% { transform: translateX(6px) rotate(2deg); }
 }
 
+/* Héros touché */
 .hero-card.hit {
-    animation: heroHit 0.5s ease-out;
+    animation: heroShake 0.5s ease-out !important;
 }
 
-@keyframes heroHit {
+@keyframes heroShake {
     0%, 100% { transform: scale(1); filter: brightness(1); }
-    20% { transform: scale(0.95); filter: brightness(1.5) saturate(0.5); }
-    40% { transform: scale(1.02); filter: brightness(0.9); }
+    10% { transform: scale(0.95); filter: brightness(2) saturate(0); }
+    30% { transform: scale(1.02); filter: brightness(0.8); }
+    50% { transform: scale(0.98); filter: brightness(1.3); }
 }
 `;
-document.head.appendChild(combatAnimStyle);
+document.head.appendChild(combatAnimStyles);
