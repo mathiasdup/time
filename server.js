@@ -868,7 +868,21 @@ async function processCombatSlot(room, row, col, log, sleep) {
     
     if (attacks.length === 0) return false;
     
-    // Animer les attaques
+    // Détecter le combat mutuel AVANT d'animer
+    let isMutualCombat = false;
+    if (attacks.length === 2 && !attacks[0].targetIsHero && !attacks[1].targetIsHero) {
+        const atk1 = attacks[0];
+        const atk2 = attacks[1];
+        const atk1TargetsAtk2 = atk1.targetPlayer === atk2.attackerPlayer && 
+                               atk1.targetRow === atk2.attackerRow && 
+                               atk1.targetCol === atk2.attackerCol;
+        const atk2TargetsAtk1 = atk2.targetPlayer === atk1.attackerPlayer && 
+                               atk2.targetRow === atk1.attackerRow && 
+                               atk2.targetCol === atk1.attackerCol;
+        isMutualCombat = atk1TargetsAtk2 && atk2TargetsAtk1;
+    }
+    
+    // Animer les attaques avec l'info de combat mutuel
     for (const atk of attacks) {
         emitAnimation(room, 'attack', {
             attacker: atk.attackerPlayer,
@@ -878,7 +892,8 @@ async function processCombatSlot(room, row, col, log, sleep) {
             targetRow: atk.targetRow,
             targetCol: atk.targetIsHero ? -1 : atk.targetCol,
             isFlying: atk.attacker.abilities.includes('fly'),
-            isShooter: atk.attacker.abilities.includes('shooter')
+            isShooter: atk.attacker.abilities.includes('shooter'),
+            isMutual: isMutualCombat
         });
     }
     await sleep(500);

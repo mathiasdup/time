@@ -147,11 +147,26 @@ function initSocket() {
     
     // Highlight des cases pour les sorts
     socket.on('spellHighlight', (data) => {
-        data.targets.forEach(t => {
+        data.targets.forEach((t, index) => {
             const owner = t.player === myNum ? 'me' : 'opp';
             const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${t.row}"][data-col="${t.col}"]`);
             if (slot) {
                 slot.classList.add('spell-highlight-' + data.type);
+                
+                // Si sort de dégâts, ajouter animation de flamme
+                if (data.type === 'damage') {
+                    const rect = slot.getBoundingClientRect();
+                    setTimeout(() => {
+                        const flame = document.createElement('div');
+                        flame.className = 'spell-flame';
+                        flame.textContent = '🔥';
+                        flame.style.left = rect.left + rect.width/2 - 30 + 'px';
+                        flame.style.top = rect.top + rect.height/2 - 40 + 'px';
+                        document.body.appendChild(flame);
+                        setTimeout(() => flame.remove(), 600);
+                    }, index * 100); // Décalage pour effet cascade
+                }
+                
                 // Si la case contient une carte, ajouter une classe à la carte aussi
                 const cardInSlot = slot.querySelector('.card');
                 if (cardInSlot) {
@@ -204,6 +219,21 @@ function handleAnimation(data) {
             const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
             heroEl.classList.add('hit');
             setTimeout(() => heroEl.classList.remove('hit'), 500);
+            
+            // Splash de dégâts sur le héros
+            if (data.damage) {
+                const heroRect = heroEl.getBoundingClientRect();
+                const splash = document.createElement('div');
+                splash.className = 'damage-splash';
+                splash.innerHTML = `
+                    <div class="damage-splash-bg"></div>
+                    <span class="damage-splash-text">-${data.damage}</span>
+                `;
+                splash.style.left = heroRect.left + heroRect.width/2 - 45 + 'px';
+                splash.style.top = heroRect.top + heroRect.height/2 - 45 + 'px';
+                document.body.appendChild(splash);
+                setTimeout(() => splash.remove(), 700);
+            }
             break;
     }
 }
@@ -227,52 +257,116 @@ function animateAttack(data) {
     const owner = data.attacker === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
-    if (card) {
-        card.classList.add('attacking');
-        setTimeout(() => card.classList.remove('attacking'), 400);
+    
+    if (!slot || !card) return;
+    
+    const rect = slot.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    
+    // Trouver la position de la cible
+    const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
+    let targetX, targetY;
+    let targetSlot = null;
+    
+    if (data.targetCol === -1) {
+        // Cible = héros
+        const heroEl = document.getElementById(targetOwner === 'me' ? 'hero-me' : 'hero-opp');
+        const heroRect = heroEl.getBoundingClientRect();
+        targetX = heroRect.left + heroRect.width / 2;
+        targetY = heroRect.top + heroRect.height / 2;
+    } else {
+        // Cible = créature
+        targetSlot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`);
+        if (targetSlot) {
+            const targetRect = targetSlot.getBoundingClientRect();
+            targetX = targetRect.left + targetRect.width / 2;
+            targetY = targetRect.top + targetRect.height / 2;
+        }
     }
     
-    if (slot) {
-        const rect = slot.getBoundingClientRect();
+    if (!targetX || !targetY) return;
+    
+    // CAS 1: Tireur - ne bouge pas, tire un projectile
+    if (data.isShooter) {
         const projectile = document.createElement('div');
-        projectile.className = 'attack-projectile';
-        projectile.textContent = data.isShooter ? '🏹' : data.isFlying ? '💨' : '⚔️';
-        projectile.style.left = rect.left + rect.width/2 + 'px';
-        projectile.style.top = rect.top + rect.height/2 + 'px';
+        projectile.className = 'shooter-projectile';
+        projectile.textContent = '🏹';
+        projectile.style.left = startX + 'px';
+        projectile.style.top = startY + 'px';
+        projectile.style.transform = 'translate(-50%, -50%)';
         document.body.appendChild(projectile);
         
-        const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
-        let targetX, targetY;
+        setTimeout(() => {
+            projectile.style.left = targetX + 'px';
+            projectile.style.top = targetY + 'px';
+        }, 50);
         
-        if (data.targetCol === -1) {
-            const heroEl = document.getElementById(targetOwner === 'me' ? 'hero-me' : 'hero-opp');
-            const heroRect = heroEl.getBoundingClientRect();
-            targetX = heroRect.left + heroRect.width/2;
-            targetY = heroRect.top + heroRect.height/2;
-        } else {
-            const targetSlot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`);
-            if (targetSlot) {
-                const targetRect = targetSlot.getBoundingClientRect();
-                targetX = targetRect.left + targetRect.width/2;
-                targetY = targetRect.top + targetRect.height/2;
-            }
-        }
-        
-        if (targetX && targetY) {
-            setTimeout(() => {
-                projectile.style.left = targetX + 'px';
-                projectile.style.top = targetY + 'px';
-                projectile.style.transform = 'scale(1.5)';
-            }, 50);
-        }
         setTimeout(() => projectile.remove(), 350);
+        return;
     }
+    
+    // CAS 2: Combat mutuel - les deux font la moitié du trajet
+    if (data.isMutual) {
+        const midX = (startX + targetX) / 2;
+        const midY = (startY + targetY) / 2;
+        
+        // Calculer le déplacement relatif (moitié du chemin)
+        const deltaX = (midX - startX);
+        const deltaY = (midY - startY);
+        
+        card.classList.add('charging');
+        card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+        
+        // Impact au milieu
+        setTimeout(() => {
+            const impact = document.createElement('div');
+            impact.className = 'combat-impact';
+            impact.textContent = '💥';
+            impact.style.left = midX - 40 + 'px';
+            impact.style.top = midY - 40 + 'px';
+            document.body.appendChild(impact);
+            setTimeout(() => impact.remove(), 400);
+        }, 200);
+        
+        // Retour à la position
+        setTimeout(() => {
+            card.style.transform = '';
+            card.classList.remove('charging');
+        }, 350);
+        return;
+    }
+    
+    // CAS 3: Mêlée ou vol - fait tout le trajet vers la cible
+    const deltaX = targetX - startX;
+    const deltaY = targetY - startY;
+    
+    card.classList.add('charging');
+    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    
+    // Impact à la cible
+    setTimeout(() => {
+        const impact = document.createElement('div');
+        impact.className = 'combat-impact';
+        impact.textContent = data.isFlying ? '💨' : '⚔️';
+        impact.style.left = targetX - 40 + 'px';
+        impact.style.top = targetY - 40 + 'px';
+        document.body.appendChild(impact);
+        setTimeout(() => impact.remove(), 400);
+    }, 200);
+    
+    // Retour à la position
+    setTimeout(() => {
+        card.style.transform = '';
+        card.classList.remove('charging');
+    }, 350);
 }
 
 function animateDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
+    
     if (card) {
         card.classList.add('taking-damage');
         setTimeout(() => card.classList.remove('taking-damage'), 400);
@@ -284,11 +378,14 @@ function animateDamage(data) {
         // Créer le splash de dégâts
         const splash = document.createElement('div');
         splash.className = 'damage-splash';
-        splash.textContent = `-${data.amount}`;
-        splash.style.left = rect.left + rect.width/2 - 40 + 'px';
-        splash.style.top = rect.top + rect.height/2 - 40 + 'px';
+        splash.innerHTML = `
+            <div class="damage-splash-bg"></div>
+            <span class="damage-splash-text">-${data.amount}</span>
+        `;
+        splash.style.left = rect.left + rect.width/2 - 45 + 'px';
+        splash.style.top = rect.top + rect.height/2 - 45 + 'px';
         document.body.appendChild(splash);
-        setTimeout(() => splash.remove(), 800);
+        setTimeout(() => splash.remove(), 700);
     }
 }
 
