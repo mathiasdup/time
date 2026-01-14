@@ -410,6 +410,7 @@ async function startResolution(room) {
     }
     
     // Les deux joueurs piochent
+    const drawnCards = [];
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
         const card = player.deck.pop();
@@ -423,14 +424,19 @@ async function startResolution(room) {
         if (player.hand.length >= 9) {
             addToGraveyard(player, card);
             log(`📦 ${player.heroName} a la main pleine, la carte va au cimetière`, 'damage');
+            drawnCards.push({ player: p, card: null, burned: true });
         } else {
             player.hand.push(card);
+            drawnCards.push({ player: p, card: card, handIndex: player.hand.length - 1 });
         }
     }
+    
+    // Émettre l'animation de pioche
+    emitAnimation(room, 'draw', { cards: drawnCards });
     log('📦 Les joueurs piochent une carte', 'action');
-    emitStateToBoth(room);
     await sleep(800);
     
+    emitStateToBoth(room);
     await sleep(500);
     startNewTurn(room);
 }

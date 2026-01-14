@@ -194,6 +194,7 @@ function handleAnimation(data) {
         case 'trapTrigger': animateTrap(data); break;
         case 'summon': animateSummon(data); break;
         case 'move': animateMove(data); break;
+        case 'draw': animateDrawCards(data); break;
         case 'heroHit':
             const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
             heroEl.classList.add('hit');
@@ -1755,3 +1756,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+/**
+ * Animation de pioche avec PixiJS
+ */
+async function animateDrawCards(data) {
+    if (!data.cards || data.cards.length === 0) return;
+    
+    // Vérifier que GameAnimations est disponible
+    if (typeof GameAnimations === 'undefined') {
+        console.warn('GameAnimations non disponible');
+        return;
+    }
+    
+    // Animer chaque carte piochée
+    for (const drawData of data.cards) {
+        if (drawData.burned) continue; // Pas d'animation si la carte est brûlée
+        
+        const owner = drawData.player === myNum ? 'me' : 'opp';
+        const card = drawData.card;
+        const handIndex = drawData.handIndex || 0;
+        
+        // Lancer l'animation PixiJS
+        GameAnimations.animateDraw(card, owner, handIndex);
+        
+        // Petit délai entre les cartes si plusieurs sont piochées
+        await new Promise(resolve => setTimeout(resolve, 150));
+    }
+}
