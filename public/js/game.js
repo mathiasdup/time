@@ -368,12 +368,16 @@ function initSocket() {
     // Bloquer les slots qui vont recevoir des créatures (avant le state)
     socket.on('blockSlots', (slots) => {
         slots.forEach(s => {
-            // Bloquer seulement les créatures adverses
-            if (s.player !== myNum) {
-                const owner = 'opp';
+            // Bloquer les créatures adverses OU les créatures locales si blockLocal est true
+            // (blockLocal = true quand le joueur a déplacé une carte puis en place une nouvelle au même endroit)
+            const isOpponent = s.player !== myNum;
+            const shouldBlock = isOpponent || s.blockLocal;
+
+            if (shouldBlock) {
+                const owner = s.player === myNum ? 'me' : 'opp';
                 const slotKey = `${owner}-${s.row}-${s.col}`;
                 animatingSlots.add(slotKey);
-                
+
                 // Vider le slot au cas où
                 const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${s.row}"][data-col="${s.col}"]`);
                 if (slot) {
@@ -573,7 +577,8 @@ let animatingSlots = new Set();
 // La carte "tombe" sur le plateau avec un effet de rebond
 function animateSummon(data) {
     // N'animer que les créatures de l'adversaire (pas les nôtres)
-    if (data.animateForOpponent && data.player === myNum) {
+    // SAUF si animateForLocal est true (cas où on déplace puis place sur le même slot)
+    if (data.animateForOpponent && data.player === myNum && !data.animateForLocal) {
         return; // Notre carte est déjà visible, pas besoin d'animation
     }
 

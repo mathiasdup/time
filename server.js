@@ -255,8 +255,26 @@ async function startResolution(room) {
     // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES ET PIÈGES
     const hasPlacesOrTraps = allActions.places.length > 0 || allActions.traps.length > 0;
     if (hasPlacesOrTraps) {
+        // Identifier les slots qui étaient origine d'un déplacement (pour bloquer aussi côté local)
+        const movedFromSlots = allActions.moves.map(m => ({
+            player: m.playerNum,
+            row: m.fromRow,
+            col: m.fromCol
+        }));
+
         // Bloquer les slots MAINTENANT (après les déplacements terminés)
-        const summonSlots = allActions.places.map(a => ({ player: a.playerNum, row: a.row, col: a.col }));
+        // Ajouter un flag 'wasMovedFrom' si le slot était l'origine d'un déplacement du même joueur
+        const summonSlots = allActions.places.map(a => {
+            const wasMovedFrom = movedFromSlots.some(m =>
+                m.player === a.playerNum && m.row === a.row && m.col === a.col
+            );
+            return {
+                player: a.playerNum,
+                row: a.row,
+                col: a.col,
+                blockLocal: wasMovedFrom // Si true, bloquer aussi pour le joueur local
+            };
+        });
         if (summonSlots.length > 0) {
             io.to(room.code).emit('blockSlots', summonSlots);
             await sleep(50);
@@ -268,8 +286,18 @@ async function startResolution(room) {
 
         // Révéler les créatures
         for (const action of allActions.places) {
+            const wasMovedFrom = movedFromSlots.some(m =>
+                m.player === action.playerNum && m.row === action.row && m.col === action.col
+            );
             log(`  🎴 ${action.heroName}: ${action.card.name} en ${slotNames[action.row][action.col]}`, 'action');
-            emitAnimation(room, 'summon', { player: action.playerNum, row: action.row, col: action.col, card: action.card, animateForOpponent: true });
+            emitAnimation(room, 'summon', {
+                player: action.playerNum,
+                row: action.row,
+                col: action.col,
+                card: action.card,
+                animateForOpponent: true,
+                animateForLocal: wasMovedFrom // Animer aussi côté local si déplacement préalable
+            });
             await sleep(100);
             emitStateToBoth(room);
             await sleep(700);
