@@ -53,7 +53,7 @@
         .player-name-arrow-border {
             position: absolute;
             top: -3px;
-            left: -3px;
+            left: -3.5px;
             right: -3.5px;
             bottom: -3px;
             background: linear-gradient(180deg, #c9a86c 0%, #8b7355 50%, #5a4a30 100%);
@@ -74,27 +74,27 @@
             margin-right: -35px;
         }
         .player-info-bar.left .player-name-arrow {
-            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+            clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%);
             padding-right: 30px;
             padding-left: 40px;
             border-radius: 3px 0 0 3px;
         }
         .player-info-bar.left .player-name-arrow-border {
-            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+            clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%);
         }
         /* Flèche vers la gauche pour joueur droite (miroir) */
         .player-info-bar.right .rank-icon-container {
             margin-left: -35px;
         }
         .player-info-bar.right .player-name-arrow {
-            clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+            clip-path: polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%);
             padding-left: 30px;
             padding-right: 40px;
             align-items: flex-end;
             border-radius: 0 3px 3px 0;
         }
         .player-info-bar.right .player-name-arrow-border {
-            clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+            clip-path: polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%);
         }
         
         .player-name-text {
@@ -858,7 +858,7 @@
         }
         .log-popup { 
             position: absolute; 
-            bottom: 80px; 
+            bottom: 130px; 
             left: 50%; 
             transform: translateX(-50%); 
             width: 400px; 
@@ -914,7 +914,7 @@
         /* Popup cimetière */
         .graveyard-popup { 
             position: fixed; 
-            bottom: 80px; 
+            bottom: 130px; 
             left: 50%; 
             transform: translateX(-50%); 
             background: rgba(0,0,0,0.7); 
@@ -1101,7 +1101,7 @@
         /* Settings popup */
         .settings-popup {
             position: absolute;
-            bottom: 80px;
+            bottom: 130px;
             left: 50%;
             transform: translateX(-50%);
             width: 280px;
