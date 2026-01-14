@@ -1326,7 +1326,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 isMutual: true
             });
         }
-        await sleep(600);
+        await sleep(900); // Attendre la fin des animations de combat mutuel
         
         // Maintenant résoudre les dégâts
         const bothInit = atk1.hasInitiative && atk2.hasInitiative;
@@ -1393,13 +1393,13 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     isFlying: atk.isFlying,
                     isShooter: atk.isShooter
                 });
-                await sleep(500);
-                
+                await sleep(800); // Attendre la fin de l'animation d'attaque
+
                 targetPlayer.hp -= damage;
                 log(`⚔️ ${attackerCard.name} → ${targetPlayer.heroName} (-${damage})`, 'damage');
-                emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: damage });
+                // L'animation d'attaque affiche déjà les dégâts, pas besoin de heroHit en plus
                 io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: damage });
-                
+
                 if (targetPlayer.hp <= 0) {
                     emitStateToBoth(room);
                     return true;
@@ -1411,7 +1411,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 
                 const damage = attackerCard.atk;
                 
-                // Animation d'attaque avec dégâts (griffures intégrées)
+                // Animation d'attaque avec dégâts intégrés
                 emitAnimation(room, 'attack', {
                     combatType: atk.isShooter ? 'shooter' : 'solo',
                     attacker: atk.attackerPlayer,
@@ -1424,8 +1424,8 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     isFlying: atk.isFlying,
                     isShooter: atk.isShooter
                 });
-                await sleep(500);
-                
+                await sleep(800); // Attendre la fin de l'animation d'attaque
+
                 targetCard.currentHp -= damage;
                 log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
                 
@@ -1450,10 +1450,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     const riposteDmg = targetCard.atk;
                     attackerCard.currentHp -= riposteDmg;
                     log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDmg})`, 'damage');
-                    // Afficher les griffures de riposte
+                    // Afficher les dégâts de riposte
                     emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDmg });
-                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDmg });
-                    
+
                     if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
                         attackerCard.atk += 1;
                         log(`💪 ${attackerCard.name} gagne +1 ATK!`, 'buff');
@@ -1464,8 +1463,8 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
     }
     
     emitStateToBoth(room);
-    await sleep(300);
-    
+    await sleep(500); // Attendre que les animations de dégâts se terminent
+
     // Retirer les créatures mortes DE TOUT LE TERRAIN (pas seulement ce slot)
     let anyDeath = false;
     for (let p = 1; p <= 2; p++) {
@@ -1482,10 +1481,10 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             }
         }
     }
-    
+
     if (anyDeath) {
+        await sleep(600); // Attendre l'animation de mort
         emitStateToBoth(room);
-        await sleep(300);
     }
     
     return false;
