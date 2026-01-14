@@ -5,6 +5,71 @@ let mulliganDone = false;
 
 const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
+// ==================== SYSTÈME DE FILE D'ATTENTE D'ANIMATIONS ====================
+const animationQueue = [];
+let isAnimating = false;
+const ANIMATION_DELAYS = {
+    attack: 800,      // Délai après une attaque (augmenté pour lisibilité)
+    damage: 400,      // Délai après affichage des dégâts
+    death: 600,       // Délai après une mort
+    spell: 500,       // Délai après un sort
+    heal: 400,        // Délai après un soin
+    buff: 400,        // Délai après un buff
+    trapTrigger: 500, // Délai après un piège
+    summon: 300,      // Délai après une invocation
+    move: 300,        // Délai après un déplacement
+    draw: 200,        // Délai après une pioche
+    heroHit: 500,     // Délai après dégâts au héros
+    default: 300      // Délai par défaut
+};
+
+function queueAnimation(type, data) {
+    animationQueue.push({ type, data });
+    if (!isAnimating) {
+        processAnimationQueue();
+    }
+}
+
+function processAnimationQueue() {
+    if (animationQueue.length === 0) {
+        isAnimating = false;
+        return;
+    }
+    
+    isAnimating = true;
+    const { type, data } = animationQueue.shift();
+    const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
+    
+    // Exécuter l'animation
+    executeAnimation(type, data);
+    
+    // Passer à la suivante après le délai
+    setTimeout(() => processAnimationQueue(), delay);
+}
+
+function executeAnimation(type, data) {
+    switch(type) {
+        case 'attack': animateAttack(data); break;
+        case 'damage': animateDamage(data); break;
+        case 'death': animateDeath(data); break;
+        case 'spell': animateSpell(data); break;
+        case 'spellMiss': animateSpellMiss(data); break;
+        case 'heal': animateHeal(data); break;
+        case 'buff': animateBuff(data); break;
+        case 'trapTrigger': animateTrap(data); break;
+        case 'summon': animateSummon(data); break;
+        case 'move': animateMove(data); break;
+        case 'draw': 
+            if (typeof GameAnimations !== 'undefined') {
+                GameAnimations.prepareDrawAnimation(data);
+            }
+            break;
+        case 'heroHit':
+            animateHeroHit(data);
+            break;
+    }
+}
+
 function initSocket() {
     socket = io();
     
@@ -198,43 +263,36 @@ function initSocket() {
 
 function handleAnimation(data) {
     const { type } = data;
-    switch(type) {
-        case 'attack': animateAttack(data); break;
-        case 'damage': animateDamage(data); break;
-        case 'death': animateDeath(data); break;
-        case 'spell': animateSpell(data); break;
-        case 'spellMiss': animateSpellMiss(data); break;
-        case 'heal': animateHeal(data); break;
-        case 'buff': animateBuff(data); break;
-        case 'trapTrigger': animateTrap(data); break;
-        case 'summon': animateSummon(data); break;
-        case 'move': animateMove(data); break;
-        case 'draw': 
-            // Préparer l'animation (stocke les cartes à cacher)
-            if (typeof GameAnimations !== 'undefined') {
-                GameAnimations.prepareDrawAnimation(data);
-            }
-            break;
-        case 'heroHit':
-            const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
-            heroEl.classList.add('hit');
-            setTimeout(() => heroEl.classList.remove('hit'), 500);
-            
-            // Splash de dégâts sur le héros
-            if (data.damage) {
-                const heroRect = heroEl.getBoundingClientRect();
-                const splash = document.createElement('div');
-                splash.className = 'damage-splash';
-                splash.innerHTML = `
-                    <div class="damage-splash-bg"></div>
-                    <span class="damage-splash-text">-${data.damage}</span>
-                `;
-                splash.style.left = heroRect.left + heroRect.width/2 - 45 + 'px';
-                splash.style.top = heroRect.top + heroRect.height/2 - 45 + 'px';
-                document.body.appendChild(splash);
-                setTimeout(() => splash.remove(), 700);
-            }
-            break;
+    
+    // Les animations de combat utilisent la file d'attente pour la lisibilité
+    const queuedTypes = ['attack', 'damage', 'death', 'heroHit'];
+    
+    if (queuedTypes.includes(type)) {
+        queueAnimation(type, data);
+    } else {
+        // Les autres animations s'exécutent immédiatement
+        executeAnimation(type, data);
+    }
+}
+
+function animateHeroHit(data) {
+    const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
+    heroEl.classList.add('hit');
+    setTimeout(() => heroEl.classList.remove('hit'), 500);
+    
+    // Splash de dégâts sur le héros
+    if (data.damage) {
+        const heroRect = heroEl.getBoundingClientRect();
+        const splash = document.createElement('div');
+        splash.className = 'damage-splash';
+        splash.innerHTML = `
+            <div class="damage-splash-bg"></div>
+            <span class="damage-splash-text">-${data.damage}</span>
+        `;
+        splash.style.left = heroRect.left + heroRect.width/2 - 45 + 'px';
+        splash.style.top = heroRect.top + heroRect.height/2 - 45 + 'px';
+        document.body.appendChild(splash);
+        setTimeout(() => splash.remove(), 2000);
     }
 }
 
@@ -268,6 +326,7 @@ function animateAttack(data) {
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
     let targetX, targetY;
     let targetSlot = null;
+    let targetCard = null;
     
     if (data.targetCol === -1) {
         // Cible = héros
@@ -282,6 +341,7 @@ function animateAttack(data) {
             const targetRect = targetSlot.getBoundingClientRect();
             targetX = targetRect.left + targetRect.width / 2;
             targetY = targetRect.top + targetRect.height / 2;
+            targetCard = targetSlot.querySelector('.card');
         }
     }
     
@@ -297,69 +357,100 @@ function animateAttack(data) {
         projectile.style.transform = 'translate(-50%, -50%)';
         document.body.appendChild(projectile);
         
-        setTimeout(() => {
+        // Animation fluide du projectile
+        requestAnimationFrame(() => {
             projectile.style.left = targetX + 'px';
             projectile.style.top = targetY + 'px';
-        }, 50);
+        });
         
-        setTimeout(() => projectile.remove(), 350);
+        setTimeout(() => projectile.remove(), 550);
         return;
     }
     
-    // CAS 2: Combat mutuel - les deux font la moitié du trajet
-    if (data.isMutual) {
+    // CAS 2: Combat mutuel - les deux créatures se rencontrent à mi-chemin
+    if (data.isMutual && targetCard) {
         const midX = (startX + targetX) / 2;
         const midY = (startY + targetY) / 2;
         
-        // Calculer le déplacement relatif (moitié du chemin)
-        const deltaX = (midX - startX);
-        const deltaY = (midY - startY);
+        // Calculer le déplacement relatif vers le milieu pour l'attaquant
+        const deltaX = midX - startX;
+        const deltaY = midY - startY;
         
+        // Calculer le déplacement pour la cible (inverse)
+        const targetDeltaX = midX - targetX;
+        const targetDeltaY = midY - targetY;
+        
+        // Les deux créatures chargent vers le milieu
         card.classList.add('charging');
-        card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+        targetCard.classList.add('charging');
         
-        // Impact au milieu
+        // Animation fluide avec requestAnimationFrame
+        requestAnimationFrame(() => {
+            card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+            targetCard.style.transform = `translate(${targetDeltaX}px, ${targetDeltaY}px)`;
+        });
+        
+        // Impact au milieu après que les deux se rencontrent
         setTimeout(() => {
             const impact = document.createElement('div');
             impact.className = 'combat-impact';
             impact.textContent = '💥';
-            impact.style.left = midX - 40 + 'px';
-            impact.style.top = midY - 40 + 'px';
+            impact.style.left = midX - 50 + 'px';
+            impact.style.top = midY - 50 + 'px';
             document.body.appendChild(impact);
-            setTimeout(() => impact.remove(), 400);
-        }, 200);
-        
-        // Retour à la position
-        setTimeout(() => {
-            card.style.transform = '';
-            card.classList.remove('charging');
+            setTimeout(() => impact.remove(), 600);
         }, 350);
+        
+        // Retour à la position initiale
+        setTimeout(() => {
+            card.classList.remove('charging');
+            card.classList.add('returning');
+            targetCard.classList.remove('charging');
+            targetCard.classList.add('returning');
+            
+            card.style.transform = '';
+            targetCard.style.transform = '';
+            
+            setTimeout(() => {
+                card.classList.remove('returning');
+                targetCard.classList.remove('returning');
+            }, 350);
+        }, 500);
         return;
     }
     
-    // CAS 3: Mêlée ou vol - fait tout le trajet vers la cible
+    // CAS 3: Mêlée ou vol - fait tout le trajet vers la cible avec animation fluide
     const deltaX = targetX - startX;
     const deltaY = targetY - startY;
     
     card.classList.add('charging');
-    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    
+    // Animation fluide avec requestAnimationFrame
+    requestAnimationFrame(() => {
+        card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    });
     
     // Impact à la cible
     setTimeout(() => {
         const impact = document.createElement('div');
         impact.className = 'combat-impact';
         impact.textContent = data.isFlying ? '💨' : '⚔️';
-        impact.style.left = targetX - 40 + 'px';
-        impact.style.top = targetY - 40 + 'px';
+        impact.style.left = targetX - 50 + 'px';
+        impact.style.top = targetY - 50 + 'px';
         document.body.appendChild(impact);
-        setTimeout(() => impact.remove(), 400);
-    }, 200);
-    
-    // Retour à la position
-    setTimeout(() => {
-        card.style.transform = '';
-        card.classList.remove('charging');
+        setTimeout(() => impact.remove(), 600);
     }, 350);
+    
+    // Retour à la position avec transition fluide
+    setTimeout(() => {
+        card.classList.remove('charging');
+        card.classList.add('returning');
+        card.style.transform = '';
+        
+        setTimeout(() => {
+            card.classList.remove('returning');
+        }, 350);
+    }, 500);
 }
 
 function animateDamage(data) {
@@ -375,7 +466,7 @@ function animateDamage(data) {
     if (slot) {
         const rect = slot.getBoundingClientRect();
         
-        // Créer le splash de dégâts
+        // Créer le splash de dégâts - durée 2 secondes
         const splash = document.createElement('div');
         splash.className = 'damage-splash';
         splash.innerHTML = `
@@ -385,7 +476,7 @@ function animateDamage(data) {
         splash.style.left = rect.left + rect.width/2 - 45 + 'px';
         splash.style.top = rect.top + rect.height/2 - 45 + 'px';
         document.body.appendChild(splash);
-        setTimeout(() => splash.remove(), 700);
+        setTimeout(() => splash.remove(), 2000);
     }
 }
 

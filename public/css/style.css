@@ -770,7 +770,7 @@
         .spell-miss { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; animation: missAnim 0.8s ease-out forwards; }
         @keyframes missAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.5) translateY(-30px); opacity: 0; } }
         
-        /* Splash de dégâts avec image */
+        /* Splash de dégâts avec image - durée 2 secondes */
         .damage-splash {
             position: fixed;
             z-index: 1001;
@@ -780,7 +780,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: damageSplashAnim 0.7s ease-out forwards;
+            animation: damageSplashAnim 2s ease-out forwards;
         }
         .damage-splash-bg {
             position: absolute;
@@ -806,9 +806,11 @@
         }
         @keyframes damageSplashAnim { 
             0% { opacity: 0; transform: scale(0.2); } 
-            15% { opacity: 1; transform: scale(1.3); } 
-            30% { transform: scale(0.95); }
-            45% { transform: scale(1.05); }
+            5% { opacity: 1; transform: scale(1.3); } 
+            10% { transform: scale(0.95); }
+            15% { transform: scale(1.05); }
+            20% { transform: scale(1); }
+            80% { opacity: 1; transform: scale(1); }
             100% { opacity: 0; transform: scale(1) translateY(-15px); } 
         }
         
@@ -835,33 +837,40 @@
             z-index: 1000;
             font-size: 2em;
             pointer-events: none;
-            transition: all 0.3s ease-out;
+            transition: all 0.5s ease-out;
             filter: drop-shadow(0 0 5px rgba(255,200,0,0.8));
         }
         
-        /* Créature qui charge (mêlée/vol) */
+        /* Créature qui charge (mêlée/vol) - animation fluide */
         .card.charging {
             z-index: 1000 !important;
-            transition: transform 0.25s ease-in-out;
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }
         
-        /* Impact au centre */
+        /* Créature en retour après charge */
+        .card.returning {
+            z-index: 1000 !important;
+            transition: transform 0.3s ease-out;
+        }
+        
+        /* Impact au centre - plus visible */
         .combat-impact {
             position: fixed;
-            z-index: 1001;
-            width: 80px;
-            height: 80px;
+            z-index: 1002;
+            width: 100px;
+            height: 100px;
             pointer-events: none;
-            font-size: 3em;
+            font-size: 3.5em;
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: impactAnim 0.4s ease-out forwards;
+            animation: impactAnim 0.6s ease-out forwards;
         }
         @keyframes impactAnim {
-            0% { opacity: 0; transform: scale(0.3); }
-            30% { opacity: 1; transform: scale(1.5); }
-            100% { opacity: 0; transform: scale(2); }
+            0% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+            25% { opacity: 1; transform: scale(1.8) rotate(15deg); }
+            50% { transform: scale(1.4) rotate(-10deg); }
+            100% { opacity: 0; transform: scale(2.2) rotate(5deg); }
         }
         
         .damage-number { position: fixed; z-index: 1001; font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 2px 2px 4px black; pointer-events: none; animation: damageFloat 1s ease-out forwards; }
