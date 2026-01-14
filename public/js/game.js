@@ -194,7 +194,12 @@ function handleAnimation(data) {
         case 'trapTrigger': animateTrap(data); break;
         case 'summon': animateSummon(data); break;
         case 'move': animateMove(data); break;
-        case 'draw': animateDrawCards(data); break;
+        case 'draw': 
+            // Préparer l'animation (stocke les cartes à cacher)
+            if (typeof GameAnimations !== 'undefined') {
+                GameAnimations.prepareDrawAnimation(data);
+            }
+            break;
         case 'heroHit':
             const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
             heroEl.classList.add('hit');
@@ -1108,6 +1113,11 @@ function render() {
     renderHand(me.hand, me.energy);
     renderOppHand(opp.handCount);
     
+    // Lancer les animations de pioche après les renders
+    if (typeof GameAnimations !== 'undefined') {
+        GameAnimations.startPendingDrawAnimations();
+    }
+    
     if (me.ready) {
         document.getElementById('end-turn-btn').classList.add('waiting');
     }
@@ -1415,6 +1425,11 @@ function renderHand(hand, energy) {
         // Z-index incrémental pour éviter les saccades au hover
         el.style.zIndex = i + 1;
         
+        // Cacher si animation de pioche en attente
+        if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i)) {
+            el.style.visibility = 'hidden';
+        }
+        
         // Toujours draggable
         el.draggable = true;
         
@@ -1463,6 +1478,11 @@ function renderOppHand(count) {
         el.className = 'opp-card-back';
         el.textContent = '🎴';
         el.style.zIndex = i + 1; // Z-index incrémental
+        
+        // Cacher si animation de pioche en attente
+        if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('opp', i)) {
+            el.style.visibility = 'hidden';
+        }
         
         // Preview dos de carte au survol
         el.onmouseenter = () => showCardBackPreview();
@@ -1756,31 +1776,3 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
-
-/**
- * Animation de pioche
- */
-async function animateDrawCards(data) {
-    if (!data.cards || data.cards.length === 0) return;
-    
-    // Vérifier que GameAnimations est disponible
-    if (typeof GameAnimations === 'undefined') {
-        console.warn('GameAnimations non disponible');
-        return;
-    }
-    
-    // Animer chaque carte piochée
-    for (const drawData of data.cards) {
-        if (drawData.burned) continue; // Pas d'animation si la carte est brûlée
-        
-        const owner = drawData.player === myNum ? 'me' : 'opp';
-        const card = drawData.card;
-        const handIndex = drawData.handIndex || 0;
-        
-        // Lancer l'animation
-        GameAnimations.animateDraw(card, owner, handIndex);
-        
-        // Délai entre les cartes (animation dure 400ms)
-        await new Promise(resolve => setTimeout(resolve, 350));
-    }
-}

@@ -431,14 +431,14 @@ async function startResolution(room) {
         }
     }
     
-    // État d'abord (carte dans le DOM)
-    emitStateToBoth(room);
-    
-    // Court délai pour que le render soit fait
-    await sleep(30);
-    
-    // Animation (le client va trouver la carte, la cacher et animer)
+    // Animation AVANT état - le client va stocker les cartes à cacher
     emitAnimation(room, 'draw', { cards: drawnCards });
+    
+    // Petit délai pour que le client reçoive l'animation
+    await sleep(20);
+    
+    // État (le render va créer les cartes cachées)
+    emitStateToBoth(room);
     log('📦 Les joueurs piochent une carte', 'action');
     
     // Attendre la fin de l'animation
@@ -556,9 +556,9 @@ async function applySpell(room, action, log, sleep) {
             }
             if (drawnCards.length > 0) {
                 log(`  📜 ${action.heroName}: ${spell.name} - pioche ${drawnCards.length} carte(s)`, 'action');
-                emitStateToBoth(room);
-                await sleep(30);
                 emitAnimation(room, 'draw', { cards: drawnCards });
+                await sleep(20);
+                emitStateToBoth(room);
                 await sleep(400 * drawnCards.length);
             }
         } else if (spell.effect === 'mana') {
@@ -575,9 +575,9 @@ async function applySpell(room, action, log, sleep) {
                 }
                 player.hand.push(card);
                 log(`  💎 ${action.heroName}: ${spell.name} - mana max, pioche une carte`, 'action');
-                emitStateToBoth(room);
-                await sleep(30);
                 emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: card, handIndex: player.hand.length - 1 }] });
+                await sleep(20);
+                emitStateToBoth(room);
                 await sleep(400);
             }
         }
@@ -640,9 +640,9 @@ async function applySpell(room, action, log, sleep) {
             }
             if (drawnCards.length > 0) {
                 log(`  📜 ${action.heroName}: ${spell.name} → ${targetName} pioche ${drawnCards.length} carte(s)`, 'action');
-                emitStateToBoth(room);
-                await sleep(30);
                 emitAnimation(room, 'draw', { cards: drawnCards });
+                await sleep(20);
+                emitStateToBoth(room);
                 await sleep(400 * drawnCards.length);
             }
         } else if (spell.effect === 'mana') {
@@ -659,9 +659,9 @@ async function applySpell(room, action, log, sleep) {
                 }
                 targetHero.hand.push(card);
                 log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} mana max, pioche une carte`, 'action');
-                emitStateToBoth(room);
-                await sleep(30);
                 emitAnimation(room, 'draw', { cards: [{ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 }] });
+                await sleep(20);
+                emitStateToBoth(room);
                 await sleep(400);
             }
         } else if (spell.heal) {

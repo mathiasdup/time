@@ -1,6 +1,63 @@
 /**
- * Animation de pioche - Position exacte depuis le DOM, synchronisation parfaite
+ * Animation de pioche - Cartes cachées dès le render
  */
+
+// Cartes à cacher lors du prochain render
+const pendingDrawAnimations = {
+    me: new Map(),   // handIndex -> card
+    opp: new Map()   // handIndex -> card
+};
+
+/**
+ * Appelé quand l'animation 'draw' est reçue (AVANT l'état)
+ * Stocke les cartes à cacher et prépare l'animation
+ */
+function prepareDrawAnimation(data) {
+    if (!data.cards || data.cards.length === 0) return;
+    
+    // Déterminer myNum depuis la variable globale
+    const myPlayerNum = typeof myNum !== 'undefined' ? myNum : 1;
+    
+    for (const drawData of data.cards) {
+        if (drawData.burned) continue;
+        
+        const owner = drawData.player === myPlayerNum ? 'me' : 'opp';
+        const handIndex = drawData.handIndex;
+        const card = drawData.card;
+        
+        // Stocker pour que le render crée la carte cachée
+        pendingDrawAnimations[owner].set(handIndex, card);
+    }
+}
+
+/**
+ * Vérifie si une carte doit être cachée au render
+ */
+function shouldHideCard(owner, handIndex) {
+    return pendingDrawAnimations[owner].has(handIndex);
+}
+
+/**
+ * Lance les animations après le render
+ */
+function startPendingDrawAnimations() {
+    // Attendre le prochain frame pour s'assurer que le DOM est rendu
+    requestAnimationFrame(() => {
+        // Animer les cartes du joueur
+        for (const [handIndex, card] of pendingDrawAnimations.me) {
+            animateCardDraw(card, 'me', handIndex);
+        }
+        
+        // Animer les cartes de l'adversaire
+        for (const [handIndex, card] of pendingDrawAnimations.opp) {
+            animateCardDraw(card, 'opp', handIndex);
+        }
+        
+        // Vider les pending
+        pendingDrawAnimations.me.clear();
+        pendingDrawAnimations.opp.clear();
+    });
+}
 
 /**
  * Crée un élément carte identique (pour le joueur)
@@ -63,7 +120,7 @@ function easeOutCubic(t) {
  * Animation de pioche d'une carte
  */
 function animateCardDraw(card, owner, handIndex) {
-    // Trouver la main et la carte à l'index spécifié
+    // Trouver la carte dans le DOM
     const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
     const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
@@ -71,19 +128,11 @@ function animateCardDraw(card, owner, handIndex) {
     if (!handEl) return;
     
     const handCards = handEl.querySelectorAll(cardSelector);
-    
-    // Utiliser le handIndex pour trouver la bonne carte
     const targetCard = handCards[handIndex];
     
-    if (!targetCard) {
-        console.warn('Carte non trouvée à index', handIndex);
-        return;
-    }
+    if (!targetCard) return;
     
-    // CACHER IMMÉDIATEMENT (avant tout rendu)
-    targetCard.style.visibility = 'hidden';
-    
-    // Position EXACTE de la carte cible
+    // Position EXACTE de la carte cible (elle est déjà cachée par le render)
     const targetRect = targetCard.getBoundingClientRect();
     const endX = targetRect.left;
     const endY = targetRect.top;
@@ -118,7 +167,6 @@ function animateCardDraw(card, owner, handIndex) {
         margin: 0 !important;
         transform: none !important;
         opacity: 0;
-        transition: none !important;
     `;
     
     document.body.appendChild(animatedCard);
@@ -148,15 +196,12 @@ function animateCardDraw(card, owner, handIndex) {
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            // FIN - Dans le même frame : révéler la vraie carte et supprimer l'animation
-            requestAnimationFrame(() => {
-                targetCard.style.visibility = 'visible';
-                animatedCard.remove();
-            });
+            // FIN - révéler la vraie carte et supprimer l'animation
+            targetCard.style.visibility = 'visible';
+            animatedCard.remove();
         }
     }
     
-    // Démarrer l'animation
     requestAnimationFrame(animate);
 }
 
@@ -166,12 +211,22 @@ function animateCardDraw(card, owner, handIndex) {
 const GameAnimations = {
     init: () => Promise.resolve(),
     
-    animateDraw: (card, owner, handIndex = 0) => {
-        animateCardDraw(card, owner, handIndex);
-        return Promise.resolve();
-    },
+    // Appelé par handleAnimation AVANT l'état
+    prepareDrawAnimation: prepareDrawAnimation,
     
-    clear: () => {},
+    // Vérifie si une carte doit être cachée
+    shouldHideCard: shouldHideCard,
+    
+    // Lance les animations après le render
+    startPendingDrawAnimations: startPendingDrawAnimations,
+    
+    // Pour compatibilité (ne fait plus rien directement)
+    animateDraw: (card, owner, handIndex = 0) => Promise.resolve(),
+    
+    clear: () => {
+        pendingDrawAnimations.me.clear();
+        pendingDrawAnimations.opp.clear();
+    },
     
     get isReady() { return true; }
 };
