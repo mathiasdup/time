@@ -10,11 +10,11 @@ const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 const animationQueue = [];
 let isAnimating = false;
 const ANIMATION_DELAYS = {
-    attack: 900,       // Délai après une attaque
-    damage: 600,       // Délai après affichage des dégâts
-    death: 700,        // Délai après une mort
-    heroHit: 600,      // Délai après dégâts au héros
-    default: 400       // Délai par défaut
+    attack: 600,       // Délai après une attaque
+    damage: 500,       // Délai après affichage des dégâts
+    death: 600,        // Délai après une mort
+    heroHit: 500,      // Délai après dégâts au héros
+    default: 300       // Délai par défaut
 };
 
 // Initialiser le système d'animation PixiJS
@@ -71,20 +71,28 @@ async function executeAnimationAsync(type, data) {
             case 'heroHit':
                 await handlePixiHeroHit(data);
                 return;
+            case 'death':
+                animateDeath(data);
+                return;
         }
     }
     
-    // Fallback sur les anciennes animations
-    executeAnimationFallback(type, data);
+    // Fallback si PixiJS pas dispo
+    switch(type) {
+        case 'attack': animateAttackFallback(data); break;
+        case 'damage': animateDamageFallback(data); break;
+        case 'death': animateDeath(data); break;
+        case 'heroHit': animateHeroHitFallback(data); break;
+    }
 }
 
 async function handlePixiAttack(data) {
     const attackerOwner = data.attacker === myNum ? 'me' : 'opp';
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
     
-    // Tireur = projectile
+    // Tireur = projectile (ne se déplace pas)
     if (data.isShooter) {
-        await CombatAnimations.executeAnimation('projectile', {
+        await CombatAnimations.animateProjectile({
             startOwner: attackerOwner,
             startRow: data.row,
             startCol: data.col,
@@ -95,17 +103,17 @@ async function handlePixiAttack(data) {
         return;
     }
     
-    // Combat mutuel
+    // Combat mutuel = les deux se rencontrent au milieu (50/50)
     if (data.isMutual) {
-        await CombatAnimations.executeAnimation('mutual_attack', {
+        await CombatAnimations.animateMutualAttack({
             attacker1: { owner: attackerOwner, row: data.row, col: data.col },
             attacker2: { owner: targetOwner, row: data.targetRow, col: data.targetCol }
         });
         return;
     }
     
-    // Attaque normale
-    await CombatAnimations.executeAnimation('attack', {
+    // Attaque normale = la créature va vers la cible
+    await CombatAnimations.animateAttack({
         attackerOwner: attackerOwner,
         attackerRow: data.row,
         attackerCol: data.col,
@@ -118,7 +126,7 @@ async function handlePixiAttack(data) {
 
 async function handlePixiDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    await CombatAnimations.executeAnimation('damage', {
+    await CombatAnimations.animateDamage({
         owner: owner,
         row: data.row,
         col: data.col,
@@ -128,18 +136,76 @@ async function handlePixiDamage(data) {
 
 async function handlePixiHeroHit(data) {
     const owner = data.defender === myNum ? 'me' : 'opp';
-    await CombatAnimations.executeAnimation('heroHit', {
+    await CombatAnimations.animateHeroHit({
         owner: owner,
         amount: data.damage
     });
 }
 
-function executeAnimationFallback(type, data) {
-    switch(type) {
-        case 'attack': animateAttackFallback(data); break;
-        case 'damage': animateDamageFallback(data); break;
-        case 'death': animateDeath(data); break;
-        case 'heroHit': animateHeroHitFallback(data); break;
+// ==================== FALLBACK ANIMATIONS ====================
+
+function animateAttackFallback(data) {
+    const owner = data.attacker === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const card = slot?.querySelector('.card');
+    if (!card) return;
+    
+    const rect = slot.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    
+    const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
+    let targetX, targetY;
+    
+    if (data.targetCol === -1) {
+        const heroEl = document.getElementById(targetOwner === 'me' ? 'hero-me' : 'hero-opp');
+        const heroRect = heroEl.getBoundingClientRect();
+        targetX = heroRect.left + heroRect.width / 2;
+        targetY = heroRect.top + heroRect.height / 2;
+    } else {
+        const targetSlot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`);
+        if (targetSlot) {
+            const targetRect = targetSlot.getBoundingClientRect();
+            targetX = targetRect.left + targetRect.width / 2;
+            targetY = targetRect.top + targetRect.height / 2;
+        }
+    }
+    
+    if (!targetX || !targetY) return;
+    
+    const deltaX = data.isMutual ? (targetX - startX) / 2 : (targetX - startX);
+    const deltaY = data.isMutual ? (targetY - startY) / 2 : (targetY - startY);
+    
+    card.style.transition = 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+    card.style.zIndex = '1000';
+    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    
+    setTimeout(() => {
+        card.style.transition = 'transform 0.2s ease-out';
+        card.style.transform = '';
+        setTimeout(() => {
+            card.style.zIndex = '';
+            card.style.transition = '';
+        }, 200);
+    }, 280);
+}
+
+function animateDamageFallback(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const card = slot?.querySelector('.card');
+    
+    if (card) {
+        card.classList.add('taking-damage');
+        setTimeout(() => card.classList.remove('taking-damage'), 400);
+    }
+}
+
+function animateHeroHitFallback(data) {
+    const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
+    if (heroEl) {
+        heroEl.classList.add('hit');
+        setTimeout(() => heroEl.classList.remove('hit'), 500);
     }
 }
 
@@ -337,7 +403,7 @@ function initSocket() {
 function handleAnimation(data) {
     const { type } = data;
     
-    // Les animations de combat utilisent la file d'attente pour la lisibilité
+    // Les animations de combat utilisent la file d'attente
     const queuedTypes = ['attack', 'damage', 'death', 'heroHit'];
     
     if (queuedTypes.includes(type)) {
@@ -361,103 +427,6 @@ function handleAnimation(data) {
     }
 }
 
-// ==================== FALLBACK ANIMATIONS (si PixiJS pas disponible) ====================
-
-function animateAttackFallback(data) {
-    const owner = data.attacker === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
-    const card = slot?.querySelector('.card');
-    
-    if (!slot || !card) return;
-    
-    const rect = slot.getBoundingClientRect();
-    const startX = rect.left + rect.width / 2;
-    const startY = rect.top + rect.height / 2;
-    
-    const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
-    let targetX, targetY;
-    
-    if (data.targetCol === -1) {
-        const heroEl = document.getElementById(targetOwner === 'me' ? 'hero-me' : 'hero-opp');
-        const heroRect = heroEl.getBoundingClientRect();
-        targetX = heroRect.left + heroRect.width / 2;
-        targetY = heroRect.top + heroRect.height / 2;
-    } else {
-        const targetSlot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`);
-        if (targetSlot) {
-            const targetRect = targetSlot.getBoundingClientRect();
-            targetX = targetRect.left + targetRect.width / 2;
-            targetY = targetRect.top + targetRect.height / 2;
-        }
-    }
-    
-    if (!targetX || !targetY) return;
-    
-    // Animation simple avec CSS
-    const deltaX = data.isMutual ? (targetX - startX) / 2 : (targetX - startX);
-    const deltaY = data.isMutual ? (targetY - startY) / 2 : (targetY - startY);
-    
-    card.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-    card.style.zIndex = '1000';
-    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-    
-    setTimeout(() => {
-        card.style.transition = 'transform 0.3s ease-out';
-        card.style.transform = '';
-        setTimeout(() => {
-            card.style.zIndex = '';
-            card.style.transition = '';
-        }, 300);
-    }, 450);
-}
-
-function animateDamageFallback(data) {
-    const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
-    const card = slot?.querySelector('.card');
-    
-    if (card) {
-        card.classList.add('taking-damage');
-        setTimeout(() => card.classList.remove('taking-damage'), 400);
-    }
-    
-    if (slot) {
-        const rect = slot.getBoundingClientRect();
-        
-        // Créer le splash de dégâts - 2x plus grand (180px)
-        const splash = document.createElement('div');
-        splash.className = 'damage-splash';
-        splash.innerHTML = `
-            <div class="damage-splash-bg"></div>
-            <span class="damage-splash-text">-${data.amount}</span>
-        `;
-        splash.style.left = rect.left + rect.width/2 - 90 + 'px';
-        splash.style.top = rect.top + rect.height/2 - 90 + 'px';
-        document.body.appendChild(splash);
-        setTimeout(() => splash.remove(), 2000);
-    }
-}
-
-function animateHeroHitFallback(data) {
-    const heroEl = document.getElementById(data.defender === myNum ? 'hero-me' : 'hero-opp');
-    heroEl.classList.add('hit');
-    setTimeout(() => heroEl.classList.remove('hit'), 500);
-    
-    if (data.damage) {
-        const heroRect = heroEl.getBoundingClientRect();
-        const splash = document.createElement('div');
-        splash.className = 'damage-splash';
-        splash.innerHTML = `
-            <div class="damage-splash-bg"></div>
-            <span class="damage-splash-text">-${data.damage}</span>
-        `;
-        splash.style.left = heroRect.left + heroRect.width/2 - 90 + 'px';
-        splash.style.top = heroRect.top + heroRect.height/2 - 90 + 'px';
-        document.body.appendChild(splash);
-        setTimeout(() => splash.remove(), 2000);
-    }
-}
-
 function animateBuff(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
@@ -473,8 +442,8 @@ function animateBuff(data) {
     }
 }
 
-// Les anciennes fonctions animateAttack et animateDamage ont été remplacées
-// par animateAttackFallback et animateDamageFallback ci-dessus
+// Les fonctions animateAttack et animateDamage sont maintenant gérées par le système PixiJS
+// Voir combat-animations.js et les fonctions handlePixiAttack/handlePixiDamage ci-dessus
 
 function animateDeath(data) {
     const owner = data.player === myNum ? 'me' : 'opp';

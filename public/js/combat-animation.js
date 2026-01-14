@@ -1,26 +1,24 @@
 /**
- * Combat Animations System - Style Hearthstone avec PixiJS
- * Animations fluides pour les combats de cartes
+ * Combat Animations System - Style Magic Arena / Hearthstone
+ * Animations fluides avec PixiJS
  */
 
 class CombatAnimationSystem {
     constructor() {
         this.app = null;
         this.container = null;
-        this.textures = {};
         this.animationQueue = [];
         this.isProcessing = false;
         this.initialized = false;
         
-        // Timing des animations (en ms)
+        // Timing des animations (en ms) - Plus rapide
         this.TIMINGS = {
-            ATTACK_MOVE_DURATION: 400,      // Durée du déplacement d'attaque
-            ATTACK_RETURN_DURATION: 300,    // Durée du retour
-            IMPACT_DISPLAY: 600,            // Durée affichage impact
-            DAMAGE_SPLASH_DURATION: 2000,   // Durée du splash de dégâts (2 secondes)
-            DELAY_BETWEEN_ATTACKS: 900,     // Délai entre chaque attaque
-            DELAY_AFTER_DAMAGE: 500,        // Délai après affichage dégâts
-            PROJECTILE_DURATION: 450,       // Durée du projectile tireur
+            ATTACK_MOVE_DURATION: 250,      // Mouvement rapide vers la cible
+            ATTACK_RETURN_DURATION: 200,    // Retour rapide
+            IMPACT_DURATION: 400,           // Durée de l'impact
+            DAMAGE_DISPLAY: 1800,           // Durée affichage dégâts (griffures)
+            DELAY_BETWEEN_ATTACKS: 700,     // Délai entre attaques
+            PROJECTILE_DURATION: 300,       // Projectile rapide
         };
     }
     
@@ -54,85 +52,17 @@ class CombatAnimationSystem {
         
         this.container.appendChild(this.app.canvas);
         
-        // Charger les textures
-        await this.loadTextures();
-        
         // Gérer le redimensionnement
         window.addEventListener('resize', () => this.handleResize());
         
         this.initialized = true;
-        console.log('✅ Combat Animation System initialized with PixiJS');
-    }
-    
-    async loadTextures() {
-        try {
-            // Charger l'image de dégâts
-            this.textures.damage = await PIXI.Assets.load('/css/degats.png');
-            console.log('✅ Damage texture loaded');
-        } catch (e) {
-            console.warn('Could not load damage texture, using fallback');
-            this.textures.damage = null;
-        }
+        console.log('✅ Combat Animation System initialized');
     }
     
     handleResize() {
         if (this.app && this.app.renderer) {
             this.app.renderer.resize(window.innerWidth, window.innerHeight);
         }
-    }
-    
-    // ==================== FILE D'ATTENTE D'ANIMATIONS ====================
-    
-    queueAnimation(type, data, delay = 0) {
-        this.animationQueue.push({ type, data, delay });
-        if (!this.isProcessing) {
-            this.processQueue();
-        }
-    }
-    
-    async processQueue() {
-        if (this.animationQueue.length === 0) {
-            this.isProcessing = false;
-            return;
-        }
-        
-        this.isProcessing = true;
-        const { type, data, delay } = this.animationQueue.shift();
-        
-        // Attendre le délai si spécifié
-        if (delay > 0) {
-            await this.wait(delay);
-        }
-        
-        // Exécuter l'animation
-        await this.executeAnimation(type, data);
-        
-        // Continuer la file
-        this.processQueue();
-    }
-    
-    async executeAnimation(type, data) {
-        switch (type) {
-            case 'attack':
-                await this.animateAttack(data);
-                break;
-            case 'damage':
-                await this.animateDamage(data);
-                break;
-            case 'heroHit':
-                await this.animateHeroHit(data);
-                break;
-            case 'mutual_attack':
-                await this.animateMutualAttack(data);
-                break;
-            case 'projectile':
-                await this.animateProjectile(data);
-                break;
-        }
-    }
-    
-    wait(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
     }
     
     // ==================== UTILITAIRES ====================
@@ -142,66 +72,25 @@ class CombatAnimationSystem {
         return slot?.querySelector('.card');
     }
     
-    getSlotPosition(owner, row, col) {
+    getSlotCenter(owner, row, col) {
         const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${row}"][data-col="${col}"]`);
         if (!slot) return null;
         const rect = slot.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-            width: rect.width,
-            height: rect.height
-        };
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     }
     
-    getHeroPosition(owner) {
+    getHeroCenter(owner) {
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (!heroEl) return null;
         const rect = heroEl.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-            width: rect.width,
-            height: rect.height
-        };
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     }
     
-    // Créer un sprite de carte pour l'animation
-    createCardSprite(cardElement) {
-        if (!cardElement) return null;
-        
-        const rect = cardElement.getBoundingClientRect();
-        const container = new PIXI.Container();
-        
-        // Fond de la carte
-        const bg = new PIXI.Graphics();
-        bg.roundRect(-rect.width/2, -rect.height/2, rect.width, rect.height, 8);
-        bg.fill({ color: 0x2a1a0a });
-        bg.stroke({ width: 3, color: 0x8b7355 });
-        container.addChild(bg);
-        
-        // Récupérer l'icône de la carte
-        const iconEl = cardElement.querySelector('.card-art');
-        if (iconEl) {
-            const text = new PIXI.Text({
-                text: iconEl.textContent,
-                style: {
-                    fontSize: 36,
-                    fill: 0xffffff,
-                }
-            });
-            text.anchor.set(0.5);
-            text.y = -10;
-            container.addChild(text);
-        }
-        
-        container.x = rect.left + rect.width / 2;
-        container.y = rect.top + rect.height / 2;
-        
-        return container;
+    wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
     
-    // ==================== ANIMATIONS DE COMBAT ====================
+    // ==================== ANIMATION D'ATTAQUE ====================
     
     async animateAttack(data) {
         const { attackerOwner, attackerRow, attackerCol, targetOwner, targetRow, targetCol, isFlying } = data;
@@ -209,431 +98,527 @@ class CombatAnimationSystem {
         const cardElement = this.getCardElement(attackerOwner, attackerRow, attackerCol);
         if (!cardElement) return;
         
-        const startPos = this.getSlotPosition(attackerOwner, attackerRow, attackerCol);
-        let endPos;
-        
-        if (targetCol === -1) {
-            // Cible = héros
-            endPos = this.getHeroPosition(targetOwner);
-        } else {
-            // Cible = créature
-            endPos = this.getSlotPosition(targetOwner, targetRow, targetCol);
-        }
+        const startPos = this.getSlotCenter(attackerOwner, attackerRow, attackerCol);
+        const endPos = targetCol === -1 
+            ? this.getHeroCenter(targetOwner)
+            : this.getSlotCenter(targetOwner, targetRow, targetCol);
         
         if (!startPos || !endPos) return;
         
-        // Créer le sprite de carte pour l'animation
-        const cardSprite = this.createCardSprite(cardElement);
-        if (!cardSprite) return;
+        // Calculer le déplacement complet vers la cible
+        const deltaX = endPos.x - startPos.x;
+        const deltaY = endPos.y - startPos.y;
         
-        this.app.stage.addChild(cardSprite);
+        // Animation CSS fluide sur la carte DOM
+        cardElement.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        cardElement.style.zIndex = '1000';
+        cardElement.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.1)`;
         
-        // Cacher la carte originale pendant l'animation
-        cardElement.style.visibility = 'hidden';
+        await this.wait(this.TIMINGS.ATTACK_MOVE_DURATION);
         
-        // Animation de déplacement vers la cible
-        await this.tweenPosition(cardSprite, startPos, endPos, this.TIMINGS.ATTACK_MOVE_DURATION, 'easeInQuad');
+        // Impact à destination
+        this.createImpactEffect(endPos.x, endPos.y, isFlying ? 'wind' : 'slash');
         
-        // Créer l'impact
-        await this.createImpact(endPos.x, endPos.y, isFlying ? 'wind' : 'clash');
+        // Retour
+        cardElement.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN_DURATION}ms cubic-bezier(0.4, 0, 1, 1)`;
+        cardElement.style.transform = '';
         
-        // Animation de retour
-        await this.tweenPosition(cardSprite, endPos, startPos, this.TIMINGS.ATTACK_RETURN_DURATION, 'easeOutQuad');
+        await this.wait(this.TIMINGS.ATTACK_RETURN_DURATION);
         
-        // Nettoyer
-        this.app.stage.removeChild(cardSprite);
-        cardSprite.destroy();
-        cardElement.style.visibility = 'visible';
+        cardElement.style.zIndex = '';
+        cardElement.style.transition = '';
     }
+    
+    // ==================== COMBAT MUTUEL - 50/50 AU MILIEU ====================
     
     async animateMutualAttack(data) {
         const { attacker1, attacker2 } = data;
         
-        const card1Element = this.getCardElement(attacker1.owner, attacker1.row, attacker1.col);
-        const card2Element = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
+        const card1 = this.getCardElement(attacker1.owner, attacker1.row, attacker1.col);
+        const card2 = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
         
-        if (!card1Element || !card2Element) return;
+        if (!card1 || !card2) return;
         
-        const pos1 = this.getSlotPosition(attacker1.owner, attacker1.row, attacker1.col);
-        const pos2 = this.getSlotPosition(attacker2.owner, attacker2.row, attacker2.col);
+        const pos1 = this.getSlotCenter(attacker1.owner, attacker1.row, attacker1.col);
+        const pos2 = this.getSlotCenter(attacker2.owner, attacker2.row, attacker2.col);
         
         if (!pos1 || !pos2) return;
         
-        // Point de rencontre au milieu
-        const midPoint = {
-            x: (pos1.x + pos2.x) / 2,
-            y: (pos1.y + pos2.y) / 2
-        };
+        // Point de collision au milieu exact (50/50)
+        const midX = (pos1.x + pos2.x) / 2;
+        const midY = (pos1.y + pos2.y) / 2;
         
-        // Créer les sprites
-        const sprite1 = this.createCardSprite(card1Element);
-        const sprite2 = this.createCardSprite(card2Element);
+        // Déplacement de chaque carte vers le milieu
+        const delta1X = midX - pos1.x;
+        const delta1Y = midY - pos1.y;
+        const delta2X = midX - pos2.x;
+        const delta2Y = midY - pos2.y;
         
-        if (!sprite1 || !sprite2) return;
+        // Animation simultanée des deux cartes vers le milieu
+        card1.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        card2.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        card1.style.zIndex = '1000';
+        card2.style.zIndex = '1001';
         
-        this.app.stage.addChild(sprite1);
-        this.app.stage.addChild(sprite2);
+        card1.style.transform = `translate(${delta1X}px, ${delta1Y}px) scale(1.05)`;
+        card2.style.transform = `translate(${delta2X}px, ${delta2Y}px) scale(1.05)`;
         
-        // Cacher les cartes originales
-        card1Element.style.visibility = 'hidden';
-        card2Element.style.visibility = 'hidden';
+        await this.wait(this.TIMINGS.ATTACK_MOVE_DURATION);
         
-        // Animation simultanée vers le milieu
-        await Promise.all([
-            this.tweenPosition(sprite1, pos1, midPoint, this.TIMINGS.ATTACK_MOVE_DURATION, 'easeInQuad'),
-            this.tweenPosition(sprite2, pos2, midPoint, this.TIMINGS.ATTACK_MOVE_DURATION, 'easeInQuad')
-        ]);
+        // Impact violent au milieu
+        this.createClashEffect(midX, midY);
         
-        // Impact au milieu
-        await this.createImpact(midPoint.x, midPoint.y, 'clash');
+        // Légère pause pour l'impact
+        await this.wait(80);
         
-        // Retour aux positions
-        await Promise.all([
-            this.tweenPosition(sprite1, midPoint, pos1, this.TIMINGS.ATTACK_RETURN_DURATION, 'easeOutQuad'),
-            this.tweenPosition(sprite2, midPoint, pos2, this.TIMINGS.ATTACK_RETURN_DURATION, 'easeOutQuad')
-        ]);
+        // Retour des deux cartes
+        card1.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN_DURATION}ms cubic-bezier(0.4, 0, 1, 1)`;
+        card2.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN_DURATION}ms cubic-bezier(0.4, 0, 1, 1)`;
+        card1.style.transform = '';
+        card2.style.transform = '';
         
-        // Nettoyer
-        this.app.stage.removeChild(sprite1);
-        this.app.stage.removeChild(sprite2);
-        sprite1.destroy();
-        sprite2.destroy();
-        card1Element.style.visibility = 'visible';
-        card2Element.style.visibility = 'visible';
+        await this.wait(this.TIMINGS.ATTACK_RETURN_DURATION);
+        
+        card1.style.zIndex = '';
+        card2.style.zIndex = '';
+        card1.style.transition = '';
+        card2.style.transition = '';
     }
+    
+    // ==================== PROJECTILE TIREUR ====================
     
     async animateProjectile(data) {
         const { startOwner, startRow, startCol, targetOwner, targetRow, targetCol } = data;
         
-        const startPos = this.getSlotPosition(startOwner, startRow, startCol);
-        let endPos;
-        
-        if (targetCol === -1) {
-            endPos = this.getHeroPosition(targetOwner);
-        } else {
-            endPos = this.getSlotPosition(targetOwner, targetRow, targetCol);
-        }
+        const startPos = this.getSlotCenter(startOwner, startRow, startCol);
+        const endPos = targetCol === -1 
+            ? this.getHeroCenter(targetOwner) 
+            : this.getSlotCenter(targetOwner, targetRow, targetCol);
         
         if (!startPos || !endPos) return;
         
-        // Créer le projectile (flèche)
+        // Créer le projectile avec PixiJS
         const projectile = new PIXI.Container();
         
-        // Corps de la flèche
+        // Trainée lumineuse
+        const trail = new PIXI.Graphics();
+        trail.moveTo(-30, 0);
+        trail.lineTo(0, 0);
+        trail.stroke({ width: 6, color: 0xffaa00, alpha: 0.6 });
+        trail.moveTo(-50, 0);
+        trail.lineTo(-30, 0);
+        trail.stroke({ width: 4, color: 0xff6600, alpha: 0.3 });
+        projectile.addChild(trail);
+        
+        // Corps du projectile (flèche/énergie)
         const arrow = new PIXI.Graphics();
-        arrow.moveTo(-20, 0);
-        arrow.lineTo(15, 0);
-        arrow.stroke({ width: 4, color: 0xd4a574 });
-        
-        // Pointe de la flèche
+        // Pointe
         arrow.moveTo(15, 0);
-        arrow.lineTo(5, -6);
-        arrow.moveTo(15, 0);
-        arrow.lineTo(5, 6);
-        arrow.stroke({ width: 3, color: 0x8b4513 });
-        
+        arrow.lineTo(0, -5);
+        arrow.lineTo(0, 5);
+        arrow.closePath();
+        arrow.fill({ color: 0xffdd44 });
+        // Corps lumineux
+        arrow.circle(0, 0, 6);
+        arrow.fill({ color: 0xffff88 });
+        arrow.circle(0, 0, 3);
+        arrow.fill({ color: 0xffffff });
         projectile.addChild(arrow);
         
-        // Calculer l'angle
+        // Glow effect
+        const glow = new PIXI.Graphics();
+        glow.circle(0, 0, 12);
+        glow.fill({ color: 0xffaa00, alpha: 0.3 });
+        projectile.addChildAt(glow, 0);
+        
+        // Angle vers la cible
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
         projectile.rotation = angle;
         projectile.x = startPos.x;
         projectile.y = startPos.y;
         
-        // Effet de trainée
-        const trail = new PIXI.Graphics();
-        trail.circle(0, 0, 3);
-        trail.fill({ color: 0xffdd00, alpha: 0.8 });
-        projectile.addChild(trail);
-        
         this.app.stage.addChild(projectile);
         
         // Animation du projectile
-        await this.tweenPosition(projectile, startPos, endPos, this.TIMINGS.PROJECTILE_DURATION, 'linear');
+        const duration = this.TIMINGS.PROJECTILE_DURATION;
+        const startTime = performance.now();
         
-        // Impact
-        await this.createImpact(endPos.x, endPos.y, 'arrow');
-        
-        // Nettoyer
-        this.app.stage.removeChild(projectile);
-        projectile.destroy();
+        await new Promise(resolve => {
+            const animate = () => {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Easing rapide au début, ralentit à la fin
+                const eased = 1 - Math.pow(1 - progress, 2);
+                
+                projectile.x = startPos.x + (endPos.x - startPos.x) * eased;
+                projectile.y = startPos.y + (endPos.y - startPos.y) * eased;
+                
+                // Effet de pulsation
+                const pulse = 1 + Math.sin(progress * Math.PI * 4) * 0.1;
+                glow.scale.set(pulse);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    this.app.stage.removeChild(projectile);
+                    projectile.destroy();
+                    // Impact à l'arrivée
+                    this.createImpactEffect(endPos.x, endPos.y, 'arrow');
+                    resolve();
+                }
+            };
+            requestAnimationFrame(animate);
+        });
     }
     
-    // ==================== ANIMATIONS DE DÉGÂTS ====================
+    // ==================== ANIMATION DE DÉGÂTS - GRIFFURES ====================
     
     async animateDamage(data) {
         const { owner, row, col, amount } = data;
         
-        const pos = this.getSlotPosition(owner, row, col);
+        const pos = this.getSlotCenter(owner, row, col);
         if (!pos) return;
         
-        await this.createDamageSplash(pos.x, pos.y, amount);
+        // Shake sur la carte DOM
+        const cardElement = this.getCardElement(owner, row, col);
+        if (cardElement) {
+            cardElement.classList.add('taking-damage');
+            setTimeout(() => cardElement.classList.remove('taking-damage'), 400);
+        }
+        
+        // Créer l'effet de griffures avec PixiJS
+        this.createScratchEffect(pos.x, pos.y, amount);
     }
+    
+    createScratchEffect(x, y, amount) {
+        const container = new PIXI.Container();
+        container.x = x;
+        container.y = y;
+        
+        // Créer 3 griffures
+        const scratches = new PIXI.Graphics();
+        const scratchColor = 0xff3333;
+        
+        // Griffure 1 - principale
+        this.drawScratch(scratches, -25, -30, 25, 30, scratchColor, 5);
+        // Griffure 2
+        this.drawScratch(scratches, -10, -35, 15, 25, scratchColor, 4);
+        // Griffure 3
+        this.drawScratch(scratches, -35, -20, 30, 35, scratchColor, 3);
+        
+        container.addChild(scratches);
+        
+        // Particules de sang/énergie
+        for (let i = 0; i < 8; i++) {
+            const particle = new PIXI.Graphics();
+            const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.5;
+            const size = 3 + Math.random() * 4;
+            particle.circle(0, 0, size);
+            particle.fill({ color: 0xff4444 });
+            particle.x = Math.cos(angle) * 15;
+            particle.y = Math.sin(angle) * 15;
+            particle.alpha = 0.8;
+            container.addChild(particle);
+        }
+        
+        // Texte des dégâts - SANS contour noir, juste rouge vif
+        const damageText = new PIXI.Text({
+            text: `-${amount}`,
+            style: {
+                fontFamily: 'Arial Black, sans-serif',
+                fontSize: 52,
+                fontWeight: 'bold',
+                fill: 0xff2222,
+                dropShadow: {
+                    color: 0x990000,
+                    blur: 2,
+                    angle: Math.PI / 4,
+                    distance: 2,
+                    alpha: 0.5
+                }
+            }
+        });
+        damageText.anchor.set(0.5);
+        damageText.y = -5;
+        container.addChild(damageText);
+        
+        this.app.stage.addChild(container);
+        
+        // Animation
+        container.scale.set(0.3);
+        container.alpha = 0;
+        
+        const duration = this.TIMINGS.DAMAGE_DISPLAY;
+        const startTime = performance.now();
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = elapsed / duration;
+            
+            if (progress < 0.15) {
+                // Phase 1: Apparition rapide avec overshoot
+                const p = progress / 0.15;
+                const scale = this.easeOutBack(p);
+                container.scale.set(0.3 + 0.9 * scale);
+                container.alpha = p;
+            } else if (progress < 0.8) {
+                // Phase 2: Stable
+                container.scale.set(1.2);
+                container.alpha = 1;
+                
+                // Légère ondulation des griffures
+                scratches.rotation = Math.sin(elapsed * 0.01) * 0.02;
+            } else {
+                // Phase 3: Fade out en montant
+                const p = (progress - 0.8) / 0.2;
+                container.alpha = 1 - p;
+                container.y = y - 30 * p;
+                container.scale.set(1.2 - 0.2 * p);
+            }
+            
+            // Animer les particules
+            container.children.forEach((child, i) => {
+                if (child !== scratches && child !== damageText) {
+                    const angle = (Math.PI * 2 * i) / 8;
+                    const dist = 15 + progress * 40;
+                    child.x = Math.cos(angle) * dist;
+                    child.y = Math.sin(angle) * dist;
+                    child.alpha = Math.max(0, 0.8 - progress);
+                }
+            });
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                this.app.stage.removeChild(container);
+                container.destroy();
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+    
+    drawScratch(graphics, x1, y1, x2, y2, color, width) {
+        // Ligne principale de la griffure
+        graphics.moveTo(x1, y1);
+        
+        // Ajouter des variations pour un aspect naturel
+        const midX = (x1 + x2) / 2 + (Math.random() - 0.5) * 10;
+        const midY = (y1 + y2) / 2 + (Math.random() - 0.5) * 10;
+        
+        graphics.quadraticCurveTo(midX, midY, x2, y2);
+        graphics.stroke({ width: width, color: color, cap: 'round' });
+        
+        // Ligne plus fine par-dessus (highlight)
+        graphics.moveTo(x1 + 2, y1 + 2);
+        graphics.quadraticCurveTo(midX + 2, midY + 2, x2 + 2, y2 + 2);
+        graphics.stroke({ width: width * 0.4, color: 0xffaaaa, cap: 'round' });
+    }
+    
+    // ==================== DÉGÂTS AU HÉROS ====================
     
     async animateHeroHit(data) {
         const { owner, amount } = data;
         
-        const pos = this.getHeroPosition(owner);
+        const pos = this.getHeroCenter(owner);
         if (!pos) return;
         
-        // Shake effect sur le héros
+        // Shake sur le héros DOM
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (heroEl) {
             heroEl.classList.add('hit');
             setTimeout(() => heroEl.classList.remove('hit'), 500);
         }
         
-        await this.createDamageSplash(pos.x, pos.y, amount);
-    }
-    
-    async createDamageSplash(x, y, amount) {
-        const container = new PIXI.Container();
-        container.x = x;
-        container.y = y;
-        
-        // Taille du splash (2x plus grand)
-        const splashSize = 180;
-        
-        // Image de dégâts ou fallback
-        if (this.textures.damage) {
-            const damageSprite = new PIXI.Sprite(this.textures.damage);
-            damageSprite.anchor.set(0.5);
-            damageSprite.width = splashSize;
-            damageSprite.height = splashSize;
-            container.addChild(damageSprite);
-        } else {
-            // Fallback: étoile de dégâts
-            const star = new PIXI.Graphics();
-            const spikes = 8;
-            const outerRadius = splashSize / 2;
-            const innerRadius = splashSize / 3;
-            
-            star.moveTo(0, -outerRadius);
-            for (let i = 0; i < spikes * 2; i++) {
-                const radius = i % 2 === 0 ? outerRadius : innerRadius;
-                const angle = (Math.PI * i) / spikes - Math.PI / 2;
-                star.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-            }
-            star.closePath();
-            star.fill({ color: 0xffa500 });
-            star.stroke({ width: 4, color: 0xff6600 });
-            container.addChild(star);
-        }
-        
-        // Texte du nombre de dégâts
-        const damageText = new PIXI.Text({
-            text: `-${amount}`,
-            style: {
-                fontFamily: 'Cinzel, serif',
-                fontSize: 48,
-                fontWeight: 'bold',
-                fill: 0xffffff,
-                stroke: { color: 0x000000, width: 6 },
-                dropShadow: {
-                    color: 0x000000,
-                    blur: 4,
-                    angle: Math.PI / 4,
-                    distance: 4,
-                }
-            }
-        });
-        damageText.anchor.set(0.5);
-        container.addChild(damageText);
-        
-        this.app.stage.addChild(container);
-        
-        // Animation d'apparition
-        container.scale.set(0.2);
-        container.alpha = 0;
-        
-        // Phase 1: Pop in
-        await this.tweenScale(container, 0.2, 1.3, 150, 'easeOutBack');
-        container.alpha = 1;
-        
-        // Phase 2: Settle
-        await this.tweenScale(container, 1.3, 1.0, 100, 'easeInOutQuad');
-        
-        // Phase 3: Stay visible
-        await this.wait(this.TIMINGS.DAMAGE_SPLASH_DURATION - 500);
-        
-        // Phase 4: Fade out et monte
-        await this.tweenFadeUp(container, 250);
-        
-        // Nettoyer
-        this.app.stage.removeChild(container);
-        container.destroy();
+        // Effet de griffures sur le héros
+        this.createScratchEffect(pos.x, pos.y, amount);
     }
     
     // ==================== EFFETS D'IMPACT ====================
     
-    async createImpact(x, y, type = 'clash') {
+    createImpactEffect(x, y, type = 'slash') {
         const container = new PIXI.Container();
         container.x = x;
         container.y = y;
         
-        // Particules d'impact
-        const particleCount = type === 'clash' ? 12 : 8;
-        const particles = [];
-        
-        for (let i = 0; i < particleCount; i++) {
-            const particle = new PIXI.Graphics();
-            const angle = (Math.PI * 2 * i) / particleCount;
-            
-            if (type === 'clash') {
-                // Étoiles dorées pour le clash
-                particle.star(0, 0, 5, 8, 4);
-                particle.fill({ color: 0xffdd00 });
-            } else if (type === 'wind') {
-                // Lignes pour le vent
-                particle.moveTo(0, 0);
-                particle.lineTo(15, 0);
-                particle.stroke({ width: 2, color: 0xaaddff });
-            } else if (type === 'arrow') {
-                // Points pour l'impact de flèche
-                particle.circle(0, 0, 4);
-                particle.fill({ color: 0xffaa00 });
+        if (type === 'slash') {
+            // Impact de mêlée - éclats
+            for (let i = 0; i < 12; i++) {
+                const spark = new PIXI.Graphics();
+                const angle = (Math.PI * 2 * i) / 12;
+                const length = 15 + Math.random() * 10;
+                
+                spark.moveTo(0, 0);
+                spark.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+                spark.stroke({ width: 3, color: 0xffdd00, cap: 'round' });
+                
+                container.addChild(spark);
             }
             
-            particle.x = Math.cos(angle) * 5;
-            particle.y = Math.sin(angle) * 5;
-            particle.rotation = angle;
-            particles.push({ sprite: particle, angle });
-            container.addChild(particle);
+            // Cercle d'impact
+            const ring = new PIXI.Graphics();
+            ring.circle(0, 0, 25);
+            ring.stroke({ width: 4, color: 0xffaa00 });
+            container.addChild(ring);
+            
+        } else if (type === 'wind') {
+            // Impact aérien - lignes de vent
+            for (let i = 0; i < 8; i++) {
+                const line = new PIXI.Graphics();
+                const angle = (Math.PI * 2 * i) / 8;
+                const curve = Math.random() * 20;
+                
+                line.moveTo(0, 0);
+                line.quadraticCurveTo(
+                    Math.cos(angle + 0.3) * curve,
+                    Math.sin(angle + 0.3) * curve,
+                    Math.cos(angle) * 30,
+                    Math.sin(angle) * 30
+                );
+                line.stroke({ width: 2, color: 0x88ccff, cap: 'round' });
+                container.addChild(line);
+            }
+            
+        } else if (type === 'arrow') {
+            // Impact de projectile - éclat
+            const burst = new PIXI.Graphics();
+            burst.star(0, 0, 6, 20, 10);
+            burst.fill({ color: 0xffaa00 });
+            container.addChild(burst);
+            
+            // Particules
+            for (let i = 0; i < 6; i++) {
+                const p = new PIXI.Graphics();
+                p.circle(0, 0, 3);
+                p.fill({ color: 0xffdd00 });
+                const angle = (Math.PI * 2 * i) / 6;
+                p.x = Math.cos(angle) * 10;
+                p.y = Math.sin(angle) * 10;
+                container.addChild(p);
+            }
         }
-        
-        // Cercle d'impact central
-        const impactRing = new PIXI.Graphics();
-        impactRing.circle(0, 0, 20);
-        impactRing.stroke({ width: 4, color: type === 'wind' ? 0xaaddff : 0xffdd00 });
-        container.addChild(impactRing);
         
         this.app.stage.addChild(container);
         
-        // Animation des particules
-        const duration = this.TIMINGS.IMPACT_DISPLAY;
+        // Animation de l'impact
+        const duration = this.TIMINGS.IMPACT_DURATION;
         const startTime = performance.now();
         
-        return new Promise(resolve => {
-            const animate = () => {
-                const elapsed = performance.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                // Expansion des particules
-                particles.forEach(p => {
-                    const distance = 60 * this.easeOutQuad(progress);
-                    p.sprite.x = Math.cos(p.angle) * distance;
-                    p.sprite.y = Math.sin(p.angle) * distance;
-                    p.sprite.alpha = 1 - progress;
-                    p.sprite.scale.set(1 + progress * 0.5);
-                });
-                
-                // Expansion et fade du cercle
-                impactRing.scale.set(1 + progress * 2);
-                impactRing.alpha = 1 - progress;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    this.app.stage.removeChild(container);
-                    container.destroy();
-                    resolve();
-                }
-            };
-            requestAnimationFrame(animate);
-        });
-    }
-    
-    // ==================== TWEENING ====================
-    
-    tweenPosition(sprite, from, to, duration, easing = 'linear') {
-        return new Promise(resolve => {
-            const startTime = performance.now();
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = elapsed / duration;
             
-            const animate = () => {
-                const elapsed = performance.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easedProgress = this.applyEasing(progress, easing);
-                
-                sprite.x = from.x + (to.x - from.x) * easedProgress;
-                sprite.y = from.y + (to.y - from.y) * easedProgress;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    resolve();
-                }
-            };
-            requestAnimationFrame(animate);
-        });
-    }
-    
-    tweenScale(sprite, from, to, duration, easing = 'linear') {
-        return new Promise(resolve => {
-            const startTime = performance.now();
+            // Expansion et fade
+            container.scale.set(1 + progress * 1.5);
+            container.alpha = 1 - progress;
+            container.rotation = progress * 0.3;
             
-            const animate = () => {
-                const elapsed = performance.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easedProgress = this.applyEasing(progress, easing);
-                
-                const scale = from + (to - from) * easedProgress;
-                sprite.scale.set(scale);
-                sprite.alpha = Math.min(progress * 3, 1);
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    resolve();
-                }
-            };
-            requestAnimationFrame(animate);
-        });
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                this.app.stage.removeChild(container);
+                container.destroy();
+            }
+        };
+        requestAnimationFrame(animate);
     }
     
-    tweenFadeUp(sprite, duration) {
-        return new Promise(resolve => {
-            const startTime = performance.now();
-            const startY = sprite.y;
+    createClashEffect(x, y) {
+        const container = new PIXI.Container();
+        container.x = x;
+        container.y = y;
+        
+        // Explosion d'énergie au centre
+        const burst = new PIXI.Graphics();
+        burst.star(0, 0, 8, 40, 20);
+        burst.fill({ color: 0xffdd00 });
+        container.addChild(burst);
+        
+        // Cercle de choc
+        const shockwave = new PIXI.Graphics();
+        shockwave.circle(0, 0, 30);
+        shockwave.stroke({ width: 5, color: 0xffffff });
+        container.addChild(shockwave);
+        
+        // Étincelles
+        for (let i = 0; i < 16; i++) {
+            const spark = new PIXI.Graphics();
+            const angle = (Math.PI * 2 * i) / 16;
             
-            const animate = () => {
-                const elapsed = performance.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                sprite.alpha = 1 - progress;
-                sprite.y = startY - 30 * progress;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    resolve();
-                }
-            };
-            requestAnimationFrame(animate);
-        });
-    }
-    
-    applyEasing(t, type) {
-        switch (type) {
-            case 'easeInQuad':
-                return t * t;
-            case 'easeOutQuad':
-                return t * (2 - t);
-            case 'easeInOutQuad':
-                return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-            case 'easeOutBack':
-                const c1 = 1.70158;
-                const c3 = c1 + 1;
-                return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-            case 'easeOutElastic':
-                if (t === 0 || t === 1) return t;
-                return Math.pow(2, -10 * t) * Math.sin((t - 0.1) * 5 * Math.PI) + 1;
-            default:
-                return t;
+            spark.moveTo(0, 0);
+            spark.lineTo(Math.cos(angle) * 25, Math.sin(angle) * 25);
+            spark.stroke({ width: 3, color: i % 2 === 0 ? 0xffff00 : 0xff8800, cap: 'round' });
+            
+            container.addChild(spark);
         }
+        
+        // Particules d'énergie
+        for (let i = 0; i < 10; i++) {
+            const p = new PIXI.Graphics();
+            const size = 4 + Math.random() * 6;
+            p.circle(0, 0, size);
+            p.fill({ color: 0xffffaa });
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 20;
+            p.x = Math.cos(angle) * dist;
+            p.y = Math.sin(angle) * dist;
+            container.addChild(p);
+        }
+        
+        this.app.stage.addChild(container);
+        
+        // Animation explosive
+        container.scale.set(0.3);
+        const duration = 500;
+        const startTime = performance.now();
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = elapsed / duration;
+            
+            if (progress < 0.2) {
+                // Expansion rapide
+                const p = progress / 0.2;
+                container.scale.set(0.3 + 1.2 * this.easeOutBack(p));
+                container.alpha = 1;
+            } else {
+                // Fade out
+                const p = (progress - 0.2) / 0.8;
+                container.scale.set(1.5 + p * 0.5);
+                container.alpha = 1 - p;
+            }
+            
+            // Rotation de l'étoile
+            burst.rotation = progress * Math.PI;
+            
+            // Expansion de la shockwave
+            shockwave.scale.set(1 + progress * 2);
+            shockwave.alpha = 1 - progress;
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                this.app.stage.removeChild(container);
+                container.destroy();
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+    
+    // ==================== EASING FUNCTIONS ====================
+    
+    easeOutBack(t) {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     }
     
     easeOutQuad(t) {
         return t * (2 - t);
+    }
+    
+    easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     }
 }
 
