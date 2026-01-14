@@ -17,7 +17,7 @@ const ANIMATION_DELAYS = {
     default: 300       // Délai par défaut
 };
 
-// Initialiser le système d'animation PixiJS
+// Initialiser le système d'animation
 async function initCombatAnimations() {
     if (typeof CombatAnimations !== 'undefined') {
         try {
@@ -25,9 +25,13 @@ async function initCombatAnimations() {
             combatAnimReady = true;
             console.log('✅ Combat animations ready');
         } catch (e) {
-            console.warn('Could not initialize combat animations:', e);
-            combatAnimReady = false;
+            console.warn('Combat animations init error:', e);
+            // Le système DOM fonctionne quand même
+            combatAnimReady = true;
         }
+    } else {
+        console.warn('CombatAnimations not found');
+        combatAnimReady = false;
     }
 }
 
