@@ -72,6 +72,9 @@ async function executeAnimationAsync(type, data) {
             case 'damage':
                 await handlePixiDamage(data);
                 return;
+            case 'spellDamage':
+                await handlePixiSpellDamage(data);
+                return;
             case 'heroHit':
                 await handlePixiHeroHit(data);
                 return;
@@ -80,11 +83,12 @@ async function executeAnimationAsync(type, data) {
                 return;
         }
     }
-    
+
     // Fallback si PixiJS pas dispo
     switch(type) {
         case 'attack': animateAttackFallback(data); break;
         case 'damage': animateDamageFallback(data); break;
+        case 'spellDamage': animateDamageFallback(data); break;
         case 'death': animateDeath(data); break;
         case 'heroHit': animateHeroHitFallback(data); break;
     }
@@ -162,6 +166,16 @@ async function handlePixiHeroHit(data) {
     await CombatAnimations.animateHeroHit({
         owner: owner,
         amount: data.damage
+    });
+}
+
+async function handlePixiSpellDamage(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    await CombatAnimations.animateSpellDamage({
+        owner: owner,
+        row: data.row,
+        col: data.col,
+        amount: data.amount
     });
 }
 
@@ -427,7 +441,7 @@ function handleAnimation(data) {
     const { type } = data;
     
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'death', 'heroHit'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit'];
     
     if (queuedTypes.includes(type)) {
         queueAnimation(type, data);
