@@ -1,11 +1,12 @@
 /**
- * Combat Animations System - 100% DOM (pas de PixiJS)
- * Fonctionne toujours, sans dépendances externes
+ * Combat Animations System - Hybrid DOM + PixiJS VFX
+ * Mouvements en DOM, effets d'impact en PixiJS
  */
 
 class CombatAnimationSystem {
     constructor() {
         this.initialized = false;
+        this.vfxReady = false;
         this.TIMINGS = {
             PROJECTILE_FLIGHT: 400,
             ATTACK_MOVE: 300,
@@ -14,11 +15,24 @@ class CombatAnimationSystem {
             BETWEEN_PHASES: 200,
         };
     }
-    
+
     async init() {
-        // Pas besoin d'initialisation complexe - tout est en DOM
         this.initialized = true;
-        console.log('✅ Combat Animation System ready (DOM mode)');
+
+        // Initialiser le système VFX PixiJS
+        if (typeof CombatVFX !== 'undefined') {
+            try {
+                await CombatVFX.init();
+                this.vfxReady = true;
+                console.log('✅ Combat Animation System ready (DOM + PixiJS VFX)');
+            } catch (e) {
+                console.warn('VFX init failed, using fallback:', e);
+                this.vfxReady = false;
+            }
+        } else {
+            console.warn('CombatVFX not found, using DOM fallback');
+        }
+
         return Promise.resolve();
     }
     
@@ -47,14 +61,31 @@ class CombatAnimationSystem {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     
-    // ==================== ANIMATION DE DÉGÂTS (GRIFFURES) ====================
-    
+    // ==================== ANIMATION DE DÉGÂTS (VFX) ====================
+
     /**
-     * Affiche les griffures + nombre de dégâts
-     * C'est L'ANIMATION PRINCIPALE quand une créature/héros prend des dégâts
+     * Affiche un effet d'impact + nombre de dégâts
+     * Utilise PixiJS VFX si disponible, sinon fallback DOM
+     * @param {number} x - Position X
+     * @param {number} y - Position Y
+     * @param {number} damage - Dégâts
+     * @param {string} effectType - Type d'effet: 'claw', 'slash', 'bite', 'impact'
      */
-    showDamageEffect(x, y, damage) {
-        // Container principal
+    showDamageEffect(x, y, damage, effectType = 'claw') {
+        // Utiliser le système VFX PixiJS si disponible
+        if (this.vfxReady && typeof CombatVFX !== 'undefined') {
+            CombatVFX.playDamageEffect(effectType, x, y, damage, { color: 0xFF3333 });
+            return;
+        }
+
+        // Fallback DOM simple
+        this.showDamageEffectFallback(x, y, damage);
+    }
+
+    /**
+     * Fallback DOM pour l'effet de dégâts
+     */
+    showDamageEffectFallback(x, y, damage) {
         const container = document.createElement('div');
         container.style.cssText = `
             position: fixed;
@@ -66,120 +97,30 @@ class CombatAnimationSystem {
             opacity: 0;
             transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.1s ease-out;
         `;
-        
-        // Les 3 griffures en SVG
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '140');
-        svg.setAttribute('height', '140');
-        svg.setAttribute('viewBox', '-70 -70 140 140');
-        svg.style.cssText = 'position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);';
-        
-        // Griffure 1 (principale)
-        const scratch1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        scratch1.setAttribute('d', 'M-25,-50 C-20,-25 -10,0 0,25 S15,50 20,55');
-        scratch1.setAttribute('stroke', '#ff0000');
-        scratch1.setAttribute('stroke-width', '8');
-        scratch1.setAttribute('fill', 'none');
-        scratch1.setAttribute('stroke-linecap', 'round');
-        svg.appendChild(scratch1);
-        
-        // Griffure 2
-        const scratch2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        scratch2.setAttribute('d', 'M0,-55 C5,-30 10,-5 5,20 S0,45 5,58');
-        scratch2.setAttribute('stroke', '#dd0000');
-        scratch2.setAttribute('stroke-width', '6');
-        scratch2.setAttribute('fill', 'none');
-        scratch2.setAttribute('stroke-linecap', 'round');
-        svg.appendChild(scratch2);
-        
-        // Griffure 3
-        const scratch3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        scratch3.setAttribute('d', 'M25,-45 C30,-20 20,5 25,30 S30,50 25,55');
-        scratch3.setAttribute('stroke', '#cc0000');
-        scratch3.setAttribute('stroke-width', '5');
-        scratch3.setAttribute('fill', 'none');
-        scratch3.setAttribute('stroke-linecap', 'round');
-        svg.appendChild(scratch3);
-        
-        container.appendChild(svg);
-        
+
         // Nombre de dégâts
         const damageNum = document.createElement('div');
         damageNum.textContent = `-${damage}`;
         damageNum.style.cssText = `
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
             font-family: 'Arial Black', Arial, sans-serif;
             font-size: 52px;
             font-weight: bold;
             color: #ff0000;
-            text-shadow: 
+            text-shadow:
                 0 0 10px rgba(255,0,0,0.9),
                 0 0 20px rgba(255,0,0,0.6),
                 3px 3px 6px rgba(0,0,0,0.7);
             white-space: nowrap;
         `;
         container.appendChild(damageNum);
-        
-        // Particules de sang
-        for (let i = 0; i < 10; i++) {
-            const particle = document.createElement('div');
-            const angle = (i / 10) * Math.PI * 2 + Math.random() * 0.5;
-            const distance = 40 + Math.random() * 30;
-            const size = 5 + Math.random() * 8;
-            
-            particle.style.cssText = `
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                width: ${size}px;
-                height: ${size}px;
-                background: #ff2222;
-                border-radius: 50%;
-                transform: translate(-50%, -50%);
-                opacity: 1;
-                box-shadow: 0 0 4px #ff0000;
-            `;
-            particle.dataset.angle = angle;
-            particle.dataset.distance = distance;
-            container.appendChild(particle);
-        }
-        
+
         document.body.appendChild(container);
-        
-        // Déclencher l'animation d'apparition
+
         requestAnimationFrame(() => {
             container.style.transform = 'translate(-50%, -50%) scale(1)';
             container.style.opacity = '1';
         });
-        
-        // Animer les particules
-        const particles = container.querySelectorAll('div[data-angle]');
-        let startTime = performance.now();
-        
-        const animateParticles = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / 600, 1);
-            
-            particles.forEach(p => {
-                const angle = parseFloat(p.dataset.angle);
-                const distance = parseFloat(p.dataset.distance);
-                const currentDist = distance * progress;
-                const x = Math.cos(angle) * currentDist;
-                const y = Math.sin(angle) * currentDist + progress * 20; // gravité
-                p.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
-                p.style.opacity = 1 - progress;
-            });
-            
-            if (progress < 1) {
-                requestAnimationFrame(animateParticles);
-            }
-        };
-        animateParticles();
-        
-        // Disparition
+
         setTimeout(() => {
             container.style.transition = 'transform 0.4s ease-in, opacity 0.4s ease-in';
             container.style.transform = 'translate(-50%, -70%) scale(0.8)';
@@ -280,12 +221,9 @@ class CombatAnimationSystem {
                 } else {
                     projectile.remove();
                     
-                    // Impact
-                    this.showImpact(endPos.x, endPos.y);
-                    
-                    // Griffures avec dégâts
+                    // Impact avec effet de projectile
                     if (damage !== undefined) {
-                        this.showDamageEffect(endPos.x, endPos.y, damage);
+                        this.showDamageEffect(endPos.x, endPos.y, damage, 'impact');
                     }
                     
                     resolve();
@@ -296,9 +234,15 @@ class CombatAnimationSystem {
     }
     
     /**
-     * Effet d'impact
+     * Effet d'impact - utilise VFX ou fallback
      */
     showImpact(x, y) {
+        if (this.vfxReady && typeof CombatVFX !== 'undefined') {
+            CombatVFX.createImpactEffect(x, y, 0xFFAA00, 0.7);
+            return;
+        }
+
+        // Fallback DOM
         const impact = document.createElement('div');
         impact.style.cssText = `
             position: fixed;
@@ -314,12 +258,12 @@ class CombatAnimationSystem {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out;
         `;
         document.body.appendChild(impact);
-        
+
         requestAnimationFrame(() => {
             impact.style.transform = 'translate(-50%, -50%) scale(2.5)';
             impact.style.opacity = '0';
         });
-        
+
         setTimeout(() => impact.remove(), 300);
     }
     
@@ -356,13 +300,13 @@ class CombatAnimationSystem {
         attackerCard.style.zIndex = '1000';
         
         await this.wait(this.TIMINGS.ATTACK_MOVE);
-        
-        // Impact + Griffures
-        this.showImpact(targetPos.x, targetPos.y);
+
+        // Effet de dégâts - griffes ou slash selon le type
+        const effectType = data.isFlying ? 'slash' : 'claw';
         if (damage !== undefined) {
-            this.showDamageEffect(targetPos.x, targetPos.y, damage);
+            this.showDamageEffect(targetPos.x, targetPos.y, damage, effectType);
         }
-        
+
         // Retour
         attackerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms ease-out`;
         attackerCard.style.transform = '';
@@ -417,16 +361,16 @@ class CombatAnimationSystem {
         
         await this.wait(this.TIMINGS.ATTACK_MOVE);
         
-        // CLASH au milieu
+        // CLASH au milieu avec effet VFX
         this.showClashEffect(midX, midY);
-        
-        // Griffures des deux côtés
+
+        // Griffures des deux côtés - slash croisés
         if (damage1 !== undefined) {
-            this.showDamageEffect(midX - 70, midY, damage1);
+            this.showDamageEffect(midX - 60, midY, damage1, 'slash');
         }
         if (damage2 !== undefined) {
             setTimeout(() => {
-                this.showDamageEffect(midX + 70, midY, damage2);
+                this.showDamageEffect(midX + 60, midY, damage2, 'slash');
             }, 80);
         }
         
@@ -447,9 +391,16 @@ class CombatAnimationSystem {
     }
     
     /**
-     * Effet de CLASH (entrechoc)
+     * Effet de CLASH (entrechoc) - utilise VFX ou fallback
      */
     showClashEffect(x, y) {
+        // Utiliser le système VFX PixiJS si disponible
+        if (this.vfxReady && typeof CombatVFX !== 'undefined') {
+            CombatVFX.createClashEffect(x, y);
+            return;
+        }
+
+        // Fallback DOM
         const clash = document.createElement('div');
         clash.style.cssText = `
             position: fixed;
@@ -459,8 +410,7 @@ class CombatAnimationSystem {
             z-index: 10002;
             pointer-events: none;
         `;
-        
-        // Grande étoile
+
         const star = document.createElement('div');
         star.textContent = '✦';
         star.style.cssText = `
@@ -470,8 +420,7 @@ class CombatAnimationSystem {
             animation: clashStar 0.5s ease-out forwards;
         `;
         clash.appendChild(star);
-        
-        // Cercle de shockwave
+
         const ring = document.createElement('div');
         ring.style.cssText = `
             position: absolute;
@@ -485,44 +434,7 @@ class CombatAnimationSystem {
             animation: clashRing 0.5s ease-out forwards;
         `;
         clash.appendChild(ring);
-        
-        // Étincelles
-        for (let i = 0; i < 14; i++) {
-            const spark = document.createElement('div');
-            const angle = (i / 14) * Math.PI * 2;
-            const distance = 50 + Math.random() * 40;
-            spark.style.cssText = `
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                width: 10px;
-                height: 10px;
-                background: ${i % 2 === 0 ? '#ffff00' : '#ff8800'};
-                border-radius: 50%;
-                box-shadow: 0 0 8px currentColor;
-                animation: sparkFly${i} 0.5s ease-out forwards;
-            `;
-            
-            // Créer l'animation unique pour chaque étincelle
-            const styleEl = document.createElement('style');
-            styleEl.textContent = `
-                @keyframes sparkFly${i} {
-                    0% { transform: translate(-50%, -50%); opacity: 1; }
-                    100% { 
-                        transform: translate(
-                            calc(-50% + ${Math.cos(angle) * distance}px), 
-                            calc(-50% + ${Math.sin(angle) * distance}px)
-                        ); 
-                        opacity: 0; 
-                    }
-                }
-            `;
-            document.head.appendChild(styleEl);
-            clash.appendChild(spark);
-            
-            setTimeout(() => styleEl.remove(), 600);
-        }
-        
+
         document.body.appendChild(clash);
         setTimeout(() => clash.remove(), 600);
     }
@@ -563,9 +475,9 @@ class CombatAnimationSystem {
             
             await this.wait(this.TIMINGS.ATTACK_MOVE);
             
-            this.showImpact(shooterPos.x, shooterPos.y);
+            // Le volant attaque avec un slash
             if (flyerDamage !== undefined) {
-                this.showDamageEffect(shooterPos.x, shooterPos.y, flyerDamage);
+                this.showDamageEffect(shooterPos.x, shooterPos.y, flyerDamage, 'slash');
             }
             
             flyerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms ease-out`;
@@ -583,34 +495,39 @@ class CombatAnimationSystem {
     async animateHeroHit(data) {
         const { owner, damage, amount } = data;
         const dmg = damage || amount;
-        
+
         const pos = this.getHeroCenter(owner);
         if (!pos) return;
-        
+
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (heroEl) {
             heroEl.style.animation = 'heroShake 0.5s ease-out';
             setTimeout(() => heroEl.style.animation = '', 500);
         }
-        
-        this.showDamageEffect(pos.x, pos.y, dmg);
+
+        // Effet aléatoire pour le héros (griffe ou morsure)
+        const effectType = Math.random() > 0.5 ? 'claw' : 'bite';
+        this.showDamageEffect(pos.x, pos.y, dmg, effectType);
     }
     
     // ==================== DÉGÂTS SUR CRÉATURE ====================
     
     async animateDamage(data) {
         const { owner, row, col, amount } = data;
-        
+
         const pos = this.getSlotCenter(owner, row, col);
         if (!pos) return;
-        
+
         const card = this.getCardElement(owner, row, col);
         if (card) {
             card.style.animation = 'cardShake 0.4s ease-out';
             setTimeout(() => card.style.animation = '', 400);
         }
-        
-        this.showDamageEffect(pos.x, pos.y, amount);
+
+        // Effet aléatoire (claw, slash ou bite)
+        const effects = ['claw', 'slash', 'bite'];
+        const effectType = effects[Math.floor(Math.random() * effects.length)];
+        this.showDamageEffect(pos.x, pos.y, amount, effectType);
     }
     
     // ==================== COMPATIBILITÉ ====================
