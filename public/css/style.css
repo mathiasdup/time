@@ -503,17 +503,6 @@
         }
         .grave-top-card .mini-card .card-stats .atk { color: #f39c12; }
         .grave-top-card .mini-card .card-stats .hp { color: #e74c3c; }
-        .grave-count {
-            position: absolute;
-            bottom: 3px;
-            right: 3px;
-            background: rgba(0,0,0,0.8);
-            padding: 2px 6px;
-            border-radius: 8px;
-            font-size: 0.75em;
-            font-weight: bold;
-            z-index: 5;
-        }
         .deck-icon { font-size: 2.5em; margin-bottom: 5px; }
         .deck-count { font-size: 1.4em; font-weight: bold; }
         
