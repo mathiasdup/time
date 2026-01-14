@@ -281,13 +281,10 @@ function animateDamage(data) {
     if (slot) {
         const rect = slot.getBoundingClientRect();
         
-        // Créer le splash de dégâts avec image
+        // Créer le splash de dégâts
         const splash = document.createElement('div');
         splash.className = 'damage-splash';
-        splash.innerHTML = `
-            <div class="damage-splash-img"></div>
-            <div class="damage-splash-text">-${data.amount}</div>
-        `;
+        splash.textContent = `-${data.amount}`;
         splash.style.left = rect.left + rect.width/2 - 40 + 'px';
         splash.style.top = rect.top + rect.height/2 - 40 + 'px';
         document.body.appendChild(splash);
