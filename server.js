@@ -229,28 +229,20 @@ async function startResolution(room) {
         log(`⚔️ RÉSOLUTION DU TOUR ${room.gameState.turn}`, 'phase');
         await sleep(800);
     }
-    
-    // Collecter les slots qui vont recevoir des créatures
-    const summonSlots = allActions.places.map(a => ({ player: a.playerNum, row: a.row, col: a.col }));
-    
-    if (summonSlots.length > 0) {
-        io.to(room.code).emit('blockSlots', summonSlots);
-        await sleep(50);
-    }
-    
-    // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS
+
+    // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS (AVANT de bloquer les slots pour les invocations)
     if (allActions.moves.length > 0) {
         io.to(room.code).emit('phaseMessage', { text: 'Déplacements', type: 'revelation' });
         log('↔️ Phase des déplacements', 'phase');
         await sleep(600);
-        
+
         for (const action of allActions.moves) {
             log(`  ↔️ ${action.heroName}: ${action.card.name} ${slotNames[action.fromRow][action.fromCol]} → ${slotNames[action.toRow][action.toCol]}`, 'action');
-            emitAnimation(room, 'move', { 
-                player: action.playerNum, 
-                fromRow: action.fromRow, 
-                fromCol: action.fromCol, 
-                toRow: action.toRow, 
+            emitAnimation(room, 'move', {
+                player: action.playerNum,
+                fromRow: action.fromRow,
+                fromCol: action.fromCol,
+                toRow: action.toRow,
                 toCol: action.toCol,
                 card: action.card
             });
@@ -259,14 +251,21 @@ async function startResolution(room) {
             await sleep(700);
         }
     }
-    
+
     // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES ET PIÈGES
     const hasPlacesOrTraps = allActions.places.length > 0 || allActions.traps.length > 0;
     if (hasPlacesOrTraps) {
+        // Bloquer les slots MAINTENANT (après les déplacements terminés)
+        const summonSlots = allActions.places.map(a => ({ player: a.playerNum, row: a.row, col: a.col }));
+        if (summonSlots.length > 0) {
+            io.to(room.code).emit('blockSlots', summonSlots);
+            await sleep(50);
+        }
+
         io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
         log('🎴 Phase de révélation', 'phase');
         await sleep(600);
-        
+
         // Révéler les créatures
         for (const action of allActions.places) {
             log(`  🎴 ${action.heroName}: ${action.card.name} en ${slotNames[action.row][action.col]}`, 'action');
