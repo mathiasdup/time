@@ -1,5 +1,5 @@
 /**
- * Animation de pioche - Position exacte depuis le DOM
+ * Animation de pioche - Position calculée (carte pas encore dans le DOM)
  */
 
 /**
@@ -53,6 +53,48 @@ function createCardBackElement() {
 }
 
 /**
+ * Calcule la position où la nouvelle carte va atterrir
+ * Basé sur les cartes EXISTANTES dans la main (la nouvelle n'est pas encore là)
+ */
+function calculateNewCardPosition(owner) {
+    const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
+    const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
+    const handEl = document.querySelector(handSelector);
+    
+    if (!handEl) return null;
+    
+    const existingCards = handEl.querySelectorAll(cardSelector);
+    const numCards = existingCards.length;
+    
+    // Dimensions selon le type
+    const cardWidth = owner === 'me' ? 100 : 86;
+    const cardHeight = owner === 'me' ? 135 : 116;
+    const overlap = owner === 'me' ? 40 : 55; // margin-left négatif
+    const visibleWidth = cardWidth - overlap; // Partie visible de chaque carte
+    
+    let endX, endY;
+    
+    if (numCards > 0) {
+        // Prendre la position de la dernière carte existante
+        const lastCard = existingCards[numCards - 1];
+        const lastRect = lastCard.getBoundingClientRect();
+        
+        // La nouvelle carte sera à droite de la dernière (avec overlap)
+        endX = lastRect.left + visibleWidth + cardWidth / 2;
+        endY = lastRect.top + cardHeight / 2;
+    } else {
+        // Première carte - position au début de la main
+        const handRect = handEl.getBoundingClientRect();
+        const paddingLeft = 15;
+        
+        endX = handRect.left + paddingLeft + cardWidth / 2;
+        endY = handRect.top + cardHeight / 2;
+    }
+    
+    return { x: endX, y: endY, width: cardWidth, height: cardHeight };
+}
+
+/**
  * Easing
  */
 function easeOutCubic(t) {
@@ -63,86 +105,63 @@ function easeOutCubic(t) {
  * Animation de pioche d'une carte
  */
 function animateCardDraw(card, owner, handIndex) {
-    // Trouver la vraie carte dans le DOM (la dernière de la main)
-    const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
-    const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
-    const handEl = document.querySelector(handSelector);
-    if (!handEl) return;
-    
-    const handCards = handEl.querySelectorAll(cardSelector);
-    if (handCards.length === 0) return;
-    
-    const targetCard = handCards[handCards.length - 1];
-    
-    // Cacher la vraie carte IMMÉDIATEMENT (sans transition)
-    targetCard.style.transition = 'none';
-    targetCard.style.visibility = 'hidden';
-    
-    // Position exacte de la carte cible
-    const targetRect = targetCard.getBoundingClientRect();
-    const endX = targetRect.left + targetRect.width / 2;
-    const endY = targetRect.top + targetRect.height / 2;
-    
     // Position de départ (deck)
     const deckEl = document.querySelector(`#${owner}-deck-stack`);
-    if (!deckEl) {
-        targetCard.style.visibility = 'visible';
-        return;
-    }
+    if (!deckEl) return;
     
     const deckRect = deckEl.getBoundingClientRect();
     const startX = deckRect.left + deckRect.width / 2;
     const startY = deckRect.top + deckRect.height / 2;
     
-    // Créer l'élément animé (copie de la vraie carte)
+    // Position d'arrivée (calculée)
+    const endPos = calculateNewCardPosition(owner);
+    if (!endPos) return;
+    
+    // Créer l'élément animé
     const animatedCard = owner === 'me' 
         ? createCardElement(card) 
         : createCardBackElement();
     
-    // Style initial
+    // Style initial - positionné au deck
     animatedCard.style.cssText = `
         position: fixed;
         z-index: 10000;
         pointer-events: none;
-        width: ${targetRect.width}px;
-        height: ${targetRect.height}px;
+        width: ${endPos.width}px;
+        height: ${endPos.height}px;
         left: ${startX}px;
         top: ${startY}px;
         transform: translate(-50%, -50%);
         opacity: 0;
-        transition: none;
     `;
     
     document.body.appendChild(animatedCard);
     
     // Animation
-    const duration = 450;
+    const duration = 400;
     const startTime = performance.now();
-    const controlY = Math.min(startY, endY) - 60;
+    const controlY = Math.min(startY, endPos.y) - 50;
     
     function animate() {
         const elapsed = performance.now() - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const eased = easeOutCubic(progress);
         
-        // Position sur courbe de Bézier
+        // Courbe de Bézier
         const t = eased;
-        const midX = (startX + endX) / 2;
-        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * midX + t * t * endX;
-        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endY;
+        const midX = (startX + endPos.x) / 2;
+        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * midX + t * t * endPos.x;
+        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endPos.y;
         
         animatedCard.style.left = x + 'px';
         animatedCard.style.top = y + 'px';
-        animatedCard.style.opacity = Math.min(progress * 3, 1);
+        animatedCard.style.opacity = Math.min(progress * 2.5, 1);
         
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            // Révéler la vraie carte
-            targetCard.style.visibility = 'visible';
-            
-            // Supprimer l'animation
-            animatedCard.remove();
+            // Garder visible un instant puis supprimer
+            setTimeout(() => animatedCard.remove(), 50);
         }
     }
     

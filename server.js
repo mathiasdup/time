@@ -431,19 +431,17 @@ async function startResolution(room) {
         }
     }
     
-    // D'abord mettre à jour l'état (la carte apparaît dans la main)
-    emitStateToBoth(room);
-    
-    // Très court délai pour que le DOM soit mis à jour
-    await sleep(50);
-    
-    // Puis émettre l'animation (le client va cacher la carte et animer)
+    // Émettre l'animation AVANT l'état (pas de clignotement)
     emitAnimation(room, 'draw', { cards: drawnCards });
     log('📦 Les joueurs piochent une carte', 'action');
     
     // Attendre la fin de l'animation
-    await sleep(550);
+    await sleep(500);
     
+    // Maintenant mettre à jour l'état (la carte apparaît)
+    emitStateToBoth(room);
+    
+    await sleep(100);
     startNewTurn(room);
 }
 
