@@ -52,10 +52,15 @@
             flex-direction: column;
             justify-content: center;
             padding: 10px 25px 10px 45px;
-            background: rgba(0,0,0,0.75);
+            background: rgba(0,0,0,0.85);
             position: relative;
             min-width: 120px;
             height: 44px;
+            filter: 
+                drop-shadow(0 -2px 0 #c9a86c)
+                drop-shadow(0 2px 0 #5a4a30)
+                drop-shadow(-2px 0 0 #8b7355)
+                drop-shadow(2px 0 0 #8b7355);
         }
         /* Flèche vers la droite pour joueur gauche - icône chevauchante */
         .player-info-bar.left .rank-icon-container {
@@ -125,7 +130,7 @@
             width: 50px;
             padding: 0;
             background-image: url('mana.png');
-            background-size: 70%;
+            background-size: 110%;
             background-repeat: no-repeat;
             background-position: center;
             display: flex; 
@@ -151,7 +156,7 @@
             height: 55px; 
             border-radius: 30px; 
             background: linear-gradient(180deg, #d4a000 0%, #b08000 50%, #806000 100%);
-            border: 4px solid #8b7355;
+            border: 3px solid #8b7355;
             border-top-color: #c9a86c;
             border-bottom-color: #5a4a30;
             cursor: pointer; 
