@@ -47,6 +47,18 @@
             object-fit: contain;
         }
         
+        .player-name-arrow-wrapper {
+            position: relative;
+        }
+        .player-name-arrow-border {
+            position: absolute;
+            top: -3px;
+            left: -3px;
+            right: -3px;
+            bottom: -3px;
+            background: linear-gradient(180deg, #c9a86c 0%, #8b7355 50%, #5a4a30 100%);
+            z-index: -1;
+        }
         .player-name-arrow {
             display: flex;
             flex-direction: column;
@@ -56,11 +68,6 @@
             position: relative;
             min-width: 120px;
             height: 44px;
-            filter: 
-                drop-shadow(0 -2px 0 #c9a86c)
-                drop-shadow(0 2px 0 #5a4a30)
-                drop-shadow(-2px 0 0 #8b7355)
-                drop-shadow(2px 0 0 #8b7355);
         }
         /* Flèche vers la droite pour joueur gauche - icône chevauchante */
         .player-info-bar.left .rank-icon-container {
@@ -72,6 +79,9 @@
             padding-left: 40px;
             border-radius: 3px 0 0 3px;
         }
+        .player-info-bar.left .player-name-arrow-border {
+            clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+        }
         /* Flèche vers la gauche pour joueur droite (miroir) */
         .player-info-bar.right .rank-icon-container {
             margin-left: -35px;
@@ -82,6 +92,9 @@
             padding-right: 40px;
             align-items: flex-end;
             border-radius: 0 3px 3px 0;
+        }
+        .player-info-bar.right .player-name-arrow-border {
+            clip-path: polygon(14px 0, 100% 0, 100% 100%, 14px 100%, 0 50%);
         }
         
         .player-name-text {
@@ -845,7 +858,7 @@
         }
         .log-popup { 
             position: absolute; 
-            bottom: 120px; 
+            bottom: 80px; 
             left: 50%; 
             transform: translateX(-50%); 
             width: 400px; 
@@ -1088,7 +1101,7 @@
         /* Settings popup */
         .settings-popup {
             position: absolute;
-            bottom: 85px;
+            bottom: 80px;
             left: 50%;
             transform: translateX(-50%);
             width: 280px;
