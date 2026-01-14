@@ -280,13 +280,18 @@ function animateDamage(data) {
     
     if (slot) {
         const rect = slot.getBoundingClientRect();
-        const num = document.createElement('div');
-        num.className = 'damage-number';
-        num.textContent = `-${data.amount}`;
-        num.style.left = rect.left + rect.width/2 - 20 + 'px';
-        num.style.top = rect.top + 'px';
-        document.body.appendChild(num);
-        setTimeout(() => num.remove(), 1000);
+        
+        // Créer le splash de dégâts avec image
+        const splash = document.createElement('div');
+        splash.className = 'damage-splash';
+        splash.innerHTML = `
+            <div class="damage-splash-img"></div>
+            <div class="damage-splash-text">-${data.amount}</div>
+        `;
+        splash.style.left = rect.left + rect.width/2 - 40 + 'px';
+        splash.style.top = rect.top + rect.height/2 - 40 + 'px';
+        document.body.appendChild(splash);
+        setTimeout(() => splash.remove(), 800);
     }
 }
 

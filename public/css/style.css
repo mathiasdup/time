@@ -770,6 +770,44 @@
         .spell-miss { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; animation: missAnim 0.8s ease-out forwards; }
         @keyframes missAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.5) translateY(-30px); opacity: 0; } }
         
+        .damage-splash {
+            position: fixed;
+            z-index: 1001;
+            width: 80px;
+            height: 80px;
+            pointer-events: none;
+            animation: damageSplash 0.8s ease-out forwards;
+        }
+        .damage-splash-img {
+            width: 100%;
+            height: 100%;
+            background-image: url('degats.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+        .damage-splash-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.6em;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000,
+                0 0 8px rgba(0,0,0,0.8);
+        }
+        @keyframes damageSplash { 
+            0% { opacity: 0; transform: scale(0.3); } 
+            20% { opacity: 1; transform: scale(1.2); } 
+            40% { transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.1) translateY(-20px); } 
+        }
+        
         .damage-number { position: fixed; z-index: 1001; font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 2px 2px 4px black; pointer-events: none; animation: damageFloat 1s ease-out forwards; }
         .damage-number.heal { color: #2ecc71; }
         @keyframes damageFloat { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-50px) scale(1.5); } }
