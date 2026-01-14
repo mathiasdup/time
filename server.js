@@ -431,17 +431,19 @@ async function startResolution(room) {
         }
     }
     
-    // Émettre l'animation AVANT l'état (pas de clignotement)
+    // État d'abord (carte dans le DOM)
+    emitStateToBoth(room);
+    
+    // Court délai pour que le render soit fait
+    await sleep(30);
+    
+    // Animation (le client va trouver la carte, la cacher et animer)
     emitAnimation(room, 'draw', { cards: drawnCards });
     log('📦 Les joueurs piochent une carte', 'action');
     
     // Attendre la fin de l'animation
     await sleep(500);
     
-    // Maintenant mettre à jour l'état (la carte apparaît)
-    emitStateToBoth(room);
-    
-    await sleep(100);
     startNewTurn(room);
 }
 
@@ -537,8 +539,8 @@ async function applySpell(room, action, log, sleep) {
     // SORTS GLOBAUX (sans ciblage)
     if (spell.pattern === 'global') {
         if (spell.effect === 'draw') {
-            // Pioche X cartes
-            let drawn = 0;
+            // Pioche X cartes avec animation
+            const drawnCards = [];
             for (let i = 0; i < spell.amount; i++) {
                 if (player.deck.length > 0 && player.hand.length < 9) {
                     const card = player.deck.pop();
@@ -549,10 +551,16 @@ async function applySpell(room, action, log, sleep) {
                         card.movedThisTurn = false;
                     }
                     player.hand.push(card);
-                    drawn++;
+                    drawnCards.push({ player: playerNum, card: card, handIndex: player.hand.length - 1 });
                 }
             }
-            log(`  📜 ${action.heroName}: ${spell.name} - pioche ${drawn} carte(s)`, 'action');
+            if (drawnCards.length > 0) {
+                log(`  📜 ${action.heroName}: ${spell.name} - pioche ${drawnCards.length} carte(s)`, 'action');
+                emitStateToBoth(room);
+                await sleep(30);
+                emitAnimation(room, 'draw', { cards: drawnCards });
+                await sleep(400 * drawnCards.length);
+            }
         } else if (spell.effect === 'mana') {
             // Gagne un cristal mana (ou pioche si déjà 10)
             if (player.maxEnergy < 10) {
@@ -567,6 +575,10 @@ async function applySpell(room, action, log, sleep) {
                 }
                 player.hand.push(card);
                 log(`  💎 ${action.heroName}: ${spell.name} - mana max, pioche une carte`, 'action');
+                emitStateToBoth(room);
+                await sleep(30);
+                emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: card, handIndex: player.hand.length - 1 }] });
+                await sleep(400);
             }
         }
     }
@@ -611,8 +623,8 @@ async function applySpell(room, action, log, sleep) {
             emitAnimation(room, 'heroHit', { defender: action.targetPlayer, damage: spell.damage });
             io.to(room.code).emit('directDamage', { defender: action.targetPlayer, damage: spell.damage });
         } else if (spell.effect === 'draw') {
-            // Le héros ciblé pioche
-            let drawn = 0;
+            // Le héros ciblé pioche avec animation
+            const drawnCards = [];
             for (let i = 0; i < spell.amount; i++) {
                 if (targetHero.deck.length > 0 && targetHero.hand.length < 9) {
                     const card = targetHero.deck.pop();
@@ -623,10 +635,16 @@ async function applySpell(room, action, log, sleep) {
                         card.movedThisTurn = false;
                     }
                     targetHero.hand.push(card);
-                    drawn++;
+                    drawnCards.push({ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 });
                 }
             }
-            log(`  📜 ${action.heroName}: ${spell.name} → ${targetName} pioche ${drawn} carte(s)`, 'action');
+            if (drawnCards.length > 0) {
+                log(`  📜 ${action.heroName}: ${spell.name} → ${targetName} pioche ${drawnCards.length} carte(s)`, 'action');
+                emitStateToBoth(room);
+                await sleep(30);
+                emitAnimation(room, 'draw', { cards: drawnCards });
+                await sleep(400 * drawnCards.length);
+            }
         } else if (spell.effect === 'mana') {
             // Le héros ciblé gagne un mana
             if (targetHero.maxEnergy < 10) {
@@ -641,6 +659,10 @@ async function applySpell(room, action, log, sleep) {
                 }
                 targetHero.hand.push(card);
                 log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} mana max, pioche une carte`, 'action');
+                emitStateToBoth(room);
+                await sleep(30);
+                emitAnimation(room, 'draw', { cards: [{ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 }] });
+                await sleep(400);
             }
         } else if (spell.heal) {
             // Soin au héros ciblé

@@ -1,5 +1,5 @@
 /**
- * Animation de pioche - Position calculée (carte pas encore dans le DOM)
+ * Animation de pioche - Position exacte depuis le DOM, synchronisation parfaite
  */
 
 /**
@@ -53,48 +53,6 @@ function createCardBackElement() {
 }
 
 /**
- * Calcule la position où la nouvelle carte va atterrir
- * Basé sur les cartes EXISTANTES dans la main (la nouvelle n'est pas encore là)
- */
-function calculateNewCardPosition(owner) {
-    const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
-    const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
-    const handEl = document.querySelector(handSelector);
-    
-    if (!handEl) return null;
-    
-    const existingCards = handEl.querySelectorAll(cardSelector);
-    const numCards = existingCards.length;
-    
-    // Dimensions selon le type
-    const cardWidth = owner === 'me' ? 100 : 86;
-    const cardHeight = owner === 'me' ? 135 : 116;
-    const overlap = owner === 'me' ? 40 : 55; // margin-left négatif
-    const visibleWidth = cardWidth - overlap; // Partie visible de chaque carte
-    
-    let endX, endY;
-    
-    if (numCards > 0) {
-        // Prendre la position de la dernière carte existante
-        const lastCard = existingCards[numCards - 1];
-        const lastRect = lastCard.getBoundingClientRect();
-        
-        // La nouvelle carte sera à droite de la dernière (avec overlap)
-        endX = lastRect.left + visibleWidth + cardWidth / 2;
-        endY = lastRect.top + cardHeight / 2;
-    } else {
-        // Première carte - position au début de la main
-        const handRect = handEl.getBoundingClientRect();
-        const paddingLeft = 15;
-        
-        endX = handRect.left + paddingLeft + cardWidth / 2;
-        endY = handRect.top + cardHeight / 2;
-    }
-    
-    return { x: endX, y: endY, width: cardWidth, height: cardHeight };
-}
-
-/**
  * Easing
  */
 function easeOutCubic(t) {
@@ -105,34 +63,62 @@ function easeOutCubic(t) {
  * Animation de pioche d'une carte
  */
 function animateCardDraw(card, owner, handIndex) {
-    // Position de départ (deck)
+    // Trouver la main et la carte à l'index spécifié
+    const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
+    const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
+    const handEl = document.querySelector(handSelector);
+    
+    if (!handEl) return;
+    
+    const handCards = handEl.querySelectorAll(cardSelector);
+    
+    // Utiliser le handIndex pour trouver la bonne carte
+    const targetCard = handCards[handIndex];
+    
+    if (!targetCard) {
+        console.warn('Carte non trouvée à index', handIndex);
+        return;
+    }
+    
+    // CACHER IMMÉDIATEMENT (avant tout rendu)
+    targetCard.style.visibility = 'hidden';
+    
+    // Position EXACTE de la carte cible
+    const targetRect = targetCard.getBoundingClientRect();
+    const endX = targetRect.left;
+    const endY = targetRect.top;
+    const cardWidth = targetRect.width;
+    const cardHeight = targetRect.height;
+    
+    // Position du deck
     const deckEl = document.querySelector(`#${owner}-deck-stack`);
-    if (!deckEl) return;
+    if (!deckEl) {
+        targetCard.style.visibility = 'visible';
+        return;
+    }
     
     const deckRect = deckEl.getBoundingClientRect();
-    const startX = deckRect.left + deckRect.width / 2;
-    const startY = deckRect.top + deckRect.height / 2;
+    const startX = deckRect.left + deckRect.width / 2 - cardWidth / 2;
+    const startY = deckRect.top + deckRect.height / 2 - cardHeight / 2;
     
-    // Position d'arrivée (calculée)
-    const endPos = calculateNewCardPosition(owner);
-    if (!endPos) return;
-    
-    // Créer l'élément animé
+    // Créer la carte animée
     const animatedCard = owner === 'me' 
         ? createCardElement(card) 
         : createCardBackElement();
     
-    // Style initial - positionné au deck
+    // Style initial - EXACTEMENT les mêmes dimensions
     animatedCard.style.cssText = `
-        position: fixed;
-        z-index: 10000;
-        pointer-events: none;
-        width: ${endPos.width}px;
-        height: ${endPos.height}px;
-        left: ${startX}px;
-        top: ${startY}px;
-        transform: translate(-50%, -50%);
+        position: fixed !important;
+        z-index: 10000 !important;
+        pointer-events: none !important;
+        width: ${cardWidth}px !important;
+        height: ${cardHeight}px !important;
+        left: ${startX}px !important;
+        top: ${startY}px !important;
+        margin: 0 !important;
+        transform: none !important;
         opacity: 0;
+        transition: none !important;
     `;
     
     document.body.appendChild(animatedCard);
@@ -140,18 +126,20 @@ function animateCardDraw(card, owner, handIndex) {
     // Animation
     const duration = 400;
     const startTime = performance.now();
-    const controlY = Math.min(startY, endPos.y) - 50;
+    
+    // Point de contrôle pour la courbe
+    const controlX = (startX + endX) / 2;
+    const controlY = Math.min(startY, endY) - 50;
     
     function animate() {
         const elapsed = performance.now() - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const eased = easeOutCubic(progress);
         
-        // Courbe de Bézier
+        // Position sur courbe de Bézier quadratique
         const t = eased;
-        const midX = (startX + endPos.x) / 2;
-        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * midX + t * t * endPos.x;
-        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endPos.y;
+        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * endX;
+        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endY;
         
         animatedCard.style.left = x + 'px';
         animatedCard.style.top = y + 'px';
@@ -160,11 +148,15 @@ function animateCardDraw(card, owner, handIndex) {
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            // Garder visible un instant puis supprimer
-            setTimeout(() => animatedCard.remove(), 50);
+            // FIN - Dans le même frame : révéler la vraie carte et supprimer l'animation
+            requestAnimationFrame(() => {
+                targetCard.style.visibility = 'visible';
+                animatedCard.remove();
+            });
         }
     }
     
+    // Démarrer l'animation
     requestAnimationFrame(animate);
 }
 

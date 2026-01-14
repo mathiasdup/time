@@ -1758,7 +1758,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Animation de pioche avec PixiJS
+ * Animation de pioche
  */
 async function animateDrawCards(data) {
     if (!data.cards || data.cards.length === 0) return;
@@ -1777,10 +1777,10 @@ async function animateDrawCards(data) {
         const card = drawData.card;
         const handIndex = drawData.handIndex || 0;
         
-        // Lancer l'animation PixiJS
+        // Lancer l'animation
         GameAnimations.animateDraw(card, owner, handIndex);
         
-        // Petit délai entre les cartes si plusieurs sont piochées
-        await new Promise(resolve => setTimeout(resolve, 150));
+        // Délai entre les cartes (animation dure 400ms)
+        await new Promise(resolve => setTimeout(resolve, 350));
     }
 }
