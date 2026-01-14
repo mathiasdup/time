@@ -570,51 +570,64 @@ function animateTrap(data) {
 let animatingSlots = new Set();
 
 // Animation d'invocation - overlay indépendant du render
+// La carte "tombe" sur le plateau avec un effet de rebond
 function animateSummon(data) {
     // N'animer que les créatures de l'adversaire (pas les nôtres)
     if (data.animateForOpponent && data.player === myNum) {
         return; // Notre carte est déjà visible, pas besoin d'animation
     }
-    
+
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
-    
+
     // Le slot devrait déjà être bloqué par blockSlots, mais on s'assure
     animatingSlots.add(slotKey);
-    
+
     // Trouver le slot cible
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     if (!slot) return;
-    
+
     // Vider le slot (au cas où)
     const label = slot.querySelector('.slot-label');
     slot.innerHTML = '';
     if (label) slot.appendChild(label.cloneNode(true));
     slot.classList.remove('has-card');
-    
+
     const rect = slot.getBoundingClientRect();
-    
+
     // Créer une carte overlay en position fixe
     const cardEl = makeCard(data.card, false);
     cardEl.style.position = 'fixed';
     cardEl.style.left = rect.left + 'px';
-    cardEl.style.top = rect.top + 'px';
     cardEl.style.width = rect.width + 'px';
     cardEl.style.height = rect.height + 'px';
     cardEl.style.zIndex = '2000';
     cardEl.style.pointerEvents = 'none';
-    cardEl.classList.add('summon-overlay');
-    
+
+    // Position de départ : au-dessus de l'écran
+    cardEl.style.top = '-150px';
+    cardEl.style.opacity = '0';
+    cardEl.style.transform = 'scale(0.8) rotateX(30deg)';
+    cardEl.classList.add('summon-drop');
+
     document.body.appendChild(cardEl);
-    
-    // Après l'animation pop (550ms)
+
+    // Déclencher l'animation de chute
+    requestAnimationFrame(() => {
+        cardEl.style.transition = 'top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease-out, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        cardEl.style.top = rect.top + 'px';
+        cardEl.style.opacity = '1';
+        cardEl.style.transform = 'scale(1) rotateX(0deg)';
+    });
+
+    // Après l'animation de chute (550ms)
     setTimeout(() => {
         // Retirer l'overlay
         cardEl.remove();
-        
+
         // Libérer le slot - render() pourra le mettre à jour
         animatingSlots.delete(slotKey);
-        
+
         // Forcer un render pour afficher la carte du state
         render();
     }, 550);
@@ -625,30 +638,35 @@ function animateMove(data) {
     if (data.player === myNum) {
         return; // Nos cartes sont déjà à leur nouvelle position
     }
-    
+
     const owner = 'opp';
-    
+
     // Bloquer les deux slots (origine et destination)
     const fromKey = `${owner}-${data.fromRow}-${data.fromCol}`;
     const toKey = `${owner}-${data.toRow}-${data.toCol}`;
     animatingSlots.add(fromKey);
     animatingSlots.add(toKey);
-    
+
     const fromSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.fromRow}"][data-col="${data.fromCol}"]`);
     const toSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
-    
+
     if (!fromSlot || !toSlot) return;
-    
-    // Vider le slot d'origine immédiatement
-    const label = fromSlot.querySelector('.slot-label');
+
+    // Vider les DEUX slots immédiatement (pour éviter le doublon visuel)
+    const labelFrom = fromSlot.querySelector('.slot-label');
     fromSlot.innerHTML = '';
-    if (label) fromSlot.appendChild(label.cloneNode(true));
+    if (labelFrom) fromSlot.appendChild(labelFrom.cloneNode(true));
     fromSlot.classList.remove('has-card');
-    
+
+    const labelTo = toSlot.querySelector('.slot-label');
+    toSlot.innerHTML = '';
+    if (labelTo) toSlot.appendChild(labelTo.cloneNode(true));
+    toSlot.classList.remove('has-card');
+
     // Récupérer les positions
     const fromRect = fromSlot.getBoundingClientRect();
     const toRect = toSlot.getBoundingClientRect();
-    
+
     // Créer une carte pour l'animation
     const movingCard = makeCard(data.card, false);
     movingCard.classList.add('card-moving');
@@ -656,15 +674,15 @@ function animateMove(data) {
     movingCard.style.top = fromRect.top + 'px';
     movingCard.style.width = fromRect.width + 'px';
     movingCard.style.height = fromRect.height + 'px';
-    
+
     document.body.appendChild(movingCard);
-    
+
     // Animer vers la destination
     requestAnimationFrame(() => {
         movingCard.style.left = toRect.left + 'px';
         movingCard.style.top = toRect.top + 'px';
     });
-    
+
     // Nettoyer après l'animation
     setTimeout(() => {
         movingCard.remove();

@@ -139,7 +139,7 @@ class CombatAnimationSystem {
 
     /**
      * Un projectile part de la carte tireur vers la cible
-     * LE TIREUR NE BOUGE PAS
+     * LE TIREUR NE BOUGE PAS - Flèche d'énergie lumineuse
      */
     async animateProjectile(data) {
         const { startOwner, startRow, startCol, targetOwner, targetRow, targetCol, damage } = data;
@@ -154,11 +154,48 @@ class CombatAnimationSystem {
             return;
         }
 
-        // Créer le projectile
+        // Créer le projectile - Flèche d'énergie stylisée
         const projectile = document.createElement('div');
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * (180 / Math.PI);
 
+        // Flèche d'énergie avec glow et traînée
         projectile.innerHTML = `
+            <!-- Traînée d'énergie -->
+            <div style="
+                position: absolute;
+                right: 25px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 80px;
+                height: 6px;
+                background: linear-gradient(to left,
+                    rgba(0, 200, 255, 1),
+                    rgba(100, 220, 255, 0.8) 20%,
+                    rgba(150, 230, 255, 0.5) 50%,
+                    rgba(200, 240, 255, 0.2) 80%,
+                    transparent);
+                border-radius: 3px;
+                filter: blur(2px);
+            "></div>
+            <!-- Corps lumineux central -->
+            <div style="
+                position: absolute;
+                right: 15px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 35px;
+                height: 10px;
+                background: linear-gradient(to left,
+                    #ffffff,
+                    #00ddff 30%,
+                    #00aaff);
+                border-radius: 5px 2px 2px 5px;
+                box-shadow:
+                    0 0 10px #00ddff,
+                    0 0 20px rgba(0, 200, 255, 0.8),
+                    0 0 30px rgba(0, 150, 255, 0.5);
+            "></div>
+            <!-- Pointe de flèche -->
             <div style="
                 position: absolute;
                 right: 0;
@@ -166,37 +203,43 @@ class CombatAnimationSystem {
                 transform: translateY(-50%);
                 width: 0;
                 height: 0;
-                border-left: 22px solid #ffdd00;
-                border-top: 11px solid transparent;
-                border-bottom: 11px solid transparent;
-                filter: drop-shadow(0 0 8px #ffaa00);
+                border-left: 18px solid #ffffff;
+                border-top: 8px solid transparent;
+                border-bottom: 8px solid transparent;
+                filter: drop-shadow(0 0 8px #00ddff) drop-shadow(0 0 15px #00aaff);
             "></div>
+            <!-- Glow central -->
             <div style="
                 position: absolute;
-                right: 18px;
+                right: 5px;
                 top: 50%;
                 transform: translateY(-50%);
-                width: 50px;
-                height: 10px;
-                background: linear-gradient(to left, #ffcc00, #ff8800 60%, transparent);
-                border-radius: 5px;
-            "></div>
-            <div style="
-                position: absolute;
-                right: 8px;
-                top: 50%;
-                transform: translateY(-50%);
-                width: 30px;
-                height: 30px;
-                background: radial-gradient(circle, rgba(255,220,0,0.8), transparent 70%);
+                width: 25px;
+                height: 25px;
+                background: radial-gradient(circle,
+                    rgba(255, 255, 255, 0.9),
+                    rgba(0, 220, 255, 0.6) 40%,
+                    transparent 70%);
                 border-radius: 50%;
             "></div>
+            <!-- Particules de traînée -->
+            <div class="energy-particles" style="
+                position: absolute;
+                right: 40px;
+                top: 50%;
+                transform: translateY(-50%);
+            ">
+                <div style="position: absolute; width: 4px; height: 4px; background: #00ffff; border-radius: 50%; left: 0; top: -8px; opacity: 0.8; box-shadow: 0 0 6px #00ffff;"></div>
+                <div style="position: absolute; width: 3px; height: 3px; background: #88ffff; border-radius: 50%; left: 15px; top: 6px; opacity: 0.6; box-shadow: 0 0 4px #00ffff;"></div>
+                <div style="position: absolute; width: 3px; height: 3px; background: #00ddff; border-radius: 50%; left: 30px; top: -5px; opacity: 0.5; box-shadow: 0 0 4px #00ffff;"></div>
+                <div style="position: absolute; width: 2px; height: 2px; background: #aaffff; border-radius: 50%; left: 50px; top: 4px; opacity: 0.3; box-shadow: 0 0 3px #00ffff;"></div>
+            </div>
         `;
 
         projectile.style.cssText = `
             position: fixed;
-            width: 70px;
-            height: 30px;
+            width: 120px;
+            height: 40px;
             left: ${startPos.x}px;
             top: ${startPos.y}px;
             transform: translate(-50%, -50%) rotate(${angle}deg);
@@ -221,6 +264,10 @@ class CombatAnimationSystem {
 
                 projectile.style.left = currentX + 'px';
                 projectile.style.top = currentY + 'px';
+
+                // Effet de pulsation sur le glow
+                const pulse = 1 + Math.sin(progress * Math.PI * 6) * 0.15;
+                projectile.style.filter = `brightness(${pulse})`;
 
                 if (progress < 1) {
                     requestAnimationFrame(animate);

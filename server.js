@@ -1326,11 +1326,13 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         
         if (shooterVsFlyer) {
             // Tireur vs non-tireur (volant ou mêlée)
+            // Animation en 2 temps: tireur tire, puis l'autre charge
+            // Mais les dégâts sont simultanés
             const shooter = atk1.isShooter ? atk1 : atk2;
             const other = atk1.isShooter ? atk2 : atk1;
             const shooterDmg = shooter.attacker.atk;
             const otherDmg = other.attacker.atk;
-            
+
             emitAnimation(room, 'attack', {
                 combatType: 'shooter_vs_flyer',
                 attacker: shooter.attackerPlayer,
@@ -1343,8 +1345,25 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 flyerDamage: otherDmg,
                 isShooter: true
             });
+            await sleep(1200); // Attendre l'animation complète (projectile + charge du volant)
+
+            // Appliquer les dégâts simultanément
+            other.attacker.currentHp -= shooterDmg;
+            shooter.attacker.currentHp -= otherDmg;
+
+            log(`⚔️ ${shooter.attacker.name} ↔ ${other.attacker.name} (-${shooterDmg} / -${otherDmg})`, 'damage');
+
+            // Power
+            if (shooter.attacker.currentHp > 0 && shooter.attacker.abilities.includes('power')) {
+                shooter.attacker.atk += 1;
+                log(`💪 ${shooter.attacker.name} gagne +1 ATK!`, 'buff');
+            }
+            if (other.attacker.currentHp > 0 && other.attacker.abilities.includes('power')) {
+                other.attacker.atk += 1;
+                log(`💪 ${other.attacker.name} gagne +1 ATK!`, 'buff');
+            }
         } else if (bothShooters) {
-            // Deux tireurs - projectiles croisés
+            // Deux tireurs - projectiles croisés (simultanés)
             emitAnimation(room, 'attack', {
                 combatType: 'shooter',
                 attacker: atk1.attackerPlayer,
@@ -1367,6 +1386,23 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 damage: dmg2,
                 isShooter: true
             });
+            await sleep(800); // Attendre les animations de projectiles
+
+            // Dégâts simultanés
+            atk2.attacker.currentHp -= dmg1;
+            atk1.attacker.currentHp -= dmg2;
+
+            log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1} / -${dmg2})`, 'damage');
+
+            // Power
+            if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
+                atk1.attacker.atk += 1;
+                log(`💪 ${atk1.attacker.name} gagne +1 ATK!`, 'buff');
+            }
+            if (atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
+                atk2.attacker.atk += 1;
+                log(`💪 ${atk2.attacker.name} gagne +1 ATK!`, 'buff');
+            }
         } else {
             // Combat mêlée mutuel - vérifier l'initiative AVANT l'animation
             const bothInit = atk1.hasInitiative && atk2.hasInitiative;
