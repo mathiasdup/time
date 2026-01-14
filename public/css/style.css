@@ -74,27 +74,27 @@
             margin-right: -35px;
         }
         .player-info-bar.left .player-name-arrow {
-            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
+            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
             padding-right: 30px;
             padding-left: 40px;
             border-radius: 3px 0 0 3px;
         }
         .player-info-bar.left .player-name-arrow-border {
-            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
+            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
         }
         /* Flèche vers la gauche pour joueur droite (miroir) */
         .player-info-bar.right .rank-icon-container {
             margin-left: -35px;
         }
         .player-info-bar.right .player-name-arrow {
-            clip-path: polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%);
+            clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
             padding-left: 30px;
             padding-right: 40px;
             align-items: flex-end;
             border-radius: 0 3px 3px 0;
         }
         .player-info-bar.right .player-name-arrow-border {
-            clip-path: polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%);
+            clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
         }
         
         .player-name-text {
@@ -166,7 +166,7 @@
         
         .end-turn-btn { 
             width: 120px; 
-            height: 55px; 
+            height: 50px; 
             border-radius: 30px; 
             background: linear-gradient(180deg, #d4a000 0%, #b08000 50%, #806000 100%);
             border: 3px solid #8b7355;
