@@ -841,8 +841,8 @@
         /* MANA (image mana.png) - haut gauche */
         .card.full-art .fa-mana {
             position: absolute;
-            top: -6px;
-            left: -6px;
+            top: -10px;
+            left: -10px;
             width: 26px;
             height: 26px;
             background-image: url('/css/mana.png');
@@ -852,6 +852,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            padding-top: 2px;
             font-size: 0.8em;
             font-weight: bold;
             color: #fff;
@@ -862,10 +863,10 @@
         /* ATK (image épée) - bas gauche */
         .card.full-art .fa-atk {
             position: absolute;
-            bottom: -6px;
-            left: -6px;
-            width: 26px;
-            height: 26px;
+            bottom: -8px;
+            left: -9px;
+            width: 29px;
+            height: 29px;
             background-image: url('/css/Sword.png');
             background-size: contain;
             background-repeat: no-repeat;
