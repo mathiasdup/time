@@ -1711,8 +1711,13 @@ function render() {
     const oppDeckTooltip = document.getElementById('opp-deck-tooltip');
     if (meDeckTooltip) meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
     if (oppDeckTooltip) oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
-    document.getElementById('me-grave').textContent = me.graveyardCount || 0;
-    document.getElementById('opp-grave').textContent = opp.graveyardCount || 0;
+    // Mettre à jour les tooltips du cimetière
+    const meGraveCount = me.graveyardCount || 0;
+    const oppGraveCount = opp.graveyardCount || 0;
+    const meGraveTooltip = document.getElementById('me-grave-tooltip');
+    const oppGraveTooltip = document.getElementById('opp-grave-tooltip');
+    if (meGraveTooltip) meGraveTooltip.textContent = meGraveCount + (meGraveCount > 1 ? ' cartes' : ' carte');
+    if (oppGraveTooltip) oppGraveTooltip.textContent = oppGraveCount + (oppGraveCount > 1 ? ' cartes' : ' carte');
     
     // Afficher/cacher le contenu du deck selon le nombre de cartes
     updateDeckDisplay('me', me.deckCount);

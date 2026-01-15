@@ -343,36 +343,33 @@
             height: 115px;
         }
         /* Tooltip du deck */
-        .deck-tooltip {
+        .deck-tooltip, .grave-tooltip {
             position: absolute;
-            bottom: 100%;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.9);
-            color: #ffd700;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 1em;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.85em;
             font-weight: bold;
             white-space: nowrap;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
             z-index: 100;
-            margin-bottom: 8px;
-            border: 1px solid rgba(255, 215, 0, 0.3);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
         }
-        .deck-tooltip::after {
-            content: '';
-            position: absolute;
+        .deck-tooltip {
             top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            border: 6px solid transparent;
-            border-top-color: rgba(0, 0, 0, 0.9);
+            margin-top: 8px;
         }
-        .deck-box:hover .deck-tooltip {
+        .grave-tooltip {
+            bottom: 100%;
+            margin-bottom: 8px;
+        }
+        .deck-box:hover .deck-tooltip,
+        .grave-box:hover .grave-tooltip {
             opacity: 1;
         }
         /* Cartes empilées style Magic Arena */
@@ -480,26 +477,6 @@
             content: '☠️';
             font-size: 2em;
             opacity: 0.3;
-        }
-        .grave-count {
-            position: absolute;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: rgba(0,0,0,0.8);
-            border: 2px solid rgba(255,255,255,0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.85em;
-            font-weight: bold;
-            color: #fff;
-            z-index: 20;
-        }
-        /* Compteur en miroir pour l'adversaire */
-        .side-panel.right .grave-count {
-            right: auto;
-            left: 0px;
         }
         .grave-top-card .mini-card {
             width: 100%;
@@ -869,7 +846,6 @@
             margin-left: -55px;
             border-radius: 6px;
             background: url('back1.png') center/cover no-repeat;
-            border: 2px solid #8b7355;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             flex-shrink: 0;
             position: relative;
