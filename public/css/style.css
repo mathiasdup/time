@@ -685,51 +685,55 @@
         .card.has-image {
             background-size: cover;
             background-position: center;
-            border: none;
+            border: none !important;
         }
         .card.has-image .card-art,
         .card.has-image .card-body {
-            display: none;
+            display: none !important;
         }
         /* Coût mana - orbe bleu en haut à gauche */
         .card.has-image .card-cost {
-            top: 3px;
-            left: 5px;
-            width: 18px;
-            height: 18px;
-            font-size: 0.85em;
-            background: transparent;
-            border: none;
-            color: #fff;
-            text-shadow: 0 0 3px #000, 0 0 6px #000;
+            position: absolute !important;
+            top: 2% !important;
+            left: 6% !important;
+            width: auto !important;
+            height: auto !important;
+            font-size: 1em !important;
+            background: transparent !important;
+            border: none !important;
+            color: #fff !important;
+            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
         /* ATK - gemme verte en bas à gauche */
         .card.has-image .card-stat-atk {
-            position: absolute;
-            bottom: 3px;
-            left: 8px;
-            font-size: 0.8em;
-            font-weight: bold;
-            color: #fff;
-            text-shadow: 0 0 3px #000, 0 0 6px #000;
+            position: absolute !important;
+            bottom: 2% !important;
+            left: 12% !important;
+            font-size: 0.9em !important;
+            font-weight: bold !important;
+            color: #fff !important;
+            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
         }
         /* HP - gemme rouge en bas à droite */
         .card.has-image .card-stat-hp {
-            position: absolute;
-            bottom: 3px;
-            right: 8px;
-            font-size: 0.8em;
-            font-weight: bold;
-            color: #fff;
-            text-shadow: 0 0 3px #000, 0 0 6px #000;
+            position: absolute !important;
+            bottom: 2% !important;
+            right: 12% !important;
+            font-size: 0.9em !important;
+            font-weight: bold !important;
+            color: #fff !important;
+            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
         }
         .card.has-image .card-stat-hp.damaged {
-            color: #ff6b6b;
+            color: #ff6b6b !important;
         }
         .card.has-image .card-stat-atk.boosted,
         .card.has-image .card-stat-hp.boosted {
-            color: #2ecc71;
-            text-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
+            color: #2ecc71 !important;
+            text-shadow: 0 0 6px rgba(46, 204, 113, 0.8) !important;
         }
         .card.has-image.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.has-image.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
