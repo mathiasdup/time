@@ -887,10 +887,10 @@
         /* HP (image coeur) - bas droite */
         .card.full-art .fa-hp {
             position: absolute;
-            bottom: -6px;
+            bottom: -8px;
             right: -6px;
-            width: 26px;
-            height: 26px;
+            width: 27px;
+            height: 27px;
             background-image: url('/css/Heart.png');
             background-size: contain;
             background-repeat: no-repeat;
