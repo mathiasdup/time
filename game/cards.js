@@ -17,7 +17,8 @@ const CardDB = {
         { id: 'rogue', name: 'Voleur', atk: 3, hp: 2, cost: 2, abilities: ['initiative'], type: 'creature', icon: '🗡️' },
         { id: 'bat', name: 'Chauve-souris', atk: 2, hp: 2, cost: 2, abilities: ['fly', 'haste'], type: 'creature', icon: '🦇' },
         
-        // === COÛT 3 (6 créatures) ===
+        // === COÛT 3 (7 créatures) ===
+        { id: 'skeleton_cleaver', name: 'Squelette Clivant', atk: 4, hp: 2, cost: 3, abilities: ['initiative', 'cleave'], type: 'creature', image: 'squelette_clivant.png', subtype: 'Mort-vivant', combatType: 'melee' },
         { id: 'knight', name: 'Chevalier', atk: 3, hp: 4, cost: 3, abilities: [], type: 'creature', icon: '⚔️' },
         { id: 'sniper', name: 'Sniper', atk: 4, hp: 2, cost: 3, abilities: ['shooter'], type: 'creature', icon: '🎯' },
         { id: 'ghost', name: 'Spectre', atk: 2, hp: 3, cost: 3, abilities: ['intangible'], type: 'creature', icon: '👻' },
@@ -25,12 +26,13 @@ const CardDB = {
         { id: 'eagle', name: 'Aigle géant', atk: 3, hp: 3, cost: 3, abilities: ['fly'], type: 'creature', icon: '🦅' },
         { id: 'barbarian', name: 'Barbare', atk: 2, hp: 5, cost: 3, abilities: ['power'], type: 'creature', icon: '🪓' },
         
-        // === COÛT 4 (5 créatures) ===
+        // === COÛT 4 (6 créatures) ===
         { id: 'rhino', name: 'Rhinocéros', atk: 4, hp: 4, cost: 4, abilities: ['trample'], type: 'creature', icon: '🦏' },
         { id: 'assassin', name: 'Assassin', atk: 5, hp: 2, cost: 4, abilities: ['initiative', 'haste'], type: 'creature', icon: '🥷' },
         { id: 'griffin', name: 'Griffon', atk: 4, hp: 4, cost: 4, abilities: ['fly'], type: 'creature', icon: '🦁' },
         { id: 'werewolf', name: 'Loup-garou', atk: 3, hp: 5, cost: 4, abilities: ['power', 'haste'], type: 'creature', icon: '🌕' },
         { id: 'cannon', name: 'Canon', atk: 5, hp: 3, cost: 4, abilities: ['shooter'], type: 'creature', icon: '💣' },
+        { id: 'reaper', name: 'Faucheur', atk: 3, hp: 4, cost: 4, abilities: ['cleave'], type: 'creature', icon: '⚰️' },
         
         // === COÛT 5+ (3 créatures) ===
         { id: 'dragon', name: 'Dragon', atk: 5, hp: 5, cost: 5, abilities: ['fly', 'trample'], type: 'creature', icon: '🐉' },

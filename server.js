@@ -1073,6 +1073,37 @@ async function processCombatSlot(room, row, col, log, sleep) {
             const bothHaveInitiative = atk1.hasInitiative && atk2.hasInitiative;
             const oneHasInitiative = atk1.hasInitiative !== atk2.hasInitiative;
             
+            // Helper pour appliquer le clivant
+            const applyCleave = (attacker, atkData) => {
+                if (!attacker.abilities.includes('cleave')) return [];
+                const cleaveTargets = [];
+                const targetOwner = room.gameState.players[atkData.targetPlayer];
+                const adjacentRows = [atkData.targetRow - 1, atkData.targetRow + 1].filter(r => r >= 0 && r < 4);
+                const damage = attacker.atk;
+
+                for (const adjRow of adjacentRows) {
+                    const adjTarget = targetOwner.field[adjRow][atkData.targetCol];
+                    if (adjTarget && !adjTarget.abilities.includes('intangible')) {
+                        const attackerIsFlying = attacker.abilities.includes('fly');
+                        const attackerIsShooter = attacker.abilities.includes('shooter');
+                        if (adjTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
+                            continue;
+                        }
+
+                        adjTarget.currentHp -= damage;
+                        log(`⛏️ Clivant: ${attacker.name} → ${adjTarget.name} (-${damage})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: adjRow, col: atkData.targetCol, amount: damage });
+
+                        if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
+                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + 1;
+                        }
+
+                        cleaveTargets.push({ row: adjRow, col: atkData.targetCol });
+                    }
+                }
+                return cleaveTargets;
+            };
+
             // Helper pour appliquer le piétinement
             const applyTrample = async (attacker, target, atkData) => {
                 if (!atkData.hasTrample || target.currentHp >= 0) return;
@@ -1131,10 +1162,14 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + 1;
                 }
                 
+                // Clivant - s'applique même si l'attaquant meurt car il a attaqué
+                atk1.cleaveTargets = applyCleave(atk1.attacker, atk1);
+                atk2.cleaveTargets = applyCleave(atk2.attacker, atk2);
+
                 // Piétinement - s'applique même si l'attaquant meurt car il a attaqué
                 await applyTrample(atk1.attacker, atk2.attacker, atk1);
                 await applyTrample(atk2.attacker, atk1.attacker, atk2);
-                
+
             } else {
                 // Une seule a initiative - elle attaque en premier
                 const first = atk1.hasInitiative ? atk1 : atk2;
@@ -1150,9 +1185,12 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     second.attacker.pendingPowerBonus = (second.attacker.pendingPowerBonus || 0) + 1;
                 }
                 
+                // Clivant du premier
+                first.cleaveTargets = applyCleave(first.attacker, first);
+
                 // Piétinement du premier (même si le second va riposter et le tuer)
                 await applyTrample(first.attacker, second.attacker, first);
-                
+
                 // Second riposte seulement s'il survit
                 if (second.attacker.currentHp > 0) {
                     const dmgSecond = second.attacker.atk;
@@ -1172,10 +1210,17 @@ async function processCombatSlot(room, row, col, log, sleep) {
             emitStateToBoth(room);
             await sleep(400);
             
-            // Vérifier les morts (inclure les slots derrière pour le piétinement)
+            // Vérifier les morts (inclure les slots derrière pour le piétinement et clivant)
             const slotsToCheck = [[row, col]];
             if (atk1.targetCol === 1) slotsToCheck.push([atk1.targetRow, 0]);
             if (atk2.targetCol === 1) slotsToCheck.push([atk2.targetRow, 0]);
+            // Ajouter les cibles du clivant
+            if (atk1.cleaveTargets) {
+                for (const ct of atk1.cleaveTargets) slotsToCheck.push([ct.row, ct.col]);
+            }
+            if (atk2.cleaveTargets) {
+                for (const ct of atk2.cleaveTargets) slotsToCheck.push([ct.row, ct.col]);
+            }
             await checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep);
             
             // Vérifier victoire après piétinement
@@ -1212,16 +1257,47 @@ async function processCombatSlot(room, row, col, log, sleep) {
         } else if (atk.target) {
             const targetCard = room.gameState.players[atk.targetPlayer].field[atk.targetRow][atk.targetCol];
             if (!targetCard) continue;
-            
+
             const damage = attackerCard.atk;
             targetCard.currentHp -= damage;
             log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
             emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
-            
+
             if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
                 targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + 1;
             }
-            
+
+            // Clivant - inflige les dégâts aux créatures sur les lignes adjacentes (même colonne)
+            if (attackerCard.abilities.includes('cleave')) {
+                const targetOwner = room.gameState.players[atk.targetPlayer];
+                const adjacentRows = [atk.targetRow - 1, atk.targetRow + 1].filter(r => r >= 0 && r < 4);
+
+                for (const adjRow of adjacentRows) {
+                    const adjTarget = targetOwner.field[adjRow][atk.targetCol];
+                    if (adjTarget && !adjTarget.abilities.includes('intangible')) {
+                        // Vérifier si on peut toucher une cible volante
+                        const attackerIsFlying = attackerCard.abilities.includes('fly');
+                        const attackerIsShooter = attackerCard.abilities.includes('shooter');
+                        if (adjTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
+                            continue; // Ne peut pas toucher une créature volante
+                        }
+
+                        adjTarget.currentHp -= damage;
+                        log(`⛏️ Clivant: ${attackerCard.name} → ${adjTarget.name} (-${damage})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: adjRow, col: atk.targetCol, amount: damage });
+
+                        // Les cibles adjacentes ne ripostent PAS mais peuvent gagner Power
+                        if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
+                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + 1;
+                        }
+
+                        // Stocker pour vérifier les morts plus tard
+                        atk.cleaveTargets = atk.cleaveTargets || [];
+                        atk.cleaveTargets.push({ row: adjRow, col: atk.targetCol });
+                    }
+                }
+            }
+
             // Piétinement
             if (atk.hasTrample && targetCard.currentHp < 0) {
                 const excessDamage = Math.abs(targetCard.currentHp);
@@ -1301,10 +1377,16 @@ async function processCombatSlot(room, row, col, log, sleep) {
             if (atk.hasTrample && atk.targetCol === 1) {
                 slotsToCheck.push([atk.targetRow, 0]);
             }
+            // Ajouter les cibles du clivant
+            if (atk.cleaveTargets) {
+                for (const ct of atk.cleaveTargets) {
+                    slotsToCheck.push([ct.row, ct.col]);
+                }
+            }
         }
     }
     await checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep);
-    
+
     return false;
 }
 

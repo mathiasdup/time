@@ -800,10 +800,24 @@ async function animateDisintegration(cardEl, owner) {
 function createCardElementForAnimation(card) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
+    const hp = card.currentHp ?? card.hp;
+
+    // Si la carte a une image, utiliser le nouveau système
+    if (card.image) {
+        el.classList.add('has-image');
+        el.style.backgroundImage = `url('/cards/${card.image}')`;
+        el.innerHTML = `
+            <div class="card-cost">${card.cost}</div>
+            <div class="card-stats-overlay">
+                <span class="stat-img">${card.atk}</span>
+                <span class="stat-img">${hp}</span>
+            </div>`;
+        return el;
+    }
 
     const icons = {
         fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', initiative: '🗡️', power: '💪'
+        trample: '🦏', initiative: '🗡️', power: '💪', cleave: '⛏️'
     };
     const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
 
@@ -822,7 +836,7 @@ function createCardElementForAnimation(card) {
                 ${card.atk !== undefined ? `<span class="stat stat-atk">${card.atk}</span>` : ''}
                 ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
                 ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
-                ${card.type === 'creature' ? `<span class="stat stat-hp">${card.hp}</span>` : ''}
+                ${card.type === 'creature' ? `<span class="stat stat-hp">${hp}</span>` : ''}
             </div>
         </div>`;
 
@@ -2134,40 +2148,54 @@ function renderOppHand(count) {
 function makeCard(card, inHand) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
-    
+
     if (!inHand && card.type === 'creature') {
         if (card.turnsOnField === 0 && !card.abilities?.includes('haste')) el.classList.add('just-played');
         if (card.canAttack) el.classList.add('can-attack');
     }
-    
-    const icons = { 
-        fly: '🦅', 
-        shooter: '🎯', 
-        haste: '⚡',
-        intangible: '👻',
-        trample: '🦏',
-        initiative: '🗡️',
-        power: '💪'
-    };
-    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
+
     const hp = card.currentHp ?? card.hp;
-    
+
     // Classes pour les stats
     let hpClass = '';
     let atkClass = '';
     if (card.type === 'creature') {
-        // HP damaged (rouge) ou boosted (vert)
         if (hp < card.hp) {
             hpClass = 'damaged';
         } else if (card.baseHp !== undefined && card.hp > card.baseHp) {
             hpClass = 'boosted';
         }
-        // ATK boosted (vert)
         if (card.baseAtk !== undefined && card.atk > card.baseAtk) {
             atkClass = 'boosted';
         }
     }
-    
+
+    // Si la carte a une image, utiliser le nouveau système
+    if (card.image) {
+        el.classList.add('has-image');
+        el.style.backgroundImage = `url('/cards/${card.image}')`;
+        el.innerHTML = `
+            <div class="card-cost">${card.cost}</div>
+            <div class="card-stats-overlay">
+                <span class="stat-img ${atkClass}">${card.atk}</span>
+                <span class="stat-img ${hpClass}">${hp}</span>
+            </div>`;
+        return el;
+    }
+
+    // Système classique avec emojis
+    const icons = {
+        fly: '🦅',
+        shooter: '🎯',
+        haste: '⚡',
+        intangible: '👻',
+        trample: '🦏',
+        initiative: '🗡️',
+        power: '💪',
+        cleave: '⛏️'
+    };
+    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
+
     // Type icon for spells and traps
     let typeIcon = '';
     if (card.type === 'spell') {
@@ -2175,7 +2203,7 @@ function makeCard(card, inHand) {
     } else if (card.type === 'trap') {
         typeIcon = `<div class="card-type-icon trap-icon">🪤</div>`;
     }
-    
+
     // Pattern info for spells
     let patternInfo = '';
     if (card.pattern === 'cross') {
@@ -2185,7 +2213,7 @@ function makeCard(card, inHand) {
     } else if (card.pattern === 'hero') {
         patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">🎯 Héros</div>';
     }
-    
+
     el.innerHTML = `
         <div class="card-cost">${card.cost}</div>
         ${typeIcon}

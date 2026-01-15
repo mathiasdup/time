@@ -65,22 +65,36 @@ function startPendingDrawAnimations() {
 function createCardElement(card) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
-    
-    const icons = { 
+    const hp = card.currentHp ?? card.hp;
+
+    // Si la carte a une image, utiliser le nouveau système
+    if (card.image) {
+        el.classList.add('has-image');
+        el.style.backgroundImage = `url('/cards/${card.image}')`;
+        el.innerHTML = `
+            <div class="card-cost">${card.cost}</div>
+            <div class="card-stats-overlay">
+                <span class="stat-img">${card.atk}</span>
+                <span class="stat-img">${hp}</span>
+            </div>`;
+        return el;
+    }
+
+    const icons = {
         fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', initiative: '🗡️', power: '💪'
+        trample: '🦏', initiative: '🗡️', power: '💪', cleave: '⛏️'
     };
     const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
-    
+
     let typeIcon = '';
     if (card.type === 'spell') typeIcon = `<div class="card-type-icon spell-icon">✨</div>`;
     else if (card.type === 'trap') typeIcon = `<div class="card-type-icon trap-icon">🪤</div>`;
-    
+
     let patternInfo = '';
     if (card.pattern === 'cross') patternInfo = '<div style="font-size:0.5em;color:#ff9800;">✝️ Zone</div>';
     else if (card.pattern === 'global' || card.pattern === 'all') patternInfo = '<div style="font-size:0.5em;color:#3498db;">🌍 Global</div>';
     else if (card.pattern === 'hero') patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">🎯 Héros</div>';
-    
+
     el.innerHTML = `
         <div class="card-cost">${card.cost}</div>
         ${typeIcon}
@@ -92,10 +106,10 @@ function createCardElement(card) {
                 ${card.atk !== undefined ? `<span class="stat stat-atk">${card.atk}</span>` : ''}
                 ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
                 ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
-                ${card.type === 'creature' ? `<span class="stat stat-hp">${card.hp}</span>` : ''}
+                ${card.type === 'creature' ? `<span class="stat stat-hp">${hp}</span>` : ''}
             </div>
         </div>`;
-    
+
     return el;
 }
 
