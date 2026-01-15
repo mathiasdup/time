@@ -806,10 +806,25 @@ function createCardElementForAnimation(card) {
     if (card.image) {
         el.classList.add('has-image');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
+
+        const abilityNames = {
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+        };
+        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+
+        let combatTypeText = 'Mêlée';
+        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
+        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
+
         el.innerHTML = `
-            <div class="card-cost">${card.cost}</div>
-            <div class="card-stat-atk">${card.atk}</div>
-            <div class="card-stat-hp">${hp}</div>`;
+            <div class="img-cost">${card.cost}</div>
+            <div class="img-subtype">${card.subtype || ''}</div>
+            <div class="img-name">${card.name}</div>
+            <div class="img-type-line">Créature - ${combatTypeText}</div>
+            <div class="img-abilities">${abilitiesText}</div>
+            <div class="img-atk">${card.atk}</div>
+            <div class="img-hp">${hp}</div>`;
         return el;
     }
 
@@ -2172,10 +2187,27 @@ function makeCard(card, inHand) {
     if (card.image) {
         el.classList.add('has-image');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
+
+        // Construire le texte des capacités
+        const abilityNames = {
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+        };
+        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+
+        // Déterminer le type de combat
+        let combatTypeText = 'Mêlée';
+        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
+        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
+
         el.innerHTML = `
-            <div class="card-cost">${card.cost}</div>
-            <div class="card-stat-atk ${atkClass}">${card.atk}</div>
-            <div class="card-stat-hp ${hpClass}">${hp}</div>`;
+            <div class="img-cost">${card.cost}</div>
+            <div class="img-subtype">${card.subtype || ''}</div>
+            <div class="img-name">${card.name}</div>
+            <div class="img-type-line">Créature - ${combatTypeText}</div>
+            <div class="img-abilities">${abilitiesText}</div>
+            <div class="img-atk ${atkClass}">${card.atk}</div>
+            <div class="img-hp ${hpClass}">${hp}</div>`;
         return el;
     }
 

@@ -688,52 +688,94 @@
             border: none !important;
         }
         .card.has-image .card-art,
-        .card.has-image .card-body {
+        .card.has-image .card-body,
+        .card.has-image .card-cost {
             display: none !important;
         }
         /* Coût mana - orbe bleu en haut à gauche */
-        .card.has-image .card-cost {
-            position: absolute !important;
-            top: 2% !important;
-            left: 6% !important;
-            width: auto !important;
-            height: auto !important;
-            font-size: 1em !important;
-            background: transparent !important;
-            border: none !important;
-            color: #fff !important;
-            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
+        .card.has-image .img-cost {
+            position: absolute;
+            top: 3%;
+            left: 8%;
+            font-size: 0.95em;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
+        }
+        /* Type créature - en haut au centre */
+        .card.has-image .img-subtype {
+            position: absolute;
+            top: 1%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.4em;
+            color: #ccc;
+            text-shadow: 1px 1px 2px #000;
+            white-space: nowrap;
+        }
+        /* Nom de la carte - bannière centrale */
+        .card.has-image .img-name {
+            position: absolute;
+            top: 38%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.45em;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 3px #000, 0 0 6px #000;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* Zone description - type + capacités */
+        .card.has-image .img-type-line {
+            position: absolute;
+            bottom: 22%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.35em;
+            color: #aaa;
+            text-shadow: 1px 1px 2px #000;
+            white-space: nowrap;
+        }
+        .card.has-image .img-abilities {
+            position: absolute;
+            bottom: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.38em;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 1px 1px 2px #000;
+            white-space: nowrap;
         }
         /* ATK - gemme verte en bas à gauche */
-        .card.has-image .card-stat-atk {
-            position: absolute !important;
-            bottom: 2% !important;
-            left: 12% !important;
-            font-size: 0.9em !important;
-            font-weight: bold !important;
-            color: #fff !important;
-            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
+        .card.has-image .img-atk {
+            position: absolute;
+            bottom: 2%;
+            left: 12%;
+            font-size: 0.85em;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
         }
         /* HP - gemme rouge en bas à droite */
-        .card.has-image .card-stat-hp {
-            position: absolute !important;
-            bottom: 2% !important;
-            right: 12% !important;
-            font-size: 0.9em !important;
-            font-weight: bold !important;
-            color: #fff !important;
-            text-shadow: 1px 1px 2px #000, 0 0 8px #000 !important;
+        .card.has-image .img-hp {
+            position: absolute;
+            bottom: 2%;
+            right: 12%;
+            font-size: 0.85em;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
         }
-        .card.has-image .card-stat-hp.damaged {
-            color: #ff6b6b !important;
+        .card.has-image .img-hp.damaged {
+            color: #ff6b6b;
         }
-        .card.has-image .card-stat-atk.boosted,
-        .card.has-image .card-stat-hp.boosted {
-            color: #2ecc71 !important;
-            text-shadow: 0 0 6px rgba(46, 204, 113, 0.8) !important;
+        .card.has-image .img-atk.boosted,
+        .card.has-image .img-hp.boosted {
+            color: #2ecc71;
+            text-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
         }
         .card.has-image.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.has-image.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
