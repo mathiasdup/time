@@ -2194,7 +2194,7 @@ function makeCard(card, inHand) {
         }
     }
 
-    // Carte fullArt : image plein fond + icônes PNG pour les stats
+    // Carte fullArt : image plein fond + ronds colorés style héros
     if (card.fullArt && card.image) {
         el.classList.add('full-art');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
@@ -2210,16 +2210,14 @@ function makeCard(card, inHand) {
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
         el.innerHTML = `
-            <div class="fa-mana"><img src="/css/mana.png" alt=""><span>${card.cost}</span></div>
-            <div class="fa-name-banner">
-                <div class="fa-name">${card.name}</div>
-            </div>
+            <div class="fa-mana">${card.cost}</div>
+            <div class="fa-title"><div class="fa-name">${card.name}</div></div>
             <div class="fa-text-zone">
                 <div class="fa-type">Créature - ${combatTypeText}</div>
                 <div class="fa-abilities">${abilitiesText}</div>
             </div>
-            <div class="fa-atk"><img src="/css/damage.png" alt=""><span class="${atkClass}">${card.atk}</span></div>
-            <div class="fa-hp"><img src="/css/health.png" alt=""><span class="${hpClass}">${hp}</span></div>`;
+            <div class="fa-atk ${atkClass}">${card.atk}</div>
+            <div class="fa-hp ${hpClass}">${hp}</div>`;
         return el;
     }
 
