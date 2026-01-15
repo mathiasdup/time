@@ -97,8 +97,8 @@ async function executeAnimationAsync(type, data) {
 async function handlePixiAttack(data) {
     const attackerOwner = data.attacker === myNum ? 'me' : 'opp';
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
-    
-    // Cas spécial : Tireur vs Volant (2 temps)
+
+    // Cas spécial : Tireur vs Volant (simultané - projectile touche le volant en mouvement)
     if (data.combatType === 'shooter_vs_flyer') {
         await CombatAnimations.animateShooterVsFlyer({
             shooter: { owner: attackerOwner, row: data.row, col: data.col },
@@ -108,7 +108,39 @@ async function handlePixiAttack(data) {
         });
         return;
     }
-    
+
+    // Attaques parallèles : deux créatures attaquent des cibles différentes en même temps
+    if (data.combatType === 'parallel_attacks') {
+        const attack1Owner = data.attack1.attacker === myNum ? 'me' : 'opp';
+        const attack1TargetOwner = data.attack1.targetPlayer === myNum ? 'me' : 'opp';
+        const attack2Owner = data.attack2.attacker === myNum ? 'me' : 'opp';
+        const attack2TargetOwner = data.attack2.targetPlayer === myNum ? 'me' : 'opp';
+
+        await CombatAnimations.animateParallelAttacks({
+            attack1: {
+                attackerOwner: attack1Owner,
+                attackerRow: data.attack1.row,
+                attackerCol: data.attack1.col,
+                targetOwner: attack1TargetOwner,
+                targetRow: data.attack1.targetRow,
+                targetCol: data.attack1.targetCol,
+                damage: data.attack1.damage,
+                isShooter: data.attack1.isShooter
+            },
+            attack2: {
+                attackerOwner: attack2Owner,
+                attackerRow: data.attack2.row,
+                attackerCol: data.attack2.col,
+                targetOwner: attack2TargetOwner,
+                targetRow: data.attack2.targetRow,
+                targetCol: data.attack2.targetCol,
+                damage: data.attack2.damage,
+                isShooter: data.attack2.isShooter
+            }
+        });
+        return;
+    }
+
     // Combat mutuel mêlée = les deux se rencontrent au milieu (50/50)
     if (data.combatType === 'mutual_melee' || data.isMutual) {
         await CombatAnimations.animateMutualMelee({
@@ -119,7 +151,7 @@ async function handlePixiAttack(data) {
         });
         return;
     }
-    
+
     // Tireur simple = projectile avec griffure à l'impact
     if (data.isShooter || data.combatType === 'shooter') {
         await CombatAnimations.animateProjectile({
@@ -133,7 +165,7 @@ async function handlePixiAttack(data) {
         });
         return;
     }
-    
+
     // Attaque solo (volant ou mêlée) = charge vers la cible avec griffure
     await CombatAnimations.animateSoloAttack({
         attackerOwner: attackerOwner,

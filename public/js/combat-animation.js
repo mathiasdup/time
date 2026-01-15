@@ -457,13 +457,14 @@ class CombatAnimationSystem {
         setTimeout(() => clash.remove(), 600);
     }
 
-    // ==================== TIREUR VS VOLANT (2 temps) ====================
+    // ==================== TIREUR VS VOLANT (SIMULTANÉ) ====================
 
     /**
-     * Animation en 2 temps :
-     * 1. Le tireur tire son projectile
-     * 2. Le volant charge sur le tireur
-     * (mais la résolution est simultanée)
+     * Animation SIMULTANÉE :
+     * - Le volant charge vers le tireur
+     * - Le projectile est tiré et touche le volant EN COURS DE DÉPLACEMENT (au milieu)
+     * - Le volant termine son animation et frappe le tireur
+     * - Les dégâts sont résolus ensemble à la fin
      */
     async animateShooterVsFlyer(data) {
         const { shooter, flyer, shooterDamage, flyerDamage } = data;
@@ -472,41 +473,43 @@ class CombatAnimationSystem {
         const flyerPos = this.getSlotCenter(flyer.owner, flyer.row, flyer.col);
         const flyerCard = this.getCardElement(flyer.owner, flyer.row, flyer.col);
 
-        if (!shooterPos || !flyerPos) return;
+        if (!shooterPos || !flyerPos || !flyerCard) return;
 
-        // Phase 1: Le tireur tire (projectile)
-        await this.animateProjectile({
-            startOwner: shooter.owner,
-            startRow: shooter.row,
-            startCol: shooter.col,
-            targetOwner: flyer.owner,
-            targetRow: flyer.row,
-            targetCol: flyer.col,
-            damage: shooterDamage
-        });
+        // Marquer la carte volante comme étant en combat
+        flyerCard.dataset.inCombat = 'true';
 
-        await this.wait(this.TIMINGS.BETWEEN_PHASES);
+        const flyerRect = flyerCard.getBoundingClientRect();
+        const flyerStartX = flyerRect.left + flyerRect.width / 2;
+        const flyerStartY = flyerRect.top + flyerRect.height / 2;
 
-        // Phase 2: Le volant charge sur le tireur
-        if (flyerCard) {
-            // Marquer la carte comme étant en combat (désactive l'animation de vol)
-            flyerCard.dataset.inCombat = 'true';
+        // Calculer le déplacement du volant vers le tireur
+        const dx = shooterPos.x - flyerStartX;
+        const dy = shooterPos.y - flyerStartY;
 
-            const rect = flyerCard.getBoundingClientRect();
-            const dx = shooterPos.x - (rect.left + rect.width / 2);
-            const dy = shooterPos.y - (rect.top + rect.height / 2);
+        // Point d'interception : le volant sera à mi-chemin quand le projectile le touche
+        const interceptX = flyerStartX + dx * 0.5;
+        const interceptY = flyerStartY + dy * 0.5;
 
-            flyerCard.style.transition = `transform ${this.TIMINGS.ATTACK_MOVE}ms cubic-bezier(0.4, 0, 0.8, 1)`;
+        // Durée totale de l'animation du volant
+        const flyerMoveDuration = this.TIMINGS.ATTACK_MOVE;
+        // Le projectile doit arriver au point d'interception quand le volant y est (à 50% du trajet)
+        const projectileDuration = flyerMoveDuration * 0.5;
+
+        // Lancer les deux animations EN PARALLÈLE
+        const flyerAnimation = (async () => {
+            // Le volant se déplace vers le tireur
+            flyerCard.style.transition = `transform ${flyerMoveDuration}ms cubic-bezier(0.4, 0, 0.8, 1)`;
             flyerCard.style.transform = `translate(${dx}px, ${dy}px) scale(1.15)`;
             flyerCard.style.zIndex = '1000';
 
-            await this.wait(this.TIMINGS.ATTACK_MOVE);
+            await this.wait(flyerMoveDuration);
 
-            // Explosion à l'impact
+            // Le volant frappe le tireur
             if (flyerDamage !== undefined) {
                 this.showDamageEffect(shooterPos.x, shooterPos.y, flyerDamage);
             }
 
+            // Retour du volant
             flyerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms ease-out`;
             flyerCard.style.transform = '';
 
@@ -514,10 +517,82 @@ class CombatAnimationSystem {
 
             flyerCard.style.transition = '';
             flyerCard.style.zIndex = '';
-
-            // Libérer la carte - l'animation de vol peut reprendre
             flyerCard.dataset.inCombat = 'false';
-        }
+        })();
+
+        const projectileAnimation = (async () => {
+            // Créer le projectile qui vise le point d'interception
+            await this.animateProjectileToPoint({
+                startPos: shooterPos,
+                targetPos: { x: interceptX, y: interceptY },
+                duration: projectileDuration,
+                damage: shooterDamage
+            });
+        })();
+
+        // Attendre que les deux animations soient terminées
+        await Promise.all([flyerAnimation, projectileAnimation]);
+    }
+
+    /**
+     * Anime un projectile vers un point précis (pour l'interception)
+     */
+    async animateProjectileToPoint(data) {
+        const { startPos, targetPos, duration, damage } = data;
+
+        // Créer le projectile - Flèche d'énergie stylisée
+        const projectile = document.createElement('div');
+        const angle = Math.atan2(targetPos.y - startPos.y, targetPos.x - startPos.x) * (180 / Math.PI);
+
+        projectile.innerHTML = `
+            <div style="position: absolute; right: 25px; top: 50%; transform: translateY(-50%); width: 80px; height: 6px; background: linear-gradient(to left, rgba(0, 200, 255, 1), rgba(100, 220, 255, 0.8) 20%, rgba(150, 230, 255, 0.5) 50%, rgba(200, 240, 255, 0.2) 80%, transparent); border-radius: 3px; filter: blur(2px);"></div>
+            <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); width: 35px; height: 10px; background: linear-gradient(to left, #ffffff, #00ddff 30%, #00aaff); border-radius: 5px 2px 2px 5px; box-shadow: 0 0 10px #00ddff, 0 0 20px rgba(0, 200, 255, 0.8), 0 0 30px rgba(0, 150, 255, 0.5);"></div>
+            <div style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-left: 18px solid #ffffff; border-top: 8px solid transparent; border-bottom: 8px solid transparent; filter: drop-shadow(0 0 8px #00ddff) drop-shadow(0 0 15px #00aaff);"></div>
+            <div style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 25px; height: 25px; background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(0, 220, 255, 0.6) 40%, transparent 70%); border-radius: 50%;"></div>
+        `;
+
+        projectile.style.cssText = `
+            position: fixed;
+            width: 120px;
+            height: 40px;
+            left: ${startPos.x}px;
+            top: ${startPos.y}px;
+            transform: translate(-50%, -50%) rotate(${angle}deg);
+            z-index: 10001;
+            pointer-events: none;
+        `;
+
+        document.body.appendChild(projectile);
+
+        const startTime = performance.now();
+
+        await new Promise(resolve => {
+            const animate = () => {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+
+                const currentX = startPos.x + (targetPos.x - startPos.x) * eased;
+                const currentY = startPos.y + (targetPos.y - startPos.y) * eased;
+
+                projectile.style.left = currentX + 'px';
+                projectile.style.top = currentY + 'px';
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    projectile.remove();
+
+                    // Impact sur le volant en mouvement
+                    if (damage !== undefined) {
+                        this.showDamageEffect(targetPos.x, targetPos.y, damage);
+                    }
+
+                    resolve();
+                }
+            };
+            requestAnimationFrame(animate);
+        });
     }
 
     // ==================== DÉGÂTS AU HÉROS ====================
@@ -571,6 +646,63 @@ class CombatAnimationSystem {
 
         // Utiliser l'effet de flammes pour les sorts
         this.showFlameEffect(pos.x, pos.y, amount);
+    }
+
+    // ==================== ATTAQUES PARALLÈLES ====================
+
+    /**
+     * Anime deux attaques qui se déroulent EN MÊME TEMPS
+     * (chaque créature attaque sa propre cible, indépendamment)
+     */
+    async animateParallelAttacks(data) {
+        const { attack1, attack2 } = data;
+
+        // Préparer les animations
+        const animations = [];
+
+        // Animation de l'attaque 1
+        if (attack1) {
+            animations.push(this.animateSingleAttack(attack1));
+        }
+
+        // Animation de l'attaque 2
+        if (attack2) {
+            animations.push(this.animateSingleAttack(attack2));
+        }
+
+        // Lancer toutes les animations en parallèle
+        await Promise.all(animations);
+    }
+
+    /**
+     * Anime une seule attaque (utilisé par animateParallelAttacks)
+     */
+    async animateSingleAttack(attack) {
+        const { attackerOwner, attackerRow, attackerCol, targetOwner, targetRow, targetCol, damage, isShooter } = attack;
+
+        if (isShooter) {
+            // Tireur = projectile
+            await this.animateProjectile({
+                startOwner: attackerOwner,
+                startRow: attackerRow,
+                startCol: attackerCol,
+                targetOwner: targetOwner,
+                targetRow: targetRow,
+                targetCol: targetCol,
+                damage: damage
+            });
+        } else {
+            // Mêlée ou volant = charge
+            await this.animateSoloAttack({
+                attackerOwner,
+                attackerRow,
+                attackerCol,
+                targetOwner,
+                targetRow,
+                targetCol,
+                damage
+            });
+        }
     }
 
     // ==================== COMPATIBILITÉ ====================
