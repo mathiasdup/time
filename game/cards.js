@@ -1,13 +1,14 @@
 // ==================== CARD DATABASE - 40 CARTES ====================
 const CardDB = {
     creatures: [
-        // === COÛT 1 (6 créatures) ===
+        // === COÛT 1 (7 créatures) ===
         { id: 'goblin', name: 'Gobelin', atk: 1, hp: 2, cost: 1, abilities: [], type: 'creature', icon: '👺' },
         { id: 'rat', name: 'Rat', atk: 2, hp: 1, cost: 1, abilities: ['haste'], type: 'creature', icon: '🐀' },
         { id: 'viper', name: 'Vipère', atk: 2, hp: 1, cost: 1, abilities: ['initiative'], type: 'creature', icon: '🐍' },
         { id: 'sprite', name: 'Lutin', atk: 1, hp: 1, cost: 1, abilities: ['fly'], type: 'creature', icon: '🧚' },
         { id: 'squire', name: 'Écuyer', atk: 1, hp: 3, cost: 1, abilities: [], type: 'creature', icon: '🛡️' },
         { id: 'wisp', name: 'Feu follet', atk: 1, hp: 1, cost: 1, abilities: ['intangible'], type: 'creature', icon: '✨' },
+        { id: 'crossbowman', name: 'Arbalétrier', atk: 2, hp: 1, cost: 1, abilities: ['shooter', 'initiative'], type: 'creature', image: 'arbaletrier.jpg', combatType: 'shooter', usePixiRender: true },
         
         // === COÛT 2 (6 créatures) ===
         { id: 'archer', name: 'Archer', atk: 2, hp: 2, cost: 2, abilities: ['shooter'], type: 'creature', icon: '🏹' },

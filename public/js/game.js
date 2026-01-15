@@ -35,6 +35,16 @@ async function initCombatAnimations() {
         console.warn('CombatAnimations not found');
         combatAnimReady = false;
     }
+
+    // Initialiser le renderer de cartes PixiJS
+    if (typeof CardRenderer !== 'undefined') {
+        try {
+            await CardRenderer.init();
+            console.log('✅ CardRenderer PixiJS ready');
+        } catch (e) {
+            console.warn('CardRenderer init error:', e);
+        }
+    }
 }
 
 function queueAnimation(type, data) {
@@ -2184,7 +2194,29 @@ function makeCard(card, inHand) {
         }
     }
 
-    // Si la carte a une image, utiliser le nouveau système
+    // Si la carte utilise le rendu PixiJS
+    if (card.usePixiRender && card.image && typeof CardRenderer !== 'undefined') {
+        el.classList.add('pixi-card');
+        el.setAttribute('data-card-id', card.id);
+        el.setAttribute('data-hp', hp);
+        el.setAttribute('data-atk', card.atk);
+
+        // Rendu asynchrone PixiJS
+        (async () => {
+            try {
+                const dataUrl = await CardRenderer.renderCard(card);
+                el.style.backgroundImage = `url('${dataUrl}')`;
+                el.style.backgroundSize = 'cover';
+                el.style.backgroundPosition = 'center';
+            } catch (e) {
+                console.warn('[makeCard] Erreur rendu PixiJS:', e);
+            }
+        })();
+
+        return el;
+    }
+
+    // Si la carte a une image (système template)
     if (card.image) {
         el.classList.add('has-image');
         el.style.backgroundImage = `url('/cards/${card.image}')`;

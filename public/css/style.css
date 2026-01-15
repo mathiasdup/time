@@ -781,6 +781,24 @@
         }
         .card.has-image.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.has-image.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
+
+        /* Cartes rendues avec PixiJS */
+        .card.pixi-card {
+            border: none !important;
+            background-color: transparent;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .card.pixi-card.just-played {
+            box-shadow: 0 0 12px rgba(255,255,255,0.6);
+        }
+        .card.pixi-card.can-attack {
+            box-shadow: 0 0 12px rgba(46,204,113,0.8);
+        }
+        .card.pixi-card:hover {
+            transform: scale(1.05);
+        }
+
         .card.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.just-played::after { content: '💤'; position: absolute; top: 2px; right: 2px; font-size: 0.7em; }
         .card.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
