@@ -580,9 +580,18 @@ const flyingAnimationSpeed = 0.002; // Vitesse de l'oscillation
 const flyingAnimationAmplitude = 4; // Amplitude en pixels
 
 function startFlyingAnimation(cardEl) {
-    // Utiliser le temps global pour synchroniser toutes les cartes volantes
+    // Marquer la carte comme ayant une animation de vol active
+    cardEl.dataset.flyingAnimation = 'true';
+
     function animate() {
-        if (!cardEl.isConnected) return; // Stop si la carte n'est plus dans le DOM
+        // Stop si la carte n'est plus dans le DOM
+        if (!cardEl.isConnected) return;
+
+        // Stop si la carte est en train d'attaquer (l'animation de combat prend le dessus)
+        if (cardEl.dataset.inCombat === 'true') {
+            requestAnimationFrame(animate); // Continue à vérifier pour reprendre après
+            return;
+        }
 
         const time = performance.now() * flyingAnimationSpeed;
         const offset = Math.sin(time) * flyingAnimationAmplitude;

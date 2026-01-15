@@ -308,6 +308,9 @@ class CombatAnimationSystem {
 
         if (!targetPos) return;
 
+        // Marquer la carte comme étant en combat (désactive l'animation de vol)
+        attackerCard.dataset.inCombat = 'true';
+
         const rect = attackerCard.getBoundingClientRect();
         const startX = rect.left + rect.width / 2;
         const startY = rect.top + rect.height / 2;
@@ -335,6 +338,9 @@ class CombatAnimationSystem {
 
         attackerCard.style.transition = '';
         attackerCard.style.zIndex = '';
+
+        // Libérer la carte - l'animation de vol peut reprendre
+        attackerCard.dataset.inCombat = 'false';
     }
 
     // ==================== COMBAT MUTUEL MÊLÉE ====================
@@ -353,6 +359,10 @@ class CombatAnimationSystem {
             console.warn('Cards not found for mutual melee');
             return;
         }
+
+        // Marquer les cartes comme étant en combat (désactive l'animation de vol)
+        card1.dataset.inCombat = 'true';
+        card2.dataset.inCombat = 'true';
 
         const rect1 = card1.getBoundingClientRect();
         const rect2 = card2.getBoundingClientRect();
@@ -407,6 +417,10 @@ class CombatAnimationSystem {
         card2.style.transition = '';
         card1.style.zIndex = '';
         card2.style.zIndex = '';
+
+        // Libérer les cartes - l'animation de vol peut reprendre
+        card1.dataset.inCombat = 'false';
+        card2.dataset.inCombat = 'false';
     }
 
     /**
@@ -475,6 +489,9 @@ class CombatAnimationSystem {
 
         // Phase 2: Le volant charge sur le tireur
         if (flyerCard) {
+            // Marquer la carte comme étant en combat (désactive l'animation de vol)
+            flyerCard.dataset.inCombat = 'true';
+
             const rect = flyerCard.getBoundingClientRect();
             const dx = shooterPos.x - (rect.left + rect.width / 2);
             const dy = shooterPos.y - (rect.top + rect.height / 2);
@@ -497,6 +514,9 @@ class CombatAnimationSystem {
 
             flyerCard.style.transition = '';
             flyerCard.style.zIndex = '';
+
+            // Libérer la carte - l'animation de vol peut reprendre
+            flyerCard.dataset.inCombat = 'false';
         }
     }
 

@@ -779,23 +779,32 @@
 
         /* Animation de lévitation pour les créatures volantes */
         .card.flying-creature {
-            box-shadow: 0 12px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(135, 206, 250, 0.3);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(135, 206, 250, 0.4);
             /* Décalage vers le haut pour montrer l'emplacement en dessous */
-            margin-top: -15px;
             position: relative;
+            z-index: 10;
+        }
+        /* Le slot avec un volant garde sa bordure visible */
+        .card-slot.has-flying {
+            border-color: rgba(135, 206, 250, 0.5) !important;
+            background: rgba(135, 206, 250, 0.1) !important;
+        }
+        .card-slot.has-flying::before {
+            display: block !important;
+            border-color: rgba(135, 206, 250, 0.3) !important;
         }
         /* Ombre au sol pour les volants */
         .card-slot.has-flying::after {
             content: '';
             position: absolute;
-            bottom: 5px;
+            bottom: 8px;
             left: 50%;
             transform: translateX(-50%);
-            width: 65%;
-            height: 12px;
-            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.4) 0%, transparent 70%);
+            width: 60%;
+            height: 15px;
+            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.5) 0%, transparent 70%);
             pointer-events: none;
-            z-index: 1;
+            z-index: 5;
         }
         
         /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
