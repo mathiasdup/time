@@ -1,29 +1,16 @@
 /**
  * Card Renderer avec PixiJS
- * Génère des cartes visuellement magnifiques avec cadre, ornements et stats
+ * Image en fond plein + icônes de stats (mana, damage, health)
  */
 
 const CardRenderer = {
     // Cache des textures générées
     cache: new Map(),
+    textureCache: {},
 
     // Dimensions de la carte
     CARD_WIDTH: 200,
     CARD_HEIGHT: 280,
-
-    // Couleurs du thème
-    COLORS: {
-        gold: 0xFFD700,
-        goldDark: 0xB8860B,
-        bronze: 0xCD7F32,
-        silver: 0xC0C0C0,
-        darkBg: 0x1a1a2e,
-        cardBg: 0x16213e,
-        red: 0xe74c3c,
-        green: 0x2ecc71,
-        blue: 0x3498db,
-        purple: 0x9b59b6
-    },
 
     /**
      * Initialise le renderer
@@ -39,6 +26,16 @@ const CardRenderer = {
             resolution: 2,
             autoDensity: true
         });
+
+        // Précharger les icônes de stats
+        try {
+            this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
+            this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
+            this.textureCache.health = await PIXI.Assets.load('/css/health.png');
+            console.log('[CardRenderer] Icônes chargées');
+        } catch (e) {
+            console.warn('[CardRenderer] Erreur chargement icônes:', e);
+        }
 
         this.isReady = true;
         console.log('[CardRenderer] Initialisé avec PixiJS');
@@ -62,23 +59,20 @@ const CardRenderer = {
         const container = new PIXI.Container();
         this.app.stage.addChild(container);
 
-        // 1. Fond de carte avec dégradé
-        await this.drawCardBackground(container, card);
+        const W = this.CARD_WIDTH;
+        const H = this.CARD_HEIGHT;
 
-        // 2. Image de la carte
-        await this.drawCardImage(container, card);
+        // 1. Image de fond (plein écran)
+        await this.drawFullImage(container, card);
 
-        // 3. Cadre ornemental
-        this.drawFrame(container, card);
+        // 2. Nom de la carte (en haut)
+        this.drawName(container, card);
 
-        // 4. Bannière du nom
-        this.drawNameBanner(container, card);
+        // 3. Type et capacités (en bas)
+        this.drawBottomText(container, card);
 
-        // 5. Zone de texte (type + capacités)
-        this.drawTextZone(container, card);
-
-        // 6. Gemmes de stats (Mana, ATK, HP)
-        this.drawStatGems(container, card);
+        // 4. Stats avec icônes
+        this.drawStats(container, card);
 
         // Render et extraire l'image
         this.app.renderer.render(this.app.stage);
@@ -89,63 +83,47 @@ const CardRenderer = {
     },
 
     /**
-     * Fond de carte avec effet de profondeur
+     * Image de fond en plein écran
      */
-    async drawCardBackground(container, card) {
+    async drawFullImage(container, card) {
         const W = this.CARD_WIDTH;
         const H = this.CARD_HEIGHT;
 
-        // Fond principal sombre
+        // Fond noir au cas où l'image ne charge pas
         const bg = new PIXI.Graphics();
-        bg.roundRect(0, 0, W, H, 12);
-        bg.fill({ color: this.COLORS.darkBg });
+        bg.roundRect(0, 0, W, H, 8);
+        bg.fill({ color: 0x1a1a2e });
         container.addChild(bg);
 
-        // Bordure interne dorée
-        const innerBorder = new PIXI.Graphics();
-        innerBorder.roundRect(4, 4, W - 8, H - 8, 10);
-        innerBorder.stroke({ color: this.COLORS.goldDark, width: 2 });
-        container.addChild(innerBorder);
-    },
-
-    /**
-     * Image de la carte
-     */
-    async drawCardImage(container, card) {
         if (!card.image) return;
-
-        const W = this.CARD_WIDTH;
-        const imgY = 25;
-        const imgH = 120;
-        const imgW = W - 20;
-        const imgX = 10;
 
         try {
             const texture = await PIXI.Assets.load(`/cards/${card.image}`);
             const sprite = new PIXI.Sprite(texture);
 
-            // Calculer le ratio pour cover
-            const scale = Math.max(imgW / texture.width, imgH / texture.height);
+            // Cover : remplir toute la carte
+            const scaleX = W / texture.width;
+            const scaleY = H / texture.height;
+            const scale = Math.max(scaleX, scaleY);
+
             sprite.scale.set(scale);
+            sprite.x = (W - texture.width * scale) / 2;
+            sprite.y = (H - texture.height * scale) / 2;
 
-            // Centrer l'image
-            sprite.x = imgX + (imgW - texture.width * scale) / 2;
-            sprite.y = imgY + (imgH - texture.height * scale) / 2;
-
-            // Masque pour arrondir les coins
+            // Masque arrondi
             const mask = new PIXI.Graphics();
-            mask.roundRect(imgX, imgY, imgW, imgH, 6);
+            mask.roundRect(0, 0, W, H, 8);
             mask.fill({ color: 0xffffff });
             container.addChild(mask);
             sprite.mask = mask;
 
             container.addChild(sprite);
 
-            // Bordure de l'image
-            const imgBorder = new PIXI.Graphics();
-            imgBorder.roundRect(imgX, imgY, imgW, imgH, 6);
-            imgBorder.stroke({ color: this.COLORS.gold, width: 2 });
-            container.addChild(imgBorder);
+            // Bordure fine
+            const border = new PIXI.Graphics();
+            border.roundRect(0, 0, W, H, 8);
+            border.stroke({ color: 0x333333, width: 2 });
+            container.addChild(border);
 
         } catch (e) {
             console.warn('[CardRenderer] Image non trouvée:', card.image);
@@ -153,102 +131,56 @@ const CardRenderer = {
     },
 
     /**
-     * Cadre ornemental de la carte
+     * Nom de la carte en haut
      */
-    drawFrame(container, card) {
+    drawName(container, card) {
         const W = this.CARD_WIDTH;
-        const H = this.CARD_HEIGHT;
 
-        // Cadre extérieur doré
-        const frame = new PIXI.Graphics();
-        frame.roundRect(0, 0, W, H, 12);
-        frame.stroke({ color: this.COLORS.gold, width: 3 });
-        container.addChild(frame);
+        // Fond semi-transparent pour le nom
+        const nameBg = new PIXI.Graphics();
+        nameBg.roundRect(10, 8, W - 20, 26, 4);
+        nameBg.fill({ color: 0x000000, alpha: 0.6 });
+        container.addChild(nameBg);
 
-        // Ornements aux coins
-        const cornerSize = 15;
-        const corners = [
-            { x: 8, y: 8 },
-            { x: W - 8, y: 8 },
-            { x: 8, y: H - 8 },
-            { x: W - 8, y: H - 8 }
-        ];
-
-        corners.forEach((pos, i) => {
-            const corner = new PIXI.Graphics();
-            corner.circle(pos.x, pos.y, 4);
-            corner.fill({ color: this.COLORS.gold });
-            container.addChild(corner);
-        });
-
-        // Lignes décoratives horizontales
-        const deco = new PIXI.Graphics();
-        // Sous l'image
-        deco.moveTo(20, 150);
-        deco.lineTo(W - 20, 150);
-        deco.stroke({ color: this.COLORS.goldDark, width: 1 });
-        // Au-dessus des stats
-        deco.moveTo(20, H - 50);
-        deco.lineTo(W - 20, H - 50);
-        deco.stroke({ color: this.COLORS.goldDark, width: 1 });
-        container.addChild(deco);
-    },
-
-    /**
-     * Bannière du nom avec effet parchemin
-     */
-    drawNameBanner(container, card) {
-        const W = this.CARD_WIDTH;
-        const bannerY = 148;
-        const bannerH = 28;
-
-        // Fond de la bannière
-        const banner = new PIXI.Graphics();
-        banner.roundRect(15, bannerY, W - 30, bannerH, 4);
-        banner.fill({ color: 0x2c1810 });
-        banner.stroke({ color: this.COLORS.gold, width: 1 });
-        container.addChild(banner);
-
-        // Nom de la carte
+        // Texte du nom
         const nameText = new PIXI.Text({
             text: card.name.toUpperCase(),
             style: {
-                fontFamily: 'Georgia, serif',
-                fontSize: 13,
+                fontFamily: 'Arial, sans-serif',
+                fontSize: 14,
                 fontWeight: 'bold',
-                fill: this.COLORS.gold,
+                fill: 0xffffff,
                 align: 'center',
                 letterSpacing: 1
             }
         });
         nameText.anchor.set(0.5);
         nameText.x = W / 2;
-        nameText.y = bannerY + bannerH / 2;
+        nameText.y = 21;
         container.addChild(nameText);
     },
 
     /**
-     * Zone de texte avec type et capacités
+     * Type et capacités en bas
      */
-    drawTextZone(container, card) {
+    drawBottomText(container, card) {
         const W = this.CARD_WIDTH;
-        const zoneY = 182;
-        const zoneH = 45;
+        const H = this.CARD_HEIGHT;
 
-        // Fond de la zone de texte
-        const textBg = new PIXI.Graphics();
-        textBg.roundRect(10, zoneY, W - 20, zoneH, 4);
-        textBg.fill({ color: 0x0f0f1a, alpha: 0.8 });
-        container.addChild(textBg);
+        // Fond semi-transparent en bas
+        const bottomBg = new PIXI.Graphics();
+        bottomBg.roundRect(10, H - 55, W - 20, 45, 4);
+        bottomBg.fill({ color: 0x000000, alpha: 0.6 });
+        container.addChild(bottomBg);
 
         // Type de créature
-        let typeText = 'Creature';
+        let typeText = 'Créature';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) {
-            typeText = 'Creature - Tireur';
+            typeText = 'Créature - Tireur';
         } else if (card.combatType === 'fly' || card.abilities?.includes('fly')) {
-            typeText = 'Creature - Volant';
+            typeText = 'Créature - Volant';
         } else {
-            typeText = 'Creature - Melee';
+            typeText = 'Créature - Mêlée';
         }
 
         const type = new PIXI.Text({
@@ -256,13 +188,13 @@ const CardRenderer = {
             style: {
                 fontFamily: 'Arial, sans-serif',
                 fontSize: 10,
-                fill: 0xaaaaaa,
+                fill: 0xcccccc,
                 align: 'center'
             }
         });
         type.anchor.set(0.5, 0);
         type.x = W / 2;
-        type.y = zoneY + 5;
+        type.y = H - 50;
         container.addChild(type);
 
         // Capacités
@@ -283,75 +215,77 @@ const CardRenderer = {
                     fontFamily: 'Arial, sans-serif',
                     fontSize: 11,
                     fontWeight: 'bold',
-                    fill: this.COLORS.gold,
+                    fill: 0xffd700,
                     align: 'center'
                 }
             });
             abText.anchor.set(0.5, 0);
             abText.x = W / 2;
-            abText.y = zoneY + 22;
+            abText.y = H - 35;
             container.addChild(abText);
         }
     },
 
     /**
-     * Gemmes de statistiques (Mana, ATK, HP)
+     * Stats avec icônes (mana, atk, hp)
      */
-    drawStatGems(container, card) {
+    drawStats(container, card) {
         const W = this.CARD_WIDTH;
         const H = this.CARD_HEIGHT;
         const hp = card.currentHp ?? card.hp;
+        const iconSize = 32;
 
-        // === MANA (haut gauche) - Gemme bleue ===
-        this.drawGem(container, 20, 15, this.COLORS.blue, card.cost, 'mana');
+        // === MANA (haut gauche) ===
+        if (this.textureCache.mana) {
+            const manaSprite = new PIXI.Sprite(this.textureCache.mana);
+            manaSprite.width = iconSize;
+            manaSprite.height = iconSize;
+            manaSprite.x = 5;
+            manaSprite.y = 5;
+            container.addChild(manaSprite);
 
-        // === ATK (bas gauche) - Gemme verte ===
-        this.drawGem(container, 25, H - 35, this.COLORS.green, card.atk, 'atk');
+            this.drawStatNumber(container, card.cost, 5 + iconSize/2, 5 + iconSize/2);
+        }
 
-        // === HP (bas droite) - Gemme rouge ===
-        const hpColor = hp < card.hp ? 0xff6b6b : this.COLORS.red;
-        this.drawGem(container, W - 25, H - 35, hpColor, hp, 'hp');
+        // === ATK (bas gauche) ===
+        if (this.textureCache.damage) {
+            const atkSprite = new PIXI.Sprite(this.textureCache.damage);
+            atkSprite.width = iconSize;
+            atkSprite.height = iconSize;
+            atkSprite.x = 8;
+            atkSprite.y = H - 58 - iconSize;
+            container.addChild(atkSprite);
+
+            this.drawStatNumber(container, card.atk, 8 + iconSize/2, H - 58 - iconSize/2);
+        }
+
+        // === HP (bas droite) ===
+        if (this.textureCache.health) {
+            const hpSprite = new PIXI.Sprite(this.textureCache.health);
+            hpSprite.width = iconSize;
+            hpSprite.height = iconSize;
+            hpSprite.x = W - iconSize - 8;
+            hpSprite.y = H - 58 - iconSize;
+            container.addChild(hpSprite);
+
+            // Couleur différente si endommagé
+            const hpColor = hp < card.hp ? 0xff6b6b : 0xffffff;
+            this.drawStatNumber(container, hp, W - 8 - iconSize/2, H - 58 - iconSize/2, hpColor);
+        }
     },
 
     /**
-     * Dessine une gemme de stat
+     * Dessine un nombre de stat (blanc avec contour noir)
      */
-    drawGem(container, x, y, color, value, type) {
-        const size = 18;
-
-        // Ombre
-        const shadow = new PIXI.Graphics();
-        shadow.circle(x + 2, y + 2, size);
-        shadow.fill({ color: 0x000000, alpha: 0.5 });
-        container.addChild(shadow);
-
-        // Fond de la gemme (cercle principal)
-        const gem = new PIXI.Graphics();
-        gem.circle(x, y, size);
-        gem.fill({ color: color });
-        container.addChild(gem);
-
-        // Reflet brillant
-        const highlight = new PIXI.Graphics();
-        highlight.circle(x - 5, y - 5, 6);
-        highlight.fill({ color: 0xffffff, alpha: 0.4 });
-        container.addChild(highlight);
-
-        // Bordure dorée
-        const border = new PIXI.Graphics();
-        border.circle(x, y, size);
-        border.stroke({ color: this.COLORS.gold, width: 2 });
-        container.addChild(border);
-
-        // Valeur
+    drawStatNumber(container, value, x, y, color = 0xffffff) {
         const text = new PIXI.Text({
             text: value.toString(),
             style: {
                 fontFamily: 'Arial Black, sans-serif',
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: 'bold',
-                fill: 0xffffff,
-                stroke: { color: 0x000000, width: 3 }
+                fill: color,
+                stroke: { color: 0x000000, width: 4 }
             }
         });
         text.anchor.set(0.5);
@@ -380,7 +314,6 @@ const CardRenderer = {
      */
     clearCache() {
         this.cache.clear();
-        PIXI.Assets.cache.reset();
     }
 };
 
