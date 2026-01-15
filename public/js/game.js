@@ -68,6 +68,34 @@ async function processAnimationQueue() {
         return;
     }
 
+    // Regrouper les animations de dégâts de sort consécutives en batch
+    if (animationQueue[0].type === 'spellDamage') {
+        const spellDamageBatch = [];
+        while (animationQueue.length > 0 && animationQueue[0].type === 'spellDamage') {
+            spellDamageBatch.push(animationQueue.shift().data);
+        }
+        // Animer tous les dégâts de sort en même temps
+        const promises = spellDamageBatch.map(data => {
+            const owner = data.player === myNum ? 'me' : 'opp';
+            if (combatAnimReady && CombatAnimations) {
+                return CombatAnimations.animateSpellDamage({
+                    owner: owner,
+                    row: data.row,
+                    col: data.col,
+                    amount: data.amount
+                });
+            } else {
+                animateDamageFallback(data);
+                return Promise.resolve();
+            }
+        });
+        await Promise.all(promises);
+        // Un seul délai pour tout le batch
+        await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
+        processAnimationQueue();
+        return;
+    }
+
     const { type, data } = animationQueue.shift();
     const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
 
@@ -406,8 +434,12 @@ function initSocket() {
         endTurnBtn.classList.remove('waiting', 'has-timer', 'urgent');
         endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
         clearSel();
+
+        // Nettoyage des états d'animation pour éviter les bugs de persistance
+        resetAnimationStates();
+
         log(`🎮 Tour ${d.turn} — ⚡${d.maxEnergy} énergie`, 'phase');
-        
+
         // Message éphémère de phase - seulement s'il y a des créatures à repositionner
         if (hasCreaturesOnMyField()) {
             showPhaseMessage('Phase de repositionnement', 'redeploy');
@@ -423,7 +455,26 @@ function initSocket() {
     });
     
     socket.on('animation', handleAnimation);
-    
+
+    // Bloquer les slots pendant les animations de mort (pour que render() ne les efface pas)
+    socket.on('blockSlots', (slots) => {
+        slots.forEach(s => {
+            const owner = s.player === myNum ? 'me' : 'opp';
+            const slotKey = `${owner}-${s.row}-${s.col}`;
+            animatingSlots.add(slotKey);
+        });
+    });
+
+    socket.on('unblockSlots', (slots) => {
+        slots.forEach(s => {
+            const owner = s.player === myNum ? 'me' : 'opp';
+            const slotKey = `${owner}-${s.row}-${s.col}`;
+            animatingSlots.delete(slotKey);
+        });
+        // Forcer un render après déblocage pour mettre à jour l'affichage
+        render();
+    });
+
     // Cacher les cartes qui vont être révélées plus tard (pendant les déplacements)
     // Ces cartes sont cachées dans renderField via hiddenCards
     socket.on('hideCards', (cards) => {
@@ -860,6 +911,40 @@ let animatingSlots = new Set();
 
 // Cartes cachées en attente de révélation (pendant la phase de déplacement)
 let hiddenCards = new Set();
+
+/**
+ * Réinitialise tous les états d'animation pour éviter les bugs de persistance
+ * Appelé au début de chaque nouveau tour
+ */
+function resetAnimationStates() {
+    // Vider les sets d'état
+    animatingSlots.clear();
+    hiddenCards.clear();
+
+    // Vider la file d'animation
+    animationQueue.length = 0;
+    isAnimating = false;
+
+    // Nettoyer les animations de pioche en attente
+    if (typeof GameAnimations !== 'undefined') {
+        GameAnimations.clear();
+    }
+
+    // Réinitialiser les flags de combat sur toutes les cartes
+    document.querySelectorAll('.card[data-in-combat="true"]').forEach(card => {
+        card.dataset.inCombat = 'false';
+    });
+
+    // Retirer les classes d'animation résiduelles
+    document.querySelectorAll('.card.dying, .card.taking-damage, .card.healing').forEach(card => {
+        card.classList.remove('dying', 'taking-damage', 'healing');
+    });
+
+    // Supprimer les éléments d'animation orphelins
+    document.querySelectorAll('.damage-number, .buff-indicator, .spell-effect, .spell-miss').forEach(el => {
+        el.remove();
+    });
+}
 
 // Animation de lévitation continue pour les créatures volantes
 // Utilise le temps global pour que l'animation reste synchronisée même après re-render
