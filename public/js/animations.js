@@ -105,7 +105,6 @@ function createCardElement(card) {
 function createCardBackElement() {
     const el = document.createElement('div');
     el.className = 'opp-card-back';
-    el.textContent = '🎴';
     return el;
 }
 

@@ -1976,7 +1976,6 @@ function showCardBackPreview() {
     hideCardPreview();
     previewEl = document.createElement('div');
     previewEl.className = 'card-back-preview card-preview';
-    previewEl.innerHTML = '<div class="card-back-inner">🎴</div>';
     document.body.appendChild(previewEl);
     requestAnimationFrame(() => {
         previewEl.classList.add('visible');
@@ -2109,18 +2108,17 @@ function renderOppHand(count) {
     for (let i = 0; i < Math.min(count, 12); i++) {
         const el = document.createElement('div');
         el.className = 'opp-card-back';
-        el.textContent = '🎴';
         el.style.zIndex = i + 1; // Z-index incrémental
-        
+
         // Cacher si animation de pioche en attente
         if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('opp', i)) {
             el.style.visibility = 'hidden';
         }
-        
+
         // Preview dos de carte au survol
         el.onmouseenter = () => showCardBackPreview();
         el.onmouseleave = hideCardPreview;
-        
+
         panel.appendChild(el);
     }
 }
