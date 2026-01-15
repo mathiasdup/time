@@ -454,25 +454,35 @@ async function startResolution(room) {
         if (player.hand.length >= 9) {
             addToGraveyard(player, card);
             log(`📦 ${player.heroName} a la main pleine, la carte va au cimetière`, 'damage');
-            drawnCards.push({ player: p, card: null, burned: true });
+            drawnCards.push({ player: p, card: card, burned: true });
         } else {
             player.hand.push(card);
             drawnCards.push({ player: p, card: card, handIndex: player.hand.length - 1 });
         }
     }
-    
-    // Animation AVANT état - le client va stocker les cartes à cacher
-    emitAnimation(room, 'draw', { cards: drawnCards });
-    
-    // Petit délai pour que le client reçoive l'animation
-    await sleep(20);
-    
+
+    // Séparer les cartes piochées normalement et les cartes brûlées
+    const normalDraws = drawnCards.filter(d => !d.burned);
+    const burnedCards = drawnCards.filter(d => d.burned);
+
+    // Animation de pioche normale AVANT état
+    if (normalDraws.length > 0) {
+        emitAnimation(room, 'draw', { cards: normalDraws });
+        await sleep(20);
+    }
+
     // État (le render va créer les cartes cachées)
     emitStateToBoth(room);
     log('📦 Les joueurs piochent une carte', 'action');
-    
-    // Attendre la fin de l'animation
+
+    // Attendre la fin de l'animation de pioche
     await sleep(500);
+
+    // Animation de burn APRÈS l'état (pour que ce soit bien visible)
+    for (const burned of burnedCards) {
+        emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
+        await sleep(1200); // Attendre l'animation de burn
+    }
     
     startNewTurn(room);
 }
@@ -571,8 +581,9 @@ async function applySpell(room, action, log, sleep) {
         if (spell.effect === 'draw') {
             // Pioche X cartes avec animation
             const drawnCards = [];
+            const burnedCards = [];
             for (let i = 0; i < spell.amount; i++) {
-                if (player.deck.length > 0 && player.hand.length < 9) {
+                if (player.deck.length > 0) {
                     const card = player.deck.pop();
                     if (card.type === 'creature') {
                         card.currentHp = card.hp;
@@ -580,8 +591,13 @@ async function applySpell(room, action, log, sleep) {
                         card.turnsOnField = 0;
                         card.movedThisTurn = false;
                     }
-                    player.hand.push(card);
-                    drawnCards.push({ player: playerNum, card: card, handIndex: player.hand.length - 1 });
+                    if (player.hand.length < 9) {
+                        player.hand.push(card);
+                        drawnCards.push({ player: playerNum, card: card, handIndex: player.hand.length - 1 });
+                    } else {
+                        addToGraveyard(player, card);
+                        burnedCards.push({ player: playerNum, card: card });
+                    }
                 }
             }
             if (drawnCards.length > 0) {
@@ -591,24 +607,37 @@ async function applySpell(room, action, log, sleep) {
                 emitStateToBoth(room);
                 await sleep(400 * drawnCards.length);
             }
+            // Animation de burn pour les cartes qui n'ont pas pu être ajoutées
+            for (const burned of burnedCards) {
+                log(`  📦 Main pleine, ${burned.card.name} va au cimetière`, 'damage');
+                emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
+                await sleep(1200);
+            }
         } else if (spell.effect === 'mana') {
             // Gagne un cristal mana (ou pioche si déjà 10)
             if (player.maxEnergy < 10) {
                 player.maxEnergy++;
                 player.energy++;
                 log(`  💎 ${action.heroName}: ${spell.name} - gagne un cristal de mana (${player.maxEnergy}/10)`, 'action');
-            } else if (player.deck.length > 0 && player.hand.length < 9) {
+            } else if (player.deck.length > 0) {
                 const card = player.deck.pop();
                 if (card.type === 'creature') {
                     card.currentHp = card.hp;
                     card.canAttack = false;
                 }
-                player.hand.push(card);
-                log(`  💎 ${action.heroName}: ${spell.name} - mana max, pioche une carte`, 'action');
-                emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: card, handIndex: player.hand.length - 1 }] });
-                await sleep(20);
-                emitStateToBoth(room);
-                await sleep(400);
+                if (player.hand.length < 9) {
+                    player.hand.push(card);
+                    log(`  💎 ${action.heroName}: ${spell.name} - mana max, pioche une carte`, 'action');
+                    emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: card, handIndex: player.hand.length - 1 }] });
+                    await sleep(20);
+                    emitStateToBoth(room);
+                    await sleep(400);
+                } else {
+                    addToGraveyard(player, card);
+                    log(`  📦 Main pleine, ${card.name} va au cimetière`, 'damage');
+                    emitAnimation(room, 'burn', { player: playerNum, card: card });
+                    await sleep(1200);
+                }
             }
         }
     }
@@ -683,8 +712,9 @@ async function applySpell(room, action, log, sleep) {
         } else if (spell.effect === 'draw') {
             // Le héros ciblé pioche avec animation
             const drawnCards = [];
+            const burnedCards = [];
             for (let i = 0; i < spell.amount; i++) {
-                if (targetHero.deck.length > 0 && targetHero.hand.length < 9) {
+                if (targetHero.deck.length > 0) {
                     const card = targetHero.deck.pop();
                     if (card.type === 'creature') {
                         card.currentHp = card.hp;
@@ -692,8 +722,13 @@ async function applySpell(room, action, log, sleep) {
                         card.turnsOnField = 0;
                         card.movedThisTurn = false;
                     }
-                    targetHero.hand.push(card);
-                    drawnCards.push({ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 });
+                    if (targetHero.hand.length < 9) {
+                        targetHero.hand.push(card);
+                        drawnCards.push({ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 });
+                    } else {
+                        addToGraveyard(targetHero, card);
+                        burnedCards.push({ player: action.targetPlayer, card: card });
+                    }
                 }
             }
             if (drawnCards.length > 0) {
@@ -703,24 +738,37 @@ async function applySpell(room, action, log, sleep) {
                 emitStateToBoth(room);
                 await sleep(400 * drawnCards.length);
             }
+            // Animation de burn pour les cartes qui n'ont pas pu être ajoutées
+            for (const burned of burnedCards) {
+                log(`  📦 Main pleine, ${burned.card.name} va au cimetière`, 'damage');
+                emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
+                await sleep(1200);
+            }
         } else if (spell.effect === 'mana') {
             // Le héros ciblé gagne un mana
             if (targetHero.maxEnergy < 10) {
                 targetHero.maxEnergy++;
                 targetHero.energy++;
                 log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} gagne un cristal de mana (${targetHero.maxEnergy}/10)`, 'action');
-            } else if (targetHero.deck.length > 0 && targetHero.hand.length < 9) {
+            } else if (targetHero.deck.length > 0) {
                 const card = targetHero.deck.pop();
                 if (card.type === 'creature') {
                     card.currentHp = card.hp;
                     card.canAttack = false;
                 }
-                targetHero.hand.push(card);
-                log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} mana max, pioche une carte`, 'action');
-                emitAnimation(room, 'draw', { cards: [{ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 }] });
-                await sleep(20);
-                emitStateToBoth(room);
-                await sleep(400);
+                if (targetHero.hand.length < 9) {
+                    targetHero.hand.push(card);
+                    log(`  💎 ${action.heroName}: ${spell.name} → ${targetName} mana max, pioche une carte`, 'action');
+                    emitAnimation(room, 'draw', { cards: [{ player: action.targetPlayer, card: card, handIndex: targetHero.hand.length - 1 }] });
+                    await sleep(20);
+                    emitStateToBoth(room);
+                    await sleep(400);
+                } else {
+                    addToGraveyard(targetHero, card);
+                    log(`  📦 Main pleine, ${card.name} va au cimetière`, 'damage');
+                    emitAnimation(room, 'burn', { player: action.targetPlayer, card: card });
+                    await sleep(1200);
+                }
             }
         } else if (spell.heal) {
             // Soin au héros ciblé

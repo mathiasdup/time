@@ -12,8 +12,10 @@ let isAnimating = false;
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
-    death: 600,        // Délai après une mort
-    heroHit: 500,      // Délai après dégâts au héros
+    death: 600,        // Délai après une mort (batch)
+    heroHit: 200,      // Délai après dégâts au héros (réduit)
+    discard: 800,      // Délai après défausse
+    burn: 1000,        // Délai après burn (pioche vers cimetière)
     default: 300       // Délai par défaut
 };
 
@@ -47,17 +49,34 @@ async function processAnimationQueue() {
         isAnimating = false;
         return;
     }
-    
+
     isAnimating = true;
+
+    // Regrouper les animations de mort consécutives en batch
+    if (animationQueue[0].type === 'death') {
+        const deathBatch = [];
+        while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
+            deathBatch.push(animationQueue.shift().data);
+        }
+        // Animer toutes les morts en même temps
+        for (const data of deathBatch) {
+            animateDeath(data);
+        }
+        // Un seul délai pour tout le batch
+        await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
+        processAnimationQueue();
+        return;
+    }
+
     const { type, data } = animationQueue.shift();
     const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
-    
+
     // Exécuter l'animation
     await executeAnimationAsync(type, data);
-    
+
     // Attendre le délai
     await new Promise(resolve => setTimeout(resolve, delay));
-    
+
     // Continuer la file
     processAnimationQueue();
 }
@@ -81,6 +100,12 @@ async function executeAnimationAsync(type, data) {
             case 'death':
                 animateDeath(data);
                 return;
+            case 'discard':
+                await animateDiscard(data);
+                return;
+            case 'burn':
+                await animateBurn(data);
+                return;
         }
     }
 
@@ -91,6 +116,8 @@ async function executeAnimationAsync(type, data) {
         case 'spellDamage': animateDamageFallback(data); break;
         case 'death': animateDeath(data); break;
         case 'heroHit': animateHeroHitFallback(data); break;
+        case 'discard': await animateDiscard(data); break;
+        case 'burn': await animateBurn(data); break;
     }
 }
 
@@ -473,10 +500,10 @@ function initSocket() {
 
 function handleAnimation(data) {
     const { type } = data;
-    
+
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit'];
-    
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn'];
+
     if (queuedTypes.includes(type)) {
         queueAnimation(type, data);
     } else {
@@ -521,6 +548,234 @@ function animateDeath(data) {
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
     if (card) card.classList.add('dying');
+}
+
+/**
+ * Animation de défausse depuis la main (désintégration sur place)
+ */
+async function animateDiscard(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const handEl = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+    if (!handEl) return;
+
+    const cards = handEl.querySelectorAll(owner === 'me' ? '.card' : '.opp-card-back');
+    const cardEl = cards[data.handIndex];
+    if (!cardEl) return;
+
+    const rect = cardEl.getBoundingClientRect();
+
+    // Créer un clone pour l'animation
+    const clone = cardEl.cloneNode(true);
+    clone.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        z-index: 10000;
+        pointer-events: none;
+        margin: 0;
+        transform: none;
+    `;
+    document.body.appendChild(clone);
+
+    // Cacher la carte originale
+    cardEl.style.visibility = 'hidden';
+
+    // Animation de désintégration
+    await animateDisintegration(clone, owner);
+}
+
+/**
+ * Animation de burn (pioche -> milieu de l'écran -> désintégration -> cimetière)
+ */
+async function animateBurn(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const card = data.card;
+
+    // Position du deck
+    const deckEl = document.getElementById(owner === 'me' ? 'me-deck-stack' : 'opp-deck-stack');
+    if (!deckEl) return;
+
+    const deckRect = deckEl.getBoundingClientRect();
+
+    // Créer la carte (face visible pour montrer ce qui est burn)
+    const cardEl = createCardElementForAnimation(card);
+    const cardWidth = 90;
+    const cardHeight = 130;
+
+    // Position initiale (sur le deck)
+    cardEl.style.cssText = `
+        position: fixed;
+        left: ${deckRect.left + deckRect.width / 2 - cardWidth / 2}px;
+        top: ${deckRect.top + deckRect.height / 2 - cardHeight / 2}px;
+        width: ${cardWidth}px;
+        height: ${cardHeight}px;
+        z-index: 10000;
+        pointer-events: none;
+        opacity: 0;
+        transform: scale(0.8);
+        transition: all 0.4s ease-out;
+    `;
+    document.body.appendChild(cardEl);
+
+    // Phase 1: Apparition et déplacement vers le centre
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const centerX = window.innerWidth / 2 - cardWidth / 2;
+    const centerY = window.innerHeight / 2 - cardHeight / 2;
+
+    cardEl.style.left = centerX + 'px';
+    cardEl.style.top = centerY + 'px';
+    cardEl.style.opacity = '1';
+    cardEl.style.transform = 'scale(1.2)';
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Phase 2: Désintégration
+    await animateDisintegration(cardEl, owner);
+}
+
+/**
+ * Animation de désintégration avec particules vers le cimetière
+ */
+async function animateDisintegration(cardEl, owner) {
+    const rect = cardEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Position du cimetière
+    const graveyardEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
+    let graveyardX = window.innerWidth / 2;
+    let graveyardY = owner === 'me' ? window.innerHeight - 50 : 50;
+
+    if (graveyardEl) {
+        const gRect = graveyardEl.getBoundingClientRect();
+        graveyardX = gRect.left + gRect.width / 2;
+        graveyardY = gRect.top + gRect.height / 2;
+    }
+
+    // Créer les particules
+    const particleCount = 20;
+    const particles = [];
+
+    for (let i = 0; i < particleCount; i++) {
+        const particle = document.createElement('div');
+        const size = 4 + Math.random() * 8;
+        const startOffsetX = (Math.random() - 0.5) * rect.width;
+        const startOffsetY = (Math.random() - 0.5) * rect.height;
+
+        particle.style.cssText = `
+            position: fixed;
+            left: ${centerX + startOffsetX}px;
+            top: ${centerY + startOffsetY}px;
+            width: ${size}px;
+            height: ${size}px;
+            background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 10001;
+            box-shadow: 0 0 ${size}px rgba(255, 107, 107, 0.8);
+            opacity: 1;
+        `;
+        document.body.appendChild(particle);
+        particles.push({
+            el: particle,
+            startX: centerX + startOffsetX,
+            startY: centerY + startOffsetY,
+            delay: Math.random() * 200
+        });
+    }
+
+    // Commencer à faire disparaître la carte
+    cardEl.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+    cardEl.style.opacity = '0';
+    cardEl.style.transform = 'scale(0.5)';
+
+    // Animer les particules vers le cimetière
+    const duration = 600;
+
+    await new Promise(resolve => {
+        const startTime = performance.now();
+
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            let allDone = true;
+
+            for (const p of particles) {
+                const particleElapsed = Math.max(0, elapsed - p.delay);
+                const progress = Math.min(particleElapsed / duration, 1);
+
+                if (progress < 1) {
+                    allDone = false;
+                    const eased = 1 - Math.pow(1 - progress, 3);
+
+                    // Trajectoire courbe vers le cimetière
+                    const controlX = (p.startX + graveyardX) / 2 + (Math.random() - 0.5) * 100;
+                    const controlY = Math.min(p.startY, graveyardY) - 50;
+
+                    const t = eased;
+                    const x = (1 - t) * (1 - t) * p.startX + 2 * (1 - t) * t * controlX + t * t * graveyardX;
+                    const y = (1 - t) * (1 - t) * p.startY + 2 * (1 - t) * t * controlY + t * t * graveyardY;
+
+                    p.el.style.left = x + 'px';
+                    p.el.style.top = y + 'px';
+                    p.el.style.opacity = (1 - progress * 0.5).toString();
+                    p.el.style.transform = `scale(${1 - progress * 0.5})`;
+                } else {
+                    p.el.style.opacity = '0';
+                }
+            }
+
+            if (!allDone) {
+                requestAnimationFrame(animate);
+            } else {
+                // Nettoyer
+                for (const p of particles) {
+                    p.el.remove();
+                }
+                cardEl.remove();
+                resolve();
+            }
+        }
+
+        requestAnimationFrame(animate);
+    });
+}
+
+/**
+ * Crée un élément carte pour l'animation (copie de celle dans animations.js)
+ */
+function createCardElementForAnimation(card) {
+    const el = document.createElement('div');
+    el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
+
+    const icons = {
+        fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
+        trample: '🦏', initiative: '🗡️', power: '💪'
+    };
+    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
+
+    let typeIcon = '';
+    if (card.type === 'spell') typeIcon = `<div class="card-type-icon spell-icon">✨</div>`;
+    else if (card.type === 'trap') typeIcon = `<div class="card-type-icon trap-icon">🪤</div>`;
+
+    el.innerHTML = `
+        <div class="card-cost">${card.cost}</div>
+        ${typeIcon}
+        <div class="card-art">${card.icon || '❓'}</div>
+        <div class="card-body">
+            <div class="card-name">${card.name}</div>
+            <div class="card-abilities">${abilities || (card.type === 'spell' ? (card.offensive ? '⚔️' : '💚') : '')}</div>
+            <div class="card-stats">
+                ${card.atk !== undefined ? `<span class="stat stat-atk">${card.atk}</span>` : ''}
+                ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
+                ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
+                ${card.type === 'creature' ? `<span class="stat stat-hp">${card.hp}</span>` : ''}
+            </div>
+        </div>`;
+
+    return el;
 }
 
 function animateSpell(data) {
