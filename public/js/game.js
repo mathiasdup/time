@@ -2194,41 +2194,46 @@ function makeCard(card, inHand) {
         }
     }
 
-    // Si la carte utilise le rendu PixiJS
-    if (card.usePixiRender && card.image && typeof CardRenderer !== 'undefined') {
-        el.classList.add('pixi-card');
-        el.setAttribute('data-card-id', card.id);
-        el.setAttribute('data-hp', hp);
-        el.setAttribute('data-atk', card.atk);
-
-        // Rendu asynchrone PixiJS
-        (async () => {
-            try {
-                const dataUrl = await CardRenderer.renderCard(card);
-                el.style.backgroundImage = `url('${dataUrl}')`;
-                el.style.backgroundSize = 'cover';
-                el.style.backgroundPosition = 'center';
-            } catch (e) {
-                console.warn('[makeCard] Erreur rendu PixiJS:', e);
-            }
-        })();
-
-        return el;
-    }
-
-    // Si la carte a une image (système template)
-    if (card.image) {
-        el.classList.add('has-image');
+    // Carte fullArt : image plein fond + icônes PNG pour les stats
+    if (card.fullArt && card.image) {
+        el.classList.add('full-art');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // Construire le texte des capacités
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
             trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
         };
         const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
 
-        // Déterminer le type de combat
+        let combatTypeText = 'Mêlée';
+        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
+        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
+
+        el.innerHTML = `
+            <div class="fa-mana"><img src="/css/mana.png" alt=""><span>${card.cost}</span></div>
+            <div class="fa-name-banner">
+                <div class="fa-name">${card.name}</div>
+            </div>
+            <div class="fa-text-zone">
+                <div class="fa-type">Créature - ${combatTypeText}</div>
+                <div class="fa-abilities">${abilitiesText}</div>
+            </div>
+            <div class="fa-atk"><img src="/css/damage.png" alt=""><span class="${atkClass}">${card.atk}</span></div>
+            <div class="fa-hp"><img src="/css/health.png" alt=""><span class="${hpClass}">${hp}</span></div>`;
+        return el;
+    }
+
+    // Si la carte a une image (système template avec texte positionné)
+    if (card.image) {
+        el.classList.add('has-image');
+        el.style.backgroundImage = `url('/cards/${card.image}')`;
+
+        const abilityNames = {
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+        };
+        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';

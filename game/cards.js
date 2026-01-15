@@ -8,7 +8,7 @@ const CardDB = {
         { id: 'sprite', name: 'Lutin', atk: 1, hp: 1, cost: 1, abilities: ['fly'], type: 'creature', icon: '🧚' },
         { id: 'squire', name: 'Écuyer', atk: 1, hp: 3, cost: 1, abilities: [], type: 'creature', icon: '🛡️' },
         { id: 'wisp', name: 'Feu follet', atk: 1, hp: 1, cost: 1, abilities: ['intangible'], type: 'creature', icon: '✨' },
-        { id: 'crossbowman', name: 'Arbalétrier', atk: 2, hp: 1, cost: 1, abilities: ['shooter', 'initiative'], type: 'creature', image: 'arbaletrier.jpg', combatType: 'shooter', usePixiRender: true },
+        { id: 'crossbowman', name: 'Arbalétrier', atk: 2, hp: 1, cost: 1, abilities: ['shooter', 'initiative'], type: 'creature', image: 'arbaletrier.jpg', combatType: 'shooter', fullArt: true },
         
         // === COÛT 2 (6 créatures) ===
         { id: 'archer', name: 'Archer', atk: 2, hp: 2, cost: 2, abilities: ['shooter'], type: 'creature', icon: '🏹' },
