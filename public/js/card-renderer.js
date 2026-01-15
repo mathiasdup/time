@@ -1,6 +1,6 @@
 /**
  * Card Renderer avec PixiJS
- * Image en fond plein + icônes de stats (mana, damage, health)
+ * Style Hearthstone : image plein fond + icônes de stats
  */
 
 const CardRenderer = {
@@ -59,19 +59,16 @@ const CardRenderer = {
         const container = new PIXI.Container();
         this.app.stage.addChild(container);
 
-        const W = this.CARD_WIDTH;
-        const H = this.CARD_HEIGHT;
-
         // 1. Image de fond (plein écran)
         await this.drawFullImage(container, card);
 
-        // 2. Nom de la carte (en haut)
+        // 2. Nom de la carte (bandeau au milieu-bas)
         this.drawName(container, card);
 
-        // 3. Type et capacités (en bas)
-        this.drawBottomText(container, card);
+        // 3. Zone de texte (type + capacités) au-dessus des stats
+        this.drawTextZone(container, card);
 
-        // 4. Stats avec icônes
+        // 4. Stats avec grosses icônes (style Hearthstone)
         this.drawStats(container, card);
 
         // Render et extraire l'image
@@ -91,7 +88,7 @@ const CardRenderer = {
 
         // Fond noir au cas où l'image ne charge pas
         const bg = new PIXI.Graphics();
-        bg.roundRect(0, 0, W, H, 8);
+        bg.roundRect(0, 0, W, H, 10);
         bg.fill({ color: 0x1a1a2e });
         container.addChild(bg);
 
@@ -112,17 +109,17 @@ const CardRenderer = {
 
             // Masque arrondi
             const mask = new PIXI.Graphics();
-            mask.roundRect(0, 0, W, H, 8);
+            mask.roundRect(0, 0, W, H, 10);
             mask.fill({ color: 0xffffff });
             container.addChild(mask);
             sprite.mask = mask;
 
             container.addChild(sprite);
 
-            // Bordure fine
+            // Bordure
             const border = new PIXI.Graphics();
-            border.roundRect(0, 0, W, H, 8);
-            border.stroke({ color: 0x333333, width: 2 });
+            border.roundRect(0, 0, W, H, 10);
+            border.stroke({ color: 0x222222, width: 3 });
             container.addChild(border);
 
         } catch (e) {
@@ -131,47 +128,54 @@ const CardRenderer = {
     },
 
     /**
-     * Nom de la carte en haut
+     * Nom de la carte - bandeau style Hearthstone
      */
     drawName(container, card) {
         const W = this.CARD_WIDTH;
+        const H = this.CARD_HEIGHT;
+        const bannerY = H * 0.58; // Position du bandeau (58% de la hauteur)
 
-        // Fond semi-transparent pour le nom
+        // Fond du bandeau (dégradé noir semi-transparent)
         const nameBg = new PIXI.Graphics();
-        nameBg.roundRect(10, 8, W - 20, 26, 4);
-        nameBg.fill({ color: 0x000000, alpha: 0.6 });
+        nameBg.roundRect(8, bannerY - 2, W - 16, 28, 6);
+        nameBg.fill({ color: 0x000000, alpha: 0.75 });
         container.addChild(nameBg);
 
         // Texte du nom
         const nameText = new PIXI.Text({
-            text: card.name.toUpperCase(),
+            text: card.name,
             style: {
-                fontFamily: 'Arial, sans-serif',
-                fontSize: 14,
+                fontFamily: 'Georgia, serif',
+                fontSize: 15,
                 fontWeight: 'bold',
                 fill: 0xffffff,
                 align: 'center',
-                letterSpacing: 1
+                dropShadow: {
+                    color: 0x000000,
+                    blur: 2,
+                    distance: 1
+                }
             }
         });
         nameText.anchor.set(0.5);
         nameText.x = W / 2;
-        nameText.y = 21;
+        nameText.y = bannerY + 12;
         container.addChild(nameText);
     },
 
     /**
-     * Type et capacités en bas
+     * Zone de texte (type + capacités)
      */
-    drawBottomText(container, card) {
+    drawTextZone(container, card) {
         const W = this.CARD_WIDTH;
         const H = this.CARD_HEIGHT;
+        const zoneY = H * 0.68; // Juste sous le nom
 
-        // Fond semi-transparent en bas
-        const bottomBg = new PIXI.Graphics();
-        bottomBg.roundRect(10, H - 55, W - 20, 45, 4);
-        bottomBg.fill({ color: 0x000000, alpha: 0.6 });
-        container.addChild(bottomBg);
+        // Fond semi-transparent
+        const textBg = new PIXI.Graphics();
+        textBg.roundRect(8, zoneY, W - 16, 38, 4);
+        textBg.fill({ color: 0x000000, alpha: 0.6 });
+        container.addChild(textBg);
 
         // Type de créature
         let typeText = 'Créature';
@@ -187,14 +191,14 @@ const CardRenderer = {
             text: typeText,
             style: {
                 fontFamily: 'Arial, sans-serif',
-                fontSize: 10,
-                fill: 0xcccccc,
+                fontSize: 9,
+                fill: 0xaaaaaa,
                 align: 'center'
             }
         });
         type.anchor.set(0.5, 0);
         type.x = W / 2;
-        type.y = H - 50;
+        type.y = zoneY + 4;
         container.addChild(type);
 
         // Capacités
@@ -221,71 +225,74 @@ const CardRenderer = {
             });
             abText.anchor.set(0.5, 0);
             abText.x = W / 2;
-            abText.y = H - 35;
+            abText.y = zoneY + 18;
             container.addChild(abText);
         }
     },
 
     /**
-     * Stats avec icônes (mana, atk, hp)
+     * Stats avec grosses icônes style Hearthstone
      */
     drawStats(container, card) {
         const W = this.CARD_WIDTH;
         const H = this.CARD_HEIGHT;
         const hp = card.currentHp ?? card.hp;
-        const iconSize = 32;
 
-        // === MANA (haut gauche) ===
+        // Tailles des icônes
+        const manaSize = 50;  // Mana en haut à gauche
+        const statSize = 55;  // ATK et HP en bas
+
+        // === MANA (haut gauche, déborde légèrement) ===
         if (this.textureCache.mana) {
             const manaSprite = new PIXI.Sprite(this.textureCache.mana);
-            manaSprite.width = iconSize;
-            manaSprite.height = iconSize;
-            manaSprite.x = 5;
-            manaSprite.y = 5;
+            manaSprite.width = manaSize;
+            manaSprite.height = manaSize;
+            manaSprite.x = -5;
+            manaSprite.y = -5;
             container.addChild(manaSprite);
 
-            this.drawStatNumber(container, card.cost, 5 + iconSize/2, 5 + iconSize/2);
+            this.drawStatNumber(container, card.cost, manaSize/2 - 5, manaSize/2 - 5, 0xffffff, 22);
         }
 
-        // === ATK (bas gauche) ===
+        // === ATK (bas gauche, déborde) ===
         if (this.textureCache.damage) {
             const atkSprite = new PIXI.Sprite(this.textureCache.damage);
-            atkSprite.width = iconSize;
-            atkSprite.height = iconSize;
-            atkSprite.x = 8;
-            atkSprite.y = H - 58 - iconSize;
+            atkSprite.width = statSize;
+            atkSprite.height = statSize;
+            atkSprite.x = -8;
+            atkSprite.y = H - statSize + 8;
             container.addChild(atkSprite);
 
-            this.drawStatNumber(container, card.atk, 8 + iconSize/2, H - 58 - iconSize/2);
+            this.drawStatNumber(container, card.atk, statSize/2 - 8, H - statSize/2 + 8, 0xffffff, 24);
         }
 
-        // === HP (bas droite) ===
+        // === HP (bas droite, déborde) ===
         if (this.textureCache.health) {
             const hpSprite = new PIXI.Sprite(this.textureCache.health);
-            hpSprite.width = iconSize;
-            hpSprite.height = iconSize;
-            hpSprite.x = W - iconSize - 8;
-            hpSprite.y = H - 58 - iconSize;
+            hpSprite.width = statSize;
+            hpSprite.height = statSize;
+            hpSprite.x = W - statSize + 8;
+            hpSprite.y = H - statSize + 8;
             container.addChild(hpSprite);
 
-            // Couleur différente si endommagé
+            // Couleur rouge clair si endommagé
             const hpColor = hp < card.hp ? 0xff6b6b : 0xffffff;
-            this.drawStatNumber(container, hp, W - 8 - iconSize/2, H - 58 - iconSize/2, hpColor);
+            this.drawStatNumber(container, hp, W - statSize/2 + 8, H - statSize/2 + 8, hpColor, 24);
         }
     },
 
     /**
-     * Dessine un nombre de stat (blanc avec contour noir)
+     * Dessine un nombre de stat (blanc avec contour noir épais)
      */
-    drawStatNumber(container, value, x, y, color = 0xffffff) {
+    drawStatNumber(container, value, x, y, color = 0xffffff, fontSize = 22) {
         const text = new PIXI.Text({
             text: value.toString(),
             style: {
                 fontFamily: 'Arial Black, sans-serif',
-                fontSize: 18,
+                fontSize: fontSize,
                 fontWeight: 'bold',
                 fill: color,
-                stroke: { color: 0x000000, width: 4 }
+                stroke: { color: 0x000000, width: 5 }
             }
         });
         text.anchor.set(0.5);
