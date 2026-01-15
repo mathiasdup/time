@@ -808,10 +808,8 @@ function createCardElementForAnimation(card) {
         el.style.backgroundImage = `url('/cards/${card.image}')`;
         el.innerHTML = `
             <div class="card-cost">${card.cost}</div>
-            <div class="card-stats-overlay">
-                <span class="stat-img">${card.atk}</span>
-                <span class="stat-img">${hp}</span>
-            </div>`;
+            <div class="card-stat-atk">${card.atk}</div>
+            <div class="card-stat-hp">${hp}</div>`;
         return el;
     }
 
@@ -2176,10 +2174,8 @@ function makeCard(card, inHand) {
         el.style.backgroundImage = `url('/cards/${card.image}')`;
         el.innerHTML = `
             <div class="card-cost">${card.cost}</div>
-            <div class="card-stats-overlay">
-                <span class="stat-img ${atkClass}">${card.atk}</span>
-                <span class="stat-img ${hpClass}">${hp}</span>
-            </div>`;
+            <div class="card-stat-atk ${atkClass}">${card.atk}</div>
+            <div class="card-stat-hp ${hpClass}">${hp}</div>`;
         return el;
     }
 

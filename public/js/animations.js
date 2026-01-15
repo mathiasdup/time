@@ -73,10 +73,8 @@ function createCardElement(card) {
         el.style.backgroundImage = `url('/cards/${card.image}')`;
         el.innerHTML = `
             <div class="card-cost">${card.cost}</div>
-            <div class="card-stats-overlay">
-                <span class="stat-img">${card.atk}</span>
-                <span class="stat-img">${hp}</span>
-            </div>`;
+            <div class="card-stat-atk">${card.atk}</div>
+            <div class="card-stat-hp">${hp}</div>`;
         return el;
     }
 
