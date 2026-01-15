@@ -682,92 +682,94 @@
         .card.trap-card { border: 3px solid #e74c3c; }
 
         /* Cartes avec image de fond (nouveau système) */
+        /* Template original: 636x934 pixels */
         .card.has-image {
             background-size: cover;
             background-position: center;
             border: none !important;
+            overflow: visible;
         }
         .card.has-image .card-art,
         .card.has-image .card-body,
         .card.has-image .card-cost {
             display: none !important;
         }
-        /* Coût mana - orbe bleu en haut à gauche */
+        /* Coût mana - orbe bleu en haut à gauche (centre orbe ~7% du bord, ~4% du haut) */
         .card.has-image .img-cost {
             position: absolute;
-            top: 3%;
-            left: 8%;
-            font-size: 0.95em;
+            top: 4%;
+            left: 7%;
+            font-size: 0.85em;
             font-weight: bold;
             color: #fff;
-            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
+            text-shadow: 0 0 4px #000, 0 0 8px #000;
+            z-index: 10;
         }
-        /* Type créature - en haut au centre */
+        /* Sous-type - caché car pas de zone sur le template */
         .card.has-image .img-subtype {
-            position: absolute;
-            top: 1%;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.4em;
-            color: #ccc;
-            text-shadow: 1px 1px 2px #000;
-            white-space: nowrap;
+            display: none;
         }
-        /* Nom de la carte - bannière centrale */
+        /* Nom de la carte - bannière rouge (centre bannière ~50% du haut) */
         .card.has-image .img-name {
             position: absolute;
-            top: 38%;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.45em;
+            transform: translate(-50%, -50%);
+            font-size: 0.48em;
             font-weight: bold;
             color: #fff;
-            text-shadow: 1px 1px 3px #000, 0 0 6px #000;
+            text-shadow: 1px 1px 2px #000, 0 0 4px #000;
             white-space: nowrap;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
+            z-index: 10;
         }
-        /* Zone description - type + capacités */
+        /* Type de créature - zone texte haut (~72% du haut) */
         .card.has-image .img-type-line {
             position: absolute;
-            bottom: 22%;
+            top: 72%;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.35em;
-            color: #aaa;
+            font-size: 0.28em;
+            color: #bbb;
             text-shadow: 1px 1px 2px #000;
             white-space: nowrap;
+            z-index: 10;
         }
+        /* Capacités - zone texte milieu (~78% du haut) */
         .card.has-image .img-abilities {
             position: absolute;
-            bottom: 15%;
+            top: 78%;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.38em;
+            font-size: 0.32em;
             font-weight: bold;
             color: #ffd700;
-            text-shadow: 1px 1px 2px #000;
+            text-shadow: 1px 1px 2px #000, 0 0 4px #000;
             white-space: nowrap;
+            z-index: 10;
         }
-        /* ATK - gemme verte en bas à gauche */
+        /* ATK - gemme verte bas gauche (~93% du haut, ~15% du bord) */
         .card.has-image .img-atk {
             position: absolute;
-            bottom: 2%;
-            left: 12%;
-            font-size: 0.85em;
+            bottom: 4.5%;
+            left: 15%;
+            font-size: 0.75em;
             font-weight: bold;
             color: #fff;
-            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
+            text-shadow: 0 0 4px #000, 0 0 8px #000;
+            z-index: 10;
         }
-        /* HP - gemme rouge en bas à droite */
+        /* HP - gemme rouge bas droite (~93% du haut, ~85% du bord gauche) */
         .card.has-image .img-hp {
             position: absolute;
-            bottom: 2%;
-            right: 12%;
-            font-size: 0.85em;
+            bottom: 4.5%;
+            right: 15%;
+            font-size: 0.75em;
             font-weight: bold;
             color: #fff;
-            text-shadow: 1px 1px 2px #000, 0 0 6px #000;
+            text-shadow: 0 0 4px #000, 0 0 8px #000;
+            z-index: 10;
         }
         .card.has-image .img-hp.damaged {
             color: #ff6b6b;

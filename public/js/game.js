@@ -1939,7 +1939,8 @@ const ABILITY_DESCRIPTIONS = {
     intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
     trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
     initiative: { name: 'Initiative', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
-    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' }
+    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' },
+    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige également ses dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' }
 };
 
 function showCardPreview(card, e) {
