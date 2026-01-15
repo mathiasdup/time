@@ -2217,7 +2217,7 @@ function makeCard(card, inHand) {
                 <div class="fa-abilities">${abilitiesText}</div>
             </div>
             <div class="fa-atk ${atkClass}">${card.atk}</div>
-            <div class="fa-hp ${hpClass}"><span>${hp}</span></div>`;
+            <div class="fa-hp ${hpClass}">${hp}</div>`;
         return el;
     }
 
