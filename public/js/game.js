@@ -1706,8 +1706,11 @@ function render() {
     document.getElementById('opp-hp').textContent = opp.hp;
     document.getElementById('me-energy').textContent = `${me.energy}/${me.maxEnergy}`;
     document.getElementById('opp-energy').textContent = `${opp.energy}/${opp.maxEnergy}`;
-    document.getElementById('me-deck').textContent = me.deckCount;
-    document.getElementById('opp-deck').textContent = opp.deckCount;
+    // Mettre à jour les tooltips du deck
+    const meDeckTooltip = document.getElementById('me-deck-tooltip');
+    const oppDeckTooltip = document.getElementById('opp-deck-tooltip');
+    if (meDeckTooltip) meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
+    if (oppDeckTooltip) oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
     document.getElementById('me-grave').textContent = me.graveyardCount || 0;
     document.getElementById('opp-grave').textContent = opp.graveyardCount || 0;
     
