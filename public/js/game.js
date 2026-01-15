@@ -365,29 +365,27 @@ function initSocket() {
     
     socket.on('animation', handleAnimation);
     
-    // Bloquer les slots qui vont recevoir des créatures (avant le state)
-    socket.on('blockSlots', (slots) => {
-        slots.forEach(s => {
-            // Bloquer les créatures adverses OU les créatures locales si blockLocal est true
-            // (blockLocal = true quand le joueur a déplacé une carte puis en place une nouvelle au même endroit)
-            const isOpponent = s.player !== myNum;
-            const shouldBlock = isOpponent || s.blockLocal;
+    // Cacher les cartes qui vont être révélées plus tard (pendant les déplacements)
+    // Ces cartes sont cachées dans renderField via hiddenCards
+    socket.on('hideCards', (cards) => {
+        cards.forEach(c => {
+            // Cacher les cartes adverses OU les cartes locales si hideLocal est true
+            const isOpponent = c.player !== myNum;
+            const shouldHide = isOpponent || c.hideLocal;
 
-            if (shouldBlock) {
-                const owner = s.player === myNum ? 'me' : 'opp';
-                const slotKey = `${owner}-${s.row}-${s.col}`;
-                animatingSlots.add(slotKey);
-
-                // Vider le slot au cas où
-                const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${s.row}"][data-col="${s.col}"]`);
-                if (slot) {
-                    const label = slot.querySelector('.slot-label');
-                    slot.innerHTML = '';
-                    if (label) slot.appendChild(label.cloneNode(true));
-                    slot.classList.remove('has-card');
-                }
+            if (shouldHide) {
+                const owner = c.player === myNum ? 'me' : 'opp';
+                const cardKey = `${owner}-${c.row}-${c.col}`;
+                hiddenCards.add(cardKey);
             }
         });
+    });
+
+    // Révéler une carte spécifique (appelé juste avant l'animation summon)
+    socket.on('revealCard', (c) => {
+        const owner = c.player === myNum ? 'me' : 'opp';
+        const cardKey = `${owner}-${c.row}-${c.col}`;
+        hiddenCards.delete(cardKey);
     });
     
     // Highlight des cases pour les sorts
@@ -572,6 +570,28 @@ function animateTrap(data) {
 
 // Slots en cours d'animation - render() ne doit pas les toucher
 let animatingSlots = new Set();
+
+// Cartes cachées en attente de révélation (pendant la phase de déplacement)
+let hiddenCards = new Set();
+
+// Animation de lévitation continue pour les créatures volantes
+// Utilise le temps global pour que l'animation reste synchronisée même après re-render
+const flyingAnimationSpeed = 0.002; // Vitesse de l'oscillation
+const flyingAnimationAmplitude = 4; // Amplitude en pixels
+
+function startFlyingAnimation(cardEl) {
+    // Utiliser le temps global pour synchroniser toutes les cartes volantes
+    function animate() {
+        if (!cardEl.isConnected) return; // Stop si la carte n'est plus dans le DOM
+
+        const time = performance.now() * flyingAnimationSpeed;
+        const offset = Math.sin(time) * flyingAnimationAmplitude;
+        cardEl.style.transform = `translateY(${offset}px)`;
+
+        requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+}
 
 // Animation d'invocation - overlay indépendant du render
 // La carte "tombe" sur le plateau avec un effet de rebond
@@ -1429,18 +1449,25 @@ function renderField(owner, field) {
         for (let c = 0; c < 2; c++) {
             const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${r}"][data-col="${c}"]`);
             if (!slot) continue;
-            
+
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
             if (animatingSlots.has(slotKey)) continue;
-            
+
             const label = slot.querySelector('.slot-label');
             slot.innerHTML = '';
             if (label) slot.appendChild(label.cloneNode(true));
-            
+
             slot.classList.remove('has-card');
+            slot.classList.remove('has-flying');
             const card = field[r][c];
-            
+
+            // Si la carte est cachée (en attente de révélation), ne pas l'afficher
+            const cardKey = `${owner}-${r}-${c}`;
+            if (hiddenCards.has(cardKey)) {
+                continue; // Ne pas afficher cette carte, elle sera révélée plus tard
+            }
+
             if (card) {
                 slot.classList.add('has-card');
                 const cardEl = makeCard(card, false);
@@ -1448,6 +1475,11 @@ function renderField(owner, field) {
                 // Ajouter l'effet de lévitation pour les créatures volantes
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     cardEl.classList.add('flying-creature');
+                    slot.classList.add('has-flying');
+                    // Démarrer l'animation de lévitation continue
+                    startFlyingAnimation(cardEl);
+                } else {
+                    slot.classList.remove('has-flying');
                 }
 
                 // Hover preview pour voir la carte en grand

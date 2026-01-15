@@ -230,17 +230,16 @@ async function startResolution(room) {
         await sleep(800);
     }
 
-    // Pré-calcul : identifier les slots qui étaient origine d'un déplacement
-    const movedFromSlots = allActions.moves.map(m => ({
-        player: m.playerNum,
-        row: m.fromRow,
-        col: m.fromCol
-    }));
-
-    // BLOQUER LES SLOTS DES NOUVELLES CRÉATURES DÈS LE DÉBUT
-    // Cela empêche les cartes d'apparaître pendant les animations de déplacement
+    // CACHER LES CARTES QUI VONT ÊTRE RÉVÉLÉES (pendant les déplacements)
+    // On cache les cartes adverses + les cartes locales qui remplacent un déplacement
     if (allActions.places.length > 0) {
-        const summonSlots = allActions.places.map(a => {
+        const movedFromSlots = allActions.moves.map(m => ({
+            player: m.playerNum,
+            row: m.fromRow,
+            col: m.fromCol
+        }));
+
+        const cardsToHide = allActions.places.map(a => {
             const wasMovedFrom = movedFromSlots.some(m =>
                 m.player === a.playerNum && m.row === a.row && m.col === a.col
             );
@@ -248,10 +247,10 @@ async function startResolution(room) {
                 player: a.playerNum,
                 row: a.row,
                 col: a.col,
-                blockLocal: wasMovedFrom // Si true, bloquer aussi pour le joueur local
+                hideLocal: wasMovedFrom // Cacher aussi pour le joueur local si déplacement préalable
             };
         });
-        io.to(room.code).emit('blockSlots', summonSlots);
+        io.to(room.code).emit('hideCards', cardsToHide);
         await sleep(50);
     }
 
@@ -284,19 +283,23 @@ async function startResolution(room) {
         log('🎴 Phase de révélation', 'phase');
         await sleep(600);
 
-        // Révéler les créatures
+        // Révéler les créatures une par une
         for (const action of allActions.places) {
-            const wasMovedFrom = movedFromSlots.some(m =>
-                m.player === action.playerNum && m.row === action.row && m.col === action.col
-            );
             log(`  🎴 ${action.heroName}: ${action.card.name} en ${slotNames[action.row][action.col]}`, 'action');
+
+            // Révéler la carte (retirer du cache) juste avant l'animation
+            io.to(room.code).emit('revealCard', {
+                player: action.playerNum,
+                row: action.row,
+                col: action.col
+            });
+
             emitAnimation(room, 'summon', {
                 player: action.playerNum,
                 row: action.row,
                 col: action.col,
                 card: action.card,
-                animateForOpponent: true,
-                animateForLocal: wasMovedFrom // Animer aussi côté local si déplacement préalable
+                animateForOpponent: true
             });
             await sleep(100);
             emitStateToBoth(room);

@@ -313,7 +313,7 @@
             background: linear-gradient(135deg, rgba(60,60,80,0.8), rgba(40,40,60,0.8)); 
         }
         .hero-card.hit { animation: heroHit 0.5s ease-out; }
-        @keyframes heroHit { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); box-shadow: 0 0 30px rgba(255,0,0,0.8); } }
+        @keyframes heroHit { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 30px rgba(255,0,0,0.8), inset 0 0 20px rgba(255,0,0,0.3); } }
         .hero-label { font-size: 0.8em; margin-bottom: 5px; color: #ffd700; font-weight: bold; }
         .hero-icon { font-size: 3.5em; }
         .hero-hp { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5em; font-weight: bold; border: 3px solid #f5b7b1; box-shadow: 0 3px 10px rgba(0,0,0,0.4); transition: all 0.3s; z-index: 5; }
@@ -779,40 +779,23 @@
 
         /* Animation de lévitation pour les créatures volantes */
         .card.flying-creature {
-            animation: flyingFloat 3s ease-in-out infinite;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(135, 206, 250, 0.3);
+            box-shadow: 0 12px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(135, 206, 250, 0.3);
+            /* Décalage vers le haut pour montrer l'emplacement en dessous */
+            margin-top: -15px;
+            position: relative;
         }
-        @keyframes flyingFloat {
-            0%, 100% {
-                transform: translateY(0);
-            }
-            50% {
-                transform: translateY(-8px);
-            }
-        }
-        /* Ombre au sol qui bouge avec la carte */
-        .card-slot:has(.flying-creature)::after {
+        /* Ombre au sol pour les volants */
+        .card-slot.has-flying::after {
             content: '';
             position: absolute;
-            bottom: -5px;
+            bottom: 5px;
             left: 50%;
             transform: translateX(-50%);
-            width: 70%;
-            height: 8px;
-            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.3) 0%, transparent 70%);
-            animation: flyingShadow 3s ease-in-out infinite;
+            width: 65%;
+            height: 12px;
+            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.4) 0%, transparent 70%);
             pointer-events: none;
-            z-index: -1;
-        }
-        @keyframes flyingShadow {
-            0%, 100% {
-                width: 70%;
-                opacity: 0.5;
-            }
-            50% {
-                width: 50%;
-                opacity: 0.3;
-            }
+            z-index: 1;
         }
         
         /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
