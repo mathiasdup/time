@@ -230,7 +230,32 @@ async function startResolution(room) {
         await sleep(800);
     }
 
-    // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS (AVANT de bloquer les slots pour les invocations)
+    // Pré-calcul : identifier les slots qui étaient origine d'un déplacement
+    const movedFromSlots = allActions.moves.map(m => ({
+        player: m.playerNum,
+        row: m.fromRow,
+        col: m.fromCol
+    }));
+
+    // BLOQUER LES SLOTS DES NOUVELLES CRÉATURES DÈS LE DÉBUT
+    // Cela empêche les cartes d'apparaître pendant les animations de déplacement
+    if (allActions.places.length > 0) {
+        const summonSlots = allActions.places.map(a => {
+            const wasMovedFrom = movedFromSlots.some(m =>
+                m.player === a.playerNum && m.row === a.row && m.col === a.col
+            );
+            return {
+                player: a.playerNum,
+                row: a.row,
+                col: a.col,
+                blockLocal: wasMovedFrom // Si true, bloquer aussi pour le joueur local
+            };
+        });
+        io.to(room.code).emit('blockSlots', summonSlots);
+        await sleep(50);
+    }
+
+    // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS
     if (allActions.moves.length > 0) {
         io.to(room.code).emit('phaseMessage', { text: 'Déplacements', type: 'revelation' });
         log('↔️ Phase des déplacements', 'phase');
@@ -255,31 +280,6 @@ async function startResolution(room) {
     // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES ET PIÈGES
     const hasPlacesOrTraps = allActions.places.length > 0 || allActions.traps.length > 0;
     if (hasPlacesOrTraps) {
-        // Identifier les slots qui étaient origine d'un déplacement (pour bloquer aussi côté local)
-        const movedFromSlots = allActions.moves.map(m => ({
-            player: m.playerNum,
-            row: m.fromRow,
-            col: m.fromCol
-        }));
-
-        // Bloquer les slots MAINTENANT (après les déplacements terminés)
-        // Ajouter un flag 'wasMovedFrom' si le slot était l'origine d'un déplacement du même joueur
-        const summonSlots = allActions.places.map(a => {
-            const wasMovedFrom = movedFromSlots.some(m =>
-                m.player === a.playerNum && m.row === a.row && m.col === a.col
-            );
-            return {
-                player: a.playerNum,
-                row: a.row,
-                col: a.col,
-                blockLocal: wasMovedFrom // Si true, bloquer aussi pour le joueur local
-            };
-        });
-        if (summonSlots.length > 0) {
-            io.to(room.code).emit('blockSlots', summonSlots);
-            await sleep(50);
-        }
-
         io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
         log('🎴 Phase de révélation', 'phase');
         await sleep(600);

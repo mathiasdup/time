@@ -772,10 +772,48 @@
         
         /* Les animations de dégâts sont maintenant gérées par PixiJS */
         /* Voir combat-animations.js pour les griffures et effets visuels */
-        
+
         .damage-number { position: fixed; z-index: 1001; font-size: 1.8em; font-weight: bold; color: #e74c3c; text-shadow: 2px 2px 4px black; pointer-events: none; animation: damageFloat 1s ease-out forwards; }
         .damage-number.heal { color: #2ecc71; }
         @keyframes damageFloat { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-50px) scale(1.5); } }
+
+        /* Animation de lévitation pour les créatures volantes */
+        .card.flying-creature {
+            animation: flyingFloat 3s ease-in-out infinite;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(135, 206, 250, 0.3);
+        }
+        @keyframes flyingFloat {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+        /* Ombre au sol qui bouge avec la carte */
+        .card-slot:has(.flying-creature)::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 70%;
+            height: 8px;
+            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.3) 0%, transparent 70%);
+            animation: flyingShadow 3s ease-in-out infinite;
+            pointer-events: none;
+            z-index: -1;
+        }
+        @keyframes flyingShadow {
+            0%, 100% {
+                width: 70%;
+                opacity: 0.5;
+            }
+            50% {
+                width: 50%;
+                opacity: 0.3;
+            }
+        }
         
         /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
         .my-hand { 

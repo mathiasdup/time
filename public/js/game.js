@@ -1444,12 +1444,17 @@ function renderField(owner, field) {
             if (card) {
                 slot.classList.add('has-card');
                 const cardEl = makeCard(card, false);
-                
+
+                // Ajouter l'effet de lévitation pour les créatures volantes
+                if (card.type === 'creature' && card.abilities?.includes('fly')) {
+                    cardEl.classList.add('flying-creature');
+                }
+
                 // Hover preview pour voir la carte en grand
                 cardEl.onmouseenter = (e) => showCardPreview(card, e);
                 cardEl.onmouseleave = hideCardPreview;
                 cardEl.onmousemove = (e) => moveCardPreview(e);
-                
+
                 // Drag & drop pour redéploiement (seulement mes cartes)
                 if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn) {
                     cardEl.draggable = true;
@@ -1466,7 +1471,7 @@ function renderField(owner, field) {
                         clearHighlights();
                     };
                 }
-                
+
                 if (owner === 'me') {
                     cardEl.onclick = (e) => { e.stopPropagation(); clickFieldCard(r, c, card); };
                 }
