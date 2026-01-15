@@ -782,11 +782,11 @@
         .card.has-image.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.has-image.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
 
-        /* === CARTES FULL ART (style ronds comme héros) === */
+        /* === CARTES FULL ART === */
         .card.full-art {
             background-size: cover;
             background-position: center;
-            border: 2px solid #444 !important;
+            border: 2px solid #555 !important;
             border-radius: 10px;
             overflow: visible;
         }
@@ -796,113 +796,127 @@
             display: none !important;
         }
 
-        /* Titre en haut */
+        /* Titre en haut - fond blanc transparent élégant */
         .card.full-art .fa-title {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 70%, transparent 100%);
-            border-radius: 8px 8px 0 0;
-            padding: 6px 8px 12px 8px;
+            top: 4px;
+            left: 4px;
+            right: 4px;
+            background: rgba(255,255,255,0.85);
+            border-radius: 6px;
+            padding: 4px 6px;
             text-align: center;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255,255,255,0.3);
         }
         .card.full-art .fa-name {
             font-family: Georgia, serif;
-            font-size: 0.6em;
+            font-size: 0.55em;
             font-weight: bold;
-            color: #fff;
-            text-shadow: 0 1px 3px #000;
+            color: #222;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        /* Zone de texte en bas (type + capacités) */
+        /* Zone de texte en bas - fond blanc transparent */
         .card.full-art .fa-text-zone {
             position: absolute;
-            bottom: 28px;
-            left: 0;
-            right: 0;
-            background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 60%, transparent 100%);
-            padding: 15px 8px 8px 8px;
+            bottom: 22px;
+            left: 4px;
+            right: 4px;
+            background: rgba(255,255,255,0.85);
+            border-radius: 6px;
+            padding: 5px 6px;
             text-align: center;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255,255,255,0.3);
         }
         .card.full-art .fa-type {
-            font-size: 0.38em;
-            color: #bbb;
+            font-size: 0.35em;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         .card.full-art .fa-abilities {
-            font-size: 0.42em;
+            font-size: 0.4em;
             font-weight: bold;
-            color: #ffd700;
-            margin-top: 2px;
+            color: #b8860b;
+            margin-top: 1px;
         }
 
-        /* Rond MANA (bleu) - haut gauche */
+        /* MANA (rond bleu) - haut gauche, légèrement à l'intérieur */
         .card.full-art .fa-mana {
             position: absolute;
-            top: -10px;
-            left: -10px;
-            width: 28px;
-            height: 28px;
+            top: -6px;
+            left: -6px;
+            width: 26px;
+            height: 26px;
             background: radial-gradient(circle at 30% 30%, #5dade2, #2874a6);
             border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: #fff;
+            border: 2px solid #aed6f1;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            z-index: 10;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* ATK (bouclier/épée jaune) - bas gauche */
+        .card.full-art .fa-atk {
+            position: absolute;
+            bottom: -5px;
+            left: -5px;
+            width: 30px;
+            height: 32px;
+            background: radial-gradient(circle at 30% 30%, #f4d03f, #d4ac0d);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 0.85em;
             font-weight: bold;
             color: #fff;
-            border: 2px solid #aed6f1;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-            z-index: 10;
-        }
-
-        /* Rond ATK (jaune/orange) - bas gauche */
-        .card.full-art .fa-atk {
-            position: absolute;
-            bottom: -10px;
-            left: -10px;
-            width: 30px;
-            height: 30px;
-            background: radial-gradient(circle at 30% 30%, #f4d03f, #d4ac0d);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.9em;
-            font-weight: bold;
-            color: #fff;
             border: 2px solid #f9e79f;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
             z-index: 10;
             text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
         }
         .card.full-art .fa-atk.boosted {
             background: radial-gradient(circle at 30% 30%, #58d68d, #28b463);
             border-color: #abebc6;
         }
 
-        /* Rond HP (rouge) - bas droite */
+        /* HP (coeur rouge) - bas droite */
         .card.full-art .fa-hp {
             position: absolute;
-            bottom: -10px;
-            right: -10px;
+            bottom: -5px;
+            right: -5px;
             width: 30px;
-            height: 30px;
+            height: 28px;
             background: radial-gradient(circle at 30% 30%, #e74c3c, #922b21);
-            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.9em;
+            padding-top: 2px;
+            font-size: 0.85em;
             font-weight: bold;
             color: #fff;
             border: 2px solid #f5b7b1;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
             z-index: 10;
             text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            /* Forme de coeur avec border-radius */
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            transform: rotate(180deg);
+        }
+        .card.full-art .fa-hp span {
+            transform: rotate(180deg);
+            display: block;
         }
         .card.full-art .fa-hp.damaged {
             background: radial-gradient(circle at 30% 30%, #ff6b6b, #c0392b);
