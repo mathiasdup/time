@@ -932,6 +932,10 @@
         /* ANIMATIONS */
         .card.attacking { animation: attackAnim 0.4s ease-out; }
         @keyframes attackAnim { 0% { transform: translateX(0); } 50% { transform: translateX(30px) scale(1.1); } 100% { transform: translateX(0); } }
+
+        /* Animation de recul pour tireurs */
+        .card.shooting { animation: shootRecoil 0.3s ease-out; }
+        @keyframes shootRecoil { 0% { transform: translateX(0); } 30% { transform: translateX(-8px) scale(0.95); } 100% { transform: translateX(0); } }
         
         .card.taking-damage { animation: damageAnim 0.4s ease-out; }
         @keyframes damageAnim { 0%, 100% { filter: none; } 50% { filter: brightness(2) saturate(0); box-shadow: 0 0 20px red; } }

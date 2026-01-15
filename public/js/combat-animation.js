@@ -249,6 +249,13 @@ class CombatAnimationSystem {
 
         document.body.appendChild(projectile);
 
+        // Animation de recul sur la carte tireur
+        const shooterCard = this.getCardElement(startOwner, startRow, startCol);
+        if (shooterCard) {
+            shooterCard.classList.add('shooting');
+            setTimeout(() => shooterCard.classList.remove('shooting'), 300);
+        }
+
         // Animation du vol
         const duration = this.TIMINGS.PROJECTILE_FLIGHT;
         const startTime = performance.now();

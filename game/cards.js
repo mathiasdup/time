@@ -18,8 +18,7 @@ const CardDB = {
         { id: 'rogue', name: 'Voleur', atk: 3, hp: 2, cost: 2, abilities: ['initiative'], type: 'creature', icon: '🗡️' },
         { id: 'bat', name: 'Chauve-souris', atk: 2, hp: 2, cost: 2, abilities: ['fly', 'haste'], type: 'creature', icon: '🦇' },
         
-        // === COÛT 3 (7 créatures) ===
-        { id: 'skeleton_cleaver', name: 'Squelette Clivant', atk: 4, hp: 2, cost: 3, abilities: ['initiative', 'cleave'], type: 'creature', image: 'squelette_clivant.png', subtype: 'Mort-vivant', combatType: 'melee' },
+        // === COÛT 3 (6 créatures) ===
         { id: 'knight', name: 'Chevalier', atk: 3, hp: 4, cost: 3, abilities: [], type: 'creature', icon: '⚔️' },
         { id: 'sniper', name: 'Sniper', atk: 4, hp: 2, cost: 3, abilities: ['shooter'], type: 'creature', icon: '🎯' },
         { id: 'ghost', name: 'Spectre', atk: 2, hp: 3, cost: 3, abilities: ['intangible'], type: 'creature', icon: '👻' },
