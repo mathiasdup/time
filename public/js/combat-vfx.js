@@ -724,7 +724,7 @@ class SleepAnimationSystem {
                     fontFamily: 'Arial Black, Arial',
                     fontSize: 16 - i * 2,
                     fontWeight: 'bold',
-                    fill: 0x9999FF,
+                    fill: 0xFFFFFF,
                     stroke: { color: 0x000000, width: 2 },
                 }
             });
@@ -768,13 +768,13 @@ class SleepAnimationSystem {
             // Animation en boucle
             const cycleProgress = phase / (Math.PI * 2);
 
-            // Opacité: fade in puis fade out
+            // Opacité: fade in puis fade out (max 0.7 pour transparence)
             if (cycleProgress < 0.1) {
-                z.alpha = cycleProgress / 0.1;
+                z.alpha = (cycleProgress / 0.1) * 0.7;
             } else if (cycleProgress < 0.7) {
-                z.alpha = 1;
+                z.alpha = 0.7;
             } else {
-                z.alpha = 1 - (cycleProgress - 0.7) / 0.3;
+                z.alpha = (1 - (cycleProgress - 0.7) / 0.3) * 0.7;
             }
 
             // Position: monte et oscille
