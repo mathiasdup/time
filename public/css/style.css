@@ -832,7 +832,8 @@
             font-family: 'Merriweather Sans', sans-serif;
             font-size: 0.55em;
             color: #fff;
-            -webkit-text-stroke: 0.5px #000;
+            -webkit-text-stroke: 1px #000;
+            paint-order: stroke fill;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
