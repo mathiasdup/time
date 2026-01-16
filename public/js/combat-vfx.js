@@ -655,3 +655,168 @@ class CombatVFXSystem {
 
 // Instance globale
 const CombatVFX = new CombatVFXSystem();
+
+// ==================== SYSTÈME D'ANIMATION ZZZ (SOMMEIL) ====================
+
+class SleepAnimationSystem {
+    constructor() {
+        this.activeAnimations = new Map(); // cardElement -> animation data
+        this.initialized = false;
+    }
+
+    async init() {
+        if (this.initialized) return;
+
+        // Attendre que CombatVFX soit prêt
+        if (!CombatVFX.initialized) {
+            await CombatVFX.init();
+        }
+
+        this.initialized = true;
+        console.log('✅ Sleep Animation System initialized');
+
+        // Démarrer la boucle de mise à jour
+        this.startUpdateLoop();
+    }
+
+    startUpdateLoop() {
+        const update = () => {
+            this.updateAllAnimations();
+            requestAnimationFrame(update);
+        };
+        requestAnimationFrame(update);
+    }
+
+    updateAllAnimations() {
+        // Trouver toutes les cartes avec la classe just-played
+        const sleepingCards = document.querySelectorAll('.card.just-played');
+
+        // Ajouter des animations aux nouvelles cartes
+        sleepingCards.forEach(card => {
+            if (!this.activeAnimations.has(card)) {
+                this.startAnimation(card);
+            }
+        });
+
+        // Supprimer les animations des cartes qui ne dorment plus
+        this.activeAnimations.forEach((animData, card) => {
+            if (!card.classList.contains('just-played') || !document.body.contains(card)) {
+                this.stopAnimation(card);
+            } else {
+                // Mettre à jour la position
+                this.updateAnimationPosition(card, animData);
+            }
+        });
+    }
+
+    startAnimation(card) {
+        if (!CombatVFX.initialized || !CombatVFX.container) return;
+
+        const container = new PIXI.Container();
+        CombatVFX.container.addChild(container);
+
+        // Créer 3 "Z" qui s'animent
+        const zTexts = [];
+        for (let i = 0; i < 3; i++) {
+            const z = new PIXI.Text({
+                text: 'Z',
+                style: {
+                    fontFamily: 'Arial Black, Arial',
+                    fontSize: 16 - i * 2,
+                    fontWeight: 'bold',
+                    fill: 0x9999FF,
+                    stroke: { color: 0x000000, width: 2 },
+                }
+            });
+            z.anchor.set(0.5);
+            z.alpha = 0;
+            z.zData = {
+                index: i,
+                baseOffsetX: 5 + i * 8,
+                baseOffsetY: -5 - i * 12,
+                phase: i * (Math.PI * 2 / 3), // Décalage de phase
+            };
+            container.addChild(z);
+            zTexts.push(z);
+        }
+
+        const animData = {
+            container,
+            zTexts,
+            startTime: performance.now(),
+        };
+
+        this.activeAnimations.set(card, animData);
+        this.updateAnimationPosition(card, animData);
+    }
+
+    updateAnimationPosition(card, animData) {
+        const rect = card.getBoundingClientRect();
+        const x = rect.right - 5;
+        const y = rect.top + 10;
+
+        animData.container.position.set(x, y);
+
+        // Animer les Z
+        const elapsed = performance.now() - animData.startTime;
+        const cycleTime = 2000; // 2 secondes par cycle
+
+        animData.zTexts.forEach(z => {
+            const data = z.zData;
+            const phase = (elapsed / cycleTime * Math.PI * 2 + data.phase) % (Math.PI * 2);
+
+            // Animation en boucle
+            const cycleProgress = phase / (Math.PI * 2);
+
+            // Opacité: fade in puis fade out
+            if (cycleProgress < 0.1) {
+                z.alpha = cycleProgress / 0.1;
+            } else if (cycleProgress < 0.7) {
+                z.alpha = 1;
+            } else {
+                z.alpha = 1 - (cycleProgress - 0.7) / 0.3;
+            }
+
+            // Position: monte et oscille
+            const floatY = data.baseOffsetY - cycleProgress * 20;
+            const wobbleX = Math.sin(phase * 2) * 3;
+
+            z.x = data.baseOffsetX + wobbleX;
+            z.y = floatY;
+
+            // Légère rotation
+            z.rotation = Math.sin(phase) * 0.2;
+
+            // Scale qui pulse
+            const scale = 0.8 + Math.sin(phase * 3) * 0.1;
+            z.scale.set(scale);
+        });
+    }
+
+    stopAnimation(card) {
+        const animData = this.activeAnimations.get(card);
+        if (animData) {
+            if (animData.container && animData.container.parent) {
+                animData.container.parent.removeChild(animData.container);
+            }
+            this.activeAnimations.delete(card);
+        }
+    }
+
+    // Nettoyer toutes les animations
+    cleanup() {
+        this.activeAnimations.forEach((animData, card) => {
+            this.stopAnimation(card);
+        });
+    }
+}
+
+// Instance globale
+const SleepAnimations = new SleepAnimationSystem();
+
+// Initialiser quand le DOM est prêt
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        SleepAnimations.init().catch(e => console.warn('Sleep animations init failed:', e));
+    }, 1000);
+});
