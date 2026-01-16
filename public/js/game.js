@@ -1962,8 +1962,8 @@ function showCardPreview(card, e) {
     previewEl = document.createElement('div');
     previewEl.className = 'preview-container card-preview';
     
-    // Ajouter la carte
-    const cardEl = makeCard(card, false);
+    // Ajouter la carte (version complète avec tous les détails)
+    const cardEl = makeCard(card, true);
     cardEl.classList.add('preview-card');
     previewEl.appendChild(cardEl);
     
