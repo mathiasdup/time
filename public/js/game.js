@@ -2205,11 +2205,10 @@ function makeCard(card, inHand) {
         el.classList.add('full-art');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // Version allégée sur le terrain (sans zone de texte type/capacités)
+        // Version allégée sur le terrain (sans zone de texte type/capacités, sans mana)
         if (!inHand) {
             el.classList.add('on-field');
             el.innerHTML = `
-                <div class="fa-mana">${card.cost}</div>
                 <div class="fa-title"><div class="fa-name">${card.name}</div></div>
                 <div class="fa-atk ${atkClass}">${card.atk}</div>
                 <div class="fa-hp ${hpClass}">${hp}</div>`;

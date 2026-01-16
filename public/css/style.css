@@ -820,11 +820,8 @@
 
         /* Titre en haut - fond vert */
         .card.full-art .fa-title {
-            top: 4px;
-            left: 4px;
-            right: 4px;
             background: #1a8236;
-            border-radius: 6px 6px 0px 0px;
+            border-radius: 7.5px 7.5px 0px 0px;
             padding: 2px 2px;
             text-align: center;
         }
