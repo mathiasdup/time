@@ -801,9 +801,9 @@
             backdrop-filter: blur(2px);
         }
         .card.full-art .fa-name {
-            font-family: Georgia, serif;
+            font-family: 'Merriweather', Georgia, serif;
             font-size: 0.55em;
-            font-weight: bold;
+            font-weight: 700;
             color: #222;
             white-space: nowrap;
             overflow: hidden;
@@ -824,14 +824,16 @@
             border: 1px solid rgba(255,255,255,0.3);
         }
         .card.full-art .fa-type {
+            font-family: 'Merriweather', Georgia, serif;
             font-size: 0.35em;
             color: #555;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         .card.full-art .fa-abilities {
+            font-family: 'Merriweather', Georgia, serif;
             font-size: 0.4em;
-            font-weight: bold;
+            font-weight: 700;
             color: #b8860b;
             margin-top: 1px;
         }
@@ -839,10 +841,10 @@
         /* MANA (image mana.png) - haut gauche */
         .card.full-art .fa-mana {
             position: absolute;
-            top: -8px;
-            left: -10px;
-            width: 26px;
-            height: 26px;
+            top: -5px;
+            left: -8px;
+            width: 25px;
+            height: 25px;
             background-image: url('/css/mana.png');
             background-size: contain;
             background-repeat: no-repeat;
@@ -861,10 +863,10 @@
         /* ATK (image épée) - bas gauche */
         .card.full-art .fa-atk {
             position: absolute;
-            bottom: -8px;
-            left: -9px;
-            width: 29px;
-            height: 29px;
+            bottom: -6px;
+            left: -7px;
+            width: 27px;
+            height: 27px;
             background-image: url('/css/Sword.png');
             background-size: contain;
             background-repeat: no-repeat;
