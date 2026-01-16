@@ -25,6 +25,35 @@
         
         .game-container { width: 100vw; height: 100vh; display: none; position: relative; }
         .game-container.active { display: block; }
+
+        /* Card Zoom Overlay */
+        .card-zoom-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20000;
+            cursor: pointer;
+            animation: fadeIn 0.15s ease-out;
+        }
+        .card-zoom-overlay.hidden { display: none; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .card-zoom-container {
+            transform: scale(2.5);
+            pointer-events: none;
+        }
+        .card-zoom-container .card {
+            animation: zoomPop 0.2s ease-out;
+        }
+        @keyframes zoomPop {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
         
         .top-bar { position: absolute; top: 10px; left: 0; right: 0; height: 60px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; background: transparent; z-index: 50; }
         .player-info-bar { display: flex; align-items: center; gap: 0; position: relative; }
@@ -803,8 +832,7 @@
             font-family: 'Merriweather Sans', sans-serif;
             font-size: 0.55em;
             color: #fff;
-            -webkit-text-stroke: 0.5px #000;
-            paint-order: stroke fill;
+            -webkit-text-stroke: 1px #000;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -837,6 +865,24 @@
             font-weight: 700;
             color: #b8860b;
             margin-top: 1px;
+        }
+
+        /* Version allégée sur le terrain */
+        .card.full-art.on-field .fa-name-field {
+            position: absolute;
+            bottom: 18px;
+            left: 4px;
+            right: 4px;
+            background: rgba(0,0,0,0.6);
+            border-radius: 4px;
+            padding: 2px 4px;
+            text-align: center;
+            font-family: 'Merriweather Sans', sans-serif;
+            font-size: 0.45em;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* MANA (image mana.png) - haut gauche */

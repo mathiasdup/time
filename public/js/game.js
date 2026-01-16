@@ -1930,9 +1930,11 @@ function renderField(owner, field) {
                     };
                 }
 
-                if (owner === 'me') {
-                    cardEl.onclick = (e) => { e.stopPropagation(); clickFieldCard(r, c, card); };
-                }
+                // Clic gauche = zoom sur la carte (pour toutes les cartes)
+                cardEl.onclick = (e) => {
+                    e.stopPropagation();
+                    showCardZoom(card);
+                };
                 slot.appendChild(cardEl);
             }
         }
@@ -2114,8 +2116,12 @@ function renderHand(hand, energy) {
         // Preview au survol
         el.onmouseenter = (e) => showCardPreview(card, e);
         el.onmouseleave = hideCardPreview;
-        
-        el.onclick = (e) => { e.stopPropagation(); selectCard(i); };
+
+        // Clic gauche = zoom sur la carte
+        el.onclick = (e) => {
+            e.stopPropagation();
+            showCardZoom(card);
+        };
         
         el.ondragstart = (e) => {
             if (!canPlay()) { e.preventDefault(); return; }
@@ -2199,6 +2205,17 @@ function makeCard(card, inHand) {
         el.classList.add('full-art');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
+        // Version allégée sur le terrain (pas en main)
+        if (!inHand) {
+            el.classList.add('on-field');
+            el.innerHTML = `
+                <div class="fa-name-field">${card.name}</div>
+                <div class="fa-atk ${atkClass}">${card.atk}</div>
+                <div class="fa-hp ${hpClass}">${hp}</div>`;
+            return el;
+        }
+
+        // Version complète (main, hover, cimetière)
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
             trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
@@ -2422,10 +2439,15 @@ function openGraveyard(owner) {
         container.innerHTML = '<div class="graveyard-empty">Aucune carte au cimetière</div>';
     } else {
         graveyard.forEach(card => {
-            const cardEl = makeCard(card, false);
+            const cardEl = makeCard(card, true);
             // Ajouter le preview au hover
             cardEl.onmouseenter = (e) => showCardPreview(card, e);
             cardEl.onmouseleave = hideCardPreview;
+            // Clic = zoom
+            cardEl.onclick = (e) => {
+                e.stopPropagation();
+                showCardZoom(card);
+            };
             container.appendChild(cardEl);
         });
     }
@@ -2487,14 +2509,40 @@ function log(msg, type = 'action') {
     c.scrollTop = c.scrollHeight;
 }
 
+// ==================== CARD ZOOM ====================
+let zoomCardData = null;
+
+function showCardZoom(card) {
+    const overlay = document.getElementById('card-zoom-overlay');
+    const container = document.getElementById('card-zoom-container');
+
+    // Créer la version complète de la carte (inHand = true pour avoir tous les détails)
+    container.innerHTML = '';
+    const cardEl = makeCard(card, true);
+    container.appendChild(cardEl);
+
+    zoomCardData = card;
+    overlay.classList.remove('hidden');
+}
+
+function hideCardZoom() {
+    const overlay = document.getElementById('card-zoom-overlay');
+    overlay.classList.add('hidden');
+    zoomCardData = null;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialiser le système d'animation PixiJS
     await initCombatAnimations();
-    
+
     initSocket();
     document.getElementById('room-code-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') joinRoom();
     });
+
+    // Fermer le zoom au clic sur l'overlay
+    document.getElementById('card-zoom-overlay').addEventListener('click', hideCardZoom);
+
     document.addEventListener('click', (e) => {
         // Fermer le log si on clique en dehors
         if (!e.target.closest('.log-popup') && !e.target.closest('.log-btn')) {
