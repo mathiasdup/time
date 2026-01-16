@@ -820,7 +820,7 @@
 
         /* Titre en haut - fond vert */
         .card.full-art .fa-title {
-            background: #105121c9;
+            background: #184d26ba;
             border-radius: 7.5px 7.5px 0px 0px;
             padding: 2px 2px;
             text-align: center;
@@ -899,11 +899,11 @@
             justify-content: center;
             padding-top: 2px;
             font-family: 'Cinzel', serif;
-            font-size: 0.8em;
+            font-size: 1.2em;
             font-weight: 900;
             color: #fff;
             z-index: 10;
-            -webkit-text-stroke: 1px #000;
+            -webkit-text-stroke: 1.5px #000;
             paint-order: stroke fill;
         }
 
@@ -922,11 +922,11 @@
             align-items: center;
             justify-content: center;
             font-family: 'Cinzel', serif;
-            font-size: 0.8em;
+            font-size: 1.2em;
             font-weight: 900;
             color: #fff;
             z-index: 10;
-            -webkit-text-stroke: 1px #000;
+            -webkit-text-stroke: 1.5px #000;
             paint-order: stroke fill;
         }
         .card.full-art .fa-atk.boosted {
@@ -948,11 +948,11 @@
             align-items: center;
             justify-content: center;
             font-family: 'Cinzel', serif;
-            font-size: 0.8em;
+            font-size: 1.2em;
             font-weight: 900;
             color: #fff;
             z-index: 10;
-            -webkit-text-stroke: 1px #000;
+            -webkit-text-stroke: 1.5px #000;
             paint-order: stroke fill;
         }
         .card.full-art .fa-hp.damaged {
