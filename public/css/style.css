@@ -789,22 +789,22 @@
             display: none !important;
         }
 
-        /* Titre en haut - fond blanc transparent élégant */
+        /* Titre en haut - fond vert */
         .card.full-art .fa-title {
             top: 4px;
             left: 4px;
             right: 4px;
-            background: rgba(255,255,255,0.65);
+            background: #1a8236;
             border-radius: 6px 6px 0px 0px;
             padding: 2px 2px;
             text-align: center;
-            backdrop-filter: blur(2px);
         }
         .card.full-art .fa-name {
-            font-family: 'Merriweather', Georgia, serif;
+            font-family: 'Merriweather Sans', sans-serif;
             font-size: 0.55em;
-            font-weight: 700;
-            color: #222;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -824,14 +824,15 @@
             border: 1px solid rgba(255,255,255,0.3);
         }
         .card.full-art .fa-type {
-            font-family: 'Merriweather', Georgia, serif;
+            font-family: 'Quicksand', sans-serif;
             font-size: 0.35em;
+            font-weight: 500;
             color: #555;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         .card.full-art .fa-abilities {
-            font-family: 'Merriweather', Georgia, serif;
+            font-family: 'Quicksand', sans-serif;
             font-size: 0.4em;
             font-weight: 700;
             color: #b8860b;
