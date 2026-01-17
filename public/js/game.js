@@ -48,22 +48,26 @@ async function initCombatAnimations() {
 }
 
 function queueAnimation(type, data) {
-    console.log('[Queue] Adding:', type, 'isAnimating:', isAnimating, 'queueLength:', animationQueue.length);
+    console.log('[Queue] Adding:', type, 'isAnimating:', isAnimating, 'queueLength:', animationQueue.length, 'currentQueue:', animationQueue.map(a => a.type));
     animationQueue.push({ type, data });
     if (!isAnimating) {
+        console.log('[Queue] Starting queue processing for:', type);
         processAnimationQueue();
+    } else {
+        console.log('[Queue] Animation in progress, queued:', type, 'will be processed after current');
     }
 }
 
 async function processAnimationQueue() {
-    if (animationQueue.length === 0) {
-        console.log('[Queue] Empty, stopping. isAnimating was:', isAnimating);
-        isAnimating = false;
-        return;
-    }
+    try {
+        if (animationQueue.length === 0) {
+            console.log('[Queue] Empty, stopping. isAnimating was:', isAnimating);
+            isAnimating = false;
+            return;
+        }
 
-    isAnimating = true;
-    console.log('[Queue] Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
+        isAnimating = true;
+        console.log('[Queue] Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
 
     // Regrouper les animations de mort consécutives en batch
     if (animationQueue[0].type === 'death') {
@@ -125,10 +129,21 @@ async function processAnimationQueue() {
     }
 
     // Attendre le délai
+    console.log('[Queue] Waiting delay:', delay, 'for:', type);
     await new Promise(resolve => setTimeout(resolve, delay));
 
     // Continuer la file
+    console.log('[Queue] Continuing to next, remaining:', animationQueue.length);
     processAnimationQueue();
+    } catch (globalError) {
+        console.error('[Queue] GLOBAL ERROR in processAnimationQueue:', globalError);
+        isAnimating = false;
+        // Essayer de continuer avec le reste de la queue
+        if (animationQueue.length > 0) {
+            console.log('[Queue] Attempting recovery, remaining:', animationQueue.length);
+            setTimeout(() => processAnimationQueue(), 100);
+        }
+    }
 }
 
 async function executeAnimationAsync(type, data) {
@@ -312,7 +327,7 @@ async function handleOnDeathDamage(data) {
 
 async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
-    console.log('[Zdejebel] Animation triggered for', owner, 'damage:', data.damage);
+    console.log('[Zdejebel] START - owner:', owner, 'damage:', data.damage, 'timestamp:', Date.now());
 
     // Récupérer la position du héros ciblé
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
@@ -713,22 +728,24 @@ function animateDeath(data) {
  * Animation de défausse depuis la main (désintégration sur place)
  */
 async function animateDiscard(data) {
-    console.log('[Discard] Starting animation for', data);
+    console.log('[Discard] START - data:', JSON.stringify(data));
     const owner = data.player === myNum ? 'me' : 'opp';
     const handEl = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
     if (!handEl) {
-        console.log('[Discard] No hand element found');
+        console.log('[Discard] END - No hand element found for owner:', owner);
         return;
     }
 
     const cards = handEl.querySelectorAll(owner === 'me' ? '.card' : '.opp-card-back');
+    console.log('[Discard] Found', cards.length, 'cards in hand, looking for index', data.handIndex);
     const cardEl = cards[data.handIndex];
     if (!cardEl) {
-        console.log('[Discard] No card at index', data.handIndex, 'cards count:', cards.length);
+        console.log('[Discard] END - No card at index', data.handIndex, '- hand may have been updated by render()');
         return;
     }
 
     const rect = cardEl.getBoundingClientRect();
+    console.log('[Discard] Card found at', rect.left, rect.top);
 
     // Créer un clone pour l'animation
     const clone = cardEl.cloneNode(true);
@@ -750,16 +767,18 @@ async function animateDiscard(data) {
 
     // Animation de désintégration avec timeout de sécurité
     let timeoutId;
+    console.log('[Discard] Starting disintegration animation');
     try {
         await Promise.race([
             animateDisintegration(clone, owner),
             new Promise(resolve => {
                 timeoutId = setTimeout(() => {
-                    console.log('[Discard] Timeout reached, forcing completion');
+                    console.log('[Discard] TIMEOUT reached after 1.5s, forcing completion');
                     resolve();
                 }, 1500); // Timeout 1.5s max
             })
         ]);
+        console.log('[Discard] Disintegration finished normally');
     } catch (e) {
         console.error('[Discard] Animation error:', e);
     } finally {
@@ -767,9 +786,10 @@ async function animateDiscard(data) {
         // Toujours nettoyer le clone
         if (clone.parentNode) {
             clone.remove();
+            console.log('[Discard] Clone removed');
         }
     }
-    console.log('[Discard] Animation completed');
+    console.log('[Discard] END - Animation completed');
 }
 
 /**
@@ -909,12 +929,14 @@ async function animateDisintegration(cardEl, owner) {
 
         // Sécurité : forcer la fin après maxDuration
         const safetyTimeout = setTimeout(() => {
+            console.log('[Disintegration] Safety timeout triggered');
             cancelled = true;
             cleanup();
             resolve();
         }, maxDuration);
 
         function cleanup() {
+            console.log('[Disintegration] Cleanup - removing', particles.length, 'particles');
             for (const p of particles) {
                 if (p.el.parentNode) p.el.remove();
             }
