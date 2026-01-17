@@ -2265,11 +2265,11 @@ function makeCard(card, inHand) {
             <div class="arena-title"><div class="arena-name">${card.name}</div></div>
             ${creatureTypeIcon ? `<div class="arena-creature-type"><img src="/css/${creatureTypeIcon}" alt="${card.creatureType}"></div>` : ''}
             <div class="arena-text-zone">
+                ${rarityIcon ? `<div class="arena-rarity"><img src="/css/${rarityIcon}" alt="${card.rarity}"></div>` : ''}
                 <div class="arena-type">Créature - ${combatTypeText}</div>
                 ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
             </div>
-            ${rarityIcon ? `<div class="arena-rarity"><img src="/css/${rarityIcon}" alt="${card.rarity}"></div>` : ''}
             ${editionIcon ? `<div class="arena-edition"><img src="/css/${editionIcon}" alt="Edition ${card.edition}"></div>` : ''}
             <div class="arena-mana">${card.cost}</div>
             <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
