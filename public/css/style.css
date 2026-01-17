@@ -387,8 +387,8 @@
             margin-top: 8px;
         }
         .grave-tooltip {
-            bottom: 100%;
-            margin-bottom: 8px;
+            top: 100%;
+            margin-top: 8px;
         }
         .deck-box:hover .deck-tooltip,
         .grave-box:hover .grave-tooltip {
@@ -1056,12 +1056,13 @@
             z-index: 10;
             background: rgba(255, 255, 255, 0.6);
             border-radius: 50%;
-            padding: 3px;
-            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .card.arena-style .arena-creature-type img {
-            width: 100%;
-            height: 100%;
+            width: 12px;
+            height: 12px;
             object-fit: contain;
         }
 
@@ -1082,13 +1083,14 @@
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
         }
 
-        /* Icône de rareté - collée à droite de la zone de texte */
+        /* Icône de rareté - centré en haut de la zone de texte */
         .card.arena-style .arena-rarity {
             position: absolute;
-            bottom: 22px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
+            bottom: 48px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 14px;
+            height: 14px;
             z-index: 11;
         }
         .card.arena-style .arena-rarity img {
