@@ -625,6 +625,169 @@ class CombatVFXSystem {
         return effect;
     }
 
+    // ==================== EFFET DE SLASH (ZDEJEBEL) ====================
+
+    /**
+     * Effet de slash démoniaque - griffures rouges sang
+     * Pour la capacité de Zdejebel
+     */
+    createSlashEffect(x, y, damage) {
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 800,
+        };
+
+        // Couleurs démoniaques
+        const bloodRed = 0xCC0000;
+        const darkRed = 0x660000;
+        const crimson = 0xFF1A1A;
+
+        // Flash rouge initial
+        const flash = new PIXI.Graphics();
+        flash.circle(0, 0, 80);
+        flash.fill({ color: crimson, alpha: 0.6 });
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        // Créer 3 griffures diagonales
+        const slashes = [];
+        const slashData = [
+            { offsetX: -25, angle: -0.3, length: 120 },
+            { offsetX: 0, angle: 0, length: 140 },
+            { offsetX: 25, angle: 0.3, length: 120 },
+        ];
+
+        slashData.forEach((data, i) => {
+            const slash = new PIXI.Graphics();
+            slash.slashData = { ...data, index: i, delay: i * 0.08 };
+            effectContainer.addChild(slash);
+            slashes.push(slash);
+        });
+
+        // Particules de sang
+        const bloodParticles = [];
+        for (let i = 0; i < 20; i++) {
+            const particle = new PIXI.Graphics();
+            const size = 2 + Math.random() * 5;
+            particle.circle(0, 0, size);
+            particle.fill({ color: i % 2 === 0 ? bloodRed : darkRed });
+            particle.alpha = 0;
+            particle.bloodData = {
+                startX: (Math.random() - 0.5) * 60,
+                startY: (Math.random() - 0.5) * 80,
+                vx: (Math.random() - 0.5) * 150,
+                vy: 50 + Math.random() * 100, // Tombe vers le bas
+                delay: Math.random() * 0.3,
+                gravity: 200,
+            };
+            effectContainer.addChild(particle);
+            bloodParticles.push(particle);
+        }
+
+        // Aura démoniaque
+        const aura = new PIXI.Graphics();
+        effectContainer.addChildAt(aura, 0);
+
+        const animate = () => {
+            const elapsed = performance.now() - effect.startTime;
+            const progress = Math.min(elapsed / effect.duration, 1);
+
+            // Flash initial
+            if (progress < 0.15) {
+                flash.alpha = (progress / 0.15) * 0.8;
+                flash.scale.set(0.5 + (progress / 0.15) * 0.5);
+            } else if (progress < 0.4) {
+                flash.alpha = 0.8 * (1 - (progress - 0.15) / 0.25);
+            } else {
+                flash.alpha = 0;
+            }
+
+            // Aura démoniaque pulsante
+            aura.clear();
+            if (progress < 0.7) {
+                const auraProgress = progress / 0.7;
+                const auraRadius = 60 + auraProgress * 40;
+                const auraAlpha = (1 - auraProgress) * 0.4;
+                aura.circle(0, 0, auraRadius);
+                aura.fill({ color: darkRed, alpha: auraAlpha });
+            }
+
+            // Griffures
+            slashes.forEach(slash => {
+                slash.clear();
+                const data = slash.slashData;
+                const slashProgress = Math.max(0, Math.min((progress - data.delay) / 0.4, 1));
+
+                if (slashProgress > 0) {
+                    // La griffure se dessine progressivement
+                    const drawLength = data.length * slashProgress;
+                    const startY = -data.length / 2;
+                    const endY = startY + drawLength;
+
+                    // Largeur qui s'amincit
+                    const width = 8 * (1 - slashProgress * 0.3);
+
+                    // Dessiner la griffure
+                    slash.moveTo(data.offsetX - width / 2, startY);
+                    slash.lineTo(data.offsetX + width / 2, startY);
+                    slash.lineTo(data.offsetX + width / 3, endY);
+                    slash.lineTo(data.offsetX - width / 3, endY);
+                    slash.closePath();
+
+                    // Couleur avec dégradé simulé
+                    const alpha = progress < 0.6 ? 1 : (1 - (progress - 0.6) / 0.4);
+                    slash.fill({ color: crimson, alpha: alpha * 0.9 });
+
+                    // Bordure plus sombre
+                    slash.stroke({ width: 2, color: bloodRed, alpha: alpha * 0.7 });
+
+                    slash.rotation = data.angle;
+                }
+            });
+
+            // Particules de sang
+            bloodParticles.forEach(particle => {
+                const data = particle.bloodData;
+                const particleProgress = Math.max(0, (progress - data.delay) / (1 - data.delay));
+
+                if (particleProgress > 0 && particleProgress < 1) {
+                    const t = particleProgress;
+                    particle.x = data.startX + data.vx * t;
+                    particle.y = data.startY + data.vy * t + 0.5 * data.gravity * t * t;
+                    particle.alpha = (1 - particleProgress) * 0.8;
+                    particle.scale.set(1 - particleProgress * 0.5);
+                }
+            });
+
+            if (progress >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        this.activeEffects.push(effect);
+
+        // Afficher les dégâts
+        if (damage !== undefined && damage > 0) {
+            setTimeout(() => {
+                this.showDamageNumber(x, y, damage);
+            }, 200);
+        }
+
+        // Screen shake intense
+        this.screenShake(8, 200);
+
+        return effect;
+    }
+
     // ==================== SCREEN SHAKE ====================
 
     screenShake(intensity = 5, duration = 100) {

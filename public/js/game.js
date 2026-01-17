@@ -299,35 +299,47 @@ async function handleOnDeathDamage(data) {
 
 async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
+    console.log('[Zdejebel] Animation triggered for', owner, 'damage:', data.damage);
 
-    // Afficher un effet visuel pour la capacité Zdejebel
+    // Récupérer la position du héros ciblé
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
+
     if (heroCard) {
-        // Créer un effet démoniaque
-        const zdejebelEffect = document.createElement('div');
-        zdejebelEffect.className = 'zdejebel-effect';
-        zdejebelEffect.innerHTML = `<span class="zdejebel-icon">😈</span><span class="zdejebel-text">-${data.damage}</span>`;
-        heroCard.appendChild(zdejebelEffect);
-
-        // Animer l'effet
-        setTimeout(() => zdejebelEffect.classList.add('active'), 50);
-        setTimeout(() => zdejebelEffect.remove(), 1500);
-
         // Animation de secousse sur le héros
         heroCard.classList.add('hit');
         setTimeout(() => heroCard.classList.remove('hit'), 500);
-    }
 
-    // Utiliser l'animation de dégâts sur héros existante (affiche le chiffre de dégâts)
-    if (typeof CombatAnimations !== 'undefined') {
-        await CombatAnimations.animateHeroHit({
-            owner: owner,
-            amount: data.damage
-        });
+        // Utiliser l'effet slash PixiJS si disponible
+        if (typeof CombatVFX !== 'undefined' && CombatVFX.initialized && CombatVFX.container) {
+            try {
+                const rect = heroCard.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                console.log('[Zdejebel] Creating slash effect at', x, y);
+                CombatVFX.createSlashEffect(x, y, data.damage);
+            } catch (e) {
+                console.error('[Zdejebel] Slash effect error:', e);
+                // Fallback en cas d'erreur
+                if (typeof CombatAnimations !== 'undefined') {
+                    await CombatAnimations.animateHeroHit({ owner, amount: data.damage });
+                }
+            }
+        } else {
+            console.log('[Zdejebel] Using fallback animation (VFX not ready)');
+            // Fallback : utiliser l'animation de dégâts standard
+            if (typeof CombatAnimations !== 'undefined') {
+                await CombatAnimations.animateHeroHit({
+                    owner: owner,
+                    amount: data.damage
+                });
+            }
+        }
+    } else {
+        console.warn('[Zdejebel] Hero card not found for', owner);
     }
 
     // Attendre que l'animation soit visible
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 800));
 }
 
 async function handlePixiSpellDamage(data) {
@@ -1412,11 +1424,17 @@ function setupHeroes() {
 
     heroMe.onmouseenter = () => showHeroPreview(meHero, state.me.hp);
     heroMe.onmouseleave = hideCardPreview;
-    heroMe.onclick = () => showHeroDetail(meHero, state.me.hp);
+    heroMe.oncontextmenu = (e) => {
+        e.preventDefault();
+        showHeroDetail(meHero, state.me.hp);
+    };
 
     heroOpp.onmouseenter = () => showHeroPreview(oppHero, state.opponent.hp);
     heroOpp.onmouseleave = hideCardPreview;
-    heroOpp.onclick = () => showHeroDetail(oppHero, state.opponent.hp);
+    heroOpp.oncontextmenu = (e) => {
+        e.preventDefault();
+        showHeroDetail(oppHero, state.opponent.hp);
+    };
 
     // Drag/drop sur les héros pour les sorts
     setupHeroDragDrop(heroMe, 'me');
