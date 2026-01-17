@@ -33,11 +33,11 @@ const CardDB = {
         { id: 'griffin', name: 'Griffon', atk: 4, hp: 4, cost: 4, abilities: ['fly'], type: 'creature', icon: '🦁' },
         { id: 'werewolf', name: 'Loup-garou', atk: 3, hp: 5, cost: 4, abilities: ['power', 'haste'], type: 'creature', icon: '🌕' },
         { id: 'cannon', name: 'Canon', atk: 5, hp: 3, cost: 4, abilities: ['shooter'], type: 'creature', icon: '💣' },
-        { id: 'reaper', name: 'Faucheur', atk: 3, hp: 4, cost: 4, abilities: ['cleave'], type: 'creature', icon: '⚰️' },
+        { id: 'reaper', name: 'Faucheur', atk: 3, hp: 4, cost: 4, abilities: ['cleave'], cleaveX: 2, type: 'creature', icon: '⚰️' },
         
         // === COÛT 5+ (4 créatures) ===
         { id: 'dragon', name: 'Dragon', atk: 5, hp: 5, cost: 5, abilities: ['fly', 'trample'], type: 'creature', icon: '🐉' },
-        { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 5, abilities: ['fly', 'cleave', 'trample'], type: 'creature', image: 'dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 }, titleColor: '#4d1823ba' },
+        { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 5, abilities: ['fly', 'cleave', 'trample'], cleaveX: 3, type: 'creature', image: 'dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 }, titleColor: '#4d1823ba' },
         { id: 'hydra', name: 'Hydre', atk: 3, hp: 7, cost: 5, abilities: ['power'], type: 'creature', icon: '🐲' },
         { id: 'titan', name: 'Titan', atk: 6, hp: 6, cost: 6, abilities: ['trample', 'power'], type: 'creature', icon: '🗿' }
     ],

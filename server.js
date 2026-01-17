@@ -1114,7 +1114,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 const cleaveTargets = [];
                 const targetOwner = room.gameState.players[atkData.targetPlayer];
                 const adjacentRows = [atkData.targetRow - 1, atkData.targetRow + 1].filter(r => r >= 0 && r < 4);
-                const damage = attacker.atk;
+                const damage = attacker.cleaveX || attacker.atk; // Utiliser cleaveX si défini, sinon atk
 
                 for (const adjRow of adjacentRows) {
                     const adjTarget = targetOwner.field[adjRow][atkData.targetCol];
@@ -1126,7 +1126,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
                         }
 
                         adjTarget.currentHp -= damage;
-                        log(`⛏️ Clivant: ${attacker.name} → ${adjTarget.name} (-${damage})`, 'damage');
+                        log(`⛏️ Clivant ${damage}: ${attacker.name} → ${adjTarget.name} (-${damage})`, 'damage');
                         emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: adjRow, col: atkData.targetCol, amount: damage });
 
                         if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
@@ -1322,6 +1322,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
             if (attackerCard.abilities.includes('cleave')) {
                 const targetOwner = room.gameState.players[atk.targetPlayer];
                 const adjacentRows = [atk.targetRow - 1, atk.targetRow + 1].filter(r => r >= 0 && r < 4);
+                const cleaveDamage = attackerCard.cleaveX || attackerCard.atk; // Utiliser cleaveX si défini
 
                 for (const adjRow of adjacentRows) {
                     const adjTarget = targetOwner.field[adjRow][atk.targetCol];
@@ -1333,9 +1334,9 @@ async function processCombatSlot(room, row, col, log, sleep) {
                             continue; // Ne peut pas toucher une créature volante
                         }
 
-                        adjTarget.currentHp -= damage;
-                        log(`⛏️ Clivant: ${attackerCard.name} → ${adjTarget.name} (-${damage})`, 'damage');
-                        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: adjRow, col: atk.targetCol, amount: damage });
+                        adjTarget.currentHp -= cleaveDamage;
+                        log(`⛏️ Clivant ${cleaveDamage}: ${attackerCard.name} → ${adjTarget.name} (-${cleaveDamage})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: adjRow, col: atk.targetCol, amount: cleaveDamage });
 
                         // Les cibles adjacentes ne ripostent PAS mais peuvent gagner Power
                         if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {

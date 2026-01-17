@@ -846,9 +846,12 @@ function createCardElementForAnimation(card) {
 
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
         };
-        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        const abilitiesText = (card.abilities || []).map(a => {
+            if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            return abilityNames[a] || a;
+        }).join(', ');
 
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
@@ -1979,7 +1982,7 @@ const ABILITY_DESCRIPTIONS = {
     trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
     initiative: { name: 'Initiative', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
     power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' },
-    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige également ses dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' }
+    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' }
 };
 
 function showCardPreview(card, e) {
@@ -2130,15 +2133,20 @@ function renderHand(hand, energy) {
         const el = makeCard(card, true);
         el.dataset.idx = i;
         el.dataset.cost = card.cost;
-        
+
+        // Marquer comme jouable si assez de mana
+        if (card.cost <= energy) {
+            el.classList.add('playable');
+        }
+
         // Z-index incrémental pour éviter les saccades au hover
         el.style.zIndex = i + 1;
-        
+
         // Cacher si animation de pioche en attente
         if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i)) {
             el.style.visibility = 'hidden';
         }
-        
+
         // Toujours draggable
         el.draggable = true;
         
@@ -2237,12 +2245,15 @@ function makeCard(card, inHand) {
         // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
             haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
         };
         // Filtrer shooter et fly des capacités affichées
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
-            .map(a => commonAbilityNames[a] || a);
+            .map(a => {
+                if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+                return commonAbilityNames[a] || a;
+            });
         const abilitiesText = commonAbilities.join(', ');
 
         let combatTypeText = 'Mêlée';
@@ -2321,11 +2332,14 @@ function makeCard(card, inHand) {
         // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
             haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
         };
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
-            .map(a => commonAbilityNames[a] || a);
+            .map(a => {
+                if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+                return commonAbilityNames[a] || a;
+            });
         const abilitiesText = commonAbilities.join(', ');
 
         let combatTypeText = 'Mêlée';
@@ -2351,9 +2365,12 @@ function makeCard(card, inHand) {
 
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
         };
-        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        const abilitiesText = (card.abilities || []).map(a => {
+            if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            return abilityNames[a] || a;
+        }).join(', ');
 
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
