@@ -514,6 +514,8 @@ async function startResolution(room) {
         const player = room.gameState.players[playerNum];
         const opponent = room.gameState.players[playerNum === 1 ? 2 : 1];
 
+        console.log(`[Zdejebel Check] Player ${playerNum} hero:`, player.hero?.id, 'opponent.heroAttackedThisTurn:', opponent.heroAttackedThisTurn);
+
         if (player.hero && player.hero.id === 'zdejebel' && opponent.heroAttackedThisTurn) {
             opponent.hp -= 1;
             log(`😈 ${player.heroName}: capacité Zdejebel - ${opponent.heroName} subit 1 blessure!`, 'damage');

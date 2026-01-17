@@ -645,6 +645,7 @@ function initSocket() {
 
 function handleAnimation(data) {
     const { type } = data;
+    console.log('[Animation] Received:', type, data);
 
     // Les animations de combat utilisent la file d'attente
     const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn', 'zdejebel'];
