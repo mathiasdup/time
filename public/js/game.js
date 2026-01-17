@@ -2222,19 +2222,19 @@ function makeCard(card, inHand) {
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
+        // Type de créature (mort-vivant, humain, dragon...)
+        const creatureTypeNames = {
+            undead: 'Mort-vivant',
+            human: 'Humain',
+            dragon: 'Dragon'
+        };
+        const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
+
         // Capacité spéciale/unique si présente
         let specialAbility = '';
         if (card.onHeroHit === 'draw') {
             specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
         }
-
-        // Icône du type de créature
-        const creatureTypeIcons = {
-            undead: 'type_mortvivant.png',
-            human: 'type_humain.png',
-            dragon: 'type_dragon.png'
-        };
-        const creatureTypeIcon = card.creatureType ? creatureTypeIcons[card.creatureType] : null;
 
         // Icône d'édition
         const editionIcon = card.edition ? `edition_${card.edition}.png` : null;
@@ -2249,12 +2249,17 @@ function makeCard(card, inHand) {
         };
         const rarityIcon = card.rarity ? rarityIcons[card.rarity] : null;
 
+        // Ligne de type complète
+        let typeLineText = `Créature - ${combatTypeText}`;
+        if (creatureTypeName) {
+            typeLineText += ` - ${creatureTypeName}`;
+        }
+
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
             el.innerHTML = `
                 <div class="arena-title"><div class="arena-name">${card.name}</div></div>
-                ${creatureTypeIcon ? `<div class="arena-creature-type"><img src="/css/${creatureTypeIcon}" alt="${card.creatureType}"></div>` : ''}
                 <div class="arena-mana">${card.cost}</div>
                 <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
             return el;
@@ -2263,10 +2268,9 @@ function makeCard(card, inHand) {
         // Version complète (main, hover, cimetière)
         el.innerHTML = `
             <div class="arena-title"><div class="arena-name">${card.name}</div></div>
-            ${creatureTypeIcon ? `<div class="arena-creature-type"><img src="/css/${creatureTypeIcon}" alt="${card.creatureType}"></div>` : ''}
             <div class="arena-text-zone">
                 ${rarityIcon ? `<div class="arena-rarity"><img src="/css/${rarityIcon}" alt="${card.rarity}"></div>` : ''}
-                <div class="arena-type">Créature - ${combatTypeText}</div>
+                <div class="arena-type">${typeLineText}</div>
                 ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
             </div>
