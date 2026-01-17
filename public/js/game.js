@@ -57,13 +57,13 @@ function queueAnimation(type, data) {
 
 async function processAnimationQueue() {
     if (animationQueue.length === 0) {
-        console.log('[Queue] Empty, stopping');
+        console.log('[Queue] Empty, stopping. isAnimating was:', isAnimating);
         isAnimating = false;
         return;
     }
 
     isAnimating = true;
-    console.log('[Queue] Processing, queueLength:', animationQueue.length, 'next:', animationQueue[0]?.type);
+    console.log('[Queue] Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
 
     // Regrouper les animations de mort consécutives en batch
     if (animationQueue[0].type === 'death') {
@@ -112,9 +112,13 @@ async function processAnimationQueue() {
     const { type, data } = animationQueue.shift();
     const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
 
-    // Exécuter l'animation
+    // Exécuter l'animation avec timeout de sécurité
     try {
-        await executeAnimationAsync(type, data);
+        const animationPromise = executeAnimationAsync(type, data);
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
+        );
+        await Promise.race([animationPromise, timeoutPromise]);
         console.log('[Queue] Animation completed:', type);
     } catch (e) {
         console.error('[Queue] Animation error:', type, e);
@@ -745,14 +749,25 @@ async function animateDiscard(data) {
     cardEl.style.visibility = 'hidden';
 
     // Animation de désintégration avec timeout de sécurité
+    let timeoutId;
     try {
         await Promise.race([
             animateDisintegration(clone, owner),
-            new Promise(resolve => setTimeout(resolve, 2000)) // Timeout 2s max
+            new Promise(resolve => {
+                timeoutId = setTimeout(() => {
+                    console.log('[Discard] Timeout reached, forcing completion');
+                    resolve();
+                }, 1500); // Timeout 1.5s max
+            })
         ]);
     } catch (e) {
         console.error('[Discard] Animation error:', e);
-        clone.remove();
+    } finally {
+        clearTimeout(timeoutId);
+        // Toujours nettoyer le clone
+        if (clone.parentNode) {
+            clone.remove();
+        }
     }
     console.log('[Discard] Animation completed');
 }
@@ -804,20 +819,32 @@ async function animateBurn(data) {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     // Phase 2: Désintégration avec timeout de sécurité
+    let timeoutId;
     try {
         await Promise.race([
             animateDisintegration(cardEl, owner),
-            new Promise(resolve => setTimeout(resolve, 2000)) // Timeout 2s max
+            new Promise(resolve => {
+                timeoutId = setTimeout(() => {
+                    console.log('[Burn] Timeout reached, forcing completion');
+                    resolve();
+                }, 1500); // Timeout 1.5s max
+            })
         ]);
     } catch (e) {
         console.error('[Burn] Animation error:', e);
-        cardEl.remove();
+    } finally {
+        clearTimeout(timeoutId);
+        // Toujours nettoyer la carte
+        if (cardEl.parentNode) {
+            cardEl.remove();
+        }
     }
     console.log('[Burn] Animation completed');
 }
 
 /**
  * Animation de désintégration avec particules vers le cimetière
+ * Retourne une promesse qui se résout quand l'animation est terminée
  */
 async function animateDisintegration(cardEl, owner) {
     const rect = cardEl.getBoundingClientRect();
@@ -874,11 +901,29 @@ async function animateDisintegration(cardEl, owner) {
 
     // Animer les particules vers le cimetière
     const duration = 600;
+    const maxDuration = 1000; // Durée max absolue pour éviter les blocages
 
     await new Promise(resolve => {
         const startTime = performance.now();
+        let cancelled = false;
+
+        // Sécurité : forcer la fin après maxDuration
+        const safetyTimeout = setTimeout(() => {
+            cancelled = true;
+            cleanup();
+            resolve();
+        }, maxDuration);
+
+        function cleanup() {
+            for (const p of particles) {
+                if (p.el.parentNode) p.el.remove();
+            }
+            if (cardEl.parentNode) cardEl.remove();
+        }
 
         function animate() {
+            if (cancelled) return;
+
             const elapsed = performance.now() - startTime;
             let allDone = true;
 
@@ -910,11 +955,9 @@ async function animateDisintegration(cardEl, owner) {
             if (!allDone) {
                 requestAnimationFrame(animate);
             } else {
+                clearTimeout(safetyTimeout);
                 // Nettoyer
-                for (const p of particles) {
-                    p.el.remove();
-                }
-                cardEl.remove();
+                cleanup();
                 resolve();
             }
         }
@@ -2200,7 +2243,7 @@ function showHeroPreview(hero, hp) {
 
     hideCardPreview();
     previewEl = document.createElement('div');
-    previewEl.className = 'hero-preview card-preview';
+    previewEl.className = 'hero-preview'; // Classe unique sans card-preview
 
     if (hero && hero.image) {
         previewEl.style.backgroundImage = `url('/cards/${hero.image}')`;
@@ -2223,9 +2266,13 @@ function showHeroPreview(hero, hp) {
         `;
     }
     document.body.appendChild(previewEl);
+    console.log('[HeroPreview] Created element:', previewEl, 'hero:', hero?.name);
     const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
-        if (el && el.parentNode) el.classList.add('visible');
+        if (el && el.parentNode) {
+            el.classList.add('visible');
+            console.log('[HeroPreview] Added visible class');
+        }
     });
 }
 
