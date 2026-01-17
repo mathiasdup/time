@@ -1259,7 +1259,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     if (attackerOwner.hand.length < 10) {
                         attackerOwner.hand.push(drawnCard);
                         log(`  🎴 ${attackerCard.name} déclenche: ${attackerOwner.heroName} pioche ${drawnCard.name}`, 'action');
-                        emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                        emitAnimation(room, 'draw', { cards: [{ player: atk.attackerPlayer, card: drawnCard, handIndex: attackerOwner.hand.length - 1 }] });
                     } else {
                         addToGraveyard(attackerOwner, drawnCard);
                         log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
@@ -1872,7 +1872,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                                 if (attackerOwner1.hand.length < 10) {
                                     attackerOwner1.hand.push(drawnCard);
                                     log(`  🎴 ${attackerCard1.name} déclenche: pioche ${drawnCard.name}`, 'action');
-                                    emitAnimation(room, 'draw', { player: atk1.attackerPlayer, count: 1 });
+                                    emitAnimation(room, 'draw', { cards: [{ player: atk1.attackerPlayer, card: drawnCard, handIndex: attackerOwner1.hand.length - 1 }] });
                                 } else {
                                     addToGraveyard(attackerOwner1, drawnCard);
                                     log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
@@ -1913,7 +1913,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                                 if (attackerOwner2.hand.length < 10) {
                                     attackerOwner2.hand.push(drawnCard);
                                     log(`  🎴 ${attackerCard2.name} déclenche: pioche ${drawnCard.name}`, 'action');
-                                    emitAnimation(room, 'draw', { player: atk2.attackerPlayer, count: 1 });
+                                    emitAnimation(room, 'draw', { cards: [{ player: atk2.attackerPlayer, card: drawnCard, handIndex: attackerOwner2.hand.length - 1 }] });
                                 } else {
                                     addToGraveyard(attackerOwner2, drawnCard);
                                     log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
@@ -2017,7 +2017,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         if (attackerOwner.hand.length < 10) {
                             attackerOwner.hand.push(drawnCard);
                             log(`  🎴 ${attackerCard.name} déclenche: pioche ${drawnCard.name}`, 'action');
-                            emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                            emitAnimation(room, 'draw', { cards: [{ player: atk.attackerPlayer, card: drawnCard, handIndex: attackerOwner.hand.length - 1 }] });
                         } else {
                             addToGraveyard(attackerOwner, drawnCard);
                             log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
@@ -2306,7 +2306,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
                     if (attackerOwner.hand.length < 10) {
                         attackerOwner.hand.push(drawnCard);
                         log(`  🎴 ${attackerCard.name} déclenche: pioche ${drawnCard.name}`, 'action');
-                        emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                        emitAnimation(room, 'draw', { cards: [{ player: atk.attackerPlayer, card: drawnCard, handIndex: attackerOwner.hand.length - 1 }] });
                     } else {
                         addToGraveyard(attackerOwner, drawnCard);
                         log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
