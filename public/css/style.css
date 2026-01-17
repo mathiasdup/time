@@ -1066,12 +1066,12 @@
         /* Icône d'édition - en bas au centre avec cercle noir derrière */
         .card.arena-style .arena-edition {
             position: absolute;
-            bottom: 8px;
+            bottom: 1px;
             left: 50%;
             transform: translateX(-50%);
-            width: 14px;
-            height: 14px;
-            background: rgba(0, 0, 0, 0.5);
+            width: 11px;
+            height: 11px;
+            background: rgba(0, 0, 0, 0.45);
             border-radius: 50%;
             display: flex;
             align-items: center;
