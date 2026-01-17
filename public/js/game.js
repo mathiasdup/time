@@ -115,6 +115,7 @@ async function processAnimationQueue() {
 
     const { type, data } = animationQueue.shift();
     const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
+    console.log('[Queue] Shifted:', type, '- remaining after shift:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
 
     // Exécuter l'animation avec timeout de sécurité
     try {
@@ -123,17 +124,17 @@ async function processAnimationQueue() {
             setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
         );
         await Promise.race([animationPromise, timeoutPromise]);
-        console.log('[Queue] Animation completed:', type);
+        console.log('[Queue] Animation completed:', type, '- queue now:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
     } catch (e) {
         console.error('[Queue] Animation error:', type, e);
     }
 
     // Attendre le délai
-    console.log('[Queue] Waiting delay:', delay, 'for:', type);
+    console.log('[Queue] Waiting delay:', delay, 'for:', type, '- queue before delay:', animationQueue.map(a => a.type));
     await new Promise(resolve => setTimeout(resolve, delay));
 
     // Continuer la file
-    console.log('[Queue] Continuing to next, remaining:', animationQueue.length);
+    console.log('[Queue] After delay, continuing to next, remaining:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
     processAnimationQueue();
     } catch (globalError) {
         console.error('[Queue] GLOBAL ERROR in processAnimationQueue:', globalError);
