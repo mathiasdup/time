@@ -682,7 +682,7 @@
         }
         .card.dragging { cursor: grabbing; }
         .card-cost { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; background: radial-gradient(circle at 30% 30%, #4fc3f7, #0277bd); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; border: 2px solid #81d4fa; z-index: 5; }
-        .card-cost.discounted { background: radial-gradient(circle at 30% 30%, #4caf50, #1b5e20); border-color: #81c784; box-shadow: 0 0 8px rgba(76, 175, 80, 0.6); }
+        .card-cost.discounted { color: #4caf50; text-shadow: 0 0 6px #1b5e20, 0 0 10px rgba(76, 175, 80, 0.8); }
         .card-type-icon { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7em; z-index: 5; }
         .card-type-icon.spell-icon { background: rgba(155,89,182,0.9); border: 2px solid #bb8fce; }
         .card-type-icon.trap-icon { background: rgba(231,76,60,0.9); border: 2px solid #ec7063; }
@@ -1126,11 +1126,10 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
             z-index: 10;
         }
-        /* Mana réduit par Hyrule */
+        /* Mana réduit par Hyrule - chiffre vert */
         .card.arena-style .arena-mana.discounted {
-            background: radial-gradient(circle at 30% 30%, #4caf50, #1b5e20);
-            border-color: #81c784;
-            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+            color: #4caf50;
+            text-shadow: 0 0 6px #1b5e20, 0 0 10px rgba(76, 175, 80, 0.8);
         }
 
         /* Stats - Pilule style Magic Arena */

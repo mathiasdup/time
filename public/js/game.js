@@ -1422,19 +1422,37 @@ function setupHeroes() {
     const heroMe = document.getElementById('hero-me');
     const heroOpp = document.getElementById('hero-opp');
 
-    heroMe.onmouseenter = () => showHeroPreview(meHero, state.me.hp);
-    heroMe.onmouseleave = hideCardPreview;
-    heroMe.oncontextmenu = (e) => {
-        e.preventDefault();
-        showHeroDetail(meHero, state.me.hp);
-    };
+    console.log('[setupHeroes] Setting up hero events', { heroMe, heroOpp, meHero, oppHero });
 
-    heroOpp.onmouseenter = () => showHeroPreview(oppHero, state.opponent.hp);
-    heroOpp.onmouseleave = hideCardPreview;
-    heroOpp.oncontextmenu = (e) => {
-        e.preventDefault();
-        showHeroDetail(oppHero, state.opponent.hp);
-    };
+    if (heroMe) {
+        heroMe.addEventListener('mouseenter', () => {
+            console.log('[Hero] mouseenter on heroMe');
+            const hero = window.heroData?.me || state?.me?.hero;
+            showHeroPreview(hero, state?.me?.hp);
+        });
+        heroMe.addEventListener('mouseleave', hideCardPreview);
+        heroMe.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            console.log('[Hero] contextmenu on heroMe');
+            const hero = window.heroData?.me || state?.me?.hero;
+            showHeroDetail(hero, state?.me?.hp);
+        });
+    }
+
+    if (heroOpp) {
+        heroOpp.addEventListener('mouseenter', () => {
+            console.log('[Hero] mouseenter on heroOpp');
+            const hero = window.heroData?.opp || state?.opponent?.hero;
+            showHeroPreview(hero, state?.opponent?.hp);
+        });
+        heroOpp.addEventListener('mouseleave', hideCardPreview);
+        heroOpp.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            console.log('[Hero] contextmenu on heroOpp');
+            const hero = window.heroData?.opp || state?.opponent?.hero;
+            showHeroDetail(hero, state?.opponent?.hp);
+        });
+    }
 
     // Drag/drop sur les héros pour les sorts
     setupHeroDragDrop(heroMe, 'me');
@@ -2133,6 +2151,13 @@ function showCardBackPreview() {
 }
 
 function showHeroPreview(hero, hp) {
+    console.log('[showHeroPreview] Called with', hero, hp);
+    if (!hero) {
+        console.warn('[showHeroPreview] No hero data, using window.heroData');
+        // Essayer de récupérer depuis heroData global
+        hero = window.heroData?.me || window.heroData?.opp;
+    }
+
     hideCardPreview();
     previewEl = document.createElement('div');
     previewEl.className = 'hero-preview card-preview';
@@ -2150,13 +2175,22 @@ function showHeroPreview(hero, hp) {
         `;
     }
     document.body.appendChild(previewEl);
+    console.log('[showHeroPreview] Preview element added to body', previewEl);
     requestAnimationFrame(() => {
         previewEl.classList.add('visible');
     });
 }
 
 function showHeroDetail(hero, hp) {
-    if (!hero) return;
+    console.log('[showHeroDetail] Called with', hero, hp);
+    if (!hero) {
+        console.warn('[showHeroDetail] No hero data, using window.heroData');
+        hero = window.heroData?.me || window.heroData?.opp;
+        if (!hero) {
+            console.error('[showHeroDetail] No hero data available!');
+            return;
+        }
+    }
 
     // Créer la modal de détail du héros (style arena comme les cartes)
     const modal = document.createElement('div');
