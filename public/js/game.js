@@ -2275,11 +2275,14 @@ function makeCard(card, inHand) {
             typeLineText += ` - ${creatureTypeName}`;
         }
 
+        // Style du titre (couleur personnalisée si définie)
+        const titleStyle = card.titleColor ? `style="background: ${card.titleColor}"` : '';
+
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
             el.innerHTML = `
-                <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                 <div class="arena-mana">${card.cost}</div>
                 <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
             return el;
@@ -2287,7 +2290,7 @@ function makeCard(card, inHand) {
 
         // Version complète (main, hover, cimetière)
         el.innerHTML = `
-            <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+            <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
             <div class="arena-text-zone">
                 <div class="arena-type">${typeLineText}</div>
                 ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}

@@ -985,13 +985,13 @@
             overflow: visible;
         }
 
-        /* Titre en haut */
+        /* Titre en haut - fond vert par défaut */
         .card.arena-style .arena-title {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            background: #4d1823ba;
+            background: #184d26ba;
             border-radius: 7.5px 7.5px 0px 0px;
             padding: 2px 2px;
             text-align: center;
@@ -1029,7 +1029,8 @@
         }
         .card.arena-style .arena-abilities {
             font-family: 'Quicksand', sans-serif;
-            font-size: 0.32em;
+            font-size: 0.28em;
+            font-style: italic;
             color: #000000;
             margin-top: 2px;
             text-align: left;

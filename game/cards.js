@@ -37,7 +37,7 @@ const CardDB = {
         
         // === COÛT 5+ (4 créatures) ===
         { id: 'dragon', name: 'Dragon', atk: 5, hp: 5, cost: 5, abilities: ['fly', 'trample'], type: 'creature', icon: '🐉' },
-        { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 5, abilities: ['fly', 'cleave', 'trample'], type: 'creature', image: 'dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 } },
+        { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 5, abilities: ['fly', 'cleave', 'trample'], type: 'creature', image: 'dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 }, titleColor: '#4d1823ba' },
         { id: 'hydra', name: 'Hydre', atk: 3, hp: 7, cost: 5, abilities: ['power'], type: 'creature', icon: '🐲' },
         { id: 'titan', name: 'Titan', atk: 6, hp: 6, cost: 6, abilities: ['trample', 'power'], type: 'creature', icon: '🗿' }
     ],
