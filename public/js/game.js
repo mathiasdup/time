@@ -310,7 +310,10 @@ async function animateZdejebelDamage(data) {
         setTimeout(() => heroCard.classList.remove('hit'), 500);
 
         // Utiliser l'effet slash PixiJS si disponible
-        if (typeof CombatVFX !== 'undefined' && CombatVFX.initialized && CombatVFX.container) {
+        const vfxReady = typeof CombatVFX !== 'undefined' && CombatVFX.initialized && CombatVFX.container;
+        console.log('[Zdejebel] VFX ready:', vfxReady, 'CombatVFX:', typeof CombatVFX, 'initialized:', CombatVFX?.initialized);
+
+        if (vfxReady) {
             try {
                 const rect = heroCard.getBoundingClientRect();
                 const x = rect.left + rect.width / 2;
@@ -319,20 +322,13 @@ async function animateZdejebelDamage(data) {
                 CombatVFX.createSlashEffect(x, y, data.damage);
             } catch (e) {
                 console.error('[Zdejebel] Slash effect error:', e);
-                // Fallback en cas d'erreur
-                if (typeof CombatAnimations !== 'undefined') {
-                    await CombatAnimations.animateHeroHit({ owner, amount: data.damage });
-                }
+                // Fallback en cas d'erreur - afficher les dégâts avec le système standard
+                showDamageNumber(heroCard, data.damage);
             }
         } else {
-            console.log('[Zdejebel] Using fallback animation (VFX not ready)');
-            // Fallback : utiliser l'animation de dégâts standard
-            if (typeof CombatAnimations !== 'undefined') {
-                await CombatAnimations.animateHeroHit({
-                    owner: owner,
-                    amount: data.damage
-                });
-            }
+            console.log('[Zdejebel] Using fallback animation');
+            // Fallback : afficher juste les dégâts
+            showDamageNumber(heroCard, data.damage);
         }
     } else {
         console.warn('[Zdejebel] Hero card not found for', owner);
@@ -340,6 +336,18 @@ async function animateZdejebelDamage(data) {
 
     // Attendre que l'animation soit visible
     await new Promise(r => setTimeout(r, 800));
+}
+
+// Fonction utilitaire pour afficher un nombre de dégâts sur un élément
+function showDamageNumber(element, damage) {
+    const rect = element.getBoundingClientRect();
+    const damageEl = document.createElement('div');
+    damageEl.className = 'damage-number';
+    damageEl.textContent = `-${damage}`;
+    damageEl.style.left = `${rect.left + rect.width / 2}px`;
+    damageEl.style.top = `${rect.top + rect.height / 2}px`;
+    document.body.appendChild(damageEl);
+    setTimeout(() => damageEl.remove(), 1000);
 }
 
 async function handlePixiSpellDamage(data) {
@@ -1418,48 +1426,60 @@ function setupHeroes() {
         document.getElementById('opp-hero-title').style.background = oppHero.titleColor;
     }
 
+    // Stocker les héros pour réutilisation (AVANT les event listeners)
+    window.heroData = { me: meHero, opp: oppHero };
+
     // Preview au survol des héros
     const heroMe = document.getElementById('hero-me');
     const heroOpp = document.getElementById('hero-opp');
 
-    console.log('[setupHeroes] Setting up hero events', { heroMe, heroOpp, meHero, oppHero });
+    // Fonction pour gérer le clic sur un héros
+    const handleHeroClick = (heroEl, owner) => {
+        return (e) => {
+            e.stopPropagation();
+
+            // Si un sort est sélectionné et peut cibler ce héros, le lancer
+            if (selected && selected.fromHand && selected.type === 'spell') {
+                const canTarget = selected.pattern === 'hero' || selected.canTargetHero;
+                if (canTarget && canPlay() && selected.cost <= state.me.energy) {
+                    const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+                    socket.emit('castSpell', {
+                        idx: selected.idx,
+                        targetPlayer: targetPlayer,
+                        row: -1,
+                        col: -1
+                    });
+                    clearSel();
+                    return;
+                }
+            }
+
+            // Sinon, afficher le détail du héros
+            const hero = owner === 'me' ? window.heroData.me : window.heroData.opp;
+            const hp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
+            showHeroDetail(hero, hp);
+        };
+    };
 
     if (heroMe) {
-        heroMe.addEventListener('mouseenter', () => {
-            console.log('[Hero] mouseenter on heroMe');
-            const hero = window.heroData?.me || state?.me?.hero;
-            showHeroPreview(hero, state?.me?.hp);
-        });
-        heroMe.addEventListener('mouseleave', hideCardPreview);
-        heroMe.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            console.log('[Hero] contextmenu on heroMe');
-            const hero = window.heroData?.me || state?.me?.hero;
-            showHeroDetail(hero, state?.me?.hp);
-        });
+        // Hover preview
+        heroMe.onmouseenter = () => showHeroPreview(window.heroData.me, state?.me?.hp);
+        heroMe.onmouseleave = hideCardPreview;
+        // Clic gauche
+        heroMe.onclick = handleHeroClick(heroMe, 'me');
     }
 
     if (heroOpp) {
-        heroOpp.addEventListener('mouseenter', () => {
-            console.log('[Hero] mouseenter on heroOpp');
-            const hero = window.heroData?.opp || state?.opponent?.hero;
-            showHeroPreview(hero, state?.opponent?.hp);
-        });
-        heroOpp.addEventListener('mouseleave', hideCardPreview);
-        heroOpp.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            console.log('[Hero] contextmenu on heroOpp');
-            const hero = window.heroData?.opp || state?.opponent?.hero;
-            showHeroDetail(hero, state?.opponent?.hp);
-        });
+        // Hover preview
+        heroOpp.onmouseenter = () => showHeroPreview(window.heroData.opp, state?.opponent?.hp);
+        heroOpp.onmouseleave = hideCardPreview;
+        // Clic gauche
+        heroOpp.onclick = handleHeroClick(heroOpp, 'opp');
     }
 
     // Drag/drop sur les héros pour les sorts
     setupHeroDragDrop(heroMe, 'me');
     setupHeroDragDrop(heroOpp, 'opp');
-
-    // Stocker les héros pour réutilisation
-    window.heroData = { me: meHero, opp: oppHero };
 }
 
 function setupHeroDragDrop(heroEl, owner) {
@@ -1510,25 +1530,8 @@ function setupHeroDragDrop(heroEl, owner) {
         dragged = null;
     };
     
-    // Click pour lancer le sort sélectionné
-    heroEl.onclick = (e) => {
-        if (!selected || !selected.fromHand || !canTargetThisHero(selected)) return;
-        if (!canPlay()) return;
-        if (selected.cost > state.me.energy) return;
-        
-        e.stopPropagation();
-        
-        const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
-        
-        socket.emit('castSpell', { 
-            idx: selected.idx, 
-            targetPlayer: targetPlayer, 
-            row: -1, 
-            col: -1 
-        });
-        
-        clearSel();
-    };
+    // Note: onclick est géré dans setupHeroes pour permettre à la fois
+    // le lancer de sort ET l'affichage du détail du héros
 }
 
 function createRoom() {
@@ -2151,10 +2154,7 @@ function showCardBackPreview() {
 }
 
 function showHeroPreview(hero, hp) {
-    console.log('[showHeroPreview] Called with', hero, hp);
     if (!hero) {
-        console.warn('[showHeroPreview] No hero data, using window.heroData');
-        // Essayer de récupérer depuis heroData global
         hero = window.heroData?.me || window.heroData?.opp;
     }
 
@@ -2175,35 +2175,29 @@ function showHeroPreview(hero, hp) {
         `;
     }
     document.body.appendChild(previewEl);
-    console.log('[showHeroPreview] Preview element added to body', previewEl);
     requestAnimationFrame(() => {
         previewEl.classList.add('visible');
     });
 }
 
 function showHeroDetail(hero, hp) {
-    console.log('[showHeroDetail] Called with', hero, hp);
     if (!hero) {
-        console.warn('[showHeroDetail] No hero data, using window.heroData');
         hero = window.heroData?.me || window.heroData?.opp;
-        if (!hero) {
-            console.error('[showHeroDetail] No hero data available!');
-            return;
-        }
+        if (!hero) return;
     }
 
-    // Créer la modal de détail du héros (style arena comme les cartes)
+    // Créer la modal de détail du héros
     const modal = document.createElement('div');
     modal.className = 'hero-detail-modal';
     modal.innerHTML = `
         <div class="hero-detail-content">
-            <div class="card arena-style hero-detail-card" style="background-image: url('/cards/${hero.image}')">
-                <div class="arena-title" style="background: ${hero.titleColor}">${hero.name}</div>
-                <div class="arena-text-zone">
-                    <div class="arena-type">Héros</div>
-                    <div class="arena-abilities">${hero.ability}</div>
+            <div class="hero-detail-card" style="background-image: url('/cards/${hero.image}')">
+                <div class="hero-detail-title" style="background: ${hero.titleColor}">${hero.name}</div>
+                <div class="hero-detail-text-zone">
+                    <div class="hero-detail-type">Héros</div>
+                    <div class="hero-detail-ability">${hero.ability}</div>
                 </div>
-                <div class="arena-edition">
+                <div class="hero-detail-edition">
                     <img src="/css/edition_${hero.edition}.png" alt="Edition ${hero.edition}">
                 </div>
             </div>
