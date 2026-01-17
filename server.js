@@ -81,7 +81,8 @@ function getPublicGameState(room, forPlayer) {
             ready: me.ready,
             inDeployPhase: me.inDeployPhase,
             heroName: me.heroName,
-            hero: me.hero
+            hero: me.hero,
+            spellsCastThisTurn: me.spellsCastThisTurn || 0
         },
         opponent: {
             hp: opp.hp,

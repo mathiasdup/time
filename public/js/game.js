@@ -312,22 +312,22 @@ async function animateZdejebelDamage(data) {
         // Animer l'effet
         setTimeout(() => zdejebelEffect.classList.add('active'), 50);
         setTimeout(() => zdejebelEffect.remove(), 1500);
+
+        // Animation de secousse sur le héros
+        heroCard.classList.add('hit');
+        setTimeout(() => heroCard.classList.remove('hit'), 500);
     }
 
-    // Utiliser l'animation de dégâts sur héros existante
+    // Utiliser l'animation de dégâts sur héros existante (affiche le chiffre de dégâts)
     if (typeof CombatAnimations !== 'undefined') {
         await CombatAnimations.animateHeroHit({
             owner: owner,
             amount: data.damage
         });
-    } else {
-        // Fallback simple
-        if (heroCard) {
-            heroCard.classList.add('hit');
-            await new Promise(r => setTimeout(r, 500));
-            heroCard.classList.remove('hit');
-        }
     }
+
+    // Attendre que l'animation soit visible
+    await new Promise(r => setTimeout(r, 600));
 }
 
 async function handlePixiSpellDamage(data) {
@@ -2125,12 +2125,10 @@ function showHeroPreview(hero, hp) {
         previewEl.style.backgroundPosition = 'center';
         previewEl.innerHTML = `
             <div class="hero-preview-title" style="background: ${hero.titleColor}">${hero.name}</div>
-            <div class="hero-preview-hp">❤️ ${hp}</div>
         `;
     } else {
         previewEl.innerHTML = `
             <div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>
-            <div class="hero-preview-hp">❤️ ${hp}</div>
         `;
     }
     document.body.appendChild(previewEl);
@@ -2142,21 +2140,21 @@ function showHeroPreview(hero, hp) {
 function showHeroDetail(hero, hp) {
     if (!hero) return;
 
-    // Créer la modal de détail du héros
+    // Créer la modal de détail du héros (style arena comme les cartes)
     const modal = document.createElement('div');
     modal.className = 'hero-detail-modal';
     modal.innerHTML = `
         <div class="hero-detail-content">
-            <div class="hero-detail-card" style="background-image: url('/cards/${hero.image}')">
-                <div class="hero-detail-title" style="background: ${hero.titleColor}">${hero.name}</div>
-                <div class="hero-detail-text-zone">
-                    <div class="hero-detail-ability">${hero.ability}</div>
+            <div class="card arena-style hero-detail-card" style="background-image: url('/cards/${hero.image}')">
+                <div class="arena-title" style="background: ${hero.titleColor}">${hero.name}</div>
+                <div class="arena-text-zone">
+                    <div class="arena-type">Héros</div>
+                    <div class="arena-abilities">${hero.ability}</div>
                 </div>
-                <div class="hero-detail-edition">
+                <div class="arena-edition">
                     <img src="/css/edition_${hero.edition}.png" alt="Edition ${hero.edition}">
                 </div>
             </div>
-            <div class="hero-detail-hp">❤️ ${hp}</div>
         </div>
     `;
 
@@ -2224,13 +2222,27 @@ function renderTraps() {
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
     panel.innerHTML = '';
-    hand.forEach((card, i) => {
-        const el = makeCard(card, true);
-        el.dataset.idx = i;
-        el.dataset.cost = card.cost;
 
-        // Marquer comme jouable si assez de mana
-        if (card.cost <= energy) {
+    // Vérifier si Hyrule peut réduire le coût du 2ème sort
+    const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
+    const spellsCast = state.me.spellsCastThisTurn || 0;
+    const hasHyruleDiscount = isHyrule && spellsCast === 1;
+
+    hand.forEach((card, i) => {
+        // Calculer le coût effectif pour les sorts avec Hyrule
+        let effectiveCost = card.cost;
+        let hasDiscount = false;
+        if (hasHyruleDiscount && card.type === 'spell') {
+            effectiveCost = Math.max(0, card.cost - 1);
+            hasDiscount = true;
+        }
+
+        const el = makeCard(card, true, hasDiscount ? effectiveCost : null);
+        el.dataset.idx = i;
+        el.dataset.cost = effectiveCost;
+
+        // Marquer comme jouable si assez de mana (avec coût réduit)
+        if (effectiveCost <= energy) {
             el.classList.add('playable');
         }
 
@@ -2244,7 +2256,7 @@ function renderHand(hand, energy) {
 
         // Toujours draggable
         el.draggable = true;
-        
+
         // Preview au survol
         el.onmouseenter = (e) => showCardPreview(card, e);
         el.onmouseleave = hideCardPreview;
@@ -2254,34 +2266,34 @@ function renderHand(hand, energy) {
             e.stopPropagation();
             showCardZoom(card);
         };
-        
+
         el.ondragstart = (e) => {
             if (!canPlay()) { e.preventDefault(); return; }
-            
-            // Stocker si la carte est trop chère
-            const tooExpensive = card.cost > energy;
-            
-            dragged = { ...card, idx: i, tooExpensive };
+
+            // Stocker si la carte est trop chère (avec coût effectif)
+            const tooExpensive = effectiveCost > energy;
+
+            dragged = { ...card, idx: i, tooExpensive, effectiveCost };
             draggedFromField = null;
             el.classList.add('dragging');
             hideCardPreview(); // Cacher le preview quand on drag
-            
+
             // Highlight même si trop cher (pour montrer où ça irait)
             highlightValidSlots(card);
         };
         el.ondragend = (e) => {
             el.classList.remove('dragging');
-            
+
             // Si on a essayé de poser une carte trop chère, faire vibrer
             if (dragged && dragged.tooExpensive && dragged.triedToDrop) {
                 el.classList.add('shake');
                 setTimeout(() => el.classList.remove('shake'), 400);
             }
-            
+
             dragged = null;
             clearHighlights();
         };
-        
+
         panel.appendChild(el);
     });
 }
@@ -2307,7 +2319,7 @@ function renderOppHand(count) {
     }
 }
 
-function makeCard(card, inHand) {
+function makeCard(card, inHand, discountedCost = null) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
 
@@ -2317,6 +2329,10 @@ function makeCard(card, inHand) {
     }
 
     const hp = card.currentHp ?? card.hp;
+
+    // Coût affiché (réduit si Hyrule actif)
+    const displayCost = discountedCost !== null ? discountedCost : card.cost;
+    const costClass = discountedCost !== null ? 'discounted' : '';
 
     // Classes pour les stats
     let hpClass = '';
@@ -2403,7 +2419,7 @@ function makeCard(card, inHand) {
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
             </div>
             ${editionIcon ? `<div class="arena-edition"><img src="/css/${editionIcon}" alt="Edition ${card.edition}"></div>` : ''}
-            <div class="arena-mana">${card.cost}</div>
+            <div class="arena-mana ${costClass}">${displayCost}</div>
             <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
         return el;
     }
@@ -2472,7 +2488,7 @@ function makeCard(card, inHand) {
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
         el.innerHTML = `
-            <div class="img-cost">${card.cost}</div>
+            <div class="img-cost ${costClass}">${displayCost}</div>
             <div class="img-subtype">${card.subtype || ''}</div>
             <div class="img-name">${card.name}</div>
             <div class="img-type-line">Créature - ${combatTypeText}</div>
@@ -2514,7 +2530,7 @@ function makeCard(card, inHand) {
     }
 
     el.innerHTML = `
-        <div class="card-cost">${card.cost}</div>
+        <div class="card-cost ${costClass}">${displayCost}</div>
         ${typeIcon}
         <div class="card-art">${card.icon || '❓'}</div>
         <div class="card-body">
