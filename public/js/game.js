@@ -135,6 +135,9 @@ async function executeAnimationAsync(type, data) {
             case 'heroHit':
                 await handlePixiHeroHit(data);
                 return;
+            case 'onDeathDamage':
+                await handleOnDeathDamage(data);
+                return;
             case 'death':
                 animateDeath(data);
                 return;
@@ -260,6 +263,30 @@ async function handlePixiDamage(data) {
 
 async function handlePixiHeroHit(data) {
     const owner = data.defender === myNum ? 'me' : 'opp';
+    await CombatAnimations.animateHeroHit({
+        owner: owner,
+        amount: data.damage
+    });
+}
+
+async function handleOnDeathDamage(data) {
+    const owner = data.targetPlayer === myNum ? 'me' : 'opp';
+
+    // Afficher un effet visuel spécial pour les dégâts de mort
+    const heroZone = document.querySelector(`.hero-zone.${owner}`);
+    if (heroZone) {
+        // Créer un effet de flamme/explosion sur le héros
+        const deathEffect = document.createElement('div');
+        deathEffect.className = 'on-death-effect';
+        deathEffect.innerHTML = `<span class="death-source">💀 ${data.source}</span>`;
+        heroZone.appendChild(deathEffect);
+
+        // Animer l'effet
+        setTimeout(() => deathEffect.classList.add('active'), 50);
+        setTimeout(() => deathEffect.remove(), 1500);
+    }
+
+    // Utiliser l'animation de dégâts sur héros existante
     await CombatAnimations.animateHeroHit({
         owner: owner,
         amount: data.damage
@@ -2234,6 +2261,9 @@ function makeCard(card, inHand) {
         let specialAbility = '';
         if (card.onHeroHit === 'draw') {
             specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
+        }
+        if (card.onDeath?.damageHero) {
+            specialAbility = `À la mort de cette créature, le héros adverse subit ${card.onDeath.damageHero} blessures.`;
         }
 
         // Icône d'édition

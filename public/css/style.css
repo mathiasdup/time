@@ -1851,3 +1851,40 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+
+        /* Animation onDeath - dégâts au héros à la mort d'une créature */
+        .on-death-effect {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: radial-gradient(circle, rgba(139, 0, 0, 0.9), rgba(50, 0, 0, 0.8));
+            border: 2px solid #ff4444;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        .on-death-effect.active {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+            animation: deathPulse 0.8s ease-out;
+        }
+        .on-death-effect .death-source {
+            font-size: 0.7em;
+            color: #fff;
+            text-shadow: 0 0 10px #ff0000;
+            text-align: center;
+            font-weight: bold;
+        }
+        @keyframes deathPulse {
+            0% { transform: translate(-50%, -50%) scale(0.5); box-shadow: 0 0 10px rgba(255, 0, 0, 0.3); }
+            50% { transform: translate(-50%, -50%) scale(1.2); box-shadow: 0 0 50px rgba(255, 0, 0, 0.8); }
+            100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 30px rgba(255, 0, 0, 0.6); }
+        }

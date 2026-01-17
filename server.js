@@ -112,6 +112,26 @@ function emitAnimation(room, type, data) {
     io.to(room.code).emit('animation', { type, ...data });
 }
 
+// Traite les capacités onDeath d'une carte qui meurt
+async function processOnDeathAbility(room, card, ownerPlayer, log, sleep) {
+    if (!card.onDeath) return;
+
+    // Capacité: infliger des dégâts au héros adverse
+    if (card.onDeath.damageHero) {
+        const damage = card.onDeath.damageHero;
+        const enemyPlayer = ownerPlayer === 1 ? 2 : 1;
+        room.gameState.players[enemyPlayer].hp -= damage;
+        log(`💀 ${card.name} - Capacité de mort: ${damage} dégâts au héros adverse!`, 'damage');
+        emitAnimation(room, 'onDeathDamage', {
+            source: card.name,
+            targetPlayer: enemyPlayer,
+            damage: damage
+        });
+        await sleep(800);
+        emitStateToBoth(room);
+    }
+}
+
 function startTurnTimer(room) {
     if (room.timer) clearInterval(room.timer);
     
@@ -547,12 +567,15 @@ async function processTrapsForRow(room, row, log, sleep) {
             
             // Vérifier si la créature meurt du piège
             if (firstAttacker.card.currentHp <= 0) {
-                addToGraveyard(attackerState, firstAttacker.card);
+                const deadCard = firstAttacker.card;
+                addToGraveyard(attackerState, deadCard);
                 attackerState.field[row][firstAttacker.col] = null;
-                log(`  ☠️ ${firstAttacker.card.name} détruit par le piège!`, 'damage');
+                log(`  ☠️ ${deadCard.name} détruit par le piège!`, 'damage');
                 emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: firstAttacker.col });
                 emitStateToBoth(room);
                 await sleep(600);
+                // Capacité onDeath
+                await processOnDeathAbility(room, deadCard, attackerPlayer, log, sleep);
             }
         }
     }
@@ -705,6 +728,11 @@ async function applySpell(room, action, log, sleep) {
 
             // Débloquer les slots
             io.to(room.code).emit('unblockSlots', slotsToBlock);
+
+            // Capacités onDeath
+            for (const d of deaths) {
+                await processOnDeathAbility(room, d.target, d.p, log, sleep);
+            }
         }
 
         emitStateToBoth(room);
@@ -858,6 +886,11 @@ async function applySpell(room, action, log, sleep) {
 
             // Débloquer les slots
             io.to(room.code).emit('unblockSlots', slotsToBlock);
+
+            // Capacités onDeath
+            for (const d of deaths) {
+                await processOnDeathAbility(room, d.target, d.t.player, log, sleep);
+            }
         }
 
         emitStateToBoth(room);
@@ -912,6 +945,8 @@ async function applySpell(room, action, log, sleep) {
                         log(`  ☠️ ${target.name} détruit!`, 'damage');
                         emitAnimation(room, 'death', { player: action.targetPlayer, row: action.row, col: action.col });
                         await sleep(600);
+                        // Capacité onDeath
+                        await processOnDeathAbility(room, target, action.targetPlayer, log, sleep);
                     }
 
                     emitStateToBoth(room);
@@ -1424,10 +1459,12 @@ function applyPendingPowerBonuses(room, log) {
 
 // Vérifier et retirer les créatures mortes
 async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
+    const deadCards = [];
     for (const [r, c] of slotsToCheck) {
         for (let p = 1; p <= 2; p++) {
             const card = room.gameState.players[p].field[r][c];
             if (card && card.currentHp <= 0) {
+                deadCards.push({ card, player: p });
                 addToGraveyard(room.gameState.players[p], card);
                 room.gameState.players[p].field[r][c] = null;
                 log(`☠️ ${card.name} détruit!`, 'damage');
@@ -1437,6 +1474,10 @@ async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
     }
     emitStateToBoth(room);
     await sleep(300);
+    // Capacités onDeath
+    for (const d of deadCards) {
+        await processOnDeathAbility(room, d.card, d.player, log, sleep);
+    }
 }
 
 // Traiter le combat pour un slot spécifique (row, col)
@@ -1972,6 +2013,10 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         }
                         await sleep(600);
                         emitStateToBoth(room);
+                        // Capacités onDeath
+                        for (const d of deaths) {
+                            await processOnDeathAbility(room, d.card, d.player, log, sleep);
+                        }
                     }
                     return false;
                 }
@@ -2113,8 +2158,12 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         }
         await sleep(600); // Attendre l'animation de mort (une seule fois pour toutes)
         emitStateToBoth(room);
+        // Capacités onDeath
+        for (const d of deaths) {
+            await processOnDeathAbility(room, d.card, d.player, log, sleep);
+        }
     }
-    
+
     return false;
 }
 
