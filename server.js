@@ -1250,7 +1250,23 @@ async function processCombatSlot(room, row, col, log, sleep) {
             log(`⚔️ ${attackerCard.name} → ${room.gameState.players[atk.targetPlayer].heroName} (-${attackerCard.atk})`, 'damage');
             emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk });
             io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: attackerCard.atk });
-            
+
+            // Capacité spéciale: piocher une carte quand attaque un héros
+            if (attackerCard.onHeroHit === 'draw') {
+                const attackerOwner = room.gameState.players[atk.attackerPlayer];
+                if (attackerOwner.deck.length > 0) {
+                    const drawnCard = attackerOwner.deck.shift();
+                    if (attackerOwner.hand.length < 10) {
+                        attackerOwner.hand.push(drawnCard);
+                        log(`  🎴 ${attackerCard.name} déclenche: ${attackerOwner.heroName} pioche ${drawnCard.name}`, 'action');
+                        emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                    } else {
+                        addToGraveyard(attackerOwner, drawnCard);
+                        log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
+                    }
+                }
+            }
+
             if (room.gameState.players[atk.targetPlayer].hp <= 0) {
                 return true;
             }
@@ -1847,6 +1863,22 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         targetPlayer1.hp -= damage1;
                         log(`⚔️ ${attackerCard1.name} → ${targetPlayer1.heroName} (-${damage1})`, 'damage');
                         io.to(room.code).emit('directDamage', { defender: atk1.targetPlayer, damage: damage1 });
+
+                        // Capacité spéciale: piocher une carte quand attaque un héros
+                        if (attackerCard1.onHeroHit === 'draw') {
+                            const attackerOwner1 = room.gameState.players[atk1.attackerPlayer];
+                            if (attackerOwner1.deck.length > 0) {
+                                const drawnCard = attackerOwner1.deck.shift();
+                                if (attackerOwner1.hand.length < 10) {
+                                    attackerOwner1.hand.push(drawnCard);
+                                    log(`  🎴 ${attackerCard1.name} déclenche: pioche ${drawnCard.name}`, 'action');
+                                    emitAnimation(room, 'draw', { player: atk1.attackerPlayer, count: 1 });
+                                } else {
+                                    addToGraveyard(attackerOwner1, drawnCard);
+                                    log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
+                                }
+                            }
+                        }
                     } else {
                         const targetCard1 = room.gameState.players[atk1.targetPlayer].field[atk1.targetRow][atk1.targetCol];
                         if (targetCard1) {
@@ -1872,6 +1904,22 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         targetPlayer2.hp -= damage2;
                         log(`⚔️ ${attackerCard2.name} → ${targetPlayer2.heroName} (-${damage2})`, 'damage');
                         io.to(room.code).emit('directDamage', { defender: atk2.targetPlayer, damage: damage2 });
+
+                        // Capacité spéciale: piocher une carte quand attaque un héros
+                        if (attackerCard2.onHeroHit === 'draw') {
+                            const attackerOwner2 = room.gameState.players[atk2.attackerPlayer];
+                            if (attackerOwner2.deck.length > 0) {
+                                const drawnCard = attackerOwner2.deck.shift();
+                                if (attackerOwner2.hand.length < 10) {
+                                    attackerOwner2.hand.push(drawnCard);
+                                    log(`  🎴 ${attackerCard2.name} déclenche: pioche ${drawnCard.name}`, 'action');
+                                    emitAnimation(room, 'draw', { player: atk2.attackerPlayer, count: 1 });
+                                } else {
+                                    addToGraveyard(attackerOwner2, drawnCard);
+                                    log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
+                                }
+                            }
+                        }
                     } else {
                         const targetCard2 = room.gameState.players[atk2.targetPlayer].field[atk2.targetRow][atk2.targetCol];
                         if (targetCard2) {
@@ -1960,6 +2008,22 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 log(`⚔️ ${attackerCard.name} → ${targetPlayer.heroName} (-${damage})`, 'damage');
                 // L'animation d'attaque affiche déjà les dégâts, pas besoin de heroHit en plus
                 io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: damage });
+
+                // Capacité spéciale: piocher une carte quand attaque un héros
+                if (attackerCard.onHeroHit === 'draw') {
+                    const attackerOwner = room.gameState.players[atk.attackerPlayer];
+                    if (attackerOwner.deck.length > 0) {
+                        const drawnCard = attackerOwner.deck.shift();
+                        if (attackerOwner.hand.length < 10) {
+                            attackerOwner.hand.push(drawnCard);
+                            log(`  🎴 ${attackerCard.name} déclenche: pioche ${drawnCard.name}`, 'action');
+                            emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                        } else {
+                            addToGraveyard(attackerOwner, drawnCard);
+                            log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
+                        }
+                    }
+                }
 
                 if (targetPlayer.hp <= 0) {
                     emitStateToBoth(room);
@@ -2233,7 +2297,23 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
             log(`⚔️ ${attackerCard.name} → ${room.gameState.players[atk.targetPlayer].heroName} (-${attackerCard.atk})`, 'damage');
             emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk });
             io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: attackerCard.atk });
-            
+
+            // Capacité spéciale: piocher une carte quand attaque un héros
+            if (attackerCard.onHeroHit === 'draw') {
+                const attackerOwner = room.gameState.players[atk.attackerPlayer];
+                if (attackerOwner.deck.length > 0) {
+                    const drawnCard = attackerOwner.deck.shift();
+                    if (attackerOwner.hand.length < 10) {
+                        attackerOwner.hand.push(drawnCard);
+                        log(`  🎴 ${attackerCard.name} déclenche: pioche ${drawnCard.name}`, 'action');
+                        emitAnimation(room, 'draw', { player: atk.attackerPlayer, count: 1 });
+                    } else {
+                        addToGraveyard(attackerOwner, drawnCard);
+                        log(`  📦 Main pleine, ${drawnCard.name} va au cimetière`, 'damage');
+                    }
+                }
+            }
+
             if (room.gameState.players[atk.targetPlayer].hp <= 0) {
                 applyPendingPowerBonuses(room, log);
                 emitStateToBoth(room);
@@ -2242,7 +2322,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
         } else {
             const targetCard = room.gameState.players[atk.targetPlayer].field[atk.targetRow][atk.targetCol];
             if (!targetCard) continue;
-            
+
             const damage = attackerCard.atk;
             targetCard.currentHp -= damage;
             log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');

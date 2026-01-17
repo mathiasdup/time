@@ -1975,20 +1975,22 @@ function showCardPreview(card, e) {
     if (card.type === 'creature' && card.abilities && card.abilities.length > 0) {
         const abilitiesContainer = document.createElement('div');
         abilitiesContainer.className = 'preview-abilities';
-        
+
         card.abilities.forEach(ability => {
             const abilityInfo = ABILITY_DESCRIPTIONS[ability];
             if (abilityInfo) {
                 const abilityEl = document.createElement('div');
                 abilityEl.className = 'preview-ability';
+                // Type de combat (shooter/fly) en blanc, capacités communes en jaune
+                const isTypeAbility = ability === 'shooter' || ability === 'fly';
                 abilityEl.innerHTML = `
-                    <div class="ability-name">${abilityInfo.name}</div>
+                    <div class="ability-name ${isTypeAbility ? 'type-ability' : ''}">${abilityInfo.name}</div>
                     <div class="ability-desc">${abilityInfo.desc}</div>
                 `;
                 abilitiesContainer.appendChild(abilityEl);
             }
         });
-        
+
         infoContainer.appendChild(abilitiesContainer);
     }
     
@@ -2205,20 +2207,25 @@ function makeCard(card, inHand) {
         el.classList.add('arena-style');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+        // Capacités communes (sans shooter/fly car déjà dans le type)
+        const commonAbilityNames = {
+            haste: 'Célérité', intangible: 'Intangible',
             trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
         };
-        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        // Filtrer shooter et fly des capacités affichées
+        const commonAbilities = (card.abilities || [])
+            .filter(a => a !== 'shooter' && a !== 'fly')
+            .map(a => commonAbilityNames[a] || a);
+        const abilitiesText = commonAbilities.join(', ');
 
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
-        // Capacité spéciale si présente
+        // Capacité spéciale/unique si présente
         let specialAbility = '';
         if (card.onHeroHit === 'draw') {
-            specialAbility = 'Si cette créature attaque un héros, piochez une carte.';
+            specialAbility = 'Si cette créature attaque un héros adverse, piochez une carte.';
         }
 
         // Version allégée sur le terrain
@@ -2236,7 +2243,7 @@ function makeCard(card, inHand) {
             <div class="arena-title"><div class="arena-name">${card.name}</div></div>
             <div class="arena-text-zone">
                 <div class="arena-type">Créature - ${combatTypeText}</div>
-                <div class="arena-abilities">${abilitiesText}</div>
+                ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
             </div>
             <div class="arena-mana">${card.cost}</div>
@@ -2260,11 +2267,15 @@ function makeCard(card, inHand) {
         }
 
         // Version complète (main, hover, cimetière)
-        const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+        // Capacités communes (sans shooter/fly car déjà dans le type)
+        const commonAbilityNames = {
+            haste: 'Célérité', intangible: 'Intangible',
             trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
         };
-        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        const commonAbilities = (card.abilities || [])
+            .filter(a => a !== 'shooter' && a !== 'fly')
+            .map(a => commonAbilityNames[a] || a);
+        const abilitiesText = commonAbilities.join(', ');
 
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
@@ -2275,7 +2286,7 @@ function makeCard(card, inHand) {
             <div class="fa-title"><div class="fa-name">${card.name}</div></div>
             <div class="fa-text-zone">
                 <div class="fa-type">Créature - ${combatTypeText}</div>
-                <div class="fa-abilities">${abilitiesText}</div>
+                ${abilitiesText ? `<div class="fa-abilities">${abilitiesText}</div>` : ''}
             </div>
             <div class="fa-atk ${atkClass}">${card.atk}</div>
             <div class="fa-hp ${hpClass}">${hp}</div>`;
