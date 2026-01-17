@@ -10,6 +10,9 @@ const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 const animationQueue = [];
 let isAnimating = false;
 let currentProcessorId = 0; // Pour traquer le processeur actif
+
+// Système de HP différés pour zdejebel (pour que les HP changent APRÈS l'animation)
+let pendingHpUpdate = null; // { target: 'me'|'opp', oldHp: number, newHp: number }
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
@@ -50,6 +53,16 @@ async function initCombatAnimations() {
 
 function queueAnimation(type, data) {
     console.log('[Queue] Adding:', type, 'isAnimating:', isAnimating, 'queueLength:', animationQueue.length, 'currentQueue:', animationQueue.map(a => a.type));
+
+    // Pour zdejebel, capturer les HP actuels AVANT que render() ne les mette à jour
+    if (type === 'zdejebel' && state) {
+        const target = data.targetPlayer === myNum ? 'me' : 'opp';
+        const currentDisplayedHp = target === 'me' ? state.me?.hp : state.opponent?.hp;
+        // Stocker les HP actuellement affichés pour les restaurer temporairement
+        data._displayHpBefore = currentDisplayedHp;
+        console.log('[Queue] Zdejebel: captured HP before =', currentDisplayedHp, 'for', target);
+    }
+
     animationQueue.push({ type, data });
     if (!isAnimating) {
         console.log('[Queue] Starting queue processing for:', type);
@@ -343,6 +356,17 @@ async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
     console.log('[Zdejebel] START - owner:', owner, 'damage:', data.damage, 'timestamp:', Date.now());
 
+    // Restaurer les HP d'avant l'animation (render() les a déjà mis à jour)
+    const hpElement = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+    const currentHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
+    const hpBeforeAnimation = data._displayHpBefore ?? (currentHp + data.damage); // Estimer si pas capturé
+
+    if (hpElement && hpBeforeAnimation !== undefined) {
+        // Afficher les HP d'AVANT les dégâts pendant l'animation
+        hpElement.textContent = hpBeforeAnimation;
+        console.log('[Zdejebel] Restored HP display to', hpBeforeAnimation, '(actual:', currentHp, ')');
+    }
+
     // Récupérer la position du héros ciblé
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
@@ -377,7 +401,16 @@ async function animateZdejebelDamage(data) {
     }
 
     // Attendre que l'animation soit visible
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600));
+
+    // Mettre à jour les HP APRÈS l'animation
+    if (hpElement && currentHp !== undefined) {
+        hpElement.textContent = currentHp;
+        console.log('[Zdejebel] Updated HP display to', currentHp);
+    }
+
+    // Petit délai supplémentaire pour voir le changement
+    await new Promise(r => setTimeout(r, 200));
 }
 
 // Fonction utilitaire pour afficher un nombre de dégâts sur un élément
