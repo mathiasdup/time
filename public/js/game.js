@@ -120,6 +120,7 @@ async function processAnimationQueue() {
 }
 
 async function executeAnimationAsync(type, data) {
+    console.log('[executeAnimationAsync] type:', type, 'combatAnimReady:', combatAnimReady);
     // Utiliser le système PixiJS si disponible
     if (combatAnimReady && CombatAnimations) {
         switch(type) {

@@ -1496,7 +1496,7 @@
             position: fixed;
             top: 70px;
             right: 20px;
-            z-index: 2000;
+            z-index: 10001;
             pointer-events: none;
             transform: scale(1.5);
             transform-origin: top right;
@@ -1529,8 +1529,9 @@
             padding: 0;
             box-sizing: border-box;
             overflow: hidden;
-            position: relative;
             box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+            background-color: #333; /* Fallback si l'image ne charge pas */
+            transform: scale(1) !important; /* Pas de scale pour le hero preview */
         }
         .hero-preview-title {
             width: 100%;
