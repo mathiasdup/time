@@ -975,6 +975,134 @@
             border-color: #2ecc71 !important;
         }
 
+        /* ========== STYLE ARENA (Magic Arena) ========== */
+        .card.arena-style {
+            background-size: cover;
+            background-position: center;
+            border-radius: 10px;
+            border: 2px solid #333;
+            position: relative;
+            overflow: visible;
+        }
+
+        /* Titre en haut - fond vert comme fullArt */
+        .card.arena-style .arena-title {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #184d26ba;
+            border-radius: 7.5px 7.5px 0px 0px;
+            padding: 2px 2px;
+            text-align: center;
+        }
+        .card.arena-style .arena-name {
+            font-family: 'Merriweather Sans', sans-serif;
+            font-size: 0.55em;
+            color: #fff;
+            -webkit-text-stroke: 1px #000;
+            paint-order: stroke fill;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Zone de texte en bas */
+        .card.arena-style .arena-text-zone {
+            position: absolute;
+            bottom: 22px;
+            left: 4px;
+            right: 4px;
+            background: rgba(255,255,255,0.9);
+            border-radius: 6px;
+            padding: 5px 6px;
+            text-align: center;
+        }
+        .card.arena-style .arena-type {
+            font-family: 'Quicksand', sans-serif;
+            font-size: 0.35em;
+            font-weight: 500;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card.arena-style .arena-abilities {
+            font-family: 'Quicksand', sans-serif;
+            font-size: 0.4em;
+            font-weight: 700;
+            color: #b8860b;
+            margin-top: 1px;
+        }
+        .card.arena-style .arena-special {
+            font-family: 'Quicksand', sans-serif;
+            font-size: 0.32em;
+            font-weight: 500;
+            color: #333;
+            margin-top: 3px;
+            font-style: italic;
+            line-height: 1.2;
+        }
+
+        /* Mana - Rond bleu style héros HP */
+        .card.arena-style .arena-mana {
+            position: absolute;
+            bottom: -8px;
+            left: -8px;
+            width: 28px;
+            height: 28px;
+            background: radial-gradient(circle at 30% 30%, #4fc3f7, #0277bd);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Cinzel', serif;
+            font-size: 1.2em;
+            font-weight: 900;
+            color: #fff;
+            border: 3px solid #81d4fa;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            z-index: 10;
+            -webkit-text-stroke: 1.5px #000;
+            paint-order: stroke fill;
+        }
+
+        /* Stats - Pilule style Magic Arena */
+        .card.arena-style .arena-stats {
+            position: absolute;
+            bottom: -6px;
+            right: -4px;
+            background: linear-gradient(135deg, #2c2c2c, #1a1a1a);
+            border-radius: 12px;
+            padding: 3px 10px;
+            font-family: 'Cinzel', serif;
+            font-size: 1em;
+            font-weight: 900;
+            color: #fff;
+            border: 2px solid #555;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            z-index: 10;
+            -webkit-text-stroke: 1px #000;
+            paint-order: stroke fill;
+        }
+        .card.arena-style .arena-stats.modified {
+            color: #7fff7f;
+            border-color: #4caf50;
+        }
+
+        /* Version terrain : pas de mana affiché */
+        .card.arena-style.on-field .arena-mana {
+            display: none;
+        }
+
+        /* États arena-style */
+        .card.arena-style.just-played {
+            box-shadow: 0 0 10px rgba(255,255,255,0.6);
+        }
+        .card.arena-style.can-attack {
+            box-shadow: 0 0 12px rgba(46,204,113,0.8);
+            border-color: #2ecc71 !important;
+        }
+
         .card.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
         .card.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
         .card.field-selected { box-shadow: 0 0 15px rgba(52,152,219,0.9); border-color: #3498db !important; }

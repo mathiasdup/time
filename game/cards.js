@@ -9,8 +9,9 @@ const CardDB = {
         { id: 'squire', name: 'Écuyer', atk: 1, hp: 3, cost: 1, abilities: [], type: 'creature', icon: '🛡️' },
         { id: 'wisp', name: 'Feu follet', atk: 1, hp: 1, cost: 1, abilities: ['intangible'], type: 'creature', icon: '✨' },
         { id: 'crossbowman', name: 'Arbalétrier', atk: 2, hp: 1, cost: 1, abilities: ['shooter', 'initiative'], type: 'creature', image: 'arbaletrier.jpg', combatType: 'shooter', fullArt: true },
-        
+
         // === COÛT 2 (6 créatures) ===
+        { id: 'skeleton_archer', name: 'Archer Squelette', atk: 4, hp: 1, cost: 3, abilities: ['shooter'], type: 'creature', image: 'squelette-archer.jpg', combatType: 'shooter', arenaStyle: true, onHeroHit: 'draw' },
         { id: 'archer', name: 'Archer', atk: 2, hp: 2, cost: 2, abilities: ['shooter'], type: 'creature', icon: '🏹' },
         { id: 'wolf', name: 'Loup', atk: 3, hp: 2, cost: 2, abilities: ['haste'], type: 'creature', icon: '🐺' },
         { id: 'orc', name: 'Orc', atk: 2, hp: 4, cost: 2, abilities: [], type: 'creature', icon: '👹' },

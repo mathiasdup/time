@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(ls \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\"\" 2>/dev/null || echo \"Dossier n 'existe pas \")",
-      "Bash(dir \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\")"
+      "Bash(dir \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\")",
+      "Bash(copy:*)"
     ]
   }
 }

@@ -2200,6 +2200,50 @@ function makeCard(card, inHand) {
         }
     }
 
+    // Carte style Arena (Magic Arena) : pilule stats en bas à droite, mana en rond bleu
+    if (card.arenaStyle && card.image) {
+        el.classList.add('arena-style');
+        el.style.backgroundImage = `url('/cards/${card.image}')`;
+
+        const abilityNames = {
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+        };
+        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+
+        let combatTypeText = 'Mêlée';
+        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
+        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
+
+        // Capacité spéciale si présente
+        let specialAbility = '';
+        if (card.onHeroHit === 'draw') {
+            specialAbility = 'Si cette créature attaque un héros, piochez une carte.';
+        }
+
+        // Version allégée sur le terrain
+        if (!inHand) {
+            el.classList.add('on-field');
+            el.innerHTML = `
+                <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+                <div class="arena-mana">${card.cost}</div>
+                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
+            return el;
+        }
+
+        // Version complète (main, hover, cimetière)
+        el.innerHTML = `
+            <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+            <div class="arena-text-zone">
+                <div class="arena-type">Créature - ${combatTypeText}</div>
+                <div class="arena-abilities">${abilitiesText}</div>
+                ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
+            </div>
+            <div class="arena-mana">${card.cost}</div>
+            <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
+        return el;
+    }
+
     // Carte fullArt : image plein fond + ronds colorés style héros
     if (card.fullArt && card.image) {
         el.classList.add('full-art');
