@@ -1046,7 +1046,7 @@
         /* Mana - Rond bleu style héros HP */
         .card.arena-style .arena-mana {
             position: absolute;
-            bottom: 1px;
+            top: 12%;
             left: 1px;
             width: 20px;
             height: 20px;
@@ -1062,8 +1062,6 @@
             border: 2px solid #81d4fa;
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
             z-index: 10;
-            -webkit-text-stroke: 1.5px #000;
-            paint-order: stroke fill;
         }
 
         /* Stats - Pilule style Magic Arena */
@@ -1071,7 +1069,7 @@
             position: absolute;
             bottom: -5px;
             right: -4px;
-            background: linear-gradient(135deg, #2c2c2c, #1a1a1a);
+            background: linear-gradient(135deg, #2c2c2ce0, #1a1a1a);
             border-radius: 8px;
             padding: 0px 10px;
             font-family: 'Cinzel', serif;
