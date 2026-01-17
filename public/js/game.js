@@ -2239,16 +2239,6 @@ function makeCard(card, inHand) {
         // Icône d'édition
         const editionIcon = card.edition ? `edition_${card.edition}.png` : null;
 
-        // Icône de rareté
-        const rarityIcons = {
-            common: 'commune.png',
-            uncommon: 'peu_commune.png',
-            rare: 'rare.png',
-            epic: 'epique.png',
-            legendary: 'legendaire.png'
-        };
-        const rarityIcon = card.rarity ? rarityIcons[card.rarity] : null;
-
         // Ligne de type complète
         let typeLineText = `Créature - ${combatTypeText}`;
         if (creatureTypeName) {
@@ -2269,7 +2259,6 @@ function makeCard(card, inHand) {
         el.innerHTML = `
             <div class="arena-title"><div class="arena-name">${card.name}</div></div>
             <div class="arena-text-zone">
-                ${rarityIcon ? `<div class="arena-rarity"><img src="/css/${rarityIcon}" alt="${card.rarity}"></div>` : ''}
                 <div class="arena-type">${typeLineText}</div>
                 ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
