@@ -9,6 +9,7 @@ const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 // ==================== SYSTÈME DE FILE D'ATTENTE D'ANIMATIONS ====================
 const animationQueue = [];
 let isAnimating = false;
+let currentProcessorId = 0; // Pour traquer le processeur actif
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
@@ -58,88 +59,100 @@ function queueAnimation(type, data) {
     }
 }
 
-async function processAnimationQueue() {
+async function processAnimationQueue(processorId = null) {
+    // Générer un ID unique pour ce processeur
+    if (processorId === null) {
+        currentProcessorId++;
+        processorId = currentProcessorId;
+    }
+
     try {
+        // Vérifier si un autre processeur a pris le relais
+        if (processorId !== currentProcessorId) {
+            console.log('[Queue] Processor', processorId, 'stopping - newer processor', currentProcessorId, 'is active');
+            return;
+        }
+
         if (animationQueue.length === 0) {
-            console.log('[Queue] Empty, stopping. isAnimating was:', isAnimating);
+            console.log('[Queue] Empty, stopping. Processor:', processorId);
             isAnimating = false;
             return;
         }
 
         isAnimating = true;
-        console.log('[Queue] Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
+        console.log('[Queue] Processor', processorId, '- Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
 
-    // Regrouper les animations de mort consécutives en batch
-    if (animationQueue[0].type === 'death') {
-        const deathBatch = [];
-        while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
-            deathBatch.push(animationQueue.shift().data);
-        }
-        // Animer toutes les morts en même temps
-        for (const data of deathBatch) {
-            animateDeath(data);
-        }
-        // Un seul délai pour tout le batch
-        await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
-        processAnimationQueue();
-        return;
-    }
-
-    // Regrouper les animations de dégâts de sort consécutives en batch
-    if (animationQueue[0].type === 'spellDamage') {
-        const spellDamageBatch = [];
-        while (animationQueue.length > 0 && animationQueue[0].type === 'spellDamage') {
-            spellDamageBatch.push(animationQueue.shift().data);
-        }
-        // Animer tous les dégâts de sort en même temps
-        const promises = spellDamageBatch.map(data => {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            if (combatAnimReady && CombatAnimations) {
-                return CombatAnimations.animateSpellDamage({
-                    owner: owner,
-                    row: data.row,
-                    col: data.col,
-                    amount: data.amount
-                });
-            } else {
-                animateDamageFallback(data);
-                return Promise.resolve();
+        // Regrouper les animations de mort consécutives en batch
+        if (animationQueue[0].type === 'death') {
+            const deathBatch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
+                deathBatch.push(animationQueue.shift().data);
             }
-        });
-        await Promise.all(promises);
-        // Un seul délai pour tout le batch
-        await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
-        processAnimationQueue();
-        return;
-    }
+            for (const data of deathBatch) {
+                animateDeath(data);
+            }
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
+            processAnimationQueue(processorId);
+            return;
+        }
 
-    const { type, data } = animationQueue.shift();
-    const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
-    console.log('[Queue] Shifted:', type, '- remaining after shift:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
+        // Regrouper les animations de dégâts de sort consécutives en batch
+        if (animationQueue[0].type === 'spellDamage') {
+            const spellDamageBatch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'spellDamage') {
+                spellDamageBatch.push(animationQueue.shift().data);
+            }
+            const promises = spellDamageBatch.map(data => {
+                const owner = data.player === myNum ? 'me' : 'opp';
+                if (combatAnimReady && CombatAnimations) {
+                    return CombatAnimations.animateSpellDamage({
+                        owner: owner,
+                        row: data.row,
+                        col: data.col,
+                        amount: data.amount
+                    });
+                } else {
+                    animateDamageFallback(data);
+                    return Promise.resolve();
+                }
+            });
+            await Promise.all(promises);
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
+            processAnimationQueue(processorId);
+            return;
+        }
 
-    // Exécuter l'animation avec timeout de sécurité
-    try {
-        const animationPromise = executeAnimationAsync(type, data);
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
-        );
-        await Promise.race([animationPromise, timeoutPromise]);
-        console.log('[Queue] Animation completed:', type, '- queue now:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
-    } catch (e) {
-        console.error('[Queue] Animation error:', type, e);
-    }
+        const { type, data } = animationQueue.shift();
+        const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
+        console.log('[Queue] Processor', processorId, '- Shifted:', type, '- remaining:', animationQueue.length);
 
-    // Attendre le délai
-    console.log('[Queue] Waiting delay:', delay, 'for:', type, '- queue before delay:', animationQueue.map(a => a.type));
-    await new Promise(resolve => setTimeout(resolve, delay));
+        // Exécuter l'animation avec timeout de sécurité
+        try {
+            const animationPromise = executeAnimationAsync(type, data);
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
+            );
+            await Promise.race([animationPromise, timeoutPromise]);
+            console.log('[Queue] Processor', processorId, '- Animation completed:', type);
+        } catch (e) {
+            console.error('[Queue] Animation error:', type, e);
+        }
 
-    // Continuer la file
-    console.log('[Queue] After delay, continuing to next, remaining:', animationQueue.length, 'items:', animationQueue.map(a => a.type));
-    processAnimationQueue();
+        // Vérifier encore si on est toujours le processeur actif
+        if (processorId !== currentProcessorId) {
+            console.log('[Queue] Processor', processorId, 'stopping after animation - newer processor active');
+            return;
+        }
+
+        // Attendre le délai
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        // Continuer la file (avec le même processorId)
+        console.log('[Queue] Processor', processorId, '- After delay, remaining:', animationQueue.length);
+        processAnimationQueue(processorId);
     } catch (globalError) {
         console.error('[Queue] GLOBAL ERROR in processAnimationQueue:', globalError);
         isAnimating = false;
-        // Essayer de continuer avec le reste de la queue
         if (animationQueue.length > 0) {
             console.log('[Queue] Attempting recovery, remaining:', animationQueue.length);
             setTimeout(() => processAnimationQueue(), 100);
@@ -1146,9 +1159,11 @@ function resetAnimationStates() {
     animatingSlots.clear();
     hiddenCards.clear();
 
-    // Vider la file d'animation
-    animationQueue.length = 0;
-    isAnimating = false;
+    // NE PAS vider la file d'animation - laisser les animations se terminer naturellement
+    // Cela évite de perdre des animations comme zdejebel qui arrivent en fin de tour
+    // animationQueue.length = 0;
+    // isAnimating = false;
+    console.log('[Reset] Animation states reset, queue preserved:', animationQueue.length, 'items');
 
     // Nettoyer les animations de pioche en attente
     if (typeof GameAnimations !== 'undefined') {
