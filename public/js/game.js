@@ -48,6 +48,7 @@ async function initCombatAnimations() {
 }
 
 function queueAnimation(type, data) {
+    console.log('[Queue] Adding:', type, 'isAnimating:', isAnimating, 'queueLength:', animationQueue.length);
     animationQueue.push({ type, data });
     if (!isAnimating) {
         processAnimationQueue();
@@ -56,11 +57,13 @@ function queueAnimation(type, data) {
 
 async function processAnimationQueue() {
     if (animationQueue.length === 0) {
+        console.log('[Queue] Empty, stopping');
         isAnimating = false;
         return;
     }
 
     isAnimating = true;
+    console.log('[Queue] Processing, queueLength:', animationQueue.length, 'next:', animationQueue[0]?.type);
 
     // Regrouper les animations de mort consécutives en batch
     if (animationQueue[0].type === 'death') {
@@ -110,7 +113,12 @@ async function processAnimationQueue() {
     const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
 
     // Exécuter l'animation
-    await executeAnimationAsync(type, data);
+    try {
+        await executeAnimationAsync(type, data);
+        console.log('[Queue] Animation completed:', type);
+    } catch (e) {
+        console.error('[Queue] Animation error:', type, e);
+    }
 
     // Attendre le délai
     await new Promise(resolve => setTimeout(resolve, delay));
@@ -701,13 +709,20 @@ function animateDeath(data) {
  * Animation de défausse depuis la main (désintégration sur place)
  */
 async function animateDiscard(data) {
+    console.log('[Discard] Starting animation for', data);
     const owner = data.player === myNum ? 'me' : 'opp';
     const handEl = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
-    if (!handEl) return;
+    if (!handEl) {
+        console.log('[Discard] No hand element found');
+        return;
+    }
 
     const cards = handEl.querySelectorAll(owner === 'me' ? '.card' : '.opp-card-back');
     const cardEl = cards[data.handIndex];
-    if (!cardEl) return;
+    if (!cardEl) {
+        console.log('[Discard] No card at index', data.handIndex, 'cards count:', cards.length);
+        return;
+    }
 
     const rect = cardEl.getBoundingClientRect();
 
@@ -729,8 +744,17 @@ async function animateDiscard(data) {
     // Cacher la carte originale
     cardEl.style.visibility = 'hidden';
 
-    // Animation de désintégration
-    await animateDisintegration(clone, owner);
+    // Animation de désintégration avec timeout de sécurité
+    try {
+        await Promise.race([
+            animateDisintegration(clone, owner),
+            new Promise(resolve => setTimeout(resolve, 2000)) // Timeout 2s max
+        ]);
+    } catch (e) {
+        console.error('[Discard] Animation error:', e);
+        clone.remove();
+    }
+    console.log('[Discard] Animation completed');
 }
 
 /**
@@ -779,8 +803,17 @@ async function animateBurn(data) {
 
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Phase 2: Désintégration
-    await animateDisintegration(cardEl, owner);
+    // Phase 2: Désintégration avec timeout de sécurité
+    try {
+        await Promise.race([
+            animateDisintegration(cardEl, owner),
+            new Promise(resolve => setTimeout(resolve, 2000)) // Timeout 2s max
+        ]);
+    } catch (e) {
+        console.error('[Burn] Animation error:', e);
+        cardEl.remove();
+    }
+    console.log('[Burn] Animation completed');
 }
 
 /**
@@ -2161,6 +2194,9 @@ function showHeroPreview(hero, hp) {
     if (!hero) {
         hero = window.heroData?.me || window.heroData?.opp;
     }
+    if (!hp) {
+        hp = state?.me?.hp || state?.opponent?.hp || 20;
+    }
 
     hideCardPreview();
     previewEl = document.createElement('div');
@@ -2172,6 +2208,14 @@ function showHeroPreview(hero, hp) {
         previewEl.style.backgroundPosition = 'center';
         previewEl.innerHTML = `
             <div class="hero-preview-title" style="background: ${hero.titleColor}">${hero.name}</div>
+            <div class="hero-preview-text-zone">
+                <div class="hero-preview-type">Héros</div>
+                <div class="hero-preview-ability">${hero.ability}</div>
+            </div>
+            <div class="hero-preview-edition">
+                <img src="/css/edition_${hero.edition}.png" alt="Edition">
+            </div>
+            <div class="hero-preview-hp">${hp}</div>
         `;
     } else {
         previewEl.innerHTML = `
@@ -2190,6 +2234,9 @@ function showHeroDetail(hero, hp) {
         hero = window.heroData?.me || window.heroData?.opp;
         if (!hero) return;
     }
+    if (!hp) {
+        hp = state?.me?.hp || state?.opponent?.hp || 20;
+    }
 
     // Créer la modal de détail du héros
     const modal = document.createElement('div');
@@ -2205,6 +2252,7 @@ function showHeroDetail(hero, hp) {
                 <div class="hero-detail-edition">
                     <img src="/css/edition_${hero.edition}.png" alt="Edition ${hero.edition}">
                 </div>
+                <div class="hero-detail-hp">${hp}</div>
             </div>
         </div>
     `;
