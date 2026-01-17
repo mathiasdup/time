@@ -138,6 +138,9 @@ async function executeAnimationAsync(type, data) {
             case 'onDeathDamage':
                 await handleOnDeathDamage(data);
                 return;
+            case 'zdejebel':
+                await animateZdejebelDamage(data);
+                return;
             case 'death':
                 animateDeath(data);
                 return;
@@ -157,6 +160,7 @@ async function executeAnimationAsync(type, data) {
         case 'spellDamage': animateDamageFallback(data); break;
         case 'death': animateDeath(data); break;
         case 'heroHit': animateHeroHitFallback(data); break;
+        case 'zdejebel': await animateZdejebelDamage(data); break;
         case 'discard': await animateDiscard(data); break;
         case 'burn': await animateBurn(data); break;
     }
@@ -291,6 +295,39 @@ async function handleOnDeathDamage(data) {
         owner: owner,
         amount: data.damage
     });
+}
+
+async function animateZdejebelDamage(data) {
+    const owner = data.targetPlayer === myNum ? 'me' : 'opp';
+
+    // Afficher un effet visuel pour la capacité Zdejebel
+    const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
+    if (heroCard) {
+        // Créer un effet démoniaque
+        const zdejebelEffect = document.createElement('div');
+        zdejebelEffect.className = 'zdejebel-effect';
+        zdejebelEffect.innerHTML = `<span class="zdejebel-icon">😈</span><span class="zdejebel-text">-${data.damage}</span>`;
+        heroCard.appendChild(zdejebelEffect);
+
+        // Animer l'effet
+        setTimeout(() => zdejebelEffect.classList.add('active'), 50);
+        setTimeout(() => zdejebelEffect.remove(), 1500);
+    }
+
+    // Utiliser l'animation de dégâts sur héros existante
+    if (typeof CombatAnimations !== 'undefined') {
+        await CombatAnimations.animateHeroHit({
+            owner: owner,
+            amount: data.damage
+        });
+    } else {
+        // Fallback simple
+        if (heroCard) {
+            heroCard.classList.add('hit');
+            await new Promise(r => setTimeout(r, 500));
+            heroCard.classList.remove('hit');
+        }
+    }
 }
 
 async function handlePixiSpellDamage(data) {
@@ -590,7 +627,7 @@ function handleAnimation(data) {
     const { type } = data;
 
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn', 'zdejebel'];
 
     if (queuedTypes.includes(type)) {
         queueAnimation(type, data);
@@ -604,7 +641,7 @@ function handleAnimation(data) {
             case 'trapTrigger': animateTrap(data); break;
             case 'summon': animateSummon(data); break;
             case 'move': animateMove(data); break;
-            case 'draw': 
+            case 'draw':
                 if (typeof GameAnimations !== 'undefined') {
                     GameAnimations.prepareDrawAnimation(data);
                 }
@@ -1349,29 +1386,44 @@ function doMulligan() {
 function setupHeroes() {
     document.getElementById('me-name').textContent = state.me.heroName;
     document.getElementById('opp-name').textContent = state.opponent.heroName;
-    document.getElementById('me-hero-name').textContent = state.me.heroName;
-    document.getElementById('opp-hero-name').textContent = state.opponent.heroName;
-    const meIcon = myNum === 1 ? '🧙‍♂️' : '⚔️';
-    const oppIcon = myNum === 1 ? '⚔️' : '🧙‍♂️';
-    document.getElementById('me-icon').textContent = meIcon;
-    document.getElementById('opp-icon').textContent = oppIcon;
-    
+
+    // Setup hero backgrounds et titres
+    const meHero = state.me.hero;
+    const oppHero = state.opponent.hero;
+
+    const meHeroInner = document.getElementById('me-hero-inner');
+    const oppHeroInner = document.getElementById('opp-hero-inner');
+
+    if (meHero && meHero.image) {
+        meHeroInner.style.backgroundImage = `url('/cards/${meHero.image}')`;
+        document.getElementById('me-hero-title').textContent = meHero.name;
+        document.getElementById('me-hero-title').style.background = meHero.titleColor;
+    }
+
+    if (oppHero && oppHero.image) {
+        oppHeroInner.style.backgroundImage = `url('/cards/${oppHero.image}')`;
+        document.getElementById('opp-hero-title').textContent = oppHero.name;
+        document.getElementById('opp-hero-title').style.background = oppHero.titleColor;
+    }
+
     // Preview au survol des héros
     const heroMe = document.getElementById('hero-me');
     const heroOpp = document.getElementById('hero-opp');
-    
-    heroMe.onmouseenter = () => showHeroPreview(state.me.heroName, meIcon, state.me.hp);
+
+    heroMe.onmouseenter = () => showHeroPreview(meHero, state.me.hp);
     heroMe.onmouseleave = hideCardPreview;
-    
-    heroOpp.onmouseenter = () => showHeroPreview(state.opponent.heroName, oppIcon, state.opponent.hp);
+    heroMe.onclick = () => showHeroDetail(meHero, state.me.hp);
+
+    heroOpp.onmouseenter = () => showHeroPreview(oppHero, state.opponent.hp);
     heroOpp.onmouseleave = hideCardPreview;
-    
+    heroOpp.onclick = () => showHeroDetail(oppHero, state.opponent.hp);
+
     // Drag/drop sur les héros pour les sorts
     setupHeroDragDrop(heroMe, 'me');
     setupHeroDragDrop(heroOpp, 'opp');
-    
-    // Stocker les icônes pour réutilisation
-    window.heroIcons = { me: meIcon, opp: oppIcon };
+
+    // Stocker les héros pour réutilisation
+    window.heroData = { me: meHero, opp: oppHero };
 }
 
 function setupHeroDragDrop(heroEl, owner) {
@@ -2062,18 +2114,61 @@ function showCardBackPreview() {
     });
 }
 
-function showHeroPreview(heroName, heroIcon, hp) {
+function showHeroPreview(hero, hp) {
     hideCardPreview();
     previewEl = document.createElement('div');
     previewEl.className = 'hero-preview card-preview';
-    previewEl.innerHTML = `
-        <div class="hero-preview-icon">${heroIcon}</div>
-        <div class="hero-preview-name">${heroName}</div>
-        <div class="hero-preview-hp">❤️ ${hp}</div>
-    `;
+
+    if (hero && hero.image) {
+        previewEl.style.backgroundImage = `url('/cards/${hero.image}')`;
+        previewEl.style.backgroundSize = 'cover';
+        previewEl.style.backgroundPosition = 'center';
+        previewEl.innerHTML = `
+            <div class="hero-preview-title" style="background: ${hero.titleColor}">${hero.name}</div>
+            <div class="hero-preview-hp">❤️ ${hp}</div>
+        `;
+    } else {
+        previewEl.innerHTML = `
+            <div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>
+            <div class="hero-preview-hp">❤️ ${hp}</div>
+        `;
+    }
     document.body.appendChild(previewEl);
     requestAnimationFrame(() => {
         previewEl.classList.add('visible');
+    });
+}
+
+function showHeroDetail(hero, hp) {
+    if (!hero) return;
+
+    // Créer la modal de détail du héros
+    const modal = document.createElement('div');
+    modal.className = 'hero-detail-modal';
+    modal.innerHTML = `
+        <div class="hero-detail-content">
+            <div class="hero-detail-card" style="background-image: url('/cards/${hero.image}')">
+                <div class="hero-detail-title" style="background: ${hero.titleColor}">${hero.name}</div>
+                <div class="hero-detail-text-zone">
+                    <div class="hero-detail-ability">${hero.ability}</div>
+                </div>
+                <div class="hero-detail-edition">
+                    <img src="/css/edition_${hero.edition}.png" alt="Edition ${hero.edition}">
+                </div>
+            </div>
+            <div class="hero-detail-hp">❤️ ${hp}</div>
+        </div>
+    `;
+
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+
+    document.body.appendChild(modal);
+    requestAnimationFrame(() => {
+        modal.classList.add('visible');
     });
 }
 

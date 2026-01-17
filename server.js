@@ -39,7 +39,9 @@ function resetPlayerForNewTurn(player) {
     player.ready = false;
     player.inDeployPhase = false;
     player.pendingActions = [];
-    
+    player.spellsCastThisTurn = 0;
+    player.heroAttackedThisTurn = false;
+
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
             if (player.field[r][c]) {
@@ -47,7 +49,7 @@ function resetPlayerForNewTurn(player) {
             }
         }
     }
-    
+
     player.confirmedField = deepClone(player.field);
     player.confirmedTraps = deepClone(player.traps);
 }
@@ -78,7 +80,8 @@ function getPublicGameState(room, forPlayer) {
             graveyardCount: me.graveyard.length,
             ready: me.ready,
             inDeployPhase: me.inDeployPhase,
-            heroName: me.heroName
+            heroName: me.heroName,
+            hero: me.hero
         },
         opponent: {
             hp: opp.hp,
@@ -91,7 +94,8 @@ function getPublicGameState(room, forPlayer) {
             graveyard: opp.graveyard,
             graveyardCount: opp.graveyard.length,
             ready: opp.ready,
-            heroName: opp.heroName
+            heroName: opp.heroName,
+            hero: opp.hero
         }
     };
 }
@@ -503,7 +507,28 @@ async function startResolution(room) {
         emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
         await sleep(1200); // Attendre l'animation de burn
     }
-    
+
+    // Capacité Zdejebel: fin du tour, si le héros adverse a été attaqué, il subit 1 blessure
+    for (let playerNum = 1; playerNum <= 2; playerNum++) {
+        const player = room.gameState.players[playerNum];
+        const opponent = room.gameState.players[playerNum === 1 ? 2 : 1];
+
+        if (player.hero && player.hero.id === 'zdejebel' && opponent.heroAttackedThisTurn) {
+            opponent.hp -= 1;
+            log(`😈 ${player.heroName}: capacité Zdejebel - ${opponent.heroName} subit 1 blessure!`, 'damage');
+            emitAnimation(room, 'zdejebel', { targetPlayer: playerNum === 1 ? 2 : 1, damage: 1 });
+            await sleep(800);
+            emitStateToBoth(room);
+
+            // Vérifier si le héros est mort
+            if (opponent.hp <= 0) {
+                log(`🏆 ${player.heroName} GAGNE grâce à Zdejebel!`, 'phase');
+                io.to(room.code).emit('gameOver', { winner: playerNum });
+                return;
+            }
+        }
+    }
+
     startNewTurn(room);
 }
 
@@ -1171,12 +1196,13 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     }
                 } else if (excessDamage > 0) {
                     targetOwner.hp -= excessDamage;
+                    targetOwner.heroAttackedThisTurn = true;
                     log(`🦏 Piétinement: ${attacker.name} → ${targetOwner.heroName} (-${excessDamage})`, 'damage');
                     emitAnimation(room, 'heroHit', { defender: atkData.targetPlayer, damage: excessDamage });
                     io.to(room.code).emit('directDamage', { defender: atkData.targetPlayer, damage: excessDamage });
                 }
             };
-            
+
             if (bothHaveInitiative || !oneHasInitiative) {
                 // Dégâts SIMULTANÉS - les deux s'infligent des dégâts en même temps
                 const dmg1to2 = atk1.attacker.atk;
@@ -1279,9 +1305,10 @@ async function processCombatSlot(room, row, col, log, sleep) {
     for (const atk of attacks) {
         const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
         if (!attackerCard || attackerCard.currentHp <= 0) continue;
-        
+
         if (atk.targetIsHero) {
             room.gameState.players[atk.targetPlayer].hp -= attackerCard.atk;
+            room.gameState.players[atk.targetPlayer].heroAttackedThisTurn = true;
             log(`⚔️ ${attackerCard.name} → ${room.gameState.players[atk.targetPlayer].heroName} (-${attackerCard.atk})`, 'damage');
             emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk });
             io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: attackerCard.atk });
@@ -1378,10 +1405,11 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     }
                 } else if (excessDamage > 0) {
                     targetOwner.hp -= excessDamage;
+                    targetOwner.heroAttackedThisTurn = true;
                     log(`🦏 Piétinement: ${attackerCard.name} → ${targetOwner.heroName} (-${excessDamage})`, 'damage');
                     emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: excessDamage });
                     io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: excessDamage });
-                    
+
                     if (targetOwner.hp <= 0) return true;
                 }
             }
@@ -2051,6 +2079,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 await sleep(800); // Attendre la fin de l'animation d'attaque
 
                 targetPlayer.hp -= damage;
+                targetPlayer.heroAttackedThisTurn = true;
                 log(`⚔️ ${attackerCard.name} → ${targetPlayer.heroName} (-${damage})`, 'damage');
                 // L'animation d'attaque affiche déjà les dégâts, pas besoin de heroHit en plus
                 io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: damage });
@@ -2344,6 +2373,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
         
         if (atk.targetIsHero) {
             room.gameState.players[atk.targetPlayer].hp -= attackerCard.atk;
+            room.gameState.players[atk.targetPlayer].heroAttackedThisTurn = true;
             log(`⚔️ ${attackerCard.name} → ${room.gameState.players[atk.targetPlayer].heroName} (-${attackerCard.atk})`, 'damage');
             emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk });
             io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: attackerCard.atk });
@@ -2466,6 +2496,7 @@ async function applyTrampleDamage(room, atk, log, sleep) {
         }
     } else if (excessDamage > 0 && !trampleTarget) {
         targetOwner.hp -= excessDamage;
+        targetOwner.heroAttackedThisTurn = true;
         log(`🦏 Piétinement: ${atk.attacker.name} → ${targetOwner.heroName} (-${excessDamage})`, 'damage');
         emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: excessDamage });
         io.to(room.code).emit('directDamage', { defender: atk.targetPlayer, damage: excessDamage });
@@ -2760,14 +2791,22 @@ io.on('connection', (socket) => {
         if (handIndex === undefined || handIndex < 0 || handIndex >= player.hand.length) return;
         
         const spell = player.hand[handIndex];
-        if (!spell || spell.type !== 'spell' || spell.cost > player.energy) return;
-        
+        if (!spell || spell.type !== 'spell') return;
+
+        // Calculer le coût effectif (réduction Hyrule pour le 2ème sort)
+        let effectiveCost = spell.cost;
+        if (player.hero && player.hero.id === 'hyrule' && player.spellsCastThisTurn === 1) {
+            effectiveCost = Math.max(0, spell.cost - 1);
+        }
+
+        if (effectiveCost > player.energy) return;
+
         // Validation des coordonnées
         // row = -1 signifie qu'on cible un héros
         if (row === -1) {
             // Vérifier que le sort peut cibler un héros
             if (spell.pattern !== 'hero' && !spell.canTargetHero) return;
-            
+
             // Vérifier les restrictions targetEnemy / targetSelf
             const isTargetingSelf = targetPlayer === info.playerNum;
             if (spell.targetEnemy && isTargetingSelf) return; // Frappe directe = adversaire seulement
@@ -2776,8 +2815,9 @@ io.on('connection', (socket) => {
             // Sort ciblé normal sur une créature
             if (row < 0 || row > 3 || col < 0 || col > 1) return;
         }
-        
-        player.energy -= spell.cost;
+
+        player.energy -= effectiveCost;
+        player.spellsCastThisTurn++;
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
         
@@ -2808,15 +2848,24 @@ io.on('connection', (socket) => {
         if (handIndex < 0 || handIndex >= player.hand.length) return;
         
         const spell = player.hand[handIndex];
-        if (!spell || spell.type !== 'spell' || spell.cost > player.energy) return;
-        
+        if (!spell || spell.type !== 'spell') return;
+
+        // Calculer le coût effectif (réduction Hyrule pour le 2ème sort)
+        let effectiveCost = spell.cost;
+        if (player.hero && player.hero.id === 'hyrule' && player.spellsCastThisTurn === 1) {
+            effectiveCost = Math.max(0, spell.cost - 1);
+        }
+
+        if (effectiveCost > player.energy) return;
+
         // Vérifier que c'est un sort global (global, all, hero)
         if (!['global', 'all', 'hero'].includes(spell.pattern)) return;
-        
-        player.energy -= spell.cost;
+
+        player.energy -= effectiveCost;
+        player.spellsCastThisTurn++;
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
-        
+
         player.pendingActions.push({ type: 'spell', spell: deepClone(spell), targetPlayer: info.playerNum === 1 ? 2 : 1, row: -1, col: -1 });
         
         emitStateToPlayer(room, info.playerNum);

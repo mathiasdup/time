@@ -66,6 +66,33 @@ const CardDB = {
 
 const HERO_NAMES = ['Aldric', 'Lyra', 'Theron', 'Seraphine', 'Kael', 'Mira', 'Draven', 'Elena'];
 
+// Définition des héros avec capacités
+const HEROES = {
+    hyrule: {
+        id: 'hyrule',
+        name: 'Hyrule, prophète ultime',
+        image: 'hero_hyrule.jpg',
+        titleColor: '#184d26ba', // Vert
+        edition: 3,
+        ability: 'Le deuxième sort que vous lancez chaque tour coûte 1 mana de moins.'
+    },
+    zdejebel: {
+        id: 'zdejebel',
+        name: 'Zdejebel, fille de satan',
+        image: 'hero_zdejebel.jpg',
+        titleColor: '#4d1823ba', // Rouge
+        edition: 3,
+        ability: 'Fin du tour : si le héros adverse a été attaqué, il subit 1 blessure.'
+    }
+};
+
+// Sélectionner un héros aléatoire
+function getRandomHero() {
+    const heroKeys = Object.keys(HEROES);
+    const randomKey = heroKeys[Math.floor(Math.random() * heroKeys.length)];
+    return { ...HEROES[randomKey] };
+}
+
 // Réinitialiser une carte à ses stats de base
 function resetCardForGraveyard(card) {
     if (!card) return null;
@@ -105,6 +132,7 @@ function createDeck() {
 function createPlayerState() {
     const deck = createDeck();
     const hand = deck.splice(0, 7);
+    const hero = getRandomHero();
     return {
         hp: 20,
         energy: 1,
@@ -121,8 +149,11 @@ function createPlayerState() {
         pendingActions: [],
         confirmedField: null,
         confirmedTraps: null,
-        heroName: HERO_NAMES[Math.floor(Math.random() * HERO_NAMES.length)],
-        mulliganDone: false
+        heroName: hero.name,
+        hero: hero,
+        mulliganDone: false,
+        spellsCastThisTurn: 0,
+        heroAttackedThisTurn: false
     };
 }
 
@@ -139,6 +170,8 @@ function createGameState() {
 module.exports = {
     CardDB,
     HERO_NAMES,
+    HEROES,
+    getRandomHero,
     resetCardForGraveyard,
     addToGraveyard,
     createDeck,
