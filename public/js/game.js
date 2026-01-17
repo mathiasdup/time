@@ -2225,14 +2225,26 @@ function makeCard(card, inHand) {
         // Capacité spéciale/unique si présente
         let specialAbility = '';
         if (card.onHeroHit === 'draw') {
-            specialAbility = 'Si cette créature attaque un héros adverse, piochez une carte.';
+            specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
         }
+
+        // Icône du type de créature
+        const creatureTypeIcons = {
+            undead: 'type_mortvivant.png',
+            human: 'type_humain.png',
+            dragon: 'type_dragon.png'
+        };
+        const creatureTypeIcon = card.creatureType ? creatureTypeIcons[card.creatureType] : null;
+
+        // Icône d'édition
+        const editionIcon = card.edition ? `edition_${card.edition}.png` : null;
 
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
             el.innerHTML = `
                 <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+                ${creatureTypeIcon ? `<div class="arena-creature-type"><img src="/css/${creatureTypeIcon}" alt="${card.creatureType}"></div>` : ''}
                 <div class="arena-mana">${card.cost}</div>
                 <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
             return el;
@@ -2241,11 +2253,13 @@ function makeCard(card, inHand) {
         // Version complète (main, hover, cimetière)
         el.innerHTML = `
             <div class="arena-title"><div class="arena-name">${card.name}</div></div>
+            ${creatureTypeIcon ? `<div class="arena-creature-type"><img src="/css/${creatureTypeIcon}" alt="${card.creatureType}"></div>` : ''}
             <div class="arena-text-zone">
                 <div class="arena-type">Créature - ${combatTypeText}</div>
                 ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
                 ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
             </div>
+            ${editionIcon ? `<div class="arena-edition"><img src="/css/${editionIcon}" alt="Edition ${card.edition}"></div>` : ''}
             <div class="arena-mana">${card.cost}</div>
             <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
         return el;
