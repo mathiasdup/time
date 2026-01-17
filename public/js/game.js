@@ -2136,10 +2136,11 @@ function showCardPreview(card, e) {
     if (infoContainer.children.length > 0) {
         previewEl.appendChild(infoContainer);
     }
-    
+
     document.body.appendChild(previewEl);
+    const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
-        previewEl.classList.add('visible');
+        if (el && el.parentNode) el.classList.add('visible');
     });
 }
 
@@ -2148,8 +2149,9 @@ function showCardBackPreview() {
     previewEl = document.createElement('div');
     previewEl.className = 'card-back-preview card-preview';
     document.body.appendChild(previewEl);
+    const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
-        previewEl.classList.add('visible');
+        if (el && el.parentNode) el.classList.add('visible');
     });
 }
 
@@ -2175,8 +2177,9 @@ function showHeroPreview(hero, hp) {
         `;
     }
     document.body.appendChild(previewEl);
+    const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
-        previewEl.classList.add('visible');
+        if (el && el.parentNode) el.classList.add('visible');
     });
 }
 

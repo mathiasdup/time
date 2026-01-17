@@ -632,6 +632,9 @@ class CombatVFXSystem {
      * Pour la capacité de Zdejebel
      */
     createSlashEffect(x, y, damage) {
+        console.log('[SlashEffect] Creating at', x, y, 'with', this.activeEffects.length, 'active effects');
+        console.log('[SlashEffect] Container children:', this.container?.children?.length);
+
         const effectContainer = new PIXI.Container();
         effectContainer.position.set(x, y);
         this.container.addChild(effectContainer);
@@ -694,9 +697,15 @@ class CombatVFXSystem {
         const aura = new PIXI.Graphics();
         effectContainer.addChildAt(aura, 0);
 
+        let frameCount = 0;
         const animate = () => {
+            frameCount++;
             const elapsed = performance.now() - effect.startTime;
             const progress = Math.min(elapsed / effect.duration, 1);
+
+            if (frameCount === 1) {
+                console.log('[SlashEffect] Animation started, first frame');
+            }
 
             // Flash initial
             if (progress < 0.15) {
@@ -733,19 +742,12 @@ class CombatVFXSystem {
                     // Largeur qui s'amincit
                     const width = 8 * (1 - slashProgress * 0.3);
 
-                    // Dessiner la griffure
-                    slash.moveTo(data.offsetX - width / 2, startY);
-                    slash.lineTo(data.offsetX + width / 2, startY);
-                    slash.lineTo(data.offsetX + width / 3, endY);
-                    slash.lineTo(data.offsetX - width / 3, endY);
-                    slash.closePath();
-
                     // Couleur avec dégradé simulé
                     const alpha = progress < 0.6 ? 1 : (1 - (progress - 0.6) / 0.4);
-                    slash.fill({ color: crimson, alpha: alpha * 0.9 });
 
-                    // Bordure plus sombre
-                    slash.stroke({ width: 2, color: bloodRed, alpha: alpha * 0.7 });
+                    // Dessiner la griffure comme un rectangle allongé (plus simple et compatible PixiJS 8)
+                    slash.rect(data.offsetX - width / 2, startY, width, drawLength);
+                    slash.fill({ color: crimson, alpha: alpha * 0.9 });
 
                     slash.rotation = data.angle;
                 }
@@ -767,6 +769,7 @@ class CombatVFXSystem {
 
             if (progress >= 1) {
                 effect.finished = true;
+                console.log('[SlashEffect] Animation finished after', frameCount, 'frames');
             } else {
                 requestAnimationFrame(animate);
             }
@@ -774,6 +777,7 @@ class CombatVFXSystem {
 
         requestAnimationFrame(animate);
         this.activeEffects.push(effect);
+        console.log('[SlashEffect] Effect added, total effects:', this.activeEffects.length);
 
         // Afficher les dégâts
         if (damage !== undefined && damage > 0) {
