@@ -400,7 +400,12 @@ async function startResolution(room) {
         }
         
         const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
-        
+
+        // ==================== PHASE D'INTERCEPTION DES VOLANTS ====================
+        // Les volants qui peuvent attaquer s'interceptent au centre du plateau
+        // AVANT le traitement normal slot par slot
+        await processFlyingInterceptions(room, log, sleep, checkVictory);
+
         // Combat SLOT PAR SLOT : A, B, C, D, E, F, G, H
         // A=row0/col0, B=row0/col1, C=row1/col0, D=row1/col1, etc.
         for (let row = 0; row < 4; row++) {
@@ -434,6 +439,7 @@ async function startResolution(room) {
                     card.turnsOnField++;
                     card.canAttack = true;
                     card.movedThisTurn = false;
+                    card.hasIntercepted = false;
                 }
             }
         }
@@ -1567,6 +1573,185 @@ async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
     }
 }
 
+// ==================== INTERCEPTION DES VOLANTS (PHASE GLOBALE) ====================
+// Les volants qui peuvent attaquer s'interceptent au centre du plateau
+// AVANT le traitement normal slot par slot
+async function processFlyingInterceptions(room, log, sleep, checkVictory) {
+    const p1State = room.gameState.players[1];
+    const p2State = room.gameState.players[2];
+
+    // Collecter tous les volants qui peuvent attaquer
+    const p1Flyers = [];
+    const p2Flyers = [];
+
+    for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 2; col++) {
+            const p1Card = p1State.field[row][col];
+            const p2Card = p2State.field[row][col];
+
+            if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && p1Card.abilities.includes('fly')) {
+                p1Flyers.push({ card: p1Card, player: 1, row, col });
+            }
+            if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && p2Card.abilities.includes('fly')) {
+                p2Flyers.push({ card: p2Card, player: 2, row, col });
+            }
+        }
+    }
+
+    // Pas d'interception si un seul camp a des volants
+    console.log(`[INTERCEPT DEBUG] P1 volants: ${p1Flyers.length}, P2 volants: ${p2Flyers.length}`);
+    for (const f of p1Flyers) console.log(`  P1: ${f.card.name} at row=${f.row}, col=${f.col}`);
+    for (const f of p2Flyers) console.log(`  P2: ${f.card.name} at row=${f.row}, col=${f.col}`);
+    if (p1Flyers.length === 0 || p2Flyers.length === 0) return;
+
+    // Apparier les volants pour interception (1 contre 1)
+    const interceptions = [];
+    const usedP1 = new Set();
+    const usedP2 = new Set();
+
+    for (const p1f of p1Flyers) {
+        for (const p2f of p2Flyers) {
+            const p1Key = `${p1f.row}-${p1f.col}`;
+            const p2Key = `${p2f.row}-${p2f.col}`;
+
+            if (!usedP1.has(p1Key) && !usedP2.has(p2Key)) {
+                interceptions.push({ p1: p1f, p2: p2f });
+                usedP1.add(p1Key);
+                usedP2.add(p2Key);
+                break; // Passer au volant suivant de P1
+            }
+        }
+    }
+
+    if (interceptions.length === 0) return;
+
+    log(`🦅 Interception aérienne! ${interceptions.length} combat(s) de volants`, 'action');
+
+    // Traiter chaque interception
+    for (const inter of interceptions) {
+        const { p1, p2 } = inter;
+        const card1 = p1.card;
+        const card2 = p2.card;
+
+        // Vérifier que les deux sont encore vivants
+        if (card1.currentHp <= 0 || card2.currentHp <= 0) continue;
+
+        // Marquer les créatures comme ayant participé à l'interception
+        card1.hasIntercepted = true;
+        card2.hasIntercepted = true;
+
+        // Animation d'interception (combat mutuel au centre)
+        emitAnimation(room, 'attack', {
+            combatType: 'mutual',
+            attacker1: { player: p1.player, row: p1.row, col: p1.col },
+            attacker2: { player: p2.player, row: p2.row, col: p2.col },
+            isFlying: true,
+            isInterception: true
+        });
+
+        log(`🦅 ${card1.name} et ${card2.name} s'interceptent en vol!`, 'action');
+
+        await sleep(500);
+
+        // Résoudre le combat (vérifier initiative)
+        const init1 = card1.abilities.includes('initiative');
+        const init2 = card2.abilities.includes('initiative');
+        const dmg1 = card1.atk;
+        const dmg2 = card2.atk;
+
+        if (init1 && !init2) {
+            // P1 a initiative - attaque en premier
+            card2.currentHp -= dmg1;
+            log(`⚔️ ${card1.name} → ${card2.name} (-${dmg1}) [Initiative]`, 'damage');
+            emitAnimation(room, 'damage', { player: p2.player, row: p2.row, col: p2.col, amount: dmg1 });
+
+            if (card2.currentHp > 0) {
+                if (card2.abilities.includes('power')) {
+                    card2.atk += 1;
+                    log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
+                }
+                card1.currentHp -= card2.atk;
+                log(`↩️ ${card2.name} → ${card1.name} (-${card2.atk})`, 'damage');
+                emitAnimation(room, 'damage', { player: p1.player, row: p1.row, col: p1.col, amount: card2.atk });
+
+                if (card1.currentHp > 0 && card1.abilities.includes('power')) {
+                    card1.atk += 1;
+                    log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
+                }
+            }
+        } else if (init2 && !init1) {
+            // P2 a initiative - attaque en premier
+            card1.currentHp -= dmg2;
+            log(`⚔️ ${card2.name} → ${card1.name} (-${dmg2}) [Initiative]`, 'damage');
+            emitAnimation(room, 'damage', { player: p1.player, row: p1.row, col: p1.col, amount: dmg2 });
+
+            if (card1.currentHp > 0) {
+                if (card1.abilities.includes('power')) {
+                    card1.atk += 1;
+                    log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
+                }
+                card2.currentHp -= card1.atk;
+                log(`↩️ ${card1.name} → ${card2.name} (-${card1.atk})`, 'damage');
+                emitAnimation(room, 'damage', { player: p2.player, row: p2.row, col: p2.col, amount: card1.atk });
+
+                if (card2.currentHp > 0 && card2.abilities.includes('power')) {
+                    card2.atk += 1;
+                    log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
+                }
+            }
+        } else {
+            // Combat simultané (les deux ont initiative ou aucun)
+            card2.currentHp -= dmg1;
+            card1.currentHp -= dmg2;
+
+            log(`⚔️ ${card1.name} ↔ ${card2.name} (-${dmg1} / -${dmg2})`, 'damage');
+            emitAnimation(room, 'damage', { player: p2.player, row: p2.row, col: p2.col, amount: dmg1 });
+            emitAnimation(room, 'damage', { player: p1.player, row: p1.row, col: p1.col, amount: dmg2 });
+
+            // Power bonus
+            if (card1.currentHp > 0 && card1.abilities.includes('power')) {
+                card1.atk += 1;
+                log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
+            }
+            if (card2.currentHp > 0 && card2.abilities.includes('power')) {
+                card2.atk += 1;
+                log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
+            }
+        }
+
+        // Animation de clash (onde de choc)
+        const midRow = (p1.row + p2.row) / 2;
+        emitAnimation(room, 'clash', { row: midRow, isInterception: true });
+
+        await sleep(400);
+
+        // Retirer les créatures mortes
+        const deadCards = [];
+        if (card1.currentHp <= 0) {
+            deadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
+            addToGraveyard(p1State, card1);
+            p1State.field[p1.row][p1.col] = null;
+            log(`☠️ ${card1.name} détruit!`, 'damage');
+            emitAnimation(room, 'death', { player: p1.player, row: p1.row, col: p1.col });
+        }
+        if (card2.currentHp <= 0) {
+            deadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
+            addToGraveyard(p2State, card2);
+            p2State.field[p2.row][p2.col] = null;
+            log(`☠️ ${card2.name} détruit!`, 'damage');
+            emitAnimation(room, 'death', { player: p2.player, row: p2.row, col: p2.col });
+        }
+
+        emitStateToBoth(room);
+        await sleep(300);
+
+        // Capacités onDeath
+        for (const d of deadCards) {
+            await processOnDeathAbility(room, d.card, d.player, log, sleep);
+        }
+    }
+}
+
 // Traiter le combat pour un slot spécifique (row, col)
 // Les deux joueurs ont une créature à cette position qui peuvent attaquer
 async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames) {
@@ -1579,9 +1764,15 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
     
     // Collecter les attaques de ce slot
     const attacks = [];
-    
-    if (p1Card && p1Card.canAttack && p1Card.currentHp > 0) {
+
+    // DEBUG: log pour comprendre le problème
+    console.log(`[SLOT ${slotName}] P1: ${p1Card?.name || 'vide'} (canAttack=${p1Card?.canAttack}, hp=${p1Card?.currentHp}, hasIntercepted=${p1Card?.hasIntercepted})`);
+    console.log(`[SLOT ${slotName}] P2: ${p2Card?.name || 'vide'} (canAttack=${p2Card?.canAttack}, hp=${p2Card?.currentHp}, hasIntercepted=${p2Card?.hasIntercepted})`);
+
+    // Skip les volants qui ont déjà intercepté (ils ont déjà attaqué dans la phase d'interception)
+    if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && !p1Card.hasIntercepted) {
         const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+        console.log(`[SLOT ${slotName}] P1 ${p1Card.name} cherche cible: ${target?.card?.name || (target?.isHero ? 'HERO' : 'aucune')}`);
         if (target) {
             attacks.push({
                 attacker: p1Card,
@@ -1600,8 +1791,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             });
         }
     }
-    
-    if (p2Card && p2Card.canAttack && p2Card.currentHp > 0) {
+
+    // Skip les volants qui ont déjà intercepté
+    if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && !p2Card.hasIntercepted) {
         const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
         if (target) {
             attacks.push({
