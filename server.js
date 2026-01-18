@@ -2317,7 +2317,46 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     }
     
     if (attacks.length === 0) return false;
-    
+
+    // ==================== INTERCEPTION DES VOLANTS ====================
+    // Règle: Si deux volants adverses peuvent TOUS DEUX attaquer ce tour,
+    // ils s'interceptent au centre du plateau et se battent mutuellement,
+    // peu importe leurs cibles initiales.
+    // Note: Volant, Tireur et Mêlée sont mutuellement exclusifs.
+    // Les tireurs ne se déplacent pas (tir à distance), donc pas d'interception avec eux.
+    // Si un seul volant peut attaquer, il passe librement vers sa cible.
+
+    const p1FlyingAttacks = attacks.filter(atk => atk.attackerPlayer === 1 && atk.isFlying);
+    const p2FlyingAttacks = attacks.filter(atk => atk.attackerPlayer === 2 && atk.isFlying);
+
+    // Pour chaque volant du joueur 1, chercher un volant adverse à intercepter
+    for (const p1Atk of p1FlyingAttacks) {
+        // Chercher un volant du joueur 2 qui n'est pas déjà en interception
+        const p2Interceptor = p2FlyingAttacks.find(p2Atk =>
+            !p2Atk.intercepted && !p1Atk.intercepted
+        );
+
+        if (p2Interceptor) {
+            // Les deux volants s'interceptent ! Modifier leurs cibles
+            // Le volant du J1 cible maintenant le volant du J2 et vice versa
+            p1Atk.target = p2Interceptor.attacker;
+            p1Atk.targetPlayer = p2Interceptor.attackerPlayer;
+            p1Atk.targetRow = p2Interceptor.attackerRow;
+            p1Atk.targetCol = p2Interceptor.attackerCol;
+            p1Atk.targetIsHero = false;
+            p1Atk.intercepted = true;
+
+            p2Interceptor.target = p1Atk.attacker;
+            p2Interceptor.targetPlayer = p1Atk.attackerPlayer;
+            p2Interceptor.targetRow = p1Atk.attackerRow;
+            p2Interceptor.targetCol = p1Atk.attackerCol;
+            p2Interceptor.targetIsHero = false;
+            p2Interceptor.intercepted = true;
+
+            log(`🦅 ${p1Atk.attacker.name} et ${p2Interceptor.attacker.name} s'interceptent en vol!`, 'action');
+        }
+    }
+
     // Animer toutes les attaques de cette rangée
     for (const atk of attacks) {
         emitAnimation(room, 'attack', {
@@ -2334,25 +2373,37 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     await sleep(500);
     
     // Identifier les combats mutuels (A attaque B et B attaque A)
+    // IMPORTANT: Un tireur vs mêlée n'est PAS un combat mutuel !
+    // Le tireur attaque à distance, la mêlée doit ensuite attaquer normalement et le tireur riposte
     const mutualPairs = [];
     for (let i = 0; i < attacks.length; i++) {
         if (attacks[i].processed || attacks[i].targetIsHero) continue;
-        
+
         for (let j = i + 1; j < attacks.length; j++) {
             if (attacks[j].processed || attacks[j].targetIsHero) continue;
-            
+
             const atk1 = attacks[i];
             const atk2 = attacks[j];
-            
+
             // Vérifier si elles se ciblent mutuellement
-            const atk1TargetsAtk2 = atk1.targetPlayer === atk2.attackerPlayer && 
-                                   atk1.targetRow === atk2.attackerRow && 
+            const atk1TargetsAtk2 = atk1.targetPlayer === atk2.attackerPlayer &&
+                                   atk1.targetRow === atk2.attackerRow &&
                                    atk1.targetCol === atk2.attackerCol;
-            const atk2TargetsAtk1 = atk2.targetPlayer === atk1.attackerPlayer && 
-                                   atk2.targetRow === atk1.attackerRow && 
+            const atk2TargetsAtk1 = atk2.targetPlayer === atk1.attackerPlayer &&
+                                   atk2.targetRow === atk1.attackerRow &&
                                    atk2.targetCol === atk1.attackerCol;
-            
+
             if (atk1TargetsAtk2 && atk2TargetsAtk1) {
+                // Si l'un est tireur et l'autre non, ce n'est PAS un combat mutuel
+                // Le tireur tire à distance, pas de mêlée simultanée
+                const atk1IsShooter = atk1.isShooter;
+                const atk2IsShooter = atk2.isShooter;
+
+                if (atk1IsShooter !== atk2IsShooter) {
+                    // Tireur vs non-tireur : pas de combat mutuel, traiter séparément
+                    continue;
+                }
+
                 mutualPairs.push([atk1, atk2]);
                 atk1.processed = true;
                 atk2.processed = true;

@@ -274,7 +274,7 @@ class CombatVFXSystem {
         return effect;
     }
 
-    // ==================== EFFET DE CLASH (ENTRECHOC) ====================
+    // ==================== EFFET DE CLASH (ENTRECHOC) - ONDE DE CHOC ====================
 
     createClashEffect(x, y) {
         const effectContainer = new PIXI.Container();
@@ -285,103 +285,234 @@ class CombatVFXSystem {
             container: effectContainer,
             finished: false,
             startTime: performance.now(),
-            duration: 500,
+            duration: 800,
         };
 
-        // Flash intense
-        const flash = new PIXI.Graphics();
-        flash.circle(0, 0, 80);
-        flash.fill({ color: 0xFFFFFF });
-        flash.alpha = 0;
-        effectContainer.addChild(flash);
+        // Couleurs de l'onde de choc
+        const coreColor = 0xFFFFFF;
+        const shockColor1 = 0x00DDFF;  // Cyan
+        const shockColor2 = 0xFFDD00;  // Or
+        const shockColor3 = 0xFF6600;  // Orange
 
-        // Étoile principale
-        const star = new PIXI.Graphics();
-        effectContainer.addChild(star);
+        // Flash central intense
+        const coreFlash = new PIXI.Graphics();
+        coreFlash.circle(0, 0, 30);
+        coreFlash.fill({ color: coreColor });
+        coreFlash.alpha = 0;
+        effectContainer.addChild(coreFlash);
 
-        // Anneaux
-        const rings = [];
-        for (let i = 0; i < 3; i++) {
-            const ring = new PIXI.Graphics();
-            ring.delay = i * 0.1;
-            effectContainer.addChild(ring);
-            rings.push(ring);
+        // Noyau d'énergie pulsant
+        const energyCore = new PIXI.Graphics();
+        effectContainer.addChild(energyCore);
+
+        // Ondes de choc concentriques (5 anneaux)
+        const shockwaves = [];
+        for (let i = 0; i < 5; i++) {
+            const wave = new PIXI.Graphics();
+            wave.waveData = {
+                delay: i * 0.08,
+                maxRadius: 180 + i * 40,
+                thickness: 12 - i * 2,
+                color: i < 2 ? shockColor1 : (i < 4 ? shockColor2 : shockColor3),
+            };
+            effectContainer.addChild(wave);
+            shockwaves.push(wave);
         }
 
-        // Étincelles
+        // Éclairs radiaux
+        const lightningBolts = [];
+        for (let i = 0; i < 8; i++) {
+            const bolt = new PIXI.Graphics();
+            bolt.boltData = {
+                angle: (i / 8) * Math.PI * 2,
+                length: 80 + Math.random() * 60,
+                segments: 4 + Math.floor(Math.random() * 3),
+            };
+            effectContainer.addChild(bolt);
+            lightningBolts.push(bolt);
+        }
+
+        // Étincelles explosives
         const sparks = [];
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 35; i++) {
             const spark = new PIXI.Graphics();
-            const size = 3 + Math.random() * 5;
+            const size = 2 + Math.random() * 6;
             spark.circle(0, 0, size);
-            spark.fill({ color: i % 3 === 0 ? 0xFFFFFF : (i % 3 === 1 ? 0xFFDD00 : 0xFF8800) });
+            const colors = [coreColor, shockColor1, shockColor2, shockColor3];
+            spark.fill({ color: colors[Math.floor(Math.random() * colors.length)] });
             spark.alpha = 0;
             spark.sparkData = {
-                angle: (i / 20) * Math.PI * 2 + Math.random() * 0.3,
-                speed: 100 + Math.random() * 120,
+                angle: Math.random() * Math.PI * 2,
+                speed: 150 + Math.random() * 200,
+                rotSpeed: (Math.random() - 0.5) * 10,
+                size: size,
             };
             effectContainer.addChild(spark);
             sparks.push(spark);
         }
 
+        // Particules de débris
+        const debris = [];
+        for (let i = 0; i < 20; i++) {
+            const particle = new PIXI.Graphics();
+            const w = 3 + Math.random() * 8;
+            const h = 2 + Math.random() * 4;
+            particle.rect(-w/2, -h/2, w, h);
+            particle.fill({ color: i % 2 === 0 ? 0x888888 : 0xAAAAAA });
+            particle.alpha = 0;
+            particle.debrisData = {
+                angle: Math.random() * Math.PI * 2,
+                speed: 80 + Math.random() * 150,
+                rotSpeed: (Math.random() - 0.5) * 15,
+                gravity: 200 + Math.random() * 100,
+            };
+            effectContainer.addChild(particle);
+            debris.push(particle);
+        }
+
+        // Distorsion centrale (cercle qui se compresse puis explose)
+        const distortion = new PIXI.Graphics();
+        effectContainer.addChildAt(distortion, 0);
+
         const animate = () => {
             const elapsed = performance.now() - effect.startTime;
             const progress = Math.min(elapsed / effect.duration, 1);
 
-            // Flash
+            // Phase 1: Compression (0-15%)
+            // Phase 2: Explosion (15-40%)
+            // Phase 3: Dissipation (40-100%)
+
+            // Flash central
             if (progress < 0.15) {
-                flash.alpha = (progress / 0.15) * 0.9;
-                flash.scale.set(0.5 + (progress / 0.15) * 0.5);
+                // Compression - le flash se concentre
+                const compressProgress = progress / 0.15;
+                coreFlash.alpha = compressProgress * 0.5;
+                coreFlash.scale.set(1.5 - compressProgress * 0.8);
+            } else if (progress < 0.25) {
+                // Explosion - flash intense
+                const explodeProgress = (progress - 0.15) / 0.1;
+                coreFlash.alpha = 0.5 + explodeProgress * 0.5;
+                coreFlash.scale.set(0.7 + explodeProgress * 2);
             } else {
-                flash.alpha = Math.max(0, 0.9 * (1 - (progress - 0.15) / 0.3));
-                flash.scale.set(1 + (progress - 0.15) * 0.3);
+                // Dissipation
+                const fadeProgress = (progress - 0.25) / 0.75;
+                coreFlash.alpha = Math.max(0, 1 - fadeProgress * 2);
+                coreFlash.scale.set(2.7 + fadeProgress);
             }
 
-            // Étoile
-            star.clear();
+            // Noyau d'énergie pulsant
+            energyCore.clear();
             if (progress < 0.6) {
-                const starProgress = progress / 0.6;
-                const starSize = 60 * (1 - starProgress * 0.3);
-                const points = 8;
+                const coreProgress = progress / 0.6;
+                const pulse = 1 + Math.sin(coreProgress * Math.PI * 8) * 0.3;
+                const coreRadius = 25 * (1 - coreProgress * 0.5) * pulse;
+                energyCore.circle(0, 0, coreRadius);
+                energyCore.fill({ color: coreColor, alpha: (1 - coreProgress) * 0.9 });
 
-                star.moveTo(0, -starSize);
-                for (let i = 1; i <= points * 2; i++) {
-                    const angle = (i * Math.PI) / points - Math.PI / 2;
-                    const radius = i % 2 === 0 ? starSize : starSize * 0.35;
-                    star.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-                }
-                star.closePath();
-                star.fill({ color: 0xFFDD00, alpha: (1 - starProgress) * 0.9 });
-                star.rotation = starProgress * Math.PI;
+                // Halo autour du noyau
+                energyCore.circle(0, 0, coreRadius * 1.5);
+                energyCore.fill({ color: shockColor1, alpha: (1 - coreProgress) * 0.4 });
             }
 
-            // Anneaux
-            rings.forEach((ring, i) => {
-                ring.clear();
-                const ringProgress = Math.max(0, (progress - ring.delay) / (1 - ring.delay));
-                if (ringProgress > 0 && ringProgress < 1) {
-                    const radius = ringProgress * (100 + i * 25);
-                    ring.circle(0, 0, radius);
-                    ring.stroke({
-                        width: 5 * (1 - ringProgress),
-                        color: i === 0 ? 0xFFFFFF : 0xFFDD00,
-                        alpha: (1 - ringProgress) * 0.8
-                    });
+            // Ondes de choc
+            shockwaves.forEach(wave => {
+                wave.clear();
+                const data = wave.waveData;
+                const waveProgress = Math.max(0, (progress - data.delay - 0.15) / (0.85 - data.delay));
+
+                if (waveProgress > 0 && waveProgress < 1) {
+                    const radius = waveProgress * data.maxRadius;
+                    const thickness = data.thickness * (1 - waveProgress * 0.7);
+                    const alpha = (1 - waveProgress) * 0.9;
+
+                    // Onde principale
+                    wave.circle(0, 0, radius);
+                    wave.stroke({ width: thickness, color: data.color, alpha: alpha });
+
+                    // Onde secondaire (plus fine, légèrement décalée)
+                    if (waveProgress > 0.1) {
+                        wave.circle(0, 0, radius * 0.85);
+                        wave.stroke({ width: thickness * 0.5, color: coreColor, alpha: alpha * 0.5 });
+                    }
+                }
+            });
+
+            // Éclairs radiaux
+            lightningBolts.forEach(bolt => {
+                bolt.clear();
+                const data = bolt.boltData;
+
+                if (progress > 0.12 && progress < 0.5) {
+                    const boltProgress = (progress - 0.12) / 0.38;
+                    const alpha = boltProgress < 0.3 ? boltProgress / 0.3 : (1 - (boltProgress - 0.3) / 0.7);
+
+                    bolt.moveTo(0, 0);
+                    let currentX = 0, currentY = 0;
+                    const segmentLength = data.length / data.segments;
+
+                    for (let s = 0; s < data.segments; s++) {
+                        const nextX = currentX + Math.cos(data.angle) * segmentLength;
+                        const nextY = currentY + Math.sin(data.angle) * segmentLength;
+                        // Ajouter du zigzag
+                        const perpAngle = data.angle + Math.PI / 2;
+                        const offset = (Math.random() - 0.5) * 20;
+                        const midX = (currentX + nextX) / 2 + Math.cos(perpAngle) * offset;
+                        const midY = (currentY + nextY) / 2 + Math.sin(perpAngle) * offset;
+
+                        bolt.lineTo(midX, midY);
+                        bolt.lineTo(nextX, nextY);
+                        currentX = nextX;
+                        currentY = nextY;
+                    }
+
+                    bolt.stroke({ width: 3, color: shockColor1, alpha: alpha * 0.8 });
+                    // Glow
+                    bolt.stroke({ width: 6, color: coreColor, alpha: alpha * 0.3 });
                 }
             });
 
             // Étincelles
             sparks.forEach(spark => {
                 const data = spark.sparkData;
-                if (progress > 0.05) {
-                    const sparkProgress = (progress - 0.05) / 0.95;
+                if (progress > 0.15) {
+                    const sparkProgress = (progress - 0.15) / 0.85;
                     const dist = data.speed * sparkProgress;
                     spark.x = Math.cos(data.angle) * dist;
                     spark.y = Math.sin(data.angle) * dist;
-                    spark.alpha = Math.max(0, 1 - sparkProgress * 1.3);
-                    spark.scale.set(1 - sparkProgress * 0.5);
+                    spark.alpha = sparkProgress < 0.2 ? sparkProgress / 0.2 : Math.max(0, 1 - (sparkProgress - 0.2) / 0.8);
+                    spark.scale.set(Math.max(0.1, 1 - sparkProgress * 0.8));
+                    spark.rotation += data.rotSpeed * 0.016;
                 }
             });
+
+            // Débris
+            debris.forEach(particle => {
+                const data = particle.debrisData;
+                if (progress > 0.18) {
+                    const debrisProgress = (progress - 0.18) / 0.82;
+                    const t = debrisProgress;
+                    particle.x = Math.cos(data.angle) * data.speed * t;
+                    particle.y = Math.sin(data.angle) * data.speed * t + 0.5 * data.gravity * t * t;
+                    particle.alpha = debrisProgress < 0.15 ? debrisProgress / 0.15 : Math.max(0, 1 - (debrisProgress - 0.15) / 0.85);
+                    particle.rotation += data.rotSpeed * 0.016;
+                }
+            });
+
+            // Distorsion centrale
+            distortion.clear();
+            if (progress < 0.15) {
+                // Compression
+                const compressProgress = progress / 0.15;
+                const radius = 50 * (1 - compressProgress * 0.6);
+                distortion.circle(0, 0, radius);
+                distortion.fill({ color: 0x000000, alpha: compressProgress * 0.3 });
+            } else if (progress < 0.3) {
+                // Expansion rapide
+                const expandProgress = (progress - 0.15) / 0.15;
+                const radius = 20 + expandProgress * 100;
+                distortion.circle(0, 0, radius);
+                distortion.fill({ color: 0x000000, alpha: (1 - expandProgress) * 0.3 });
+            }
 
             if (progress >= 1) {
                 effect.finished = true;
@@ -393,7 +524,8 @@ class CombatVFXSystem {
         requestAnimationFrame(animate);
         this.activeEffects.push(effect);
 
-        this.screenShake(10, 180);
+        // Screen shake plus intense
+        this.screenShake(15, 250);
 
         return effect;
     }
