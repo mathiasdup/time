@@ -1078,7 +1078,7 @@
         .card.arena-style .arena-abilities {
             font-family: 'Quicksand', sans-serif;
             font-size: 0.28em;
-            font-style: italic;
+            font-weight: 600;
             color: #2c241b;
             margin-top: 2px;
             text-align: left;
@@ -1119,7 +1119,7 @@
             transform: translateX(-50%);
             width: 10px;
             height: 10px;
-            background: rgba(0, 0, 0, 0.45);
+            background: rgba(0, 0, 0, 0.4);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -1127,8 +1127,8 @@
             z-index: 10;
         }
         .card.arena-style .arena-edition img {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             object-fit: contain;
         }
 
