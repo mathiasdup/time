@@ -115,7 +115,7 @@ function getPublicGameState(room, forPlayer) {
 function emitStateToPlayer(room, playerNum) {
     const socketId = room.players[playerNum];
     if (socketId) {
-        io.to(socketId).emit('gameState', getPublicGameState(room, playerNum));
+        io.to(socketId).emit('gameStateUpdate', getPublicGameState(room, playerNum));
     }
 }
 
@@ -458,7 +458,9 @@ io.on('connection', (socket) => {
     });
 
     function checkMulliganComplete(room) {
+        console.log(`[${room.code}] Checking mulligan: P1=${room.gameState.players[1].mulliganDone}, P2=${room.gameState.players[2].mulliganDone}`);
         if (room.gameState.players[1].mulliganDone && room.gameState.players[2].mulliganDone) {
+            console.log(`[${room.code}] Mulligan complete, starting game!`);
             room.gameState.phase = 'planning';
             emitStateToBoth(room);
             startTurnTimer(room);

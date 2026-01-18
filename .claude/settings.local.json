@@ -12,7 +12,8 @@
       "Bash(echo:*)",
       "Bash(where:*)",
       "Bash(cmd.exe /c:*)",
-      "Bash(cmd /c \"cd C:\\\\Users\\\\Math\\\\Documents\\\\Bataille && node -e \"\"require\\(''./game''\\); console.log\\(''OK''\\)\"\"\")"
+      "Bash(cmd /c \"cd C:\\\\Users\\\\Math\\\\Documents\\\\Bataille && node -e \"\"require\\(''./game''\\); console.log\\(''OK''\\)\"\"\")",
+      "Bash(powershell -Command \"node -e \"\"try { require\\(''./game''\\); console.log\\(''OK''\\); } catch\\(e\\) { console.log\\(''ERROR:'', e.message\\); }\"\"\")"
     ]
   }
 }
