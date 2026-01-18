@@ -1047,8 +1047,8 @@
         .card.arena-style .arena-name {
             font-family: 'Bree Serif', serif;
             font-size: 0.55em;
-            color: #fff;
-            -webkit-text-stroke: 1px #000;
+            color: #e5e5e5;
+            -webkit-text-stroke: 1px #2c241b;
             paint-order: stroke fill;
             letter-spacing: 0.2px;
             white-space: nowrap;
@@ -1079,7 +1079,7 @@
             font-family: 'Quicksand', sans-serif;
             font-size: 0.28em;
             font-style: italic;
-            color: #000000;
+            color: #2c241b;
             margin-top: 2px;
             text-align: left;
         }
@@ -1087,7 +1087,7 @@
             font-family: 'Quicksand', sans-serif;
             font-size: 0.32em;
             font-weight: 500;
-            color: #333;
+            color: #2c241b;
             margin-top: 3px;
             line-height: 1.2;
             text-align: left;
