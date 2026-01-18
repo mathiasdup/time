@@ -2470,6 +2470,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     }
     
     // Traiter les attaques non-mutuelles (restantes)
+    console.log(`[DEBUG] Attaques non-mutuelles à traiter:`, attacks.filter(a => !a.processed).map(a => `${a.attacker.name}(P${a.attackerPlayer}c${a.attackerCol})->P${a.targetPlayer}c${a.targetCol}${a.targetIsHero?'HERO':''}`));
     for (const atk of attacks) {
         if (atk.processed) continue;
         atk.processed = true;
@@ -2548,6 +2549,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
             const shouldRiposte = targetIsShooter || !targetAttacksThisAttacker;
 
             // Riposte si: pas tireur (attaquant), pas initiative effective qui tue, et conditions de riposte remplies
+            console.log(`[DEBUG RIPOSTE] ${attackerCard.name} -> ${targetCard.name}: isShooter=${atk.isShooter}, effectiveInit=${effectiveInitiative}, targetDied=${targetDied}, shouldRiposte=${shouldRiposte}, targetAttacksThis=${targetAttacksThisAttacker}`);
             if (!atk.isShooter && (!effectiveInitiative || !targetDied) && shouldRiposte) {
                 const riposteDamage = targetCard.atk;
                 attackerCard.currentHp -= riposteDamage;
