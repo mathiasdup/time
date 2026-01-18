@@ -758,6 +758,7 @@ function handleAnimationBatch(animations) {
     // Jouer toutes les animations en parallèle immédiatement
     const promises = animations.map(anim => {
         const owner = anim.player === myNum ? 'me' : 'opp';
+
         if (anim.type === 'spellDamage') {
             if (combatAnimReady && CombatAnimations) {
                 return CombatAnimations.animateSpellDamage({
@@ -771,6 +772,13 @@ function handleAnimationBatch(animations) {
                 return Promise.resolve();
             }
         }
+
+        if (anim.type === 'death') {
+            // Appliquer l'animation de mort immédiatement
+            animateDeath(anim);
+            return Promise.resolve();
+        }
+
         return Promise.resolve();
     });
 
@@ -1161,9 +1169,10 @@ function animateSpellMiss(data) {
         const rect = slot.getBoundingClientRect();
         const effect = document.createElement('div');
         effect.className = 'spell-miss';
-        effect.textContent = '💨';
-        effect.style.left = rect.left + rect.width/2 - 20 + 'px';
-        effect.style.top = rect.top + rect.height/2 - 20 + 'px';
+        // Grande croix rouge avec deux barres
+        effect.innerHTML = '<div class="miss-cross"></div>';
+        effect.style.left = rect.left + rect.width / 2 + 'px';
+        effect.style.top = rect.top + rect.height / 2 + 'px';
         document.body.appendChild(effect);
         setTimeout(() => effect.remove(), 800);
     }

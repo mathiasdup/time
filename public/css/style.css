@@ -1316,8 +1316,42 @@
         .spell-effect { position: fixed; z-index: 1000; font-size: 3em; pointer-events: none; animation: spellAnim 0.6s ease-out forwards; }
         @keyframes spellAnim { 0% { transform: scale(0); opacity: 1; } 50% { transform: scale(1.5); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
         
-        .spell-miss { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; animation: missAnim 0.8s ease-out forwards; }
-        @keyframes missAnim { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.5) translateY(-30px); opacity: 0; } }
+        .spell-miss {
+            position: fixed;
+            z-index: 1000;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            animation: missAnim 0.8s ease-out forwards;
+        }
+        .miss-cross {
+            position: relative;
+            width: 60px;
+            height: 60px;
+        }
+        .miss-cross::before,
+        .miss-cross::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 70px;
+            height: 10px;
+            background: linear-gradient(90deg, #ff0000, #cc0000);
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.8), 0 0 20px rgba(255, 0, 0, 0.5);
+        }
+        .miss-cross::before {
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+        .miss-cross::after {
+            transform: translate(-50%, -50%) rotate(-45deg);
+        }
+        @keyframes missAnim {
+            0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+            20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            40% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+        }
         
         /* Les animations de dégâts sont maintenant gérées par PixiJS */
         /* Voir combat-animations.js pour les griffures et effets visuels */

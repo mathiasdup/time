@@ -1209,10 +1209,21 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 // Vérifier si la créature derrière peut être touchée
                 const attackerIsFlying = attacker.abilities.includes('fly');
                 const attackerIsShooter = attacker.abilities.includes('shooter');
+
+                // Un volant ne peut pas toucher une créature normale avec le piétinement
+                if (trampleTarget && attackerIsFlying && !attackerIsShooter) {
+                    const trampleTargetIsFlying = trampleTarget.abilities.includes('fly');
+                    const trampleTargetIsShooter = trampleTarget.abilities.includes('shooter');
+                    if (!trampleTargetIsFlying && !trampleTargetIsShooter) {
+                        trampleTarget = null;
+                    }
+                }
+
+                // Un non-volant/non-tireur ne peut pas toucher un volant
                 if (trampleTarget && trampleTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
                     trampleTarget = null;
                 }
-                
+
                 if (trampleTarget && !trampleTarget.abilities.includes('intangible')) {
                     trampleTarget.currentHp -= excessDamage;
                     log(`🦏 Piétinement: ${attacker.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
@@ -1418,15 +1429,26 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 
                 const attackerIsFlying = attackerCard.abilities.includes('fly');
                 const attackerIsShooter = attackerCard.abilities.includes('shooter');
+
+                // Un volant ne peut pas toucher une créature normale avec le piétinement
+                if (trampleTarget && attackerIsFlying && !attackerIsShooter) {
+                    const trampleTargetIsFlying = trampleTarget.abilities.includes('fly');
+                    const trampleTargetIsShooter = trampleTarget.abilities.includes('shooter');
+                    if (!trampleTargetIsFlying && !trampleTargetIsShooter) {
+                        trampleTarget = null;
+                    }
+                }
+
+                // Un non-volant/non-tireur ne peut pas toucher un volant
                 if (trampleTarget && trampleTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
                     trampleTarget = null;
                 }
-                
+
                 if (trampleTarget && !trampleTarget.abilities.includes('intangible')) {
                     trampleTarget.currentHp -= excessDamage;
                     log(`🦏 Piétinement: ${attackerCard.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
                     emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: trampleCol, amount: excessDamage });
-                    
+
                     if (trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
                         trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + 1;
                     }
@@ -1440,7 +1462,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     if (targetOwner.hp <= 0) return true;
                 }
             }
-            
+
             // RIPOSTE: seulement si la cible NE PEUT PAS attaquer ce tour
             // Les tireurs ne reçoivent JAMAIS de riposte (attaque à distance)
             // La riposte est SIMULTANÉE (même si la cible meurt) SAUF si l'attaquant a INITIATIVE (et pas la cible)
@@ -1516,20 +1538,29 @@ function applyPendingPowerBonuses(room, log) {
 // Vérifier et retirer les créatures mortes
 async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
     const deadCards = [];
+    const deathAnimations = [];
+
     for (const [r, c] of slotsToCheck) {
         for (let p = 1; p <= 2; p++) {
             const card = room.gameState.players[p].field[r][c];
             if (card && card.currentHp <= 0) {
-                deadCards.push({ card, player: p });
+                deadCards.push({ card, player: p, row: r, col: c });
                 addToGraveyard(room.gameState.players[p], card);
                 room.gameState.players[p].field[r][c] = null;
                 log(`☠️ ${card.name} détruit!`, 'damage');
-                emitAnimation(room, 'death', { player: p, row: r, col: c });
+                deathAnimations.push({ type: 'death', player: p, row: r, col: c });
             }
         }
     }
+
+    // Émettre toutes les animations de mort en même temps
+    if (deathAnimations.length > 0) {
+        emitAnimationBatch(room, deathAnimations);
+    }
+
     emitStateToBoth(room);
     await sleep(300);
+
     // Capacités onDeath
     for (const d of deadCards) {
         await processOnDeathAbility(room, d.card, d.player, log, sleep);
@@ -2393,11 +2424,11 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     for (const atk of attacks) {
         if (atk.processed) continue;
         atk.processed = true;
-        
+
         // Vérifier si l'attaquant est encore vivant
         const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
         if (!attackerCard || attackerCard.currentHp <= 0) continue;
-        
+
         if (atk.targetIsHero) {
             room.gameState.players[atk.targetPlayer].hp -= attackerCard.atk;
             room.gameState.players[atk.targetPlayer].heroAttackedThisTurn = true;
@@ -2434,31 +2465,46 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
             targetCard.currentHp -= damage;
             log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
             emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
-            
+
             if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
                 targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + 1;
             }
-            
+
             // Piétinement
             await applyTrampleDamage(room, atk, log, sleep);
-            
-            // RIPOSTE: seulement si cible ne peut pas attaquer ET attaquant n'est pas tireur
-            const targetCanAttack = targetCard.canAttack;
+
+            // RIPOSTE: La cible riposte sauf si:
+            // - L'attaquant est un tireur (attaque à distance, pas de riposte)
+            // - L'attaquant a initiative effective et a tué la cible
+            // - Combat mutuel mêlée vs mêlée (déjà traité dans mutualPairs)
             const targetDied = targetCard.currentHp <= 0;
             const attackerHasInitiative = attackerCard.abilities.includes('initiative');
             const targetHasInitiative = targetCard.abilities?.includes('initiative');
             const effectiveInitiative = attackerHasInitiative && !targetHasInitiative;
-            
-            // Pas de riposte si:
-            // - La cible peut attaquer (elle attaquera/a attaqué dans son propre tour)
-            // - L'attaquant est un tireur (attaque à distance)
-            // - L'attaquant a initiative effective et a tué la cible
-            if (!targetCanAttack && !atk.isShooter && (!effectiveInitiative || !targetDied)) {
+
+            // Vérifier si c'est un vrai combat mutuel mêlée vs mêlée
+            // Un tireur attaqué par une mêlée DOIT riposter (ce n'est pas un vrai combat mutuel)
+            const targetIsShooter = targetCard.abilities?.includes('shooter');
+            const targetAttacksThisAttacker = attacks.some(otherAtk =>
+                otherAtk.attackerPlayer === atk.targetPlayer &&
+                otherAtk.attackerRow === atk.targetRow &&
+                otherAtk.attackerCol === atk.targetCol &&
+                otherAtk.targetPlayer === atk.attackerPlayer &&
+                otherAtk.targetRow === atk.attackerRow &&
+                otherAtk.targetCol === atk.attackerCol
+            );
+
+            // La cible riposte si elle est un tireur OU si ce n'est pas un combat mutuel
+            // (un tireur attaqué par une mêlée riposte car il tire à distance)
+            const shouldRiposte = targetIsShooter || !targetAttacksThisAttacker;
+
+            // Riposte si: pas tireur (attaquant), pas initiative effective qui tue, et conditions de riposte remplies
+            if (!atk.isShooter && (!effectiveInitiative || !targetDied) && shouldRiposte) {
                 const riposteDamage = targetCard.atk;
                 attackerCard.currentHp -= riposteDamage;
                 log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDamage})`, 'damage');
                 emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
-                
+
                 if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
                     attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + 1;
                 }
@@ -2509,6 +2555,18 @@ async function applyTrampleDamage(room, atk, log, sleep) {
     
     const attackerIsFlying = atk.attacker.abilities.includes('fly');
     const attackerIsShooter = atk.isShooter;
+
+    // Un volant ne peut pas toucher une créature normale avec le piétinement
+    // Il ne peut toucher que les volants/tireurs, sinon ça va au héros
+    if (trampleTarget && attackerIsFlying && !attackerIsShooter) {
+        const trampleTargetIsFlying = trampleTarget.abilities.includes('fly');
+        const trampleTargetIsShooter = trampleTarget.abilities.includes('shooter');
+        if (!trampleTargetIsFlying && !trampleTargetIsShooter) {
+            trampleTarget = null; // Le volant passe au-dessus, dégâts au héros
+        }
+    }
+
+    // Inversement, un non-volant/non-tireur ne peut pas toucher un volant
     if (trampleTarget && trampleTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
         trampleTarget = null;
     }
