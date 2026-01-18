@@ -1163,7 +1163,7 @@
             font-family: 'Cinzel', serif;
             font-size: 0.8em;
             font-weight: 900;
-            color: #fff;
+            color: #e5e5e5;
             border: 2px solid #81d4fa;
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
             z-index: 10;
@@ -1185,7 +1185,7 @@
             font-family: 'Cinzel', serif;
             font-size: 0.8em;
             font-weight: 900;
-            color: #fff;
+            color: #e5e5e5;
             border: 2px solid #555;
             z-index: 10;
             -webkit-text-stroke: 1px #000;
