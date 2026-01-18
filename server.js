@@ -399,36 +399,32 @@ async function startResolution(room) {
             await processTrapsForRow(room, row, log, sleep);
         }
         
-        // ==================== COMBAT PAR SLOTS: A → B → C → D → E → F → G → H ====================
-        // Ordre STRICT des slots. L'initiative sépare les attaques AU SEIN d'une paire seulement.
-        // Les volants qui attaquent une cible qui n'a PAS ENCORE EU SON TOUR vont jusqu'à elle.
-        // Les volants qui s'attaquent mutuellement PENDANT LEUR TOUR se rencontrent au milieu.
-        const slotOrder = [
-            { row: 0, col: 0, name: 'A' },
-            { row: 0, col: 1, name: 'B' },
-            { row: 1, col: 0, name: 'C' },
-            { row: 1, col: 1, name: 'D' },
-            { row: 2, col: 0, name: 'E' },
-            { row: 2, col: 1, name: 'F' },
-            { row: 3, col: 0, name: 'G' },
-            { row: 3, col: 1, name: 'H' }
-        ];
+        const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
-        for (const slot of slotOrder) {
-            const gameEnded = await processSlotCombat(room, slot, slotOrder, log, sleep, checkVictory);
+        // ==================== PHASE D'INTERCEPTION DES VOLANTS ====================
+        // Les volants qui peuvent attaquer s'interceptent au centre du plateau
+        // AVANT le traitement normal slot par slot
+        await processFlyingInterceptions(room, log, sleep, checkVictory);
 
-            if (gameEnded) {
-                const winner = checkVictory();
-                if (winner !== null) {
-                    await sleep(800);
-                    if (winner === 0) {
-                        log(`🤝 Match nul! Les deux héros sont tombés!`, 'phase');
-                        io.to(room.code).emit('gameOver', { winner: 0, draw: true });
-                    } else {
-                        log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
-                        io.to(room.code).emit('gameOver', { winner });
+        // Combat SLOT PAR SLOT : A, B, C, D, E, F, G, H
+        // A=row0/col0, B=row0/col1, C=row1/col0, D=row1/col1, etc.
+        for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 2; col++) {
+                const gameEnded = await processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames);
+                
+                if (gameEnded) {
+                    const winner = checkVictory();
+                    if (winner !== null) {
+                        await sleep(800);
+                        if (winner === 0) {
+                            log(`🤝 Match nul! Les deux héros sont tombés!`, 'phase');
+                            io.to(room.code).emit('gameOver', { winner: 0, draw: true });
+                        } else {
+                            log(`🏆 ${room.gameState.players[winner].heroName} GAGNE!`, 'phase');
+                            io.to(room.code).emit('gameOver', { winner });
+                        }
+                        return;
                     }
-                    return;
                 }
             }
         }
@@ -444,7 +440,6 @@ async function startResolution(room) {
                     card.canAttack = true;
                     card.movedThisTurn = false;
                     card.hasIntercepted = false;
-                    card.hasAttackedThisTurn = false;
                 }
             }
         }
@@ -1578,640 +1573,9 @@ async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
     }
 }
 
-// ==================== COMBAT PAR SLOT ====================
-// Traite le combat pour un slot donné (A, B, C, D, E, F, G, H)
-// - P1 et P2 attaquent en même temps SAUF si un seul a l'initiative
-// - Les volants qui attaquent une cible qui n'a pas encore eu son tour vont JUSQU'À elle
-// - Les volants qui s'attaquent mutuellement PENDANT ce slot se rencontrent au milieu
-async function processSlotCombat(room, slot, slotOrder, log, sleep, checkVictory) {
-    const { row, col, name: slotName } = slot;
-    const p1State = room.gameState.players[1];
-    const p2State = room.gameState.players[2];
-
-    // Récupérer les créatures du slot
-    const p1Card = p1State.field[row][col];
-    const p2Card = p2State.field[row][col];
-
-    // Collecter les attaquants potentiels pour CE slot
-    const attackers = [];
-
-    // P1 peut attaquer ?
-    if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && !p1Card.hasAttackedThisTurn) {
-        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
-        if (target) {
-            attackers.push({
-                card: p1Card,
-                player: 1,
-                row, col,
-                target,
-                hasInitiative: p1Card.abilities.includes('initiative'),
-                isShooter: p1Card.abilities.includes('shooter'),
-                isFlying: p1Card.abilities.includes('fly'),
-                hasTrample: p1Card.abilities.includes('trample')
-            });
-        }
-    }
-
-    // P2 peut attaquer ?
-    if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && !p2Card.hasAttackedThisTurn) {
-        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
-        if (target) {
-            attackers.push({
-                card: p2Card,
-                player: 2,
-                row, col,
-                target,
-                hasInitiative: p2Card.abilities.includes('initiative'),
-                isShooter: p2Card.abilities.includes('shooter'),
-                isFlying: p2Card.abilities.includes('fly'),
-                hasTrample: p2Card.abilities.includes('trample')
-            });
-        }
-    }
-
-    if (attackers.length === 0) return false;
-
-    // Déterminer si c'est un combat mutuel (les deux créatures de ce slot s'attaquent mutuellement)
-    let isMutualCombat = false;
-    if (attackers.length === 2) {
-        const atk1 = attackers[0];
-        const atk2 = attackers[1];
-        // Ils se ciblent mutuellement si la cible de chacun est l'autre (même slot, adversaires)
-        const target1IsAtk2 = !atk1.target.isHero && atk1.target.row === atk2.row && atk1.target.col === atk2.col;
-        const target2IsAtk1 = !atk2.target.isHero && atk2.target.row === atk1.row && atk2.target.col === atk1.col;
-        isMutualCombat = target1IsAtk2 && target2IsAtk1;
-    }
-
-    // Vérifier si UN SEUL a l'initiative (sépare la séquence)
-    const oneHasExclusiveInit = attackers.length === 2 &&
-        ((attackers[0].hasInitiative && !attackers[1].hasInitiative) ||
-         (!attackers[0].hasInitiative && attackers[1].hasInitiative));
-
-    if (oneHasExclusiveInit) {
-        // ===== SÉQUENCE SÉPARÉE : Initiative d'abord, puis l'autre =====
-        const first = attackers[0].hasInitiative ? attackers[0] : attackers[1];
-        const second = attackers[0].hasInitiative ? attackers[1] : attackers[0];
-
-        log(`\n⚔️ ===== SLOT ${slotName}: ${first.card.name} a l'INITIATIVE =====`, 'phase');
-
-        // Séquence 1 : Attaque de la créature avec initiative
-        const gameEnded1 = await executeSlotAttack(room, first, slotName, slotOrder, log, sleep);
-        first.card.hasAttackedThisTurn = true;
-        if (gameEnded1 || checkVictory() !== null) return true;
-
-        // Vérifier si le second est toujours vivant et peut attaquer
-        const secondCard = room.gameState.players[second.player].field[second.row][second.col];
-        if (secondCard && secondCard.currentHp > 0 && secondCard.canAttack && !secondCard.hasAttackedThisTurn) {
-            // Recalculer la cible (la première peut être morte)
-            const enemyPlayer = second.player === 1 ? 2 : 1;
-            const enemyState = room.gameState.players[enemyPlayer];
-            const newTarget = findTarget(secondCard, enemyState.field[row][1], enemyState.field[row][0], enemyPlayer, row);
-
-            if (newTarget) {
-                second.target = newTarget;
-                second.card = secondCard;
-
-                log(`\n⚔️ ===== SLOT ${slotName}: ${second.card.name} riposte =====`, 'phase');
-                const gameEnded2 = await executeSlotAttack(room, second, slotName, slotOrder, log, sleep);
-                second.card.hasAttackedThisTurn = true;
-                if (gameEnded2 || checkVictory() !== null) return true;
-            }
-        }
-    } else if (isMutualCombat && attackers.length === 2) {
-        // ===== COMBAT MUTUEL : Les deux s'attaquent en même temps =====
-        const atk1 = attackers[0];
-        const atk2 = attackers[1];
-
-        // Déterminer si c'est un combat de volants (rencontre au milieu)
-        const bothFlying = atk1.isFlying && atk2.isFlying;
-        const bothShooters = atk1.isShooter && atk2.isShooter;
-
-        if (bothFlying && !bothShooters) {
-            log(`\n🦅 ===== SLOT ${slotName}: Combat aérien mutuel =====`, 'phase');
-            const gameEnded = await executeFlyingMutualCombat(room, atk1, atk2, slotName, log, sleep);
-            atk1.card.hasAttackedThisTurn = true;
-            atk2.card.hasAttackedThisTurn = true;
-            if (gameEnded || checkVictory() !== null) return true;
-        } else {
-            log(`\n⚔️ ===== SLOT ${slotName}: Combat mutuel =====`, 'phase');
-            const gameEnded = await executeMutualSlotCombat(room, atk1, atk2, slotName, log, sleep);
-            atk1.card.hasAttackedThisTurn = true;
-            atk2.card.hasAttackedThisTurn = true;
-            if (gameEnded || checkVictory() !== null) return true;
-        }
-    } else {
-        // ===== ATTAQUES INDIVIDUELLES (pas de combat mutuel) =====
-        for (const atk of attackers) {
-            const card = room.gameState.players[atk.player].field[atk.row][atk.col];
-            if (!card || card.currentHp <= 0 || card.hasAttackedThisTurn) continue;
-
-            log(`\n⚔️ ===== SLOT ${slotName}: ${card.name} attaque =====`, 'phase');
-            const gameEnded = await executeSlotAttack(room, atk, slotName, slotOrder, log, sleep);
-            card.hasAttackedThisTurn = true;
-            if (gameEnded || checkVictory() !== null) return true;
-        }
-    }
-
-    return false;
-}
-
-// Exécute une attaque simple depuis un slot
-async function executeSlotAttack(room, atk, slotName, slotOrder, log, sleep) {
-    const { card, player, row, col, target, isShooter, isFlying, hasTrample } = atk;
-    const enemyPlayer = player === 1 ? 2 : 1;
-
-    if (target.isHero) {
-        // Attaque sur le héros
-        log(`⚔️ ${card.name} attaque le héros!`, 'action');
-
-        if (isShooter) {
-            emitAnimation(room, 'attack', {
-                combatType: 'shooter',
-                attacker: player,
-                row, col,
-                targetRow: -1,
-                targetCol: -1,
-                isHeroTarget: true
-            });
-        } else {
-            emitAnimation(room, 'attack', {
-                combatType: isFlying ? 'fly_hero' : 'melee_hero',
-                attacker: player,
-                row, col,
-                targetHero: enemyPlayer
-            });
-        }
-
-        await sleep(600);
-
-        const damage = card.atk;
-        room.gameState.players[enemyPlayer].hp -= damage;
-        log(`💥 ${damage} dégâts au héros!`, 'damage');
-        emitAnimation(room, 'heroHit', { player: enemyPlayer, amount: damage });
-
-        // Capacité onHeroHit
-        if (card.onHeroHit === 'draw') {
-            const attackerState = room.gameState.players[player];
-            if (attackerState.deck.length > 0) {
-                const drawnCard = attackerState.deck.shift();
-                attackerState.hand.push(drawnCard);
-                log(`📜 ${card.name} pioche une carte!`, 'buff');
-            }
-        }
-
-        await sleep(400);
-        emitStateToBoth(room);
-        return false;
-    }
-
-    // Attaque sur une créature
-    const targetCard = room.gameState.players[target.player].field[target.row][target.col];
-    if (!targetCard || targetCard.currentHp <= 0) {
-        log(`⏭️ ${slotName}: Cible morte, attaque annulée`, 'info');
-        return false;
-    }
-
-    log(`⚔️ ${card.name} attaque ${targetCard.name}!`, 'action');
-
-    // Déterminer si la cible est un volant qui n'a PAS ENCORE EU SON TOUR
-    const targetSlotIndex = slotOrder.findIndex(s => s.row === target.row && s.col === target.col);
-    const currentSlotIndex = slotOrder.findIndex(s => s.row === row && s.col === col);
-    const targetNotYetPlayed = targetSlotIndex > currentSlotIndex;
-    const targetIsFlying = targetCard.abilities.includes('fly');
-
-    // Animation
-    if (isShooter) {
-        emitAnimation(room, 'attack', {
-            combatType: 'shooter',
-            attacker: player,
-            row, col,
-            targetRow: target.row,
-            targetCol: target.col,
-            damage: card.atk
-        });
-        await sleep(600);
-    } else if (isFlying && targetIsFlying && targetNotYetPlayed) {
-        // Volant attaque un volant qui n'a pas joué : va JUSQU'À la cible
-        emitAnimation(room, 'attack', {
-            combatType: 'fly_to_target',
-            attacker: player,
-            row, col,
-            targetRow: target.row,
-            targetCol: target.col,
-            damage: card.atk
-        });
-        await sleep(800);
-    } else {
-        emitAnimation(room, 'attack', {
-            combatType: isFlying ? 'fly' : 'melee',
-            attacker: player,
-            row, col,
-            targetRow: target.row,
-            targetCol: target.col,
-            damage: card.atk
-        });
-        await sleep(600);
-    }
-
-    // Appliquer les dégâts
-    targetCard.currentHp -= card.atk;
-    log(`💥 ${card.atk} dégâts à ${targetCard.name} (${Math.max(0, targetCard.currentHp)} HP restants)`, 'damage');
-
-    // Gérer le piétinement
-    if (hasTrample && targetCard.currentHp < 0) {
-        const trampleDamage = Math.abs(targetCard.currentHp);
-        room.gameState.players[target.player].hp -= trampleDamage;
-        log(`🦏 Piétinement! ${trampleDamage} dégâts au héros!`, 'damage');
-        emitAnimation(room, 'heroHit', { player: target.player, amount: trampleDamage });
-    }
-
-    // Vérifier mort de la cible
-    await checkAndRemoveDeadCreatures(room, [[target.row, target.col]], log, sleep);
-
-    emitStateToBoth(room);
-    await sleep(300);
-
-    return false;
-}
-
-// Combat mutuel de volants (rencontre au milieu)
-async function executeFlyingMutualCombat(room, atk1, atk2, slotName, log, sleep) {
-    const card1 = atk1.card;
-    const card2 = atk2.card;
-
-    log(`🦅 ${card1.name} et ${card2.name} s'interceptent!`, 'action');
-
-    // Bloquer les slots pendant l'animation
-    const slotsToBlock = [
-        { player: atk1.player, row: atk1.row, col: atk1.col },
-        { player: atk2.player, row: atk2.row, col: atk2.col }
-    ];
-    io.to(room.code).emit('blockSlots', slotsToBlock);
-
-    // Animation de combat mutuel au milieu
-    emitAnimation(room, 'attack', {
-        combatType: 'mutual_melee',
-        attacker1: { owner: atk1.player, row: atk1.row, col: atk1.col },
-        attacker2: { owner: atk2.player, row: atk2.row, col: atk2.col },
-        damage1: card1.atk,
-        damage2: card2.atk
-    });
-
-    await sleep(1200);
-
-    // Appliquer les dégâts simultanément
-    card1.currentHp -= card2.atk;
-    card2.currentHp -= card1.atk;
-
-    log(`💥 ${card1.name}: ${card2.atk} dégâts (${Math.max(0, card1.currentHp)} HP)`, 'damage');
-    log(`💥 ${card2.name}: ${card1.atk} dégâts (${Math.max(0, card2.currentHp)} HP)`, 'damage');
-
-    // Piétinement
-    if (atk1.hasTrample && card2.currentHp < 0) {
-        const trample = Math.abs(card2.currentHp);
-        room.gameState.players[atk2.player].hp -= trample;
-        log(`🦏 Piétinement! ${trample} dégâts au héros de P${atk2.player}!`, 'damage');
-    }
-    if (atk2.hasTrample && card1.currentHp < 0) {
-        const trample = Math.abs(card1.currentHp);
-        room.gameState.players[atk1.player].hp -= trample;
-        log(`🦏 Piétinement! ${trample} dégâts au héros de P${atk1.player}!`, 'damage');
-    }
-
-    // Débloquer les slots
-    io.to(room.code).emit('unblockSlots', slotsToBlock);
-
-    // Vérifier les morts
-    await checkAndRemoveDeadCreatures(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
-
-    emitStateToBoth(room);
-    await sleep(300);
-
-    return false;
-}
-
-// Combat mutuel normal (mêlée ou mixte)
-async function executeMutualSlotCombat(room, atk1, atk2, slotName, log, sleep) {
-    const card1 = atk1.card;
-    const card2 = atk2.card;
-
-    log(`⚔️ ${card1.name} et ${card2.name} s'affrontent!`, 'action');
-
-    // Bloquer les slots pendant l'animation
-    const slotsToBlock = [
-        { player: atk1.player, row: atk1.row, col: atk1.col },
-        { player: atk2.player, row: atk2.row, col: atk2.col }
-    ];
-    io.to(room.code).emit('blockSlots', slotsToBlock);
-
-    // Si les deux sont tireurs, pas de rencontre au milieu
-    if (atk1.isShooter && atk2.isShooter) {
-        // Tirs simultanés
-        emitAnimation(room, 'attack', {
-            combatType: 'dual_shooter',
-            attacker1: { owner: atk1.player, row: atk1.row, col: atk1.col },
-            attacker2: { owner: atk2.player, row: atk2.row, col: atk2.col },
-            damage1: card1.atk,
-            damage2: card2.atk
-        });
-    } else {
-        // Combat mêlée mutuel
-        emitAnimation(room, 'attack', {
-            combatType: 'mutual_melee',
-            attacker1: { owner: atk1.player, row: atk1.row, col: atk1.col },
-            attacker2: { owner: atk2.player, row: atk2.row, col: atk2.col },
-            damage1: card1.atk,
-            damage2: card2.atk
-        });
-    }
-
-    await sleep(1200);
-
-    // Appliquer les dégâts simultanément
-    card1.currentHp -= card2.atk;
-    card2.currentHp -= card1.atk;
-
-    log(`💥 ${card1.name}: ${card2.atk} dégâts (${Math.max(0, card1.currentHp)} HP)`, 'damage');
-    log(`💥 ${card2.name}: ${card1.atk} dégâts (${Math.max(0, card2.currentHp)} HP)`, 'damage');
-
-    // Piétinement
-    if (atk1.hasTrample && card2.currentHp < 0) {
-        const trample = Math.abs(card2.currentHp);
-        room.gameState.players[atk2.player].hp -= trample;
-        log(`🦏 Piétinement! ${trample} dégâts au héros de P${atk2.player}!`, 'damage');
-    }
-    if (atk2.hasTrample && card1.currentHp < 0) {
-        const trample = Math.abs(card1.currentHp);
-        room.gameState.players[atk1.player].hp -= trample;
-        log(`🦏 Piétinement! ${trample} dégâts au héros de P${atk1.player}!`, 'damage');
-    }
-
-    // Débloquer les slots
-    io.to(room.code).emit('unblockSlots', slotsToBlock);
-
-    // Vérifier les morts
-    await checkAndRemoveDeadCreatures(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
-
-    emitStateToBoth(room);
-    await sleep(300);
-
-    return false;
-}
-
-// ==================== ANCIENNES FONCTIONS (non utilisées) ====================
-
-// ==================== PHASE D'INITIATIVE GLOBALE ====================
-// Les créatures avec INITIATIVE attaquent EN PREMIER, avant les interceptions et les combats normaux
-// Ceci permet aux tireurs avec initiative de tuer des volants avant qu'ils ne s'interceptent
-async function processInitiativeAttacks(room, log, sleep, checkVictory, slotNames) {
-    const p1State = room.gameState.players[1];
-    const p2State = room.gameState.players[2];
-
-    // Collecter toutes les créatures avec initiative qui peuvent attaquer
-    const initiativeAttackers = [];
-
-    for (let row = 0; row < 4; row++) {
-        for (let col = 0; col < 2; col++) {
-            // P1
-            const p1Card = p1State.field[row][col];
-            if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && p1Card.abilities.includes('initiative')) {
-                const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
-                if (target) {
-                    initiativeAttackers.push({
-                        attacker: p1Card,
-                        attackerPlayer: 1,
-                        attackerRow: row,
-                        attackerCol: col,
-                        target: target,
-                        slotName: slotNames[row][col]
-                    });
-                }
-            }
-
-            // P2
-            const p2Card = p2State.field[row][col];
-            if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && p2Card.abilities.includes('initiative')) {
-                const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
-                if (target) {
-                    initiativeAttackers.push({
-                        attacker: p2Card,
-                        attackerPlayer: 2,
-                        attackerRow: row,
-                        attackerCol: col,
-                        target: target,
-                        slotName: slotNames[row][col]
-                    });
-                }
-            }
-        }
-    }
-
-    if (initiativeAttackers.length === 0) return;
-
-    log(`\n⚡ ===== PHASE D'INITIATIVE =====`, 'phase');
-    log(`${initiativeAttackers.length} créature(s) avec initiative vont attaquer en premier!`, 'action');
-
-    // Trier par slot (A, B, C, D...) pour un ordre prévisible
-    initiativeAttackers.sort((a, b) => {
-        const orderA = a.attackerRow * 2 + a.attackerCol;
-        const orderB = b.attackerRow * 2 + b.attackerCol;
-        return orderA - orderB;
-    });
-
-    // Traiter chaque attaque d'initiative
-    for (const atk of initiativeAttackers) {
-        const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
-
-        // Vérifier que l'attaquant est toujours vivant
-        if (!attackerCard || attackerCard.currentHp <= 0) {
-            log(`⏭️ ${atk.slotName}: Attaquant mort, attaque annulée`, 'info');
-            continue;
-        }
-
-        // Vérifier que la cible existe toujours
-        let targetCard, targetRow, targetCol, targetPlayer;
-        if (atk.target.isHero) {
-            targetCard = null;
-            targetPlayer = atk.target.player;
-            log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque le héros!`, 'action');
-        } else {
-            targetPlayer = atk.target.player;
-            targetRow = atk.target.row;
-            targetCol = atk.target.col;
-            targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
-
-            if (!targetCard || targetCard.currentHp <= 0) {
-                // La cible originale est morte, chercher une nouvelle cible
-                const enemyState = room.gameState.players[targetPlayer];
-                const newTarget = findTarget(attackerCard, enemyState.field[atk.attackerRow][1], enemyState.field[atk.attackerRow][0], targetPlayer, atk.attackerRow);
-
-                if (!newTarget) {
-                    log(`⏭️ ${atk.slotName}: Plus de cible disponible`, 'info');
-                    continue;
-                }
-
-                if (newTarget.isHero) {
-                    targetCard = null;
-                    log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque le héros!`, 'action');
-                } else {
-                    targetRow = newTarget.row;
-                    targetCol = newTarget.col;
-                    targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
-                }
-            } else {
-                log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque ${targetCard.name}!`, 'action');
-            }
-        }
-
-        // Marquer l'attaquant comme ayant déjà attaqué (ne réattaquera pas dans les phases suivantes)
-        attackerCard.hasAttackedThisTurn = true;
-        attackerCard.canAttack = false;
-
-        const isShooter = attackerCard.abilities.includes('shooter');
-
-        // Animation d'attaque
-        if (atk.target.isHero || !targetCard) {
-            // Attaque sur le héros
-            if (isShooter) {
-                emitAnimation(room, 'attack', {
-                    combatType: 'shooter',
-                    attacker: atk.attackerPlayer,
-                    row: atk.attackerRow,
-                    col: atk.attackerCol,
-                    targetRow: -1,
-                    targetCol: -1,
-                    isHeroTarget: true
-                });
-            } else {
-                emitAnimation(room, 'attack', {
-                    combatType: 'melee_hero',
-                    attacker: atk.attackerPlayer,
-                    row: atk.attackerRow,
-                    col: atk.attackerCol,
-                    targetHero: targetPlayer
-                });
-            }
-
-            await sleep(600);
-
-            // Dégâts au héros
-            const damage = attackerCard.atk;
-            room.gameState.players[targetPlayer].hp -= damage;
-            log(`💥 ${damage} dégâts au héros!`, 'damage');
-            emitAnimation(room, 'heroHit', { player: targetPlayer, amount: damage });
-
-            // Vérifier capacité onHeroHit
-            if (attackerCard.onHeroHit === 'draw') {
-                const attackerState = room.gameState.players[atk.attackerPlayer];
-                if (attackerState.deck.length > 0) {
-                    const drawnCard = attackerState.deck.shift();
-                    attackerState.hand.push(drawnCard);
-                    log(`📜 ${attackerCard.name} pioche une carte!`, 'buff');
-                }
-            }
-
-            await sleep(400);
-            emitStateToBoth(room);
-
-        } else {
-            // Attaque sur une créature
-            if (isShooter) {
-                emitAnimation(room, 'attack', {
-                    combatType: 'shooter',
-                    attacker: atk.attackerPlayer,
-                    row: atk.attackerRow,
-                    col: atk.attackerCol,
-                    targetRow: targetRow,
-                    targetCol: targetCol,
-                    damage: attackerCard.atk
-                });
-            } else {
-                emitAnimation(room, 'attack', {
-                    combatType: 'solo',
-                    attacker: atk.attackerPlayer,
-                    row: atk.attackerRow,
-                    col: atk.attackerCol,
-                    targetRow: targetRow,
-                    targetCol: targetCol
-                });
-            }
-
-            await sleep(600);
-
-            // Infliger les dégâts
-            const damage = attackerCard.atk;
-            targetCard.currentHp -= damage;
-            log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage}) [Initiative]`, 'damage');
-            emitAnimation(room, 'damage', { player: targetPlayer, row: targetRow, col: targetCol, amount: damage });
-
-            await sleep(300);
-
-            // Vérifier si la cible meurt
-            if (targetCard.currentHp <= 0) {
-                const targetState = room.gameState.players[targetPlayer];
-                addToGraveyard(targetState, targetCard);
-                targetState.field[targetRow][targetCol] = null;
-                log(`☠️ ${targetCard.name} détruit par initiative!`, 'damage');
-                emitAnimation(room, 'death', { player: targetPlayer, row: targetRow, col: targetCol });
-
-                // Piétinement
-                if (attackerCard.abilities.includes('trample') && targetCard.currentHp < 0) {
-                    const trampleDmg = Math.abs(targetCard.currentHp);
-                    room.gameState.players[targetPlayer].hp -= trampleDmg;
-                    log(`🦏 ${attackerCard.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
-                    io.to(room.code).emit('directDamage', { defender: targetPlayer, damage: trampleDmg });
-                }
-
-                await sleep(400);
-
-                // onDeath
-                await processOnDeathAbility(room, targetCard, targetPlayer, log, sleep);
-            } else {
-                // Riposte si l'attaquant n'est pas un tireur et la cible ne peut pas attaquer
-                if (!isShooter && !targetCard.canAttack) {
-                    const riposteDamage = targetCard.atk;
-                    attackerCard.currentHp -= riposteDamage;
-                    log(`↩️ ${targetCard.name} riposte (-${riposteDamage})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
-
-                    if (attackerCard.currentHp <= 0) {
-                        const attackerState = room.gameState.players[atk.attackerPlayer];
-                        addToGraveyard(attackerState, attackerCard);
-                        attackerState.field[atk.attackerRow][atk.attackerCol] = null;
-                        log(`☠️ ${attackerCard.name} tué par la riposte!`, 'damage');
-                        emitAnimation(room, 'death', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol });
-                        await sleep(400);
-                        await processOnDeathAbility(room, attackerCard, atk.attackerPlayer, log, sleep);
-                    }
-                }
-
-                // Power bonus si la cible survit
-                if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
-                    targetCard.atk += 1;
-                    log(`💪 ${targetCard.name} gagne +1 ATK (Puissance)!`, 'buff');
-                }
-            }
-
-            await sleep(300);
-            emitStateToBoth(room);
-        }
-
-        // Vérifier victoire
-        const winner = checkVictory();
-        if (winner !== null) {
-            return true; // Game ended
-        }
-
-        await sleep(200);
-    }
-
-    log(`⚡ Fin de la phase d'initiative\n`, 'action');
-    return false;
-}
-
 // ==================== INTERCEPTION DES VOLANTS (PHASE GLOBALE) ====================
 // Les volants qui peuvent attaquer s'interceptent au centre du plateau
-// APRÈS la phase d'initiative (certains volants peuvent déjà être morts)
+// AVANT le traitement normal slot par slot
 async function processFlyingInterceptions(room, log, sleep, checkVictory) {
     const p1State = room.gameState.players[1];
     const p2State = room.gameState.players[2];
@@ -2260,55 +1624,40 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
 
     log(`🦅 Interception aérienne! ${interceptions.length} combat(s) de volants`, 'action');
 
-    // Collecter toutes les cartes mortes pour traiter onDeath à la fin
-    const allDeadCards = [];
-
-    // ========== TRAITER CHAQUE PAIRE SÉQUENTIELLEMENT ==========
-    // Chaque paire doit compléter son animation avant la suivante
-    for (let pairIndex = 0; pairIndex < interceptions.length; pairIndex++) {
-        const inter = interceptions[pairIndex];
+    // Traiter chaque interception
+    for (const inter of interceptions) {
         const { p1, p2 } = inter;
         const card1 = p1.card;
         const card2 = p2.card;
-        const pairLabel = `Paire ${pairIndex + 1}/${interceptions.length}`;
 
         // Vérifier que les deux sont encore vivants
-        if (card1.currentHp <= 0 || card2.currentHp <= 0) {
-            log(`⏭️ ${pairLabel}: Combat ignoré (créature déjà morte)`, 'info');
-            continue;
-        }
-
-        log(`\n🦅 ===== ${pairLabel}: ${card1.name} VS ${card2.name} =====`, 'action');
+        if (card1.currentHp <= 0 || card2.currentHp <= 0) continue;
 
         // Marquer les créatures comme ayant participé à l'interception
         card1.hasIntercepted = true;
         card2.hasIntercepted = true;
 
-        // ===== ÉTAPE 0: Bloquer les slots pour empêcher render() de les modifier =====
+        // Bloquer les slots pendant l'animation d'interception
         const slotsToBlock = [
             { player: p1.player, row: p1.row, col: p1.col },
             { player: p2.player, row: p2.row, col: p2.col }
         ];
         io.to(room.code).emit('blockSlots', slotsToBlock);
-        log(`🔒 ${pairLabel} - Slots bloqués`, 'info');
 
-        // ===== ÉTAPE 1: Animation d'attaque (vol vers le centre) =====
-        log(`📍 ${pairLabel} - Étape 1: Animation d'attaque`, 'info');
+        // Animation d'interception (combat mutuel au centre)
         emitAnimation(room, 'attack', {
             combatType: 'mutual',
             attacker1: { player: p1.player, row: p1.row, col: p1.col },
             attacker2: { player: p2.player, row: p2.row, col: p2.col },
             isFlying: true,
-            isInterception: true,
-            pairIndex: pairIndex
+            isInterception: true
         });
 
-        // Attendre que l'animation d'attaque se termine complètement
-        await sleep(800);
+        log(`🦅 ${card1.name} et ${card2.name} s'interceptent en vol!`, 'action');
 
-        // ===== ÉTAPE 2: Résolution du combat et dégâts =====
-        log(`📍 ${pairLabel} - Étape 2: Résolution des dégâts`, 'info');
+        await sleep(500);
 
+        // Résoudre le combat (vérifier initiative)
         const init1 = card1.abilities.includes('initiative');
         const init2 = card2.abilities.includes('initiative');
         const dmg1 = card1.atk;
@@ -2325,7 +1674,6 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
                     card2.atk += 1;
                     log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
                 }
-                await sleep(300);
                 card1.currentHp -= card2.atk;
                 log(`↩️ ${card2.name} → ${card1.name} (-${card2.atk})`, 'damage');
                 emitAnimation(room, 'damage', { player: p1.player, row: p1.row, col: p1.col, amount: card2.atk });
@@ -2346,7 +1694,6 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
                     card1.atk += 1;
                     log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
                 }
-                await sleep(300);
                 card2.currentHp -= card1.atk;
                 log(`↩️ ${card1.name} → ${card2.name} (-${card1.atk})`, 'damage');
                 emitAnimation(room, 'damage', { player: p2.player, row: p2.row, col: p2.col, amount: card1.atk });
@@ -2376,446 +1723,90 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
             }
         }
 
-        // Attendre que l'animation de dégâts se termine
-        await sleep(400);
-
-        // ===== ÉTAPE 3: Animation de clash (onde de choc) =====
-        log(`📍 ${pairLabel} - Étape 3: Animation de clash`, 'info');
+        // Animation de clash (onde de choc)
         const midRow = (p1.row + p2.row) / 2;
         emitAnimation(room, 'clash', { row: midRow, isInterception: true });
 
         await sleep(400);
 
-        // ===== ÉTAPE 4: Piétinement (si applicable) =====
+        // PIÉTINEMENT - dégâts excédentaires au héros
+        // Card1 (P1) attaque Card2 (P2) - si card1 a trample et card2 est mort
         if (card1.abilities.includes('trample') && card2.currentHp < 0) {
-            const trampleDmg = Math.abs(card2.currentHp);
+            const trampleDmg = Math.abs(card2.currentHp); // Dégâts excédentaires
             p2State.hp -= trampleDmg;
             log(`🦏 ${card1.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: 2, damage: trampleDmg });
-            await sleep(300);
+            io.to(room.code).emit('directDamage', { defender: p2.player, damage: trampleDmg });
         }
+        // Card2 (P2) attaque Card1 (P1) - si card2 a trample et card1 est mort
         if (card2.abilities.includes('trample') && card1.currentHp < 0) {
-            const trampleDmg = Math.abs(card1.currentHp);
+            const trampleDmg = Math.abs(card1.currentHp); // Dégâts excédentaires
             p1State.hp -= trampleDmg;
             log(`🦏 ${card2.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: 1, damage: trampleDmg });
-            await sleep(300);
+            io.to(room.code).emit('directDamage', { defender: p1.player, damage: trampleDmg });
         }
 
-        // ===== ÉTAPE 5: Animations de mort =====
-        log(`📍 ${pairLabel} - Étape 5: Gestion des morts`, 'info');
-
+        // Retirer les créatures mortes (mais NE PAS faire emitStateToBoth ici)
+        // On collecte les morts pour les traiter APRÈS toutes les interceptions
         if (card1.currentHp <= 0) {
             addToGraveyard(p1State, card1);
             p1State.field[p1.row][p1.col] = null;
             log(`☠️ ${card1.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p1.player, row: p1.row, col: p1.col });
-            allDeadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
+            // onDeath sera traité après toutes les interceptions
+            inter.deadCards = inter.deadCards || [];
+            inter.deadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
         }
         if (card2.currentHp <= 0) {
             addToGraveyard(p2State, card2);
             p2State.field[p2.row][p2.col] = null;
             log(`☠️ ${card2.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p2.player, row: p2.row, col: p2.col });
-            allDeadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
+            inter.deadCards = inter.deadCards || [];
+            inter.deadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
         }
 
-        // Attendre que les animations de mort se terminent
-        await sleep(600);
-
-        // ===== ÉTAPE 6: Débloquer les slots =====
+        // Débloquer les slots après l'animation d'interception
         io.to(room.code).emit('unblockSlots', slotsToBlock);
-        log(`🔓 ${pairLabel} - Slots débloqués`, 'info');
 
-        // ===== ÉTAPE 7: Sync state AVANT la paire suivante =====
-        // Ceci permet au client de mettre à jour le DOM pour la prochaine paire
-        log(`📍 ${pairLabel} - Étape 7: Synchronisation`, 'info');
-        emitStateToBoth(room);
-
-        // Attendre que le client render() et soit prêt pour la prochaine paire
-        await sleep(500);
-
-        log(`✅ ${pairLabel} terminée\n`, 'info');
+        // Attendre un peu entre les interceptions mais NE PAS emitStateToBoth
+        await sleep(300);
     }
+
+    // Émettre l'état UNE SEULE FOIS après toutes les interceptions
+    emitStateToBoth(room);
+    await sleep(300);
 
     // Traiter les capacités onDeath de toutes les créatures mortes
-    for (const d of allDeadCards) {
-        await processOnDeathAbility(room, d.card, d.player, log, sleep);
-    }
-
-    log(`🦅 Fin des interceptions aériennes`, 'action');
-}
-
-// ==================== TRAITEMENT D'UNE PAIRE DE COMBAT ====================
-// Gère le combat entre les créatures de P1 et P2 sur le même slot (row, col)
-//
-// RÈGLES DE SÉQUENÇAGE :
-// - Si les deux créatures s'attaquent mutuellement :
-//   - Si UNE SEULE a initiative → Séquence SOLO de celle avec initiative, puis séquence de l'autre (si vivante)
-//   - Si LES DEUX ont initiative OU AUCUNE → Séquence SIMULTANÉE (combat mutuel)
-// - Si une seule créature attaque → Séquence SOLO
-//
-async function processCombatPair(room, row, col, log, sleep, checkVictory, slotNames) {
-    const p1State = room.gameState.players[1];
-    const p2State = room.gameState.players[2];
-    const slotName = slotNames[row][col];
-
-    // Récupérer les créatures du slot
-    const p1Card = p1State.field[row][col];
-    const p2Card = p2State.field[row][col];
-
-    // Collecter les attaquants potentiels
-    const attackers = [];
-
-    // P1 peut attaquer ?
-    if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && !p1Card.hasIntercepted) {
-        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
-        if (target) {
-            attackers.push({
-                card: p1Card,
-                player: 1,
-                row, col,
-                target,
-                hasInitiative: p1Card.abilities.includes('initiative'),
-                isShooter: p1Card.abilities.includes('shooter'),
-                hasTrample: p1Card.abilities.includes('trample')
-            });
-        }
-    }
-
-    // P2 peut attaquer ?
-    if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && !p2Card.hasIntercepted) {
-        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
-        if (target) {
-            attackers.push({
-                card: p2Card,
-                player: 2,
-                row, col,
-                target,
-                hasInitiative: p2Card.abilities.includes('initiative'),
-                isShooter: p2Card.abilities.includes('shooter'),
-                hasTrample: p2Card.abilities.includes('trample')
-            });
-        }
-    }
-
-    if (attackers.length === 0) return false;
-
-    // Vérifier si c'est un combat mutuel (les deux s'attaquent l'une l'autre)
-    let isMutualCombat = false;
-    if (attackers.length === 2) {
-        const atk1 = attackers[0];
-        const atk2 = attackers[1];
-        // Ils se ciblent mutuellement si la cible de chacun est l'autre
-        const target1IsAtk2 = !atk1.target.isHero && atk1.target.player === atk2.player && atk1.target.row === atk2.row && atk1.target.col === atk2.col;
-        const target2IsAtk1 = !atk2.target.isHero && atk2.target.player === atk1.player && atk2.target.row === atk1.row && atk2.target.col === atk1.col;
-        isMutualCombat = target1IsAtk2 && target2IsAtk1;
-    }
-
-    if (isMutualCombat) {
-        const atk1 = attackers[0];
-        const atk2 = attackers[1];
-
-        // Déterminer si initiative exclusive
-        const oneHasExclusiveInit = (atk1.hasInitiative && !atk2.hasInitiative) || (!atk1.hasInitiative && atk2.hasInitiative);
-
-        if (oneHasExclusiveInit) {
-            // SÉQUENCE SÉPARÉE : celui avec initiative attaque d'abord
-            const first = atk1.hasInitiative ? atk1 : atk2;
-            const second = atk1.hasInitiative ? atk2 : atk1;
-
-            log(`\n⚔️ ===== SLOT ${slotName}: ${first.card.name} a l'INITIATIVE =====`, 'phase');
-
-            // Séquence 1 : Attaque de la créature avec initiative
-            const gameEnded1 = await executeSoloAttack(room, first, log, sleep, slotName, true);
-            if (gameEnded1 || checkVictory() !== null) return true;
-
-            // Vérifier si le second est toujours vivant et peut attaquer
-            const secondCard = room.gameState.players[second.player].field[second.row][second.col];
-            if (secondCard && secondCard.currentHp > 0 && secondCard.canAttack) {
-                // Recalculer la cible (la première peut être morte)
-                const enemyState = room.gameState.players[second.player === 1 ? 2 : 1];
-                const newTarget = findTarget(secondCard, enemyState.field[row][1], enemyState.field[row][0], second.player === 1 ? 2 : 1, row);
-
-                if (newTarget) {
-                    second.target = newTarget;
-                    second.card = secondCard; // Rafraîchir la référence
-
-                    log(`\n⚔️ ===== SLOT ${slotName}: ${second.card.name} riposte =====`, 'phase');
-                    const gameEnded2 = await executeSoloAttack(room, second, log, sleep, slotName, false);
-                    if (gameEnded2 || checkVictory() !== null) return true;
-                }
-            }
-        } else {
-            // SÉQUENCE SIMULTANÉE : combat mutuel
-            log(`\n⚔️ ===== SLOT ${slotName}: Combat mutuel =====`, 'phase');
-            const gameEnded = await executeMutualCombat(room, atk1, atk2, log, sleep, slotName);
-            if (gameEnded || checkVictory() !== null) return true;
-        }
-    } else {
-        // Une seule créature attaque ou elles attaquent des cibles différentes
-        for (const atk of attackers) {
-            // Vérifier que l'attaquant est toujours vivant
-            const attackerCard = room.gameState.players[atk.player].field[atk.row][atk.col];
-            if (!attackerCard || attackerCard.currentHp <= 0) continue;
-
-            log(`\n⚔️ ===== SLOT ${slotName}: ${attackerCard.name} attaque =====`, 'phase');
-            const gameEnded = await executeSoloAttack(room, { ...atk, card: attackerCard }, log, sleep, slotName, false);
-            if (gameEnded || checkVictory() !== null) return true;
-        }
-    }
-
-    return false;
-}
-
-// ==================== EXÉCUTION D'UNE ATTAQUE SOLO ====================
-async function executeSoloAttack(room, atk, log, sleep, slotName, isInitiativeAttack) {
-    const attackerCard = atk.card;
-    const targetPlayer = atk.target.player;
-
-    // Animation selon le type
-    if (atk.target.isHero) {
-        // Attaque sur le héros
-        if (atk.isShooter) {
-            emitAnimation(room, 'attack', {
-                combatType: 'shooter',
-                attacker: atk.player,
-                row: atk.row,
-                col: atk.col,
-                targetRow: -1,
-                targetCol: -1,
-                isHeroTarget: true
-            });
-        } else {
-            emitAnimation(room, 'attack', {
-                combatType: 'melee_hero',
-                attacker: atk.player,
-                row: atk.row,
-                col: atk.col,
-                targetHero: targetPlayer
-            });
-        }
-
-        await sleep(600);
-
-        const damage = attackerCard.atk;
-        room.gameState.players[targetPlayer].hp -= damage;
-        log(`💥 ${attackerCard.name} inflige ${damage} au héros!`, 'damage');
-        emitAnimation(room, 'heroHit', { player: targetPlayer, amount: damage });
-
-        // Capacité onHeroHit
-        if (attackerCard.onHeroHit === 'draw') {
-            const attackerState = room.gameState.players[atk.player];
-            if (attackerState.deck.length > 0) {
-                const drawnCard = attackerState.deck.shift();
-                attackerState.hand.push(drawnCard);
-                log(`📜 ${attackerCard.name} pioche une carte!`, 'buff');
+    for (const inter of interceptions) {
+        if (inter.deadCards) {
+            for (const d of inter.deadCards) {
+                await processOnDeathAbility(room, d.card, d.player, log, sleep);
             }
         }
-
-        await sleep(400);
-        emitStateToBoth(room);
-        return false;
     }
-
-    // Attaque sur une créature
-    const targetRow = atk.target.row;
-    const targetCol = atk.target.col;
-    let targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
-
-    if (!targetCard || targetCard.currentHp <= 0) {
-        log(`⏭️ Cible déjà morte`, 'info');
-        return false;
-    }
-
-    // Animation d'attaque
-    if (atk.isShooter) {
-        emitAnimation(room, 'attack', {
-            combatType: 'shooter',
-            attacker: atk.player,
-            row: atk.row,
-            col: atk.col,
-            targetRow,
-            targetCol,
-            damage: attackerCard.atk
-        });
-    } else {
-        emitAnimation(room, 'attack', {
-            combatType: 'solo',
-            attacker: atk.player,
-            row: atk.row,
-            col: atk.col,
-            targetRow,
-            targetCol
-        });
-    }
-
-    await sleep(600);
-
-    // Infliger les dégâts
-    const damage = attackerCard.atk;
-    targetCard.currentHp -= damage;
-    const initTag = isInitiativeAttack ? ' [Initiative]' : '';
-    log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})${initTag}`, 'damage');
-    emitAnimation(room, 'damage', { player: targetPlayer, row: targetRow, col: targetCol, amount: damage });
-
-    await sleep(300);
-
-    // Mort de la cible ?
-    if (targetCard.currentHp <= 0) {
-        const targetState = room.gameState.players[targetPlayer];
-        addToGraveyard(targetState, targetCard);
-        targetState.field[targetRow][targetCol] = null;
-        log(`☠️ ${targetCard.name} détruit!`, 'damage');
-        emitAnimation(room, 'death', { player: targetPlayer, row: targetRow, col: targetCol });
-
-        // Piétinement
-        if (atk.hasTrample && targetCard.currentHp < 0) {
-            const trampleDmg = Math.abs(targetCard.currentHp);
-            room.gameState.players[targetPlayer].hp -= trampleDmg;
-            log(`🦏 ${attackerCard.name} piétine! ${trampleDmg} au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: targetPlayer, damage: trampleDmg });
-        }
-
-        await sleep(400);
-        await processOnDeathAbility(room, targetCard, targetPlayer, log, sleep);
-    } else {
-        // Riposte si :
-        // - L'attaquant N'EST PAS un tireur
-        // - La cible NE PEUT PAS attaquer ce tour (sinon elle attaquera normalement)
-        // - L'attaquant n'a pas tué la cible avec initiative effective
-        if (!atk.isShooter && !targetCard.canAttack) {
-            const riposteDamage = targetCard.atk;
-            attackerCard.currentHp -= riposteDamage;
-            log(`↩️ ${targetCard.name} riposte (-${riposteDamage})`, 'damage');
-            emitAnimation(room, 'damage', { player: atk.player, row: atk.row, col: atk.col, amount: riposteDamage });
-
-            if (attackerCard.currentHp <= 0) {
-                const attackerState = room.gameState.players[atk.player];
-                addToGraveyard(attackerState, attackerCard);
-                attackerState.field[atk.row][atk.col] = null;
-                log(`☠️ ${attackerCard.name} tué par la riposte!`, 'damage');
-                emitAnimation(room, 'death', { player: atk.player, row: atk.row, col: atk.col });
-                await sleep(400);
-                await processOnDeathAbility(room, attackerCard, atk.player, log, sleep);
-            }
-        }
-
-        // Power bonus
-        if (targetCard.currentHp > 0 && targetCard.abilities?.includes('power')) {
-            targetCard.atk += 1;
-            log(`💪 ${targetCard.name} gagne +1 ATK!`, 'buff');
-        }
-    }
-
-    await sleep(300);
-    emitStateToBoth(room);
-    return false;
 }
 
-// ==================== EXÉCUTION D'UN COMBAT MUTUEL ====================
-async function executeMutualCombat(room, atk1, atk2, log, sleep, slotName) {
-    const card1 = atk1.card;
-    const card2 = atk2.card;
-    const dmg1 = card1.atk;
-    const dmg2 = card2.atk;
-
-    // Déterminer le type de combat
-    const bothShooters = atk1.isShooter && atk2.isShooter;
-    const oneShooter = atk1.isShooter !== atk2.isShooter;
-
-    if (bothShooters) {
-        // Projectiles croisés
-        emitAnimation(room, 'attack', {
-            combatType: 'crossfire',
-            attacker1: { player: atk1.player, row: atk1.row, col: atk1.col },
-            attacker2: { player: atk2.player, row: atk2.row, col: atk2.col }
-        });
-    } else if (oneShooter) {
-        // Tireur vs mêlée/volant
-        const shooter = atk1.isShooter ? atk1 : atk2;
-        const other = atk1.isShooter ? atk2 : atk1;
-        emitAnimation(room, 'attack', {
-            combatType: 'shooter_vs_melee',
-            shooter: { player: shooter.player, row: shooter.row, col: shooter.col },
-            melee: { player: other.player, row: other.row, col: other.col }
-        });
-    } else {
-        // Combat mêlée mutuel - les deux vont au centre
-        emitAnimation(room, 'attack', {
-            combatType: 'mutual_melee',
-            attacker1: { player: atk1.player, row: atk1.row, col: atk1.col },
-            attacker2: { player: atk2.player, row: atk2.row, col: atk2.col },
-            isMutual: true
-        });
-    }
-
-    await sleep(700);
-
-    // Dégâts simultanés
-    card1.currentHp -= dmg2;
-    card2.currentHp -= dmg1;
-    log(`⚔️ ${card1.name} ↔ ${card2.name} (-${dmg2} / -${dmg1})`, 'damage');
-    emitAnimation(room, 'damage', { player: atk1.player, row: atk1.row, col: atk1.col, amount: dmg2 });
-    emitAnimation(room, 'damage', { player: atk2.player, row: atk2.row, col: atk2.col, amount: dmg1 });
-
-    await sleep(400);
-
-    // Gérer les morts
-    const deaths = [];
-
-    if (card1.currentHp <= 0) {
-        const state1 = room.gameState.players[atk1.player];
-        addToGraveyard(state1, card1);
-        state1.field[atk1.row][atk1.col] = null;
-        log(`☠️ ${card1.name} détruit!`, 'damage');
-        emitAnimation(room, 'death', { player: atk1.player, row: atk1.row, col: atk1.col });
-        deaths.push({ card: card1, player: atk1.player });
-
-        // Piétinement de card2 sur card1
-        if (atk2.hasTrample && card1.currentHp < 0) {
-            const trampleDmg = Math.abs(card1.currentHp);
-            room.gameState.players[atk1.player].hp -= trampleDmg;
-            log(`🦏 ${card2.name} piétine! ${trampleDmg} au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: atk1.player, damage: trampleDmg });
+// Helper pour bloquer les slots impliqués dans un combat (évite que render() n'efface les cartes pendant l'animation)
+function blockCombatSlots(room, attacks) {
+    const slotsToBlock = [];
+    for (const atk of attacks) {
+        slotsToBlock.push({ player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol });
+        if (!atk.targetIsHero) {
+            slotsToBlock.push({ player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol });
         }
-    } else if (card1.abilities?.includes('power')) {
-        card1.atk += 1;
-        log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
     }
-
-    if (card2.currentHp <= 0) {
-        const state2 = room.gameState.players[atk2.player];
-        addToGraveyard(state2, card2);
-        state2.field[atk2.row][atk2.col] = null;
-        log(`☠️ ${card2.name} détruit!`, 'damage');
-        emitAnimation(room, 'death', { player: atk2.player, row: atk2.row, col: atk2.col });
-        deaths.push({ card: card2, player: atk2.player });
-
-        // Piétinement de card1 sur card2
-        if (atk1.hasTrample && card2.currentHp < 0) {
-            const trampleDmg = Math.abs(card2.currentHp);
-            room.gameState.players[atk2.player].hp -= trampleDmg;
-            log(`🦏 ${card1.name} piétine! ${trampleDmg} au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: atk2.player, damage: trampleDmg });
-        }
-    } else if (card2.abilities?.includes('power')) {
-        card2.atk += 1;
-        log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
+    if (slotsToBlock.length > 0) {
+        io.to(room.code).emit('blockSlots', slotsToBlock);
     }
-
-    await sleep(500);
-    emitStateToBoth(room);
-
-    // Traiter onDeath
-    for (const d of deaths) {
-        await processOnDeathAbility(room, d.card, d.player, log, sleep);
-    }
-
-    return false;
+    return slotsToBlock;
 }
 
-// ==================== ANCIENNE FONCTION (conservée pour référence) ====================
+function unblockCombatSlots(room, slotsToBlock) {
+    if (slotsToBlock.length > 0) {
+        io.to(room.code).emit('unblockSlots', slotsToBlock);
+    }
+}
+
 // Traiter le combat pour un slot spécifique (row, col)
 // Les deux joueurs ont une créature à cette position qui peuvent attaquer
 async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames) {
@@ -2891,11 +1882,14 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         mutualCombat = atk1TargetsAtk2 && atk2TargetsAtk1;
     }
     
+    // Bloquer les slots impliqués dans le combat pour éviter que render() n'interfère
+    const blockedSlots = blockCombatSlots(room, attacks);
+
     // Déterminer le type de combat et émettre l'animation appropriée
     if (mutualCombat) {
         const atk1 = attacks[0];
         const atk2 = attacks[1];
-        
+
         const bothShooters = atk1.isShooter && atk2.isShooter;
         const shooterVsFlyer = (atk1.isShooter && !atk2.isShooter) || (!atk1.isShooter && atk2.isShooter);
         
@@ -3320,6 +2314,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
 
                     // Vérifier victoire
                     if (room.gameState.players[1].hp <= 0 || room.gameState.players[2].hp <= 0) {
+                        unblockCombatSlots(room, blockedSlots);
                         emitStateToBoth(room);
                         return true;
                     }
@@ -3356,6 +2351,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                             await processOnDeathAbility(room, d.card, d.player, log, sleep);
                         }
                     }
+                    unblockCombatSlots(room, blockedSlots);
                     return false;
                 }
             }
@@ -3410,6 +2406,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 }
 
                 if (targetPlayer.hp <= 0) {
+                    unblockCombatSlots(room, blockedSlots);
                     emitStateToBoth(room);
                     return true;
                 }
@@ -3502,6 +2499,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             await processOnDeathAbility(room, d.card, d.player, log, sleep);
         }
     }
+
+    // Débloquer les slots à la fin du combat
+    unblockCombatSlots(room, blockedSlots);
 
     return false;
 }

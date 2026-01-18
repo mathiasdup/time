@@ -4,7 +4,13 @@
       "Bash(ls \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\"\" 2>/dev/null || echo \"Dossier n 'existe pas \")",
       "Bash(dir \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\")",
       "Bash(copy:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(node --check:*)",
+      "Bash(/c/Program Files/nodejs/node.exe --check server.js)",
+      "Bash(echo:*)",
+      "Bash(where:*)"
     ]
   }
 }
