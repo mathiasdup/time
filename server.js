@@ -2553,17 +2553,17 @@ function findTarget(attacker, enemyFront, enemyBack, enemyPlayer, row) {
     const backIsShooter = effectiveBack && effectiveBack.abilities.includes('shooter');
     
     // CAS 1: Créature VOLANTE
-    // - Attaque directement DERRIÈRE (col 0) si c'est un tireur ou volant
-    // - Sinon attaque le héros directement
-    // - Ne bloque PAS les créatures normales
+    // - Attaque d'abord DEVANT (col 1) si c'est un tireur ou volant
+    // - Puis DERRIÈRE (col 0) si c'est un tireur ou volant
+    // - Sinon attaque le héros directement (passe au-dessus des normales)
     if (isFlying) {
-        // Volant regarde d'abord derrière (back = col 0)
-        if (effectiveBack && (backIsFlying || backIsShooter)) {
-            return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
-        }
-        // Puis devant si c'est un volant ou tireur
+        // Volant regarde d'abord devant (front = col 1)
         if (effectiveFront && (frontIsFlying || frontIsShooter)) {
             return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
+        }
+        // Puis derrière si c'est un volant ou tireur
+        if (effectiveBack && (backIsFlying || backIsShooter)) {
+            return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
         }
         // Sinon attaque le héros (passe au-dessus des normales)
         return { card: null, col: -1, row: row, player: enemyPlayer, isHero: true };
