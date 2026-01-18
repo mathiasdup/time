@@ -1045,7 +1045,7 @@
             text-align: center;
         }
         .card.arena-style .arena-name {
-            font-family: 'Manufacturing Consent', sans-serif;
+            font-family: 'Bree Serif', serif;
             font-size: 0.55em;
             color: #fff;
             -webkit-text-stroke: 1px #000;
@@ -1089,7 +1089,7 @@
             font-weight: 500;
             color: #333;
             margin-top: 3px;
-            line-height: 1.3;
+            line-height: 1.2;
             text-align: left;
         }
 
