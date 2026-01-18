@@ -358,15 +358,12 @@ class CombatAnimationSystem {
      */
     async animateMutualMelee(data) {
         const { attacker1, attacker2, damage1, damage2 } = data;
-        console.log('[MutualMelee] Starting animation:', attacker1, attacker2);
 
         const card1 = this.getCardElement(attacker1.owner, attacker1.row, attacker1.col);
         const card2 = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
 
-        console.log('[MutualMelee] Card1:', card1 ? 'found' : 'NOT FOUND', 'Card2:', card2 ? 'found' : 'NOT FOUND');
-
         if (!card1 || !card2) {
-            console.warn('[MutualMelee] Cards not found for mutual melee - attacker1:', attacker1, 'attacker2:', attacker2);
+            console.warn('[MutualMelee] Cards not found - attacker1:', attacker1, 'attacker2:', attacker2);
             return;
         }
 

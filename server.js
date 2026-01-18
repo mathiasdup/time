@@ -1738,29 +1738,40 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
             io.to(room.code).emit('directDamage', { defender: p1.player, damage: trampleDmg });
         }
 
-        // Retirer les créatures mortes
-        const deadCards = [];
+        // Retirer les créatures mortes (mais NE PAS faire emitStateToBoth ici)
+        // On collecte les morts pour les traiter APRÈS toutes les interceptions
         if (card1.currentHp <= 0) {
-            deadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
             addToGraveyard(p1State, card1);
             p1State.field[p1.row][p1.col] = null;
             log(`☠️ ${card1.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p1.player, row: p1.row, col: p1.col });
+            // onDeath sera traité après toutes les interceptions
+            inter.deadCards = inter.deadCards || [];
+            inter.deadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
         }
         if (card2.currentHp <= 0) {
-            deadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
             addToGraveyard(p2State, card2);
             p2State.field[p2.row][p2.col] = null;
             log(`☠️ ${card2.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p2.player, row: p2.row, col: p2.col });
+            inter.deadCards = inter.deadCards || [];
+            inter.deadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
         }
 
-        emitStateToBoth(room);
+        // Attendre un peu entre les interceptions mais NE PAS emitStateToBoth
         await sleep(300);
+    }
 
-        // Capacités onDeath
-        for (const d of deadCards) {
-            await processOnDeathAbility(room, d.card, d.player, log, sleep);
+    // Émettre l'état UNE SEULE FOIS après toutes les interceptions
+    emitStateToBoth(room);
+    await sleep(300);
+
+    // Traiter les capacités onDeath de toutes les créatures mortes
+    for (const inter of interceptions) {
+        if (inter.deadCards) {
+            for (const d of inter.deadCards) {
+                await processOnDeathAbility(room, d.card, d.player, log, sleep);
+            }
         }
     }
 }
