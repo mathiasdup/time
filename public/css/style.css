@@ -1041,7 +1041,7 @@
             right: 0;
             background: #184d26ba;
             border-radius: 7.5px 7.5px 0px 0px;
-            padding: 2px 2px;
+            padding: 1px;
             text-align: center;
         }
         .card.arena-style .arena-name {
@@ -1062,7 +1062,7 @@
             bottom: 22px;
             left: 4px;
             right: 4px;
-            background: rgb(255 255 255 / 90%);
+            background: url('/css/background_texte.png') center/cover no-repeat;
             border-radius: 4px;
             padding: 2px 4px;
             text-align: left;
