@@ -13,6 +13,7 @@ let currentProcessorId = 0; // Pour traquer le processeur actif
 
 // Système de HP différés pour zdejebel (pour que les HP changent APRÈS l'animation)
 let pendingHpUpdate = null; // { target: 'me'|'opp', oldHp: number, newHp: number }
+let zdejebelAnimationInProgress = false; // Bloque render() pour les HP pendant zdejebel
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
@@ -356,6 +357,9 @@ async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
     console.log('[Zdejebel] START - owner:', owner, 'damage:', data.damage, 'timestamp:', Date.now());
 
+    // Bloquer render() pour les HP pendant toute l'animation
+    zdejebelAnimationInProgress = true;
+
     // Restaurer les HP d'avant l'animation (render() les a déjà mis à jour)
     const hpElement = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
     const currentHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
@@ -408,6 +412,9 @@ async function animateZdejebelDamage(data) {
         hpElement.textContent = currentHp;
         console.log('[Zdejebel] Updated HP display to', currentHp);
     }
+
+    // Débloquer render() pour les HP
+    zdejebelAnimationInProgress = false;
 
     // Petit délai supplémentaire pour voir le changement
     await new Promise(r => setTimeout(r, 200));
@@ -2003,9 +2010,14 @@ function clearHighlights() {
 function render() {
     if (!state) return;
     const me = state.me, opp = state.opponent;
-    
-    document.getElementById('me-hp').textContent = me.hp;
-    document.getElementById('opp-hp').textContent = opp.hp;
+
+    // Ne pas mettre à jour les HP si une animation zdejebel est en cours ou en attente
+    // L'animation zdejebel gère elle-même l'affichage des HP
+    const hasZdejebelPending = animationQueue.some(a => a.type === 'zdejebel') || zdejebelAnimationInProgress;
+    if (!hasZdejebelPending) {
+        document.getElementById('me-hp').textContent = me.hp;
+        document.getElementById('opp-hp').textContent = opp.hp;
+    }
     document.getElementById('me-energy').textContent = `${me.energy}/${me.maxEnergy}`;
     document.getElementById('opp-energy').textContent = `${opp.energy}/${opp.maxEnergy}`;
     // Mettre à jour les tooltips du deck
