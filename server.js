@@ -401,9 +401,28 @@ async function startResolution(room) {
         
         const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
+        // ==================== PHASE D'INITIATIVE GLOBALE ====================
+        // Les créatures avec INITIATIVE attaquent EN PREMIER, avant tout le reste
+        // Ceci permet aux tireurs avec initiative de tuer des cibles avant les interceptions
+        await processInitiativeAttacks(room, log, sleep, checkVictory, slotNames);
+
+        // Vérifier si le jeu s'est terminé après les attaques d'initiative
+        const initVictory = checkVictory();
+        if (initVictory !== null) {
+            await sleep(800);
+            if (initVictory === 0) {
+                log(`🤝 Match nul! Les deux héros sont tombés!`, 'phase');
+                io.to(room.code).emit('gameOver', { winner: 0, draw: true });
+            } else {
+                log(`🏆 ${room.gameState.players[initVictory].heroName} GAGNE!`, 'phase');
+                io.to(room.code).emit('gameOver', { winner: initVictory });
+            }
+            return;
+        }
+
         // ==================== PHASE D'INTERCEPTION DES VOLANTS ====================
         // Les volants qui peuvent attaquer s'interceptent au centre du plateau
-        // L'initiative est gérée AU SEIN de chaque interception
+        // (APRÈS l'initiative - des volants peuvent déjà être morts)
         await processFlyingInterceptions(room, log, sleep, checkVictory);
 
         // ==================== COMBAT PAR PAIRES DE SLOTS ====================
