@@ -359,11 +359,25 @@ class CombatAnimationSystem {
     async animateMutualMelee(data) {
         const { attacker1, attacker2, damage1, damage2 } = data;
 
+        console.log('[MutualMelee] Looking for cards:',
+            `attacker1: ${attacker1.owner}-${attacker1.row}-${attacker1.col}`,
+            `attacker2: ${attacker2.owner}-${attacker2.row}-${attacker2.col}`,
+            `pairIndex: ${data.pairIndex}`);
+
         const card1 = this.getCardElement(attacker1.owner, attacker1.row, attacker1.col);
         const card2 = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
 
+        console.log('[MutualMelee] Found:',
+            `card1: ${card1 ? 'YES' : 'NO'}`,
+            `card2: ${card2 ? 'YES' : 'NO'}`);
+
         if (!card1 || !card2) {
             console.warn('[MutualMelee] Cards not found - attacker1:', attacker1, 'attacker2:', attacker2);
+            // Log l'état actuel du DOM pour debug
+            const slot1 = document.querySelector(`.card-slot[data-owner="${attacker1.owner}"][data-row="${attacker1.row}"][data-col="${attacker1.col}"]`);
+            const slot2 = document.querySelector(`.card-slot[data-owner="${attacker2.owner}"][data-row="${attacker2.row}"][data-col="${attacker2.col}"]`);
+            console.warn('[MutualMelee] Slot1 exists:', !!slot1, 'has .card:', slot1?.querySelector('.card') ? 'YES' : 'NO');
+            console.warn('[MutualMelee] Slot2 exists:', !!slot2, 'has .card:', slot2?.querySelector('.card') ? 'YES' : 'NO');
             return;
         }
 

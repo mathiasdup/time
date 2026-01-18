@@ -1624,33 +1624,55 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
 
     log(`🦅 Interception aérienne! ${interceptions.length} combat(s) de volants`, 'action');
 
-    // Traiter chaque interception
-    for (const inter of interceptions) {
+    // Collecter toutes les cartes mortes pour traiter onDeath à la fin
+    const allDeadCards = [];
+
+    // ========== TRAITER CHAQUE PAIRE SÉQUENTIELLEMENT ==========
+    // Chaque paire doit compléter son animation avant la suivante
+    for (let pairIndex = 0; pairIndex < interceptions.length; pairIndex++) {
+        const inter = interceptions[pairIndex];
         const { p1, p2 } = inter;
         const card1 = p1.card;
         const card2 = p2.card;
+        const pairLabel = `Paire ${pairIndex + 1}/${interceptions.length}`;
 
         // Vérifier que les deux sont encore vivants
-        if (card1.currentHp <= 0 || card2.currentHp <= 0) continue;
+        if (card1.currentHp <= 0 || card2.currentHp <= 0) {
+            log(`⏭️ ${pairLabel}: Combat ignoré (créature déjà morte)`, 'info');
+            continue;
+        }
+
+        log(`\n🦅 ===== ${pairLabel}: ${card1.name} VS ${card2.name} =====`, 'action');
 
         // Marquer les créatures comme ayant participé à l'interception
         card1.hasIntercepted = true;
         card2.hasIntercepted = true;
 
-        // Animation d'interception (combat mutuel au centre)
+        // ===== ÉTAPE 0: Bloquer les slots pour empêcher render() de les modifier =====
+        const slotsToBlock = [
+            { player: p1.player, row: p1.row, col: p1.col },
+            { player: p2.player, row: p2.row, col: p2.col }
+        ];
+        io.to(room.code).emit('blockSlots', slotsToBlock);
+        log(`🔒 ${pairLabel} - Slots bloqués`, 'info');
+
+        // ===== ÉTAPE 1: Animation d'attaque (vol vers le centre) =====
+        log(`📍 ${pairLabel} - Étape 1: Animation d'attaque`, 'info');
         emitAnimation(room, 'attack', {
             combatType: 'mutual',
             attacker1: { player: p1.player, row: p1.row, col: p1.col },
             attacker2: { player: p2.player, row: p2.row, col: p2.col },
             isFlying: true,
-            isInterception: true
+            isInterception: true,
+            pairIndex: pairIndex
         });
 
-        log(`🦅 ${card1.name} et ${card2.name} s'interceptent en vol!`, 'action');
+        // Attendre que l'animation d'attaque se termine complètement
+        await sleep(800);
 
-        await sleep(500);
+        // ===== ÉTAPE 2: Résolution du combat et dégâts =====
+        log(`📍 ${pairLabel} - Étape 2: Résolution des dégâts`, 'info');
 
-        // Résoudre le combat (vérifier initiative)
         const init1 = card1.abilities.includes('initiative');
         const init2 = card2.abilities.includes('initiative');
         const dmg1 = card1.atk;
@@ -1667,6 +1689,7 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
                     card2.atk += 1;
                     log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
                 }
+                await sleep(300);
                 card1.currentHp -= card2.atk;
                 log(`↩️ ${card2.name} → ${card1.name} (-${card2.atk})`, 'damage');
                 emitAnimation(room, 'damage', { player: p1.player, row: p1.row, col: p1.col, amount: card2.atk });
@@ -1687,6 +1710,7 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
                     card1.atk += 1;
                     log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
                 }
+                await sleep(300);
                 card2.currentHp -= card1.atk;
                 log(`↩️ ${card1.name} → ${card2.name} (-${card1.atk})`, 'damage');
                 emitAnimation(room, 'damage', { player: p2.player, row: p2.row, col: p2.col, amount: card1.atk });
@@ -1716,64 +1740,74 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
             }
         }
 
-        // Animation de clash (onde de choc)
+        // Attendre que l'animation de dégâts se termine
+        await sleep(400);
+
+        // ===== ÉTAPE 3: Animation de clash (onde de choc) =====
+        log(`📍 ${pairLabel} - Étape 3: Animation de clash`, 'info');
         const midRow = (p1.row + p2.row) / 2;
         emitAnimation(room, 'clash', { row: midRow, isInterception: true });
 
         await sleep(400);
 
-        // PIÉTINEMENT - dégâts excédentaires au héros
-        // Card1 (P1) attaque Card2 (P2) - si card1 a trample et card2 est mort
+        // ===== ÉTAPE 4: Piétinement (si applicable) =====
         if (card1.abilities.includes('trample') && card2.currentHp < 0) {
-            const trampleDmg = Math.abs(card2.currentHp); // Dégâts excédentaires
+            const trampleDmg = Math.abs(card2.currentHp);
             p2State.hp -= trampleDmg;
             log(`🦏 ${card1.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: p2.player, damage: trampleDmg });
+            io.to(room.code).emit('directDamage', { defender: 2, damage: trampleDmg });
+            await sleep(300);
         }
-        // Card2 (P2) attaque Card1 (P1) - si card2 a trample et card1 est mort
         if (card2.abilities.includes('trample') && card1.currentHp < 0) {
-            const trampleDmg = Math.abs(card1.currentHp); // Dégâts excédentaires
+            const trampleDmg = Math.abs(card1.currentHp);
             p1State.hp -= trampleDmg;
             log(`🦏 ${card2.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
-            io.to(room.code).emit('directDamage', { defender: p1.player, damage: trampleDmg });
+            io.to(room.code).emit('directDamage', { defender: 1, damage: trampleDmg });
+            await sleep(300);
         }
 
-        // Retirer les créatures mortes (mais NE PAS faire emitStateToBoth ici)
-        // On collecte les morts pour les traiter APRÈS toutes les interceptions
+        // ===== ÉTAPE 5: Animations de mort =====
+        log(`📍 ${pairLabel} - Étape 5: Gestion des morts`, 'info');
+
         if (card1.currentHp <= 0) {
             addToGraveyard(p1State, card1);
             p1State.field[p1.row][p1.col] = null;
             log(`☠️ ${card1.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p1.player, row: p1.row, col: p1.col });
-            // onDeath sera traité après toutes les interceptions
-            inter.deadCards = inter.deadCards || [];
-            inter.deadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
+            allDeadCards.push({ card: card1, player: p1.player, row: p1.row, col: p1.col });
         }
         if (card2.currentHp <= 0) {
             addToGraveyard(p2State, card2);
             p2State.field[p2.row][p2.col] = null;
             log(`☠️ ${card2.name} détruit!`, 'damage');
             emitAnimation(room, 'death', { player: p2.player, row: p2.row, col: p2.col });
-            inter.deadCards = inter.deadCards || [];
-            inter.deadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
+            allDeadCards.push({ card: card2, player: p2.player, row: p2.row, col: p2.col });
         }
 
-        // Attendre un peu entre les interceptions mais NE PAS emitStateToBoth
-        await sleep(300);
-    }
+        // Attendre que les animations de mort se terminent
+        await sleep(600);
 
-    // Émettre l'état UNE SEULE FOIS après toutes les interceptions
-    emitStateToBoth(room);
-    await sleep(300);
+        // ===== ÉTAPE 6: Débloquer les slots =====
+        io.to(room.code).emit('unblockSlots', slotsToBlock);
+        log(`🔓 ${pairLabel} - Slots débloqués`, 'info');
+
+        // ===== ÉTAPE 7: Sync state AVANT la paire suivante =====
+        // Ceci permet au client de mettre à jour le DOM pour la prochaine paire
+        log(`📍 ${pairLabel} - Étape 7: Synchronisation`, 'info');
+        emitStateToBoth(room);
+
+        // Attendre que le client render() et soit prêt pour la prochaine paire
+        await sleep(500);
+
+        log(`✅ ${pairLabel} terminée\n`, 'info');
+    }
 
     // Traiter les capacités onDeath de toutes les créatures mortes
-    for (const inter of interceptions) {
-        if (inter.deadCards) {
-            for (const d of inter.deadCards) {
-                await processOnDeathAbility(room, d.card, d.player, log, sleep);
-            }
-        }
+    for (const d of allDeadCards) {
+        await processOnDeathAbility(room, d.card, d.player, log, sleep);
     }
+
+    log(`🦅 Fin des interceptions aériennes`, 'action');
 }
 
 // Traiter le combat pour un slot spécifique (row, col)
