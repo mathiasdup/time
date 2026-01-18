@@ -1059,7 +1059,7 @@
         /* Zone de texte en bas */
         .card.arena-style .arena-text-zone {
             position: absolute;
-            bottom: 22px;
+            bottom: 18px;
             left: 4px;
             right: 4px;
             background: url('/css/background_texte.png') center/cover no-repeat;
