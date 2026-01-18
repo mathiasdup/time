@@ -1826,7 +1826,7 @@ async function executeSlotAttack(room, atk, slotName, slotOrder, log, sleep) {
     }
 
     // Vérifier mort de la cible
-    await checkAndHandleDeaths(room, [[target.row, target.col]], log, sleep);
+    await checkAndRemoveDeadCreatures(room, [[target.row, target.col]], log, sleep);
 
     emitStateToBoth(room);
     await sleep(300);
@@ -1882,7 +1882,7 @@ async function executeFlyingMutualCombat(room, atk1, atk2, slotName, log, sleep)
     io.to(room.code).emit('unblockSlots', slotsToBlock);
 
     // Vérifier les morts
-    await checkAndHandleDeaths(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
+    await checkAndRemoveDeadCreatures(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
 
     emitStateToBoth(room);
     await sleep(300);
@@ -1950,7 +1950,7 @@ async function executeMutualSlotCombat(room, atk1, atk2, slotName, log, sleep) {
     io.to(room.code).emit('unblockSlots', slotsToBlock);
 
     // Vérifier les morts
-    await checkAndHandleDeaths(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
+    await checkAndRemoveDeadCreatures(room, [[atk1.row, atk1.col], [atk2.row, atk2.col]], log, sleep);
 
     emitStateToBoth(room);
     await sleep(300);
