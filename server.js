@@ -117,6 +117,10 @@ function emitAnimation(room, type, data) {
     io.to(room.code).emit('animation', { type, ...data });
 }
 
+function emitAnimationBatch(room, animations) {
+    io.to(room.code).emit('animationBatch', animations);
+}
+
 // Traite les capacités onDeath d'une carte qui meurt
 async function processOnDeathAbility(room, card, ownerPlayer, log, sleep) {
     if (!card.onDeath) return;
@@ -709,19 +713,22 @@ async function applySpell(room, action, log, sleep) {
     else if (spell.pattern === 'all') {
         log(`  🌋 ${action.heroName}: ${spell.name} - ${spell.damage} dégâts à toutes les créatures!`, 'damage');
 
-        // Phase 1: Collecter toutes les cibles et envoyer les animations de dégâts
+        // Phase 1: Collecter toutes les cibles et envoyer les animations de dégâts EN BATCH
         const deaths = [];
+        const spellAnimations = [];
         for (let p = 1; p <= 2; p++) {
             const targetPlayer = room.gameState.players[p];
             for (let r = 0; r < 4; r++) {
                 for (let c = 0; c < 2; c++) {
                     const target = targetPlayer.field[r][c];
                     if (target) {
-                        // Envoyer l'animation de dégâts (flammes pour les sorts)
-                        emitAnimation(room, 'spellDamage', { player: p, row: r, col: c, amount: spell.damage });
+                        spellAnimations.push({ type: 'spellDamage', player: p, row: r, col: c, amount: spell.damage });
                     }
                 }
             }
+        }
+        if (spellAnimations.length > 0) {
+            emitAnimationBatch(room, spellAnimations);
         }
 
         // Phase 2: Attendre que toutes les animations de dégâts se terminent
@@ -873,13 +880,17 @@ async function applySpell(room, action, log, sleep) {
         // Highlight les zones touchées
         io.to(room.code).emit('spellHighlight', { targets: allTargets, type: 'damage' });
 
-        // Phase 1: Envoyer toutes les animations de dégâts EN MÊME TEMPS
+        // Phase 1: Envoyer toutes les animations de dégâts EN BATCH
+        const spellAnimations = [];
         for (const t of allTargets) {
             const targetField = t.player === playerNum ? player.field : opponent.field;
             const target = targetField[t.row][t.col];
             if (target) {
-                emitAnimation(room, 'spellDamage', { player: t.player, row: t.row, col: t.col, amount: spell.damage });
+                spellAnimations.push({ type: 'spellDamage', player: t.player, row: t.row, col: t.col, amount: spell.damage });
             }
+        }
+        if (spellAnimations.length > 0) {
+            emitAnimationBatch(room, spellAnimations);
         }
 
         // Phase 2: Attendre les animations

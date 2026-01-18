@@ -627,6 +627,9 @@ function initSocket() {
     
     socket.on('animation', handleAnimation);
 
+    // Batch d'animations (pour les sorts de zone - jouées en parallèle)
+    socket.on('animationBatch', handleAnimationBatch);
+
     // Bloquer les slots pendant les animations de mort (pour que render() ne les efface pas)
     socket.on('blockSlots', (slots) => {
         slots.forEach(s => {
@@ -746,6 +749,35 @@ function handleAnimation(data) {
                 break;
         }
     }
+}
+
+// Handler pour les batches d'animations (sorts de zone - jouées en parallèle)
+function handleAnimationBatch(animations) {
+    console.log('[AnimationBatch] Received batch of', animations.length, 'animations');
+
+    // Jouer toutes les animations en parallèle immédiatement
+    const promises = animations.map(anim => {
+        const owner = anim.player === myNum ? 'me' : 'opp';
+        if (anim.type === 'spellDamage') {
+            if (combatAnimReady && CombatAnimations) {
+                return CombatAnimations.animateSpellDamage({
+                    owner: owner,
+                    row: anim.row,
+                    col: anim.col,
+                    amount: anim.amount
+                });
+            } else {
+                animateDamageFallback(anim);
+                return Promise.resolve();
+            }
+        }
+        return Promise.resolve();
+    });
+
+    // Attendre que toutes les animations soient terminées (optionnel, pour le logging)
+    Promise.all(promises).then(() => {
+        console.log('[AnimationBatch] All animations completed');
+    });
 }
 
 function animateBuff(data) {
