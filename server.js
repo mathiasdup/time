@@ -403,14 +403,16 @@ async function startResolution(room) {
 
         // ==================== PHASE D'INTERCEPTION DES VOLANTS ====================
         // Les volants qui peuvent attaquer s'interceptent au centre du plateau
-        // AVANT le traitement normal slot par slot
+        // L'initiative est gérée AU SEIN de chaque interception
         await processFlyingInterceptions(room, log, sleep, checkVictory);
 
-        // Combat SLOT PAR SLOT : A, B, C, D, E, F, G, H
-        // A=row0/col0, B=row0/col1, C=row1/col0, D=row1/col1, etc.
+        // ==================== COMBAT PAR PAIRES DE SLOTS ====================
+        // Chaque rangée a 2 slots: col0 (A,C,E,G) et col1 (B,D,F,H)
+        // On traite les PAIRES: (A1,A2), (B1,B2), (C1,C2), (D1,D2)...
+        // L'initiative détermine si c'est une séquence solo ou duo
         for (let row = 0; row < 4; row++) {
             for (let col = 0; col < 2; col++) {
-                const gameEnded = await processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames);
+                const gameEnded = await processCombatPair(room, row, col, log, sleep, checkVictory, slotNames);
                 
                 if (gameEnded) {
                     const winner = checkVictory();
@@ -440,6 +442,7 @@ async function startResolution(room) {
                     card.canAttack = true;
                     card.movedThisTurn = false;
                     card.hasIntercepted = false;
+                    card.hasAttackedThisTurn = false;
                 }
             }
         }
@@ -1573,9 +1576,258 @@ async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
     }
 }
 
+// ==================== PHASE D'INITIATIVE GLOBALE ====================
+// Les créatures avec INITIATIVE attaquent EN PREMIER, avant les interceptions et les combats normaux
+// Ceci permet aux tireurs avec initiative de tuer des volants avant qu'ils ne s'interceptent
+async function processInitiativeAttacks(room, log, sleep, checkVictory, slotNames) {
+    const p1State = room.gameState.players[1];
+    const p2State = room.gameState.players[2];
+
+    // Collecter toutes les créatures avec initiative qui peuvent attaquer
+    const initiativeAttackers = [];
+
+    for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 2; col++) {
+            // P1
+            const p1Card = p1State.field[row][col];
+            if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && p1Card.abilities.includes('initiative')) {
+                const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+                if (target) {
+                    initiativeAttackers.push({
+                        attacker: p1Card,
+                        attackerPlayer: 1,
+                        attackerRow: row,
+                        attackerCol: col,
+                        target: target,
+                        slotName: slotNames[row][col]
+                    });
+                }
+            }
+
+            // P2
+            const p2Card = p2State.field[row][col];
+            if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && p2Card.abilities.includes('initiative')) {
+                const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
+                if (target) {
+                    initiativeAttackers.push({
+                        attacker: p2Card,
+                        attackerPlayer: 2,
+                        attackerRow: row,
+                        attackerCol: col,
+                        target: target,
+                        slotName: slotNames[row][col]
+                    });
+                }
+            }
+        }
+    }
+
+    if (initiativeAttackers.length === 0) return;
+
+    log(`\n⚡ ===== PHASE D'INITIATIVE =====`, 'phase');
+    log(`${initiativeAttackers.length} créature(s) avec initiative vont attaquer en premier!`, 'action');
+
+    // Trier par slot (A, B, C, D...) pour un ordre prévisible
+    initiativeAttackers.sort((a, b) => {
+        const orderA = a.attackerRow * 2 + a.attackerCol;
+        const orderB = b.attackerRow * 2 + b.attackerCol;
+        return orderA - orderB;
+    });
+
+    // Traiter chaque attaque d'initiative
+    for (const atk of initiativeAttackers) {
+        const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
+
+        // Vérifier que l'attaquant est toujours vivant
+        if (!attackerCard || attackerCard.currentHp <= 0) {
+            log(`⏭️ ${atk.slotName}: Attaquant mort, attaque annulée`, 'info');
+            continue;
+        }
+
+        // Vérifier que la cible existe toujours
+        let targetCard, targetRow, targetCol, targetPlayer;
+        if (atk.target.isHero) {
+            targetCard = null;
+            targetPlayer = atk.target.player;
+            log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque le héros!`, 'action');
+        } else {
+            targetPlayer = atk.target.player;
+            targetRow = atk.target.row;
+            targetCol = atk.target.col;
+            targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
+
+            if (!targetCard || targetCard.currentHp <= 0) {
+                // La cible originale est morte, chercher une nouvelle cible
+                const enemyState = room.gameState.players[targetPlayer];
+                const newTarget = findTarget(attackerCard, enemyState.field[atk.attackerRow][1], enemyState.field[atk.attackerRow][0], targetPlayer, atk.attackerRow);
+
+                if (!newTarget) {
+                    log(`⏭️ ${atk.slotName}: Plus de cible disponible`, 'info');
+                    continue;
+                }
+
+                if (newTarget.isHero) {
+                    targetCard = null;
+                    log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque le héros!`, 'action');
+                } else {
+                    targetRow = newTarget.row;
+                    targetCol = newTarget.col;
+                    targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
+                }
+            } else {
+                log(`⚡ [Initiative] ${attackerCard.name} (${atk.slotName}) attaque ${targetCard.name}!`, 'action');
+            }
+        }
+
+        // Marquer l'attaquant comme ayant déjà attaqué (ne réattaquera pas dans les phases suivantes)
+        attackerCard.hasAttackedThisTurn = true;
+        attackerCard.canAttack = false;
+
+        const isShooter = attackerCard.abilities.includes('shooter');
+
+        // Animation d'attaque
+        if (atk.target.isHero || !targetCard) {
+            // Attaque sur le héros
+            if (isShooter) {
+                emitAnimation(room, 'attack', {
+                    combatType: 'shooter',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetRow: -1,
+                    targetCol: -1,
+                    isHeroTarget: true
+                });
+            } else {
+                emitAnimation(room, 'attack', {
+                    combatType: 'melee_hero',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetHero: targetPlayer
+                });
+            }
+
+            await sleep(600);
+
+            // Dégâts au héros
+            const damage = attackerCard.atk;
+            room.gameState.players[targetPlayer].hp -= damage;
+            log(`💥 ${damage} dégâts au héros!`, 'damage');
+            emitAnimation(room, 'heroHit', { player: targetPlayer, amount: damage });
+
+            // Vérifier capacité onHeroHit
+            if (attackerCard.onHeroHit === 'draw') {
+                const attackerState = room.gameState.players[atk.attackerPlayer];
+                if (attackerState.deck.length > 0) {
+                    const drawnCard = attackerState.deck.shift();
+                    attackerState.hand.push(drawnCard);
+                    log(`📜 ${attackerCard.name} pioche une carte!`, 'buff');
+                }
+            }
+
+            await sleep(400);
+            emitStateToBoth(room);
+
+        } else {
+            // Attaque sur une créature
+            if (isShooter) {
+                emitAnimation(room, 'attack', {
+                    combatType: 'shooter',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetRow: targetRow,
+                    targetCol: targetCol,
+                    damage: attackerCard.atk
+                });
+            } else {
+                emitAnimation(room, 'attack', {
+                    combatType: 'solo',
+                    attacker: atk.attackerPlayer,
+                    row: atk.attackerRow,
+                    col: atk.attackerCol,
+                    targetRow: targetRow,
+                    targetCol: targetCol
+                });
+            }
+
+            await sleep(600);
+
+            // Infliger les dégâts
+            const damage = attackerCard.atk;
+            targetCard.currentHp -= damage;
+            log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage}) [Initiative]`, 'damage');
+            emitAnimation(room, 'damage', { player: targetPlayer, row: targetRow, col: targetCol, amount: damage });
+
+            await sleep(300);
+
+            // Vérifier si la cible meurt
+            if (targetCard.currentHp <= 0) {
+                const targetState = room.gameState.players[targetPlayer];
+                addToGraveyard(targetState, targetCard);
+                targetState.field[targetRow][targetCol] = null;
+                log(`☠️ ${targetCard.name} détruit par initiative!`, 'damage');
+                emitAnimation(room, 'death', { player: targetPlayer, row: targetRow, col: targetCol });
+
+                // Piétinement
+                if (attackerCard.abilities.includes('trample') && targetCard.currentHp < 0) {
+                    const trampleDmg = Math.abs(targetCard.currentHp);
+                    room.gameState.players[targetPlayer].hp -= trampleDmg;
+                    log(`🦏 ${attackerCard.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
+                    io.to(room.code).emit('directDamage', { defender: targetPlayer, damage: trampleDmg });
+                }
+
+                await sleep(400);
+
+                // onDeath
+                await processOnDeathAbility(room, targetCard, targetPlayer, log, sleep);
+            } else {
+                // Riposte si l'attaquant n'est pas un tireur et la cible ne peut pas attaquer
+                if (!isShooter && !targetCard.canAttack) {
+                    const riposteDamage = targetCard.atk;
+                    attackerCard.currentHp -= riposteDamage;
+                    log(`↩️ ${targetCard.name} riposte (-${riposteDamage})`, 'damage');
+                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
+
+                    if (attackerCard.currentHp <= 0) {
+                        const attackerState = room.gameState.players[atk.attackerPlayer];
+                        addToGraveyard(attackerState, attackerCard);
+                        attackerState.field[atk.attackerRow][atk.attackerCol] = null;
+                        log(`☠️ ${attackerCard.name} tué par la riposte!`, 'damage');
+                        emitAnimation(room, 'death', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol });
+                        await sleep(400);
+                        await processOnDeathAbility(room, attackerCard, atk.attackerPlayer, log, sleep);
+                    }
+                }
+
+                // Power bonus si la cible survit
+                if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
+                    targetCard.atk += 1;
+                    log(`💪 ${targetCard.name} gagne +1 ATK (Puissance)!`, 'buff');
+                }
+            }
+
+            await sleep(300);
+            emitStateToBoth(room);
+        }
+
+        // Vérifier victoire
+        const winner = checkVictory();
+        if (winner !== null) {
+            return true; // Game ended
+        }
+
+        await sleep(200);
+    }
+
+    log(`⚡ Fin de la phase d'initiative\n`, 'action');
+    return false;
+}
+
 // ==================== INTERCEPTION DES VOLANTS (PHASE GLOBALE) ====================
 // Les volants qui peuvent attaquer s'interceptent au centre du plateau
-// AVANT le traitement normal slot par slot
+// APRÈS la phase d'initiative (certains volants peuvent déjà être morts)
 async function processFlyingInterceptions(room, log, sleep, checkVictory) {
     const p1State = room.gameState.players[1];
     const p2State = room.gameState.players[2];
@@ -1810,6 +2062,376 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
     log(`🦅 Fin des interceptions aériennes`, 'action');
 }
 
+// ==================== TRAITEMENT D'UNE PAIRE DE COMBAT ====================
+// Gère le combat entre les créatures de P1 et P2 sur le même slot (row, col)
+//
+// RÈGLES DE SÉQUENÇAGE :
+// - Si les deux créatures s'attaquent mutuellement :
+//   - Si UNE SEULE a initiative → Séquence SOLO de celle avec initiative, puis séquence de l'autre (si vivante)
+//   - Si LES DEUX ont initiative OU AUCUNE → Séquence SIMULTANÉE (combat mutuel)
+// - Si une seule créature attaque → Séquence SOLO
+//
+async function processCombatPair(room, row, col, log, sleep, checkVictory, slotNames) {
+    const p1State = room.gameState.players[1];
+    const p2State = room.gameState.players[2];
+    const slotName = slotNames[row][col];
+
+    // Récupérer les créatures du slot
+    const p1Card = p1State.field[row][col];
+    const p2Card = p2State.field[row][col];
+
+    // Collecter les attaquants potentiels
+    const attackers = [];
+
+    // P1 peut attaquer ?
+    if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && !p1Card.hasIntercepted) {
+        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+        if (target) {
+            attackers.push({
+                card: p1Card,
+                player: 1,
+                row, col,
+                target,
+                hasInitiative: p1Card.abilities.includes('initiative'),
+                isShooter: p1Card.abilities.includes('shooter'),
+                hasTrample: p1Card.abilities.includes('trample')
+            });
+        }
+    }
+
+    // P2 peut attaquer ?
+    if (p2Card && p2Card.canAttack && p2Card.currentHp > 0 && !p2Card.hasIntercepted) {
+        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
+        if (target) {
+            attackers.push({
+                card: p2Card,
+                player: 2,
+                row, col,
+                target,
+                hasInitiative: p2Card.abilities.includes('initiative'),
+                isShooter: p2Card.abilities.includes('shooter'),
+                hasTrample: p2Card.abilities.includes('trample')
+            });
+        }
+    }
+
+    if (attackers.length === 0) return false;
+
+    // Vérifier si c'est un combat mutuel (les deux s'attaquent l'une l'autre)
+    let isMutualCombat = false;
+    if (attackers.length === 2) {
+        const atk1 = attackers[0];
+        const atk2 = attackers[1];
+        // Ils se ciblent mutuellement si la cible de chacun est l'autre
+        const target1IsAtk2 = !atk1.target.isHero && atk1.target.player === atk2.player && atk1.target.row === atk2.row && atk1.target.col === atk2.col;
+        const target2IsAtk1 = !atk2.target.isHero && atk2.target.player === atk1.player && atk2.target.row === atk1.row && atk2.target.col === atk1.col;
+        isMutualCombat = target1IsAtk2 && target2IsAtk1;
+    }
+
+    if (isMutualCombat) {
+        const atk1 = attackers[0];
+        const atk2 = attackers[1];
+
+        // Déterminer si initiative exclusive
+        const oneHasExclusiveInit = (atk1.hasInitiative && !atk2.hasInitiative) || (!atk1.hasInitiative && atk2.hasInitiative);
+
+        if (oneHasExclusiveInit) {
+            // SÉQUENCE SÉPARÉE : celui avec initiative attaque d'abord
+            const first = atk1.hasInitiative ? atk1 : atk2;
+            const second = atk1.hasInitiative ? atk2 : atk1;
+
+            log(`\n⚔️ ===== SLOT ${slotName}: ${first.card.name} a l'INITIATIVE =====`, 'phase');
+
+            // Séquence 1 : Attaque de la créature avec initiative
+            const gameEnded1 = await executeSoloAttack(room, first, log, sleep, slotName, true);
+            if (gameEnded1 || checkVictory() !== null) return true;
+
+            // Vérifier si le second est toujours vivant et peut attaquer
+            const secondCard = room.gameState.players[second.player].field[second.row][second.col];
+            if (secondCard && secondCard.currentHp > 0 && secondCard.canAttack) {
+                // Recalculer la cible (la première peut être morte)
+                const enemyState = room.gameState.players[second.player === 1 ? 2 : 1];
+                const newTarget = findTarget(secondCard, enemyState.field[row][1], enemyState.field[row][0], second.player === 1 ? 2 : 1, row);
+
+                if (newTarget) {
+                    second.target = newTarget;
+                    second.card = secondCard; // Rafraîchir la référence
+
+                    log(`\n⚔️ ===== SLOT ${slotName}: ${second.card.name} riposte =====`, 'phase');
+                    const gameEnded2 = await executeSoloAttack(room, second, log, sleep, slotName, false);
+                    if (gameEnded2 || checkVictory() !== null) return true;
+                }
+            }
+        } else {
+            // SÉQUENCE SIMULTANÉE : combat mutuel
+            log(`\n⚔️ ===== SLOT ${slotName}: Combat mutuel =====`, 'phase');
+            const gameEnded = await executeMutualCombat(room, atk1, atk2, log, sleep, slotName);
+            if (gameEnded || checkVictory() !== null) return true;
+        }
+    } else {
+        // Une seule créature attaque ou elles attaquent des cibles différentes
+        for (const atk of attackers) {
+            // Vérifier que l'attaquant est toujours vivant
+            const attackerCard = room.gameState.players[atk.player].field[atk.row][atk.col];
+            if (!attackerCard || attackerCard.currentHp <= 0) continue;
+
+            log(`\n⚔️ ===== SLOT ${slotName}: ${attackerCard.name} attaque =====`, 'phase');
+            const gameEnded = await executeSoloAttack(room, { ...atk, card: attackerCard }, log, sleep, slotName, false);
+            if (gameEnded || checkVictory() !== null) return true;
+        }
+    }
+
+    return false;
+}
+
+// ==================== EXÉCUTION D'UNE ATTAQUE SOLO ====================
+async function executeSoloAttack(room, atk, log, sleep, slotName, isInitiativeAttack) {
+    const attackerCard = atk.card;
+    const targetPlayer = atk.target.player;
+
+    // Animation selon le type
+    if (atk.target.isHero) {
+        // Attaque sur le héros
+        if (atk.isShooter) {
+            emitAnimation(room, 'attack', {
+                combatType: 'shooter',
+                attacker: atk.player,
+                row: atk.row,
+                col: atk.col,
+                targetRow: -1,
+                targetCol: -1,
+                isHeroTarget: true
+            });
+        } else {
+            emitAnimation(room, 'attack', {
+                combatType: 'melee_hero',
+                attacker: atk.player,
+                row: atk.row,
+                col: atk.col,
+                targetHero: targetPlayer
+            });
+        }
+
+        await sleep(600);
+
+        const damage = attackerCard.atk;
+        room.gameState.players[targetPlayer].hp -= damage;
+        log(`💥 ${attackerCard.name} inflige ${damage} au héros!`, 'damage');
+        emitAnimation(room, 'heroHit', { player: targetPlayer, amount: damage });
+
+        // Capacité onHeroHit
+        if (attackerCard.onHeroHit === 'draw') {
+            const attackerState = room.gameState.players[atk.player];
+            if (attackerState.deck.length > 0) {
+                const drawnCard = attackerState.deck.shift();
+                attackerState.hand.push(drawnCard);
+                log(`📜 ${attackerCard.name} pioche une carte!`, 'buff');
+            }
+        }
+
+        await sleep(400);
+        emitStateToBoth(room);
+        return false;
+    }
+
+    // Attaque sur une créature
+    const targetRow = atk.target.row;
+    const targetCol = atk.target.col;
+    let targetCard = room.gameState.players[targetPlayer].field[targetRow][targetCol];
+
+    if (!targetCard || targetCard.currentHp <= 0) {
+        log(`⏭️ Cible déjà morte`, 'info');
+        return false;
+    }
+
+    // Animation d'attaque
+    if (atk.isShooter) {
+        emitAnimation(room, 'attack', {
+            combatType: 'shooter',
+            attacker: atk.player,
+            row: atk.row,
+            col: atk.col,
+            targetRow,
+            targetCol,
+            damage: attackerCard.atk
+        });
+    } else {
+        emitAnimation(room, 'attack', {
+            combatType: 'solo',
+            attacker: atk.player,
+            row: atk.row,
+            col: atk.col,
+            targetRow,
+            targetCol
+        });
+    }
+
+    await sleep(600);
+
+    // Infliger les dégâts
+    const damage = attackerCard.atk;
+    targetCard.currentHp -= damage;
+    const initTag = isInitiativeAttack ? ' [Initiative]' : '';
+    log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})${initTag}`, 'damage');
+    emitAnimation(room, 'damage', { player: targetPlayer, row: targetRow, col: targetCol, amount: damage });
+
+    await sleep(300);
+
+    // Mort de la cible ?
+    if (targetCard.currentHp <= 0) {
+        const targetState = room.gameState.players[targetPlayer];
+        addToGraveyard(targetState, targetCard);
+        targetState.field[targetRow][targetCol] = null;
+        log(`☠️ ${targetCard.name} détruit!`, 'damage');
+        emitAnimation(room, 'death', { player: targetPlayer, row: targetRow, col: targetCol });
+
+        // Piétinement
+        if (atk.hasTrample && targetCard.currentHp < 0) {
+            const trampleDmg = Math.abs(targetCard.currentHp);
+            room.gameState.players[targetPlayer].hp -= trampleDmg;
+            log(`🦏 ${attackerCard.name} piétine! ${trampleDmg} au héros!`, 'damage');
+            io.to(room.code).emit('directDamage', { defender: targetPlayer, damage: trampleDmg });
+        }
+
+        await sleep(400);
+        await processOnDeathAbility(room, targetCard, targetPlayer, log, sleep);
+    } else {
+        // Riposte si :
+        // - L'attaquant N'EST PAS un tireur
+        // - La cible NE PEUT PAS attaquer ce tour (sinon elle attaquera normalement)
+        // - L'attaquant n'a pas tué la cible avec initiative effective
+        if (!atk.isShooter && !targetCard.canAttack) {
+            const riposteDamage = targetCard.atk;
+            attackerCard.currentHp -= riposteDamage;
+            log(`↩️ ${targetCard.name} riposte (-${riposteDamage})`, 'damage');
+            emitAnimation(room, 'damage', { player: atk.player, row: atk.row, col: atk.col, amount: riposteDamage });
+
+            if (attackerCard.currentHp <= 0) {
+                const attackerState = room.gameState.players[atk.player];
+                addToGraveyard(attackerState, attackerCard);
+                attackerState.field[atk.row][atk.col] = null;
+                log(`☠️ ${attackerCard.name} tué par la riposte!`, 'damage');
+                emitAnimation(room, 'death', { player: atk.player, row: atk.row, col: atk.col });
+                await sleep(400);
+                await processOnDeathAbility(room, attackerCard, atk.player, log, sleep);
+            }
+        }
+
+        // Power bonus
+        if (targetCard.currentHp > 0 && targetCard.abilities?.includes('power')) {
+            targetCard.atk += 1;
+            log(`💪 ${targetCard.name} gagne +1 ATK!`, 'buff');
+        }
+    }
+
+    await sleep(300);
+    emitStateToBoth(room);
+    return false;
+}
+
+// ==================== EXÉCUTION D'UN COMBAT MUTUEL ====================
+async function executeMutualCombat(room, atk1, atk2, log, sleep, slotName) {
+    const card1 = atk1.card;
+    const card2 = atk2.card;
+    const dmg1 = card1.atk;
+    const dmg2 = card2.atk;
+
+    // Déterminer le type de combat
+    const bothShooters = atk1.isShooter && atk2.isShooter;
+    const oneShooter = atk1.isShooter !== atk2.isShooter;
+
+    if (bothShooters) {
+        // Projectiles croisés
+        emitAnimation(room, 'attack', {
+            combatType: 'crossfire',
+            attacker1: { player: atk1.player, row: atk1.row, col: atk1.col },
+            attacker2: { player: atk2.player, row: atk2.row, col: atk2.col }
+        });
+    } else if (oneShooter) {
+        // Tireur vs mêlée/volant
+        const shooter = atk1.isShooter ? atk1 : atk2;
+        const other = atk1.isShooter ? atk2 : atk1;
+        emitAnimation(room, 'attack', {
+            combatType: 'shooter_vs_melee',
+            shooter: { player: shooter.player, row: shooter.row, col: shooter.col },
+            melee: { player: other.player, row: other.row, col: other.col }
+        });
+    } else {
+        // Combat mêlée mutuel - les deux vont au centre
+        emitAnimation(room, 'attack', {
+            combatType: 'mutual_melee',
+            attacker1: { player: atk1.player, row: atk1.row, col: atk1.col },
+            attacker2: { player: atk2.player, row: atk2.row, col: atk2.col },
+            isMutual: true
+        });
+    }
+
+    await sleep(700);
+
+    // Dégâts simultanés
+    card1.currentHp -= dmg2;
+    card2.currentHp -= dmg1;
+    log(`⚔️ ${card1.name} ↔ ${card2.name} (-${dmg2} / -${dmg1})`, 'damage');
+    emitAnimation(room, 'damage', { player: atk1.player, row: atk1.row, col: atk1.col, amount: dmg2 });
+    emitAnimation(room, 'damage', { player: atk2.player, row: atk2.row, col: atk2.col, amount: dmg1 });
+
+    await sleep(400);
+
+    // Gérer les morts
+    const deaths = [];
+
+    if (card1.currentHp <= 0) {
+        const state1 = room.gameState.players[atk1.player];
+        addToGraveyard(state1, card1);
+        state1.field[atk1.row][atk1.col] = null;
+        log(`☠️ ${card1.name} détruit!`, 'damage');
+        emitAnimation(room, 'death', { player: atk1.player, row: atk1.row, col: atk1.col });
+        deaths.push({ card: card1, player: atk1.player });
+
+        // Piétinement de card2 sur card1
+        if (atk2.hasTrample && card1.currentHp < 0) {
+            const trampleDmg = Math.abs(card1.currentHp);
+            room.gameState.players[atk1.player].hp -= trampleDmg;
+            log(`🦏 ${card2.name} piétine! ${trampleDmg} au héros!`, 'damage');
+            io.to(room.code).emit('directDamage', { defender: atk1.player, damage: trampleDmg });
+        }
+    } else if (card1.abilities?.includes('power')) {
+        card1.atk += 1;
+        log(`💪 ${card1.name} gagne +1 ATK!`, 'buff');
+    }
+
+    if (card2.currentHp <= 0) {
+        const state2 = room.gameState.players[atk2.player];
+        addToGraveyard(state2, card2);
+        state2.field[atk2.row][atk2.col] = null;
+        log(`☠️ ${card2.name} détruit!`, 'damage');
+        emitAnimation(room, 'death', { player: atk2.player, row: atk2.row, col: atk2.col });
+        deaths.push({ card: card2, player: atk2.player });
+
+        // Piétinement de card1 sur card2
+        if (atk1.hasTrample && card2.currentHp < 0) {
+            const trampleDmg = Math.abs(card2.currentHp);
+            room.gameState.players[atk2.player].hp -= trampleDmg;
+            log(`🦏 ${card1.name} piétine! ${trampleDmg} au héros!`, 'damage');
+            io.to(room.code).emit('directDamage', { defender: atk2.player, damage: trampleDmg });
+        }
+    } else if (card2.abilities?.includes('power')) {
+        card2.atk += 1;
+        log(`💪 ${card2.name} gagne +1 ATK!`, 'buff');
+    }
+
+    await sleep(500);
+    emitStateToBoth(room);
+
+    // Traiter onDeath
+    for (const d of deaths) {
+        await processOnDeathAbility(room, d.card, d.player, log, sleep);
+    }
+
+    return false;
+}
+
+// ==================== ANCIENNE FONCTION (conservée pour référence) ====================
 // Traiter le combat pour un slot spécifique (row, col)
 // Les deux joueurs ont une créature à cette position qui peuvent attaquer
 async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames) {
