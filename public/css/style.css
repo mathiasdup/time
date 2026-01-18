@@ -1114,7 +1114,7 @@
         /* Icône d'édition - en bas au centre avec cercle noir derrière */
         .card.arena-style .arena-edition {
             position: absolute;
-            bottom: 1px;
+            bottom: 3px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 10;
@@ -1133,7 +1133,10 @@
         }
         .card.arena-style .arena-edition img {
             width: 8px;
+            height: 8px;
             display: block;
+            position: relative;
+            z-index: 1;
         }
 
         /* Icône de rareté - centré en haut de la zone de texte, attaché au bord */
