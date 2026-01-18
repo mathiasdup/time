@@ -1722,6 +1722,22 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
 
         await sleep(400);
 
+        // PIÉTINEMENT - dégâts excédentaires au héros
+        // Card1 (P1) attaque Card2 (P2) - si card1 a trample et card2 est mort
+        if (card1.abilities.includes('trample') && card2.currentHp < 0) {
+            const trampleDmg = Math.abs(card2.currentHp); // Dégâts excédentaires
+            p2State.hp -= trampleDmg;
+            log(`🦏 ${card1.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
+            io.to(room.code).emit('directDamage', { defender: p2.player, damage: trampleDmg });
+        }
+        // Card2 (P2) attaque Card1 (P1) - si card2 a trample et card1 est mort
+        if (card2.abilities.includes('trample') && card1.currentHp < 0) {
+            const trampleDmg = Math.abs(card1.currentHp); // Dégâts excédentaires
+            p1State.hp -= trampleDmg;
+            log(`🦏 ${card2.name} piétine! ${trampleDmg} dégâts au héros!`, 'damage');
+            io.to(room.code).emit('directDamage', { defender: p1.player, damage: trampleDmg });
+        }
+
         // Retirer les créatures mortes
         const deadCards = [];
         if (card1.currentHp <= 0) {
