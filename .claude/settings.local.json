@@ -10,7 +10,9 @@
       "Bash(node --check:*)",
       "Bash(/c/Program Files/nodejs/node.exe --check server.js)",
       "Bash(echo:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(cmd.exe /c:*)",
+      "Bash(cmd /c \"cd C:\\\\Users\\\\Math\\\\Documents\\\\Bataille && node -e \"\"require\\(''./game''\\); console.log\\(''OK''\\)\"\"\")"
     ]
   }
 }
