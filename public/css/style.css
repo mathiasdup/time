@@ -256,26 +256,67 @@
             text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
         
-        .phase-indicator { 
+        .phase-indicator {
             position: absolute;
-            bottom: 140px;
-            right: 100px;
-            padding: 12px 35px; 
-            background: rgba(0,0,0,0.7); 
-            border-radius: 25px; 
-            border: 2px solid rgba(255,255,255,0.3); 
-            font-size: 0.9em; 
+            bottom: 120px;
+            right: 80px;
+            padding: 18px 45px;
+            background: linear-gradient(135deg, rgba(30,30,50,0.95), rgba(20,20,40,0.95));
+            border-radius: 12px;
+            border: 3px solid rgba(255,255,255,0.4);
+            font-size: 1.3em;
             font-weight: bold;
             color: #fff;
-            white-space: nowrap; 
-            opacity: 1; 
-            transition: opacity 0.5s ease-out; 
+            white-space: nowrap;
+            opacity: 1;
+            transition: opacity 0.5s ease-out, transform 0.3s ease-out;
             z-index: 200;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 6px 25px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
             display: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
-        .phase-indicator.visible { display: block; }
-        .phase-indicator.fade-out { opacity: 0; }
+        .phase-indicator.visible {
+            display: block;
+            animation: phasePopIn 0.3s ease-out;
+        }
+        .phase-indicator.fade-out { opacity: 0; transform: translateY(10px); }
+
+        @keyframes phasePopIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.9); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Styles par type de phase */
+        .phase-indicator.planning {
+            border-color: #3498db;
+            background: linear-gradient(135deg, rgba(52,152,219,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.revelation {
+            border-color: #9b59b6;
+            background: linear-gradient(135deg, rgba(155,89,182,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.attack {
+            border-color: #e74c3c;
+            background: linear-gradient(135deg, rgba(231,76,60,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.protection {
+            border-color: #2ecc71;
+            background: linear-gradient(135deg, rgba(46,204,113,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.combat {
+            border-color: #e67e22;
+            background: linear-gradient(135deg, rgba(230,126,34,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.draw {
+            border-color: #1abc9c;
+            background: linear-gradient(135deg, rgba(26,188,156,0.3), rgba(30,30,50,0.95));
+        }
+        .phase-indicator.endturn {
+            border-color: #f39c12;
+            background: linear-gradient(135deg, rgba(243,156,18,0.3), rgba(30,30,50,0.95));
+        }
         
         .side-panel { 
             display: flex; 

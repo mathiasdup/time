@@ -544,10 +544,7 @@ function initSocket() {
         render();
         updatePhaseDisplay();
         
-        // Message éphémère si on vient de passer en phase de déploiement
-        if (!wasInDeployPhase && state.me.inDeployPhase && state.phase === 'planning') {
-            showPhaseMessage('Phase principale', 'deploy');
-        }
+        // Plus de message ici - tout est géré par newTurn avec "Planification"
     });
     
     socket.on('timerUpdate', (t) => { 
@@ -609,10 +606,8 @@ function initSocket() {
 
         log(`🎮 Tour ${d.turn} — ⚡${d.maxEnergy} énergie`, 'phase');
 
-        // Message éphémère de phase - seulement s'il y a des créatures à repositionner
-        if (hasCreaturesOnMyField()) {
-            showPhaseMessage('Phase de repositionnement', 'redeploy');
-        }
+        // Message de début de tour - phase de Planification
+        showPhaseMessage('Planification', 'planning');
     });
     
     socket.on('resolutionLog', (d) => log(d.msg, d.type));

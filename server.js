@@ -279,10 +279,10 @@ async function startResolution(room) {
         await sleep(50);
     }
 
-    // 1. PHASE DE RÉVÉLATION DES DÉPLACEMENTS
+    // 1. PHASE DE RÉVÉLATION (déplacements + créatures)
     if (allActions.moves.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: 'Déplacements', type: 'revelation' });
-        log('↔️ Phase des déplacements', 'phase');
+        io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
+        log('↔️ Phase de révélation - Déplacements', 'phase');
         await sleep(600);
 
         for (const action of allActions.moves) {
@@ -304,8 +304,11 @@ async function startResolution(room) {
     // 2. PHASE DE RÉVÉLATION DES NOUVELLES CRÉATURES ET PIÈGES
     const hasPlacesOrTraps = allActions.places.length > 0 || allActions.traps.length > 0;
     if (hasPlacesOrTraps) {
-        io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
-        log('🎴 Phase de révélation', 'phase');
+        // N'afficher le message que si on n'a pas déjà affiché Révélation pour les déplacements
+        if (allActions.moves.length === 0) {
+            io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
+        }
+        log('🎴 Phase de révélation - Créatures', 'phase');
         await sleep(600);
 
         // Révéler les créatures une par une
@@ -344,7 +347,7 @@ async function startResolution(room) {
     
     // 3. PHASE DES SORTS DÉFENSIFS (sur soi)
     if (allActions.spellsDefensive.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: 'Sorts défensifs', type: 'protection' });
+        io.to(room.code).emit('phaseMessage', { text: 'Sort défensif', type: 'protection' });
         log('💚 Phase des sorts défensifs', 'phase');
         await sleep(600);
         
@@ -355,7 +358,7 @@ async function startResolution(room) {
     
     // 4. PHASE DES SORTS OFFENSIFS (sur l'adversaire)
     if (allActions.spellsOffensive.length > 0) {
-        io.to(room.code).emit('phaseMessage', { text: 'Sorts offensifs', type: 'attack' });
+        io.to(room.code).emit('phaseMessage', { text: 'Sort offensif', type: 'attack' });
         log('🔥 Phase des sorts offensifs', 'phase');
         await sleep(600);
         
@@ -383,8 +386,8 @@ async function startResolution(room) {
     
     // 5. PHASE DE COMBAT - seulement s'il y a des créatures ou des pièges
     if (hasCreaturesOnField() || hasTraps()) {
-        io.to(room.code).emit('phaseMessage', { text: 'Phase de combat', type: 'combat' });
-        log('⚔️ Phase de combat', 'phase');
+        io.to(room.code).emit('phaseMessage', { text: 'Combat', type: 'combat' });
+        log('⚔️ Combat', 'phase');
         await sleep(800);
         
         // D'abord résoudre tous les pièges par rangée
@@ -464,6 +467,11 @@ async function startResolution(room) {
         return;
     }
     
+    // 6. PHASE DE PIOCHE
+    io.to(room.code).emit('phaseMessage', { text: 'Pioche', type: 'draw' });
+    log('🎴 Pioche', 'phase');
+    await sleep(800);
+
     // Les deux joueurs piochent
     const drawnCards = [];
     for (let p = 1; p <= 2; p++) {
@@ -508,6 +516,11 @@ async function startResolution(room) {
         emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
         await sleep(1200); // Attendre l'animation de burn
     }
+
+    // 7. EFFETS DE FIN DE TOUR
+    io.to(room.code).emit('phaseMessage', { text: 'Effet de fin de tour', type: 'endturn' });
+    log('✨ Effet de fin de tour', 'phase');
+    await sleep(800);
 
     // Capacité Zdejebel: fin du tour, si le héros adverse a été attaqué, il subit 1 blessure
     for (let playerNum = 1; playerNum <= 2; playerNum++) {
