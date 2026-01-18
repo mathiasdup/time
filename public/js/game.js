@@ -269,21 +269,6 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Interception des volants = deux volants se rencontrent au milieu du plateau
-    if (data.combatType === 'mutual' && data.isInterception) {
-        const owner1 = data.attacker1.player === myNum ? 'me' : 'opp';
-        const owner2 = data.attacker2.player === myNum ? 'me' : 'opp';
-        await CombatAnimations.animateMutualMelee({
-            attacker1: { owner: owner1, row: data.attacker1.row, col: data.attacker1.col },
-            attacker2: { owner: owner2, row: data.attacker2.row, col: data.attacker2.col },
-            damage1: 0, // Les dégâts sont affichés séparément
-            damage2: 0,
-            isFlying: true,
-            isInterception: true
-        });
-        return;
-    }
-
     // Combat mutuel mêlée = les deux se rencontrent au milieu (50/50)
     if (data.combatType === 'mutual_melee' || data.isMutual) {
         await CombatAnimations.animateMutualMelee({
@@ -647,23 +632,19 @@ function initSocket() {
 
     // Bloquer les slots pendant les animations de mort (pour que render() ne les efface pas)
     socket.on('blockSlots', (slots) => {
-        console.log('[BlockSlots] Blocking:', slots.map(s => `P${s.player}-${s.row}-${s.col}`).join(', '));
         slots.forEach(s => {
             const owner = s.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${s.row}-${s.col}`;
             animatingSlots.add(slotKey);
         });
-        console.log('[BlockSlots] Current blocked slots:', [...animatingSlots].join(', '));
     });
 
     socket.on('unblockSlots', (slots) => {
-        console.log('[UnblockSlots] Unblocking:', slots.map(s => `P${s.player}-${s.row}-${s.col}`).join(', '));
         slots.forEach(s => {
             const owner = s.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${s.row}-${s.col}`;
             animatingSlots.delete(slotKey);
         });
-        console.log('[UnblockSlots] Current blocked slots after:', [...animatingSlots].join(', '));
         // Forcer un render après déblocage pour mettre à jour l'affichage
         render();
     });

@@ -26,22 +26,10 @@ const CardRenderer = {
                 autoDensity: true
             });
 
-            // Précharger les icônes (optionnel - fallback si absentes)
-            try {
-                this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
-            } catch (e) {
-                console.warn('[CardRenderer] mana.png non trouvé, utilisation du fallback');
-            }
-            try {
-                this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
-            } catch (e) {
-                console.warn('[CardRenderer] damage.png non trouvé, utilisation du fallback');
-            }
-            try {
-                this.textureCache.health = await PIXI.Assets.load('/css/health.png');
-            } catch (e) {
-                console.warn('[CardRenderer] health.png non trouvé, utilisation du fallback');
-            }
+            // Précharger les icônes
+            this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
+            this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
+            this.textureCache.health = await PIXI.Assets.load('/css/health.png');
 
             this.isReady = true;
             console.log('[CardRenderer] Prêt');
@@ -185,26 +173,20 @@ const CardRenderer = {
             manaSprite.x = -5;
             manaSprite.y = -5;
             container.addChild(manaSprite);
-        } else {
-            // Fallback: cercle bleu
-            const manaBg = new PIXI.Graphics();
-            manaBg.circle(manaSize / 2 - 5, manaSize / 2 - 5, 20);
-            manaBg.fill({ color: 0x4169e1 });
-            manaBg.stroke({ color: 0x1e3a8a, width: 2 });
-            container.addChild(manaBg);
+
+            const manaStyle = new PIXI.TextStyle({
+                fontFamily: 'Arial Black',
+                fontSize: 22,
+                fontWeight: 'bold',
+                fill: 0xffffff,
+                stroke: { color: 0x000000, width: 5 }
+            });
+            const manaText = new PIXI.Text({ text: card.cost.toString(), style: manaStyle });
+            manaText.anchor.set(0.5);
+            manaText.x = manaSize / 2 - 5;
+            manaText.y = manaSize / 2 - 5;
+            container.addChild(manaText);
         }
-        const manaStyle = new PIXI.TextStyle({
-            fontFamily: 'Arial Black',
-            fontSize: 22,
-            fontWeight: 'bold',
-            fill: 0xffffff,
-            stroke: { color: 0x000000, width: 5 }
-        });
-        const manaText = new PIXI.Text({ text: card.cost.toString(), style: manaStyle });
-        manaText.anchor.set(0.5);
-        manaText.x = manaSize / 2 - 5;
-        manaText.y = manaSize / 2 - 5;
-        container.addChild(manaText);
 
         // 7. ATK (bas gauche)
         const statSize = 55;
@@ -215,26 +197,20 @@ const CardRenderer = {
             atkSprite.x = -8;
             atkSprite.y = H - statSize + 8;
             container.addChild(atkSprite);
-        } else {
-            // Fallback: cercle orange/jaune
-            const atkBg = new PIXI.Graphics();
-            atkBg.circle(statSize / 2 - 8, H - statSize / 2 + 8, 22);
-            atkBg.fill({ color: 0xffa500 });
-            atkBg.stroke({ color: 0xcc7000, width: 2 });
-            container.addChild(atkBg);
+
+            const atkStyle = new PIXI.TextStyle({
+                fontFamily: 'Arial Black',
+                fontSize: 24,
+                fontWeight: 'bold',
+                fill: 0xffffff,
+                stroke: { color: 0x000000, width: 5 }
+            });
+            const atkText = new PIXI.Text({ text: card.atk.toString(), style: atkStyle });
+            atkText.anchor.set(0.5);
+            atkText.x = statSize / 2 - 8;
+            atkText.y = H - statSize / 2 + 8;
+            container.addChild(atkText);
         }
-        const atkStyle = new PIXI.TextStyle({
-            fontFamily: 'Arial Black',
-            fontSize: 24,
-            fontWeight: 'bold',
-            fill: 0xffffff,
-            stroke: { color: 0x000000, width: 5 }
-        });
-        const atkText = new PIXI.Text({ text: card.atk.toString(), style: atkStyle });
-        atkText.anchor.set(0.5);
-        atkText.x = statSize / 2 - 8;
-        atkText.y = H - statSize / 2 + 8;
-        container.addChild(atkText);
 
         // 8. HP (bas droite)
         if (this.textureCache.health) {
@@ -244,27 +220,21 @@ const CardRenderer = {
             hpSprite.x = W - statSize + 8;
             hpSprite.y = H - statSize + 8;
             container.addChild(hpSprite);
-        } else {
-            // Fallback: cercle rouge
-            const hpBg = new PIXI.Graphics();
-            hpBg.circle(W - statSize / 2 + 8, H - statSize / 2 + 8, 22);
-            hpBg.fill({ color: 0xdc2626 });
-            hpBg.stroke({ color: 0x991b1b, width: 2 });
-            container.addChild(hpBg);
+
+            const hpColor = hp < card.hp ? 0xff6b6b : 0xffffff;
+            const hpStyle = new PIXI.TextStyle({
+                fontFamily: 'Arial Black',
+                fontSize: 24,
+                fontWeight: 'bold',
+                fill: hpColor,
+                stroke: { color: 0x000000, width: 5 }
+            });
+            const hpText = new PIXI.Text({ text: hp.toString(), style: hpStyle });
+            hpText.anchor.set(0.5);
+            hpText.x = W - statSize / 2 + 8;
+            hpText.y = H - statSize / 2 + 8;
+            container.addChild(hpText);
         }
-        const hpColor = hp < card.hp ? 0xff6b6b : 0xffffff;
-        const hpStyle = new PIXI.TextStyle({
-            fontFamily: 'Arial Black',
-            fontSize: 24,
-            fontWeight: 'bold',
-            fill: hpColor,
-            stroke: { color: 0x000000, width: 5 }
-        });
-        const hpText = new PIXI.Text({ text: hp.toString(), style: hpStyle });
-        hpText.anchor.set(0.5);
-        hpText.x = W - statSize / 2 + 8;
-        hpText.y = H - statSize / 2 + 8;
-        container.addChild(hpText);
 
         // Render
         this.app.renderer.render(this.app.stage);

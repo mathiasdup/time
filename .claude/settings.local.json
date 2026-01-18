@@ -5,16 +5,8 @@
       "Bash(dir \"c:\\\\Users\\\\Math\\\\Documents\\\\Bataille\\\\public\\\\cards\")",
       "Bash(copy:*)",
       "Bash(findstr:*)",
-      "Bash(git checkout:*)",
-      "Bash(git restore:*)",
-      "Bash(node --check:*)",
-      "Bash(/c/Program Files/nodejs/node.exe --check server.js)",
-      "Bash(echo:*)",
-      "Bash(where:*)",
-      "Bash(cmd.exe /c:*)",
-      "Bash(cmd /c \"cd C:\\\\Users\\\\Math\\\\Documents\\\\Bataille && node -e \"\"require\\(''./game''\\); console.log\\(''OK''\\)\"\"\")",
-      "Bash(powershell -Command \"node -e \"\"try { require\\(''./game''\\); console.log\\(''OK''\\); } catch\\(e\\) { console.log\\(''ERROR:'', e.message\\); }\"\"\")",
-      "Bash(node:*)"
+      "Bash(git reset:*)",
+      "Bash(git ls-tree:*)"
     ]
   }
 }
