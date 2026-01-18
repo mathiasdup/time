@@ -2662,30 +2662,36 @@ function findTarget(attacker, enemyFront, enemyBack, enemyPlayer, row, attackerC
     const frontIsShooter = effectiveFront && effectiveFront.abilities.includes('shooter');
     const backIsShooter = effectiveBack && effectiveBack.abilities.includes('shooter');
 
+    // Vérifier si les créatures ennemies peuvent attaquer (pour l'interception)
+    const frontCanAttack = effectiveFront && effectiveFront.canAttack;
+    const backCanAttack = effectiveBack && effectiveBack.canAttack;
+
     // CAS 1: Créature VOLANTE
-    // Appariement symétrique : col 0 vs col 0 (arrière vs arrière), col 1 vs col 1 (avant vs avant)
-    // A1 ↔ A2, B1 ↔ B2
+    // L'interception symétrique (A1↔A2, B1↔B2) ne se produit que si les DEUX peuvent attaquer
+    // Sinon le volant attaque la première cible valide (volant/tireur) trouvée
     if (isFlying) {
-        // D'abord regarder la position symétrique (même colonne)
-        if (attackerCol === 1) {
-            // Volant en front (col 1) -> regarde front ennemi d'abord
-            if (effectiveFront && (frontIsFlying || frontIsShooter)) {
-                return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
-            }
-            // Puis back si c'est un volant ou tireur
-            if (effectiveBack && (backIsFlying || backIsShooter)) {
+        // D'abord vérifier l'interception symétrique (même colonne) si l'ennemi peut aussi attaquer
+        if (attackerCol === 0) {
+            // Volant en back (col 0) -> vérifie back ennemi pour interception
+            if (effectiveBack && (backIsFlying || backIsShooter) && backCanAttack) {
                 return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
             }
         } else {
-            // Volant en back (col 0) -> regarde back ennemi d'abord (symétrique)
-            if (effectiveBack && (backIsFlying || backIsShooter)) {
-                return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
-            }
-            // Puis front si c'est un volant ou tireur
-            if (effectiveFront && (frontIsFlying || frontIsShooter)) {
+            // Volant en front (col 1) -> vérifie front ennemi pour interception
+            if (effectiveFront && (frontIsFlying || frontIsShooter) && frontCanAttack) {
                 return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
             }
         }
+
+        // Pas d'interception symétrique possible -> attaque la première cible valide
+        // Front d'abord (col 1), puis back (col 0)
+        if (effectiveFront && (frontIsFlying || frontIsShooter)) {
+            return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
+        }
+        if (effectiveBack && (backIsFlying || backIsShooter)) {
+            return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
+        }
+
         // Sinon attaque le héros (passe au-dessus des normales)
         return { card: null, col: -1, row: row, player: enemyPlayer, isHero: true };
     }
