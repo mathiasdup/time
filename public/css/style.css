@@ -1124,7 +1124,7 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-51%, -44%);
             width: 10px;
             height: 10px;
             background: rgba(0, 0, 0, 0.4);
@@ -1133,7 +1133,6 @@
         }
         .card.arena-style .arena-edition img {
             width: 8px;
-            height: 8px;
             display: block;
             position: relative;
             z-index: 1;
