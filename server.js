@@ -1599,9 +1599,6 @@ async function processFlyingInterceptions(room, log, sleep, checkVictory) {
     }
 
     // Pas d'interception si un seul camp a des volants
-    console.log(`[INTERCEPT DEBUG] P1 volants: ${p1Flyers.length}, P2 volants: ${p2Flyers.length}`);
-    for (const f of p1Flyers) console.log(`  P1: ${f.card.name} at row=${f.row}, col=${f.col}`);
-    for (const f of p2Flyers) console.log(`  P2: ${f.card.name} at row=${f.row}, col=${f.col}`);
     if (p1Flyers.length === 0 || p2Flyers.length === 0) return;
 
     // Apparier les volants pour interception (1 contre 1)
@@ -1765,14 +1762,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
     // Collecter les attaques de ce slot
     const attacks = [];
 
-    // DEBUG: log pour comprendre le problème
-    console.log(`[SLOT ${slotName}] P1: ${p1Card?.name || 'vide'} (canAttack=${p1Card?.canAttack}, hp=${p1Card?.currentHp}, hasIntercepted=${p1Card?.hasIntercepted})`);
-    console.log(`[SLOT ${slotName}] P2: ${p2Card?.name || 'vide'} (canAttack=${p2Card?.canAttack}, hp=${p2Card?.currentHp}, hasIntercepted=${p2Card?.hasIntercepted})`);
-
     // Skip les volants qui ont déjà intercepté (ils ont déjà attaqué dans la phase d'interception)
     if (p1Card && p1Card.canAttack && p1Card.currentHp > 0 && !p1Card.hasIntercepted) {
         const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
-        console.log(`[SLOT ${slotName}] P1 ${p1Card.name} cherche cible: ${target?.card?.name || (target?.isHero ? 'HERO' : 'aucune')}`);
         if (target) {
             attacks.push({
                 attacker: p1Card,
