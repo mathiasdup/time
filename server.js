@@ -227,35 +227,41 @@ async function startResolution(room) {
     io.to(room.code).emit('phaseChange', 'resolution');
 
     const helpers = createHelpers(room);
-    helpers.log('=== RÉSOLUTION ===', 'system');
+    helpers.log(`⚔️ RÉSOLUTION DU TOUR ${room.gameState.turn}`, 'phase');
 
-    // 1. Piocher une carte par joueur
-    await drawPhase(room, helpers);
-
-    // 2. Activer les créatures
+    // 1. Activer les créatures (turnsOnField > 0 peuvent attaquer)
     activateCreatures(room);
 
-    // 3. Appliquer les actions (sorts)
+    // 2. Appliquer les actions (révélation déplacements/créatures + sorts)
     await applyAllActions(room, helpers);
 
-    // 4. Vérifier victoire après les sorts
+    // 3. Vérifier victoire après les sorts
     if (checkVictory(room)) return;
 
-    // 5. Pièges
+    // 4. Pièges
     for (let row = 0; row < 4; row++) {
         await processTrapsForRow(room, row, helpers);
     }
+    if (checkVictory(room)) return;
 
-    // 6. Interceptions volantes
+    // 5. Interceptions volantes
     await processFlyingInterceptions(room, helpers);
     if (checkVictory(room)) return;
 
-    // 7. Combat principal
+    // 6. Combat principal
+    io.to(room.code).emit('phaseMessage', { text: 'Combat', type: 'combat' });
+    helpers.log('⚔️ Combat', 'phase');
+    await helpers.sleep(800);
+
     const heroKilled = await processAllCombat(room, helpers);
     if (heroKilled || checkVictory(room)) return;
 
-    // 8. Zdejebel (blessure de fin de tour)
+    // 7. Zdejebel (blessure de fin de tour)
     await processZdejebelAbility(room, helpers);
+    if (checkVictory(room)) return;
+
+    // 8. Pioche (fin de tour)
+    await drawPhase(room, helpers);
     if (checkVictory(room)) return;
 
     // 9. Nouveau tour
@@ -266,11 +272,18 @@ async function startResolution(room) {
 
 async function drawPhase(room, helpers) {
     const { log, sleep, emitAnimation } = helpers;
+    const { addToGraveyard } = require('./game/cards');
+
+    io.to(room.code).emit('phaseMessage', { text: 'Pioche', type: 'draw' });
+    log('🎴 Pioche', 'phase');
+    await sleep(800);
+
     const drawAnimations = [];
+    const burnedCards = [];
 
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
-        if (player.deck.length > 0 && player.hand.length < 9) {
+        if (player.deck.length > 0) {
             const card = player.deck.shift();
             if (card.type === 'creature') {
                 card.currentHp = card.hp;
@@ -278,17 +291,31 @@ async function drawPhase(room, helpers) {
                 card.turnsOnField = 0;
                 card.movedThisTurn = false;
             }
-            player.hand.push(card);
-            drawAnimations.push({ player: p, card, handIndex: player.hand.length - 1 });
-            log(`🎴 ${player.heroName} pioche ${card.name}`, 'action');
+
+            if (player.hand.length >= 9) {
+                addToGraveyard(player, card);
+                log(`📦 ${player.heroName} a la main pleine, ${card.name} va au cimetière`, 'damage');
+                burnedCards.push({ player: p, card });
+            } else {
+                player.hand.push(card);
+                drawAnimations.push({ player: p, card, handIndex: player.hand.length - 1 });
+            }
         }
     }
 
+    // Animation de pioche
     if (drawAnimations.length > 0) {
         emitAnimation(room, 'draw', { cards: drawAnimations });
         await sleep(20);
         emitStateToBoth(room);
-        await sleep(800);
+        log('📦 Les joueurs piochent une carte', 'action');
+        await sleep(500);
+    }
+
+    // Animation de burn (main pleine)
+    for (const burned of burnedCards) {
+        emitAnimation(room, 'burn', { player: burned.player, card: burned.card });
+        await sleep(1200);
     }
 }
 
@@ -298,12 +325,14 @@ function activateCreatures(room) {
             for (let c = 0; c < 2; c++) {
                 const card = room.gameState.players[p].field[r][c];
                 if (card) {
-                    card.turnsOnField++;
                     card.hasIntercepted = false;
-                    // Activer si pas déjà actif
-                    if (!card.canAttack && card.turnsOnField > 0) {
+                    // Activer si la créature était déjà sur le terrain (turnsOnField > 0)
+                    // Les créatures avec haste ont déjà canAttack = true
+                    if (card.turnsOnField > 0) {
                         card.canAttack = true;
                     }
+                    // Incrémenter APRÈS la vérification
+                    card.turnsOnField++;
                 }
             }
         }
@@ -311,24 +340,111 @@ function activateCreatures(room) {
 }
 
 async function applyAllActions(room, helpers) {
-    const { sleep } = helpers;
+    const { log, sleep, emitAnimation, emitStateToBoth } = helpers;
+    const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
-    // Collecter toutes les actions des deux joueurs
-    const allActions = [];
+    // Collecter toutes les actions par type
+    const moves = [];
+    const places = [];
+    const traps = [];
+    const spells = [];
+
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
         for (const action of player.pendingActions) {
-            if (action.type === 'spell') {
-                allActions.push({ ...action, playerNum: p, heroName: player.heroName });
-            }
+            action.playerNum = p;
+            action.heroName = player.heroName;
+            if (action.type === 'move') moves.push(action);
+            else if (action.type === 'place') places.push(action);
+            else if (action.type === 'trap') traps.push(action);
+            else if (action.type === 'spell') spells.push(action);
         }
         player.pendingActions = [];
     }
 
-    // Appliquer les sorts dans l'ordre
-    for (const action of allActions) {
-        await applySpell(room, action, helpers);
-        await sleep(300);
+    // 1. PHASE DE RÉVÉLATION - Cacher les cartes adverses qui vont être révélées
+    if (places.length > 0) {
+        const cardsToHide = places.map(a => ({
+            player: a.playerNum,
+            row: a.row,
+            col: a.col
+        }));
+        io.to(room.code).emit('hideCards', cardsToHide);
+        await sleep(50);
+    }
+
+    // 2. DÉPLACEMENTS
+    if (moves.length > 0) {
+        io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
+        log('↔️ Phase de révélation - Déplacements', 'phase');
+        await sleep(600);
+
+        for (const action of moves) {
+            log(`  ↔️ ${action.heroName}: ${action.card.name} ${SLOT_NAMES[action.fromRow][action.fromCol]} → ${SLOT_NAMES[action.toRow][action.toCol]}`, 'action');
+            emitAnimation(room, 'move', {
+                player: action.playerNum,
+                fromRow: action.fromRow,
+                fromCol: action.fromCol,
+                toRow: action.toRow,
+                toCol: action.toCol,
+                card: action.card
+            });
+            await sleep(100);
+            emitStateToBoth(room);
+            await sleep(700);
+        }
+    }
+
+    // 3. PLACEMENTS DE CRÉATURES
+    if (places.length > 0) {
+        if (moves.length === 0) {
+            io.to(room.code).emit('phaseMessage', { text: 'Révélation', type: 'revelation' });
+        }
+        log('🎴 Phase de révélation - Créatures', 'phase');
+        await sleep(600);
+
+        for (const action of places) {
+            log(`  🎴 ${action.heroName}: ${action.card.name} en ${SLOT_NAMES[action.row][action.col]}`, 'action');
+
+            io.to(room.code).emit('revealCard', {
+                player: action.playerNum,
+                row: action.row,
+                col: action.col
+            });
+
+            emitAnimation(room, 'summon', {
+                player: action.playerNum,
+                row: action.row,
+                col: action.col,
+                card: action.card,
+                animateForOpponent: true
+            });
+            await sleep(100);
+            emitStateToBoth(room);
+            await sleep(700);
+        }
+    }
+
+    // 4. PIÈGES
+    if (traps.length > 0) {
+        for (const action of traps) {
+            log(`  🪤 ${action.heroName}: Piège en rangée ${action.row + 1}`, 'action');
+            emitAnimation(room, 'trapPlace', { player: action.playerNum, row: action.row });
+            await sleep(400);
+        }
+        emitStateToBoth(room);
+    }
+
+    // 5. SORTS
+    if (spells.length > 0) {
+        io.to(room.code).emit('phaseMessage', { text: 'Sorts', type: 'spell' });
+        log('🔮 Phase des sorts', 'phase');
+        await sleep(600);
+
+        for (const action of spells) {
+            await applySpell(room, action, helpers);
+            await sleep(300);
+        }
     }
 }
 
