@@ -2262,7 +2262,9 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     const p1State = room.gameState.players[1];
     const p2State = room.gameState.players[2];
     const rowNames = ['A', 'B', 'C', 'D'];
-    
+
+    console.log(`[DEBUG ROW ${row}] Processing combat row`);
+
     // Collecter TOUTES les attaques de cette rangée
     const attacks = [];
     
@@ -2318,6 +2320,10 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     }
     
     if (attacks.length === 0) return false;
+
+    console.log(`[DEBUG ROW ${row}] Toutes les attaques:`, attacks.map(a =>
+        `${a.attacker.name}(P${a.attackerPlayer}c${a.attackerCol}) -> ${a.target?.name || 'HERO'}(P${a.targetPlayer}c${a.targetCol}) fly=${a.isFlying} shooter=${a.isShooter}`
+    ));
 
     // ==================== INTERCEPTION DES VOLANTS ====================
     // Règle: Les volants s'interceptent par position symétrique (col 0 ↔ col 0, col 1 ↔ col 1)
