@@ -739,7 +739,8 @@
         .stat { font-size: 0.8em; font-weight: bold; padding: 2px 7px; border-radius: 3px; }
         .stat-atk { background: linear-gradient(135deg, #c0392b, #8e2222); }
         .stat-hp { background: linear-gradient(135deg, #2980b9, #1a5276); }
-        .stat-hp.damaged { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .stat-hp.reduced { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .stat-atk.reduced { background: linear-gradient(135deg, #e74c3c, #c0392b); }
         .stat-atk.boosted, .stat-hp.boosted { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.8); }
         .card.creature { border: 3px solid #3498db; }
         .card.spell { border: 3px solid #9b59b6; }
@@ -839,7 +840,8 @@
             text-shadow: 0 0 4px #000, 0 0 8px #000;
             z-index: 10;
         }
-        .card.has-image .img-hp.damaged {
+        .card.has-image .img-hp.reduced,
+        .card.has-image .img-atk.reduced {
             color: #ff6b6b;
         }
         .card.has-image .img-atk.boosted,
@@ -980,6 +982,9 @@
         .card.full-art .fa-atk.boosted {
             color: #aaffaa;
         }
+        .card.full-art .fa-atk.reduced {
+            color: #ff6b6b;
+        }
 
         /* HP (image coeur) - bas droite */
         .card.full-art .fa-hp {
@@ -1003,7 +1008,8 @@
             -webkit-text-stroke: 1.5px #000;
             paint-order: stroke fill;
         }
-        .card.full-art .fa-hp.damaged {
+        .card.full-art .fa-hp.reduced {
+            color: #ff6b6b;
             animation: pulse-damage 1s ease-in-out infinite;
         }
         .card.full-art .fa-hp.boosted {
@@ -1197,9 +1203,14 @@
             -webkit-text-stroke: 1px #000;
             paint-order: stroke fill;
         }
-        .card.arena-style .arena-stats.modified {
+        /* Stats individuelles colorées */
+        .card.arena-style .arena-atk.boosted,
+        .card.arena-style .arena-hp.boosted {
             color: #7fff7f;
-            border-color: #4caf50;
+        }
+        .card.arena-style .arena-atk.reduced,
+        .card.arena-style .arena-hp.reduced {
+            color: #ff6b6b;
         }
 
         /* Version terrain : pas de mana affiché */

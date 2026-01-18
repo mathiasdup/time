@@ -2558,17 +2558,26 @@ function makeCard(card, inHand, discountedCost = null) {
     const displayCost = discountedCost !== null ? discountedCost : card.cost;
     const costClass = discountedCost !== null ? 'discounted' : '';
 
-    // Classes pour les stats
+    // Classes pour les stats (comparaison avec les stats de BASE)
+    // boosted = supérieur à la base (vert), reduced = inférieur à la base (rouge)
     let hpClass = '';
     let atkClass = '';
     if (card.type === 'creature') {
-        if (hp < card.hp) {
-            hpClass = 'damaged';
-        } else if (card.baseHp !== undefined && card.hp > card.baseHp) {
+        const baseHp = card.baseHp ?? card.hp; // Si pas de baseHp, utiliser hp comme référence
+        const baseAtk = card.baseAtk ?? card.atk; // Si pas de baseAtk, utiliser atk comme référence
+
+        // HP: comparer currentHp avec baseHp
+        if (hp > baseHp) {
             hpClass = 'boosted';
+        } else if (hp < baseHp) {
+            hpClass = 'reduced';
         }
-        if (card.baseAtk !== undefined && card.atk > card.baseAtk) {
+
+        // ATK: comparer atk avec baseAtk
+        if (card.atk > baseAtk) {
             atkClass = 'boosted';
+        } else if (card.atk < baseAtk) {
+            atkClass = 'reduced';
         }
     }
 
@@ -2630,7 +2639,7 @@ function makeCard(card, inHand, discountedCost = null) {
             el.innerHTML = `
                 <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                 <div class="arena-mana">${card.cost}</div>
-                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
+                <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
             return el;
         }
 
