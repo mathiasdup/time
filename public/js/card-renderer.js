@@ -26,10 +26,16 @@ const CardRenderer = {
                 autoDensity: true
             });
 
-            // Précharger les icônes
-            this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
-            this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
-            this.textureCache.health = await PIXI.Assets.load('/css/health.png');
+            // Précharger les icônes (optionnel - ne bloque pas si absent)
+            try {
+                this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
+            } catch (e) { console.warn('[CardRenderer] mana.png not found'); }
+            try {
+                this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
+            } catch (e) { console.warn('[CardRenderer] damage.png not found'); }
+            try {
+                this.textureCache.health = await PIXI.Assets.load('/css/health.png');
+            } catch (e) { console.warn('[CardRenderer] health.png not found'); }
 
             this.isReady = true;
             console.log('[CardRenderer] Prêt');

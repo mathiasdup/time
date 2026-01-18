@@ -2320,26 +2320,23 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
     if (attacks.length === 0) return false;
 
     // ==================== INTERCEPTION DES VOLANTS ====================
-    // Règle: Si deux volants adverses peuvent TOUS DEUX attaquer ce tour,
-    // ils s'interceptent au centre du plateau et se battent mutuellement,
-    // peu importe leurs cibles initiales.
-    // Note: Volant, Tireur et Mêlée sont mutuellement exclusifs.
+    // Règle: Les volants s'interceptent par position symétrique (col 0 ↔ col 0, col 1 ↔ col 1)
+    // A1 ↔ A2 (arrière vs arrière), B1 ↔ B2 (avant vs avant)
+    // L'interception ne se produit que si les DEUX volants peuvent attaquer ce tour.
     // Les tireurs ne se déplacent pas (tir à distance), donc pas d'interception avec eux.
-    // Si un seul volant peut attaquer, il passe librement vers sa cible.
 
     const p1FlyingAttacks = attacks.filter(atk => atk.attackerPlayer === 1 && atk.isFlying);
     const p2FlyingAttacks = attacks.filter(atk => atk.attackerPlayer === 2 && atk.isFlying);
 
-    // Pour chaque volant du joueur 1, chercher un volant adverse à intercepter
+    // Appariement symétrique : col 0 vs col 0, col 1 vs col 1
     for (const p1Atk of p1FlyingAttacks) {
-        // Chercher un volant du joueur 2 qui n'est pas déjà en interception
+        // Chercher un volant du joueur 2 sur la MÊME colonne (symétrique)
         const p2Interceptor = p2FlyingAttacks.find(p2Atk =>
-            !p2Atk.intercepted && !p1Atk.intercepted
+            !p2Atk.intercepted && !p1Atk.intercepted && p2Atk.attackerCol === p1Atk.attackerCol
         );
 
         if (p2Interceptor) {
             // Les deux volants s'interceptent ! Modifier leurs cibles
-            // Le volant du J1 cible maintenant le volant du J2 et vice versa
             p1Atk.target = p2Interceptor.attacker;
             p1Atk.targetPlayer = p2Interceptor.attackerPlayer;
             p1Atk.targetRow = p2Interceptor.attackerRow;
