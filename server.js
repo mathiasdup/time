@@ -569,11 +569,12 @@ async function processTrapsForRow(room, row, log, sleep) {
             const card = attackerState.field[row][col];
             if (card && card.canAttack) {
                 // Vérifier que cette créature va bien attaquer dans la direction du piège
-                const target = findTarget(card, 
-                    defenderState.field[row][1], 
-                    defenderState.field[row][0], 
+                const target = findTarget(card,
+                    defenderState.field[row][1],
+                    defenderState.field[row][0],
                     defenderPlayer,
-                    row);
+                    row,
+                    col);
                 
                 // Le piège se déclenche si la créature attaque (même le héros)
                 if (target) {
@@ -1072,7 +1073,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
     
     // Créature du joueur 1 à ce slot
     if (p1Card && p1Card.canAttack) {
-        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row, col);
         if (target) {
             attacks.push({
                 attacker: p1Card,
@@ -1092,7 +1093,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
     
     // Créature du joueur 2 à ce slot
     if (p2Card && p2Card.canAttack) {
-        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
+        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row, col);
         if (target) {
             attacks.push({
                 attacker: p2Card,
@@ -1581,7 +1582,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
     const attacks = [];
     
     if (p1Card && p1Card.canAttack && p1Card.currentHp > 0) {
-        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+        const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row, col);
         if (target) {
             attacks.push({
                 attacker: p1Card,
@@ -1600,9 +1601,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             });
         }
     }
-    
+
     if (p2Card && p2Card.canAttack && p2Card.currentHp > 0) {
-        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
+        const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row, col);
         if (target) {
             attacks.push({
                 attacker: p2Card,
@@ -2270,7 +2271,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
         // Créature du joueur 1
         const p1Card = p1State.field[row][col];
         if (p1Card && p1Card.canAttack) {
-            const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row);
+            const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row, col);
             if (target) {
                 attacks.push({
                     attacker: p1Card,
@@ -2290,11 +2291,11 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
                 });
             }
         }
-        
+
         // Créature du joueur 2
         const p2Card = p2State.field[row][col];
         if (p2Card && p2Card.canAttack) {
-            const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row);
+            const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row, col);
             if (target) {
                 attacks.push({
                     attacker: p2Card,
@@ -2640,39 +2641,50 @@ async function applyTrampleDamage(room, atk, log, sleep) {
 }
 
 // Trouver la cible d'une créature
-function findTarget(attacker, enemyFront, enemyBack, enemyPlayer, row) {
+function findTarget(attacker, enemyFront, enemyBack, enemyPlayer, row, attackerCol = 1) {
     const isFlying = attacker.abilities.includes('fly');
     const isShooter = attacker.abilities.includes('shooter');
     const isIntangible = attacker.abilities.includes('intangible');
-    
+
     // CAS 0: Créature INTANGIBLE - attaque toujours le héros directement
     if (isIntangible) {
         return { card: null, col: -1, row: row, player: enemyPlayer, isHero: true };
     }
-    
+
     // Ignorer les créatures intangibles lors de la recherche de cibles
     const frontIsIntangible = enemyFront && enemyFront.abilities.includes('intangible');
     const backIsIntangible = enemyBack && enemyBack.abilities.includes('intangible');
     const effectiveFront = frontIsIntangible ? null : enemyFront;
     const effectiveBack = backIsIntangible ? null : enemyBack;
-    
+
     const frontIsFlying = effectiveFront && effectiveFront.abilities.includes('fly');
     const backIsFlying = effectiveBack && effectiveBack.abilities.includes('fly');
     const frontIsShooter = effectiveFront && effectiveFront.abilities.includes('shooter');
     const backIsShooter = effectiveBack && effectiveBack.abilities.includes('shooter');
-    
+
     // CAS 1: Créature VOLANTE
-    // - Attaque d'abord DEVANT (col 1) si c'est un tireur ou volant
-    // - Puis DERRIÈRE (col 0) si c'est un tireur ou volant
-    // - Sinon attaque le héros directement (passe au-dessus des normales)
+    // Appariement symétrique : col 0 vs col 0 (arrière vs arrière), col 1 vs col 1 (avant vs avant)
+    // A1 ↔ A2, B1 ↔ B2
     if (isFlying) {
-        // Volant regarde d'abord devant (front = col 1)
-        if (effectiveFront && (frontIsFlying || frontIsShooter)) {
-            return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
-        }
-        // Puis derrière si c'est un volant ou tireur
-        if (effectiveBack && (backIsFlying || backIsShooter)) {
-            return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
+        // D'abord regarder la position symétrique (même colonne)
+        if (attackerCol === 1) {
+            // Volant en front (col 1) -> regarde front ennemi d'abord
+            if (effectiveFront && (frontIsFlying || frontIsShooter)) {
+                return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
+            }
+            // Puis back si c'est un volant ou tireur
+            if (effectiveBack && (backIsFlying || backIsShooter)) {
+                return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
+            }
+        } else {
+            // Volant en back (col 0) -> regarde back ennemi d'abord (symétrique)
+            if (effectiveBack && (backIsFlying || backIsShooter)) {
+                return { card: effectiveBack, col: 0, row: row, player: enemyPlayer, isHero: false };
+            }
+            // Puis front si c'est un volant ou tireur
+            if (effectiveFront && (frontIsFlying || frontIsShooter)) {
+                return { card: effectiveFront, col: 1, row: row, player: enemyPlayer, isHero: false };
+            }
         }
         // Sinon attaque le héros (passe au-dessus des normales)
         return { card: null, col: -1, row: row, player: enemyPlayer, isHero: true };
