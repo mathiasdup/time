@@ -1,0 +1,570 @@
+// =============================================
+// Système de Drag & Drop Professionnel
+// =============================================
+// Remplace le drag natif HTML5 par un système custom
+// avec animations fluides, tilt 3D et feedback visuel
+
+const CustomDrag = (function() {
+    // ==========================================
+    // État
+    // ==========================================
+    let dragState = null;
+    let ghostEl = null;
+    let isDraggingFlag = false;
+    let rafId = null;
+    let lastHoverTarget = null;
+
+    // Position souris courante
+    let mouseX = 0;
+    let mouseY = 0;
+    let prevMouseX = 0;
+    let prevMouseY = 0;
+
+    // Tilt 3D lissé
+    let tiltX = 0;
+    let tiltY = 0;
+
+    // Callbacks externes
+    let onDragStart = null;
+    let onDragMove = null;
+    let onDragEnd = null;
+    let onDrop = null;
+    let canDragCheck = null;
+
+    // ==========================================
+    // Configuration
+    // ==========================================
+    const config = {
+        dragThreshold: 8,
+        ghostScale: 1.05,
+        ghostOpacity: 0.92,
+        liftDuration: 180,
+        dropDuration: 200,
+        returnDuration: 250,
+        tiltMaxDeg: 8,
+        tiltSmoothing: 0.12
+    };
+
+    // ==========================================
+    // Ghost Management
+    // ==========================================
+
+    /**
+     * Crée le ghost - utilise makeCard() pour un rendu propre
+     */
+    function createGhost(data, sourceEl) {
+        const container = document.createElement('div');
+        container.className = 'drag-ghost-container';
+
+        // Créer la carte via makeCard (version terrain = léger)
+        let cardEl;
+        const card = data.card || data;
+        if (typeof makeCard === 'function') {
+            cardEl = makeCard(card, false);
+        } else {
+            // Fallback: clone simple
+            cardEl = sourceEl.cloneNode(true);
+        }
+        cardEl.classList.add('drag-ghost-card');
+        cardEl.classList.remove('dragging', 'selected', 'can-attack', 'just-played', 'shake');
+        // Retirer les event listeners en clonant
+        const cleanCard = cardEl.cloneNode(true);
+        container.appendChild(cleanCard);
+
+        // Positionner sur la carte source
+        const rect = sourceEl.getBoundingClientRect();
+        container.style.cssText = `
+            position: fixed;
+            left: ${rect.left}px;
+            top: ${rect.top}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            z-index: 10000;
+            pointer-events: none;
+            will-change: transform;
+            transform-origin: center center;
+            transform: translate3d(0px, 0px, 0px) scale(1);
+        `;
+
+        document.body.appendChild(container);
+        return container;
+    }
+
+    /**
+     * Détruit le ghost
+     */
+    function destroyGhost() {
+        if (ghostEl) {
+            ghostEl.remove();
+            ghostEl = null;
+        }
+    }
+
+    // ==========================================
+    // Boucle de rendu (rAF)
+    // ==========================================
+
+    function startRenderLoop() {
+        function loop() {
+            if (!isDraggingFlag || !ghostEl || !dragState) return;
+            updateGhostTransform();
+            rafId = requestAnimationFrame(loop);
+        }
+        rafId = requestAnimationFrame(loop);
+    }
+
+    function stopRenderLoop() {
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+    }
+
+    /**
+     * Met à jour la position et le tilt du ghost
+     */
+    function updateGhostTransform() {
+        if (!ghostEl || !dragState) return;
+
+        // Calculer le déplacement depuis la position d'origine
+        const dx = mouseX - dragState.offsetX - dragState.originRect.left;
+        const dy = mouseY - dragState.offsetY - dragState.originRect.top;
+
+        // Calculer la vélocité pour le tilt
+        const velX = mouseX - prevMouseX;
+        const velY = mouseY - prevMouseY;
+        prevMouseX = mouseX;
+        prevMouseY = mouseY;
+
+        // Tilt cible basé sur la vélocité
+        const targetTiltY = clamp((velX / 8) * config.tiltMaxDeg, -config.tiltMaxDeg, config.tiltMaxDeg);
+        const targetTiltX = clamp((-velY / 8) * config.tiltMaxDeg, -config.tiltMaxDeg, config.tiltMaxDeg);
+
+        // Lissage exponentiel
+        tiltX += (targetTiltX - tiltX) * config.tiltSmoothing;
+        tiltY += (targetTiltY - tiltY) * config.tiltSmoothing;
+
+        // Appliquer la transformation
+        ghostEl.style.transform =
+            `translate3d(${dx}px, ${dy}px, 0) ` +
+            `scale(${config.ghostScale}) ` +
+            `perspective(600px) rotateX(${tiltX.toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg)`;
+    }
+
+    function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+    }
+
+    // ==========================================
+    // Drop Target Detection
+    // ==========================================
+
+    /**
+     * Trouve la cible de drop sous le curseur
+     */
+    function getDropTargetAt(x, y) {
+        const element = document.elementFromPoint(x, y);
+        if (!element) return null;
+
+        // Chercher le slot ou la zone de drop
+        const slot = element.closest('.card-slot, .trap-slot, .hero-card, .global-spell-zone');
+        if (!slot) return null;
+
+        return {
+            element: slot,
+            type: slot.classList.contains('card-slot') ? 'field' :
+                  slot.classList.contains('trap-slot') ? 'trap' :
+                  slot.classList.contains('hero-card') ? 'hero' :
+                  slot.classList.contains('global-spell-zone') ? 'global' : null,
+            owner: slot.dataset.owner,
+            row: parseInt(slot.dataset.row),
+            col: parseInt(slot.dataset.col)
+        };
+    }
+
+    /**
+     * Gère le feedback visuel de hover
+     */
+    function updateHoverFeedback(x, y) {
+        const target = getDropTargetAt(x, y);
+
+        // Retirer le hover de l'ancienne cible
+        if (lastHoverTarget && lastHoverTarget.element !== (target && target.element)) {
+            lastHoverTarget.element.classList.remove('drag-hover', 'drag-over', 'hero-drag-over');
+        }
+
+        // Ajouter le hover à la nouvelle cible
+        if (target && target.element) {
+            const isValid = target.element.classList.contains('valid-target') ||
+                           target.element.classList.contains('moveable') ||
+                           target.element.classList.contains('hero-targetable') ||
+                           target.element.classList.contains('active');
+
+            if (isValid) {
+                if (target.type === 'hero') {
+                    target.element.classList.add('hero-drag-over');
+                } else if (target.type === 'global') {
+                    target.element.style.borderColor = 'rgba(46, 204, 113, 1)';
+                    target.element.style.background = 'rgba(46, 204, 113, 0.2)';
+                } else {
+                    target.element.classList.add('drag-hover', 'drag-over');
+                }
+            }
+        }
+
+        // Reset global zone style si on la quitte
+        if (lastHoverTarget && lastHoverTarget.type === 'global' &&
+            (!target || target.element !== lastHoverTarget.element)) {
+            lastHoverTarget.element.style.borderColor = '';
+            lastHoverTarget.element.style.background = '';
+        }
+
+        lastHoverTarget = target;
+    }
+
+    // ==========================================
+    // Animations
+    // ==========================================
+
+    /**
+     * Animation de snap vers la cible (drop réussi)
+     */
+    function animateSnap(targetEl, callback) {
+        if (!ghostEl || !dragState) {
+            if (callback) callback();
+            return;
+        }
+
+        stopRenderLoop();
+
+        const ghostRect = ghostEl.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+
+        // Calculer le déplacement pour aller au centre de la cible
+        const currentDx = mouseX - dragState.offsetX - dragState.originRect.left;
+        const currentDy = mouseY - dragState.offsetY - dragState.originRect.top;
+
+        const targetCenterX = targetRect.left + targetRect.width / 2;
+        const targetCenterY = targetRect.top + targetRect.height / 2;
+        const ghostCenterX = dragState.originRect.left + dragState.originRect.width / 2;
+        const ghostCenterY = dragState.originRect.top + dragState.originRect.height / 2;
+
+        const snapDx = targetCenterX - ghostCenterX;
+        const snapDy = targetCenterY - ghostCenterY;
+
+        ghostEl.classList.add('snapping');
+
+        requestAnimationFrame(() => {
+            if (!ghostEl) return;
+            ghostEl.style.transform =
+                `translate3d(${snapDx}px, ${snapDy}px, 0) scale(0.95)`;
+            ghostEl.style.opacity = '0';
+        });
+
+        setTimeout(() => {
+            cleanup();
+            if (callback) callback();
+        }, config.dropDuration);
+    }
+
+    /**
+     * Animation de retour à la position d'origine (drop invalide)
+     */
+    function animateReturn(callback) {
+        if (!ghostEl || !dragState) {
+            cleanup();
+            if (callback) callback();
+            return;
+        }
+
+        stopRenderLoop();
+
+        ghostEl.classList.add('returning');
+
+        requestAnimationFrame(() => {
+            if (!ghostEl) return;
+            ghostEl.style.transform = 'translate3d(0px, 0px, 0px) scale(1) rotateX(0deg) rotateY(0deg)';
+            ghostEl.style.opacity = '0.4';
+        });
+
+        setTimeout(() => {
+            cleanup();
+            if (callback) callback();
+        }, config.returnDuration);
+    }
+
+    // ==========================================
+    // Nettoyage
+    // ==========================================
+
+    function cleanup() {
+        stopRenderLoop();
+        destroyGhost();
+
+        if (dragState && dragState.sourceEl) {
+            dragState.sourceEl.classList.remove('custom-dragging');
+            dragState.sourceEl.style.visibility = '';
+        }
+
+        // Retirer les classes de survol
+        document.querySelectorAll('.drag-hover, .drag-over').forEach(el => {
+            el.classList.remove('drag-hover', 'drag-over');
+        });
+        document.querySelectorAll('.hero-drag-over').forEach(el => {
+            el.classList.remove('hero-drag-over');
+        });
+
+        // Reset global zone
+        const globalZone = document.querySelector('.global-spell-zone');
+        if (globalZone) {
+            globalZone.style.borderColor = '';
+            globalZone.style.background = '';
+        }
+
+        dragState = null;
+        isDraggingFlag = false;
+        lastHoverTarget = null;
+        tiltX = 0;
+        tiltY = 0;
+
+        // Restaurer la sélection de texte
+        document.body.style.userSelect = '';
+    }
+
+    // ==========================================
+    // Event Handlers
+    // ==========================================
+
+    function handleMouseDown(e, sourceEl, data) {
+        // Seulement bouton gauche
+        if (e.button !== 0) return;
+
+        // Pas de double drag
+        if (isDraggingFlag) return;
+
+        // Vérifier si le drag est autorisé
+        if (canDragCheck && !canDragCheck()) return;
+
+        // Empêcher le drag natif et la sélection
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = sourceEl.getBoundingClientRect();
+
+        dragState = {
+            sourceEl: sourceEl,
+            data: data,
+            startX: e.clientX,
+            startY: e.clientY,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            originRect: {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height
+            },
+            hasMoved: false
+        };
+
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+
+        // Empêcher la sélection de texte
+        document.body.style.userSelect = 'none';
+
+        // Listeners globaux
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    function handleMouseMove(e) {
+        if (!dragState) return;
+
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+
+        const dx = e.clientX - dragState.startX;
+        const dy = e.clientY - dragState.startY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Seuil minimum pour activer le drag
+        if (!isDraggingFlag && distance < config.dragThreshold) return;
+
+        if (!isDraggingFlag) {
+            // Premier mouvement significatif — démarrer le drag
+            isDraggingFlag = true;
+
+            // Créer le ghost
+            ghostEl = createGhost(dragState.data, dragState.sourceEl);
+
+            // Masquer la carte source
+            dragState.sourceEl.classList.add('custom-dragging');
+            dragState.sourceEl.style.visibility = 'hidden';
+
+            // Démarrer la boucle de rendu immédiatement (pas de délai)
+            startRenderLoop();
+
+            // Callback de démarrage
+            if (onDragStart) {
+                onDragStart(dragState.data, dragState.sourceEl);
+            }
+        }
+
+        dragState.hasMoved = true;
+
+        // Feedback de hover
+        updateHoverFeedback(e.clientX, e.clientY);
+
+        // Callback de mouvement
+        if (onDragMove) {
+            onDragMove(e.clientX, e.clientY, dragState.data);
+        }
+    }
+
+    function handleMouseUp(e) {
+        // Retirer les listeners globaux
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+
+        if (!dragState) return;
+
+        const wasClick = !dragState.hasMoved || !isDraggingFlag;
+
+        if (wasClick) {
+            // C'était un clic, pas un drag
+            cleanup();
+            return;
+        }
+
+        // Trouver la cible
+        const target = getDropTargetAt(e.clientX, e.clientY);
+
+        let dropAccepted = false;
+
+        if (target && onDrop) {
+            dropAccepted = onDrop(dragState.data, target, dragState.sourceEl);
+        }
+
+        if (dropAccepted && target) {
+            // Animation snap vers la cible
+            animateSnap(target.element, () => {
+                if (onDragEnd) {
+                    onDragEnd(dragState ? dragState.data : null, true);
+                }
+            });
+        } else {
+            // Animation de retour
+            const savedData = dragState ? { ...dragState.data } : null;
+            animateReturn(() => {
+                if (onDragEnd) {
+                    onDragEnd(savedData, false);
+                }
+            });
+        }
+    }
+
+    function handleKeyDown(e) {
+        if (e.key === 'Escape' && isDraggingFlag) {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+
+            const savedData = dragState ? { ...dragState.data } : null;
+            animateReturn(() => {
+                if (onDragEnd) {
+                    onDragEnd(savedData, false);
+                }
+            });
+        }
+    }
+
+    function handleWindowBlur() {
+        if (isDraggingFlag) {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+
+            const savedData = dragState ? { ...dragState.data } : null;
+            animateReturn(() => {
+                if (onDragEnd) {
+                    onDragEnd(savedData, false);
+                }
+            });
+        }
+    }
+
+    // Listeners globaux permanents
+    document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleWindowBlur);
+
+    // ==========================================
+    // API Publique
+    // ==========================================
+
+    return {
+        /**
+         * Active le drag sur un élément
+         */
+        makeDraggable(el, data) {
+            el.addEventListener('mousedown', (e) => handleMouseDown(e, el, data));
+
+            // Empêcher le drag natif
+            el.draggable = false;
+            el.ondragstart = (e) => e.preventDefault();
+        },
+
+        /**
+         * Configure les callbacks
+         */
+        setCallbacks({ dragStart, dragMove, dragEnd, drop, canDrag }) {
+            onDragStart = dragStart;
+            onDragMove = dragMove;
+            onDragEnd = dragEnd;
+            onDrop = drop;
+            canDragCheck = canDrag;
+        },
+
+        /**
+         * Annule le drag en cours
+         */
+        cancel() {
+            if (isDraggingFlag) {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+                animateReturn();
+            } else {
+                cleanup();
+            }
+        },
+
+        /**
+         * Vérifie si un drag est en cours
+         */
+        isDragging() {
+            return isDraggingFlag;
+        },
+
+        /**
+         * Récupère l'état actuel du drag
+         */
+        getState() {
+            return dragState ? { ...dragState } : null;
+        },
+
+        /**
+         * Détection de cible (exposée pour le cross-spell preview)
+         */
+        getDropTargetAt: getDropTargetAt,
+
+        /**
+         * Configure les options
+         */
+        configure(options) {
+            Object.assign(config, options);
+        }
+    };
+})();
+
+// Exposer globalement
+window.CustomDrag = CustomDrag;

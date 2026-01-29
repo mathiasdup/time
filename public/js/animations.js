@@ -136,98 +136,261 @@ function createCardBackElement() {
 }
 
 /**
- * Easing
+ * Easings
  */
 function easeOutCubic(t) {
     return 1 - Math.pow(1 - t, 3);
 }
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
 
 /**
- * Animation de pioche d'une carte
+ * Animation de pioche professionnelle (style Hearthstone/Magic Arena)
+ *
+ * Pour le joueur (me):
+ *   Phase 1 - Lift (0-15%):     Carte se soulève du deck avec glow
+ *   Phase 2 - Reveal (15-45%):  Carte vole vers le centre, agrandie pour la lire
+ *   Phase 3 - Hold (45-65%):    Pause pour que le joueur voie la carte
+ *   Phase 4 - To hand (65-100%): Carte rétrécit et glisse dans la main
+ *
+ * Pour l'adversaire (opp):
+ *   Animation simplifiée, arc rapide du deck vers sa main
  */
 function animateCardDraw(card, owner, handIndex) {
-    // Trouver la carte dans le DOM
     const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
     const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
-    
+
     if (!handEl) return;
-    
+
     const handCards = handEl.querySelectorAll(cardSelector);
     const targetCard = handCards[handIndex];
-    
+
     if (!targetCard) return;
-    
-    // Position EXACTE de la carte cible (elle est déjà cachée par le render)
+
     const targetRect = targetCard.getBoundingClientRect();
     const endX = targetRect.left;
     const endY = targetRect.top;
     const cardWidth = targetRect.width;
     const cardHeight = targetRect.height;
-    
-    // Position du deck
+
     const deckEl = document.querySelector(`#${owner}-deck-stack`);
     if (!deckEl) {
         targetCard.style.visibility = 'visible';
         return;
     }
-    
+
     const deckRect = deckEl.getBoundingClientRect();
     const startX = deckRect.left + deckRect.width / 2 - cardWidth / 2;
-    const startY = deckRect.top + deckRect.height / 2 - cardHeight / 2;
-    
-    // Créer la carte animée
-    const animatedCard = owner === 'me' 
-        ? createCardElement(card) 
-        : createCardBackElement();
-    
-    // Style initial - EXACTEMENT les mêmes dimensions
-    animatedCard.style.cssText = `
-        position: fixed !important;
-        z-index: 10000 !important;
-        pointer-events: none !important;
-        width: ${cardWidth}px !important;
-        height: ${cardHeight}px !important;
-        left: ${startX}px !important;
-        top: ${startY}px !important;
-        margin: 0 !important;
-        transform: none !important;
+    const startY = deckRect.top;
+
+    // Créer un conteneur positionné
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed;
+        z-index: 10000;
+        pointer-events: none;
+        left: ${startX}px;
+        top: ${startY}px;
+        width: ${cardWidth}px;
+        height: ${cardHeight}px;
+        transform-origin: center center;
+        transform: scale(1);
         opacity: 0;
+        perspective: 800px;
     `;
-    
-    document.body.appendChild(animatedCard);
-    
-    // Animation
-    const duration = 400;
+
+    if (owner === 'me') {
+        // Flipper 3D : dos visible au départ, face cachée
+        const flipper = document.createElement('div');
+        flipper.style.cssText = `
+            width: 100%; height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateY(0deg);
+        `;
+
+        // Face arrière (dos de carte)
+        const backFace = createCardBackElement();
+        backFace.style.cssText = `
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            backface-visibility: hidden;
+            transform: rotateY(0deg);
+            border-radius: 6px;
+        `;
+
+        // Face avant — utiliser makeCard() pour avoir le vrai design (arena-style, faction, etc.)
+        const frontFace = (typeof makeCard === 'function')
+            ? makeCard(card, true)
+            : createCardElement(card);
+        const bgImage = frontFace.style.backgroundImage;
+        frontFace.style.position = 'absolute';
+        frontFace.style.top = '0';
+        frontFace.style.left = '0';
+        frontFace.style.width = '100%';
+        frontFace.style.height = '100%';
+        frontFace.style.margin = '0';
+        frontFace.style.backfaceVisibility = 'hidden';
+        frontFace.style.transform = 'rotateY(180deg)';
+        if (bgImage) frontFace.style.backgroundImage = bgImage;
+
+        flipper.appendChild(backFace);
+        flipper.appendChild(frontFace);
+        wrapper.appendChild(flipper);
+        document.body.appendChild(wrapper);
+
+        animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard);
+    } else {
+        // Adversaire : pas de flip, juste un dos de carte
+        const backCard = createCardBackElement();
+        backCard.style.cssText = `
+            width: 100%; height: 100%;
+            margin: 0; position: relative;
+            border-radius: 6px;
+        `;
+        wrapper.appendChild(backCard);
+        document.body.appendChild(wrapper);
+
+        animateDrawForOpp(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard);
+    }
+}
+
+/**
+ * Animation de pioche pour le joueur — flip 3D + reveal au centre
+ *
+ * Phase 1 - Lift:       Dos de carte se soulève du deck
+ * Phase 2 - Fly+Flip:   Vol vers le centre + flip 3D (dos → face)
+ * Phase 3 - Hold:       Pause au centre, carte face visible
+ * Phase 4 - To hand:    Carte glisse dans la main
+ */
+function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, cardH, targetCard) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Position de reveal : centre de l'écran, carte agrandie
+    const revealScale = 1.4;
+    const revealW = cardW * revealScale;
+    const revealH = cardH * revealScale;
+    const revealX = (vw - revealW) / 2;
+    const revealY = (vh - revealH) / 2 - 30;
+
+    // Durées des phases (ms)
+    const liftDuration = 200;
+    const flyToRevealDuration = 400;
+    const holdDuration = 450;
+    const flyToHandDuration = 350;
+    const totalDuration = liftDuration + flyToRevealDuration + holdDuration + flyToHandDuration;
+
     const startTime = performance.now();
-    
-    // Point de contrôle pour la courbe
-    const controlX = (startX + endX) / 2;
-    const controlY = Math.min(startY, endY) - 50;
-    
+
     function animate() {
         const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = easeOutCubic(progress);
-        
-        // Position sur courbe de Bézier quadratique
-        const t = eased;
-        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * endX;
-        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endY;
-        
-        animatedCard.style.left = x + 'px';
-        animatedCard.style.top = y + 'px';
-        animatedCard.style.opacity = Math.min(progress * 2.5, 1);
-        
+        const progress = Math.min(elapsed / totalDuration, 1);
+
+        const t1 = liftDuration / totalDuration;
+        const t2 = (liftDuration + flyToRevealDuration) / totalDuration;
+        const t3 = (liftDuration + flyToRevealDuration + holdDuration) / totalDuration;
+
+        let x, y, scale, opacity, flipDeg;
+
+        if (progress <= t1) {
+            // === PHASE 1: LIFT — dos de carte se soulève ===
+            const p = progress / t1;
+            const ep = easeOutCubic(p);
+
+            x = startX;
+            y = startY - ep * 30;
+            scale = 1 + ep * 0.05;
+            opacity = 0.3 + ep * 0.7;
+            flipDeg = 0; // encore face cachée
+
+        } else if (progress <= t2) {
+            // === PHASE 2: FLY + FLIP — vol vers le centre avec retournement ===
+            const p = (progress - t1) / (t2 - t1);
+            const ep = easeInOutCubic(p);
+
+            const liftEndY = startY - 30;
+            x = startX + (revealX - startX) * ep;
+            y = liftEndY + (revealY - liftEndY) * ep;
+            scale = 1.05 + (revealScale - 1.05) * ep;
+            opacity = 1;
+            // Flip de 0° à 180° pendant le vol
+            flipDeg = easeInOutCubic(p) * 180;
+
+        } else if (progress <= t3) {
+            // === PHASE 3: HOLD — carte face visible au centre ===
+            x = revealX;
+            y = revealY;
+            scale = revealScale;
+            opacity = 1;
+            flipDeg = 180;
+
+        } else {
+            // === PHASE 4: FLY TO HAND — arc vers la main ===
+            const p = (progress - t3) / (1 - t3);
+            const ep = easeOutCubic(p);
+
+            x = revealX + (endX - revealX) * ep;
+            y = revealY + (endY - revealY) * ep;
+            scale = revealScale + (1 - revealScale) * ep;
+            opacity = 1;
+            flipDeg = 180;
+        }
+
+        wrapper.style.left = x + 'px';
+        wrapper.style.top = y + 'px';
+        wrapper.style.opacity = opacity;
+        wrapper.style.transform = `scale(${scale})`;
+        flipper.style.transform = `rotateY(${flipDeg}deg)`;
+
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            // FIN - révéler la vraie carte et supprimer l'animation
             targetCard.style.visibility = 'visible';
-            animatedCard.remove();
+            wrapper.remove();
         }
     }
-    
+
+    requestAnimationFrame(animate);
+}
+
+/**
+ * Animation de pioche pour l'adversaire — arc simple et rapide
+ */
+function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard) {
+    const duration = 450;
+    const startTime = performance.now();
+
+    const controlX = (startX + endX) / 2;
+    const controlY = Math.min(startY, endY) - 60;
+
+    function animate() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const t = easeOutCubic(progress);
+
+        const x = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
+        const y = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+
+        wrapper.style.left = x + 'px';
+        wrapper.style.top = y + 'px';
+        wrapper.style.opacity = Math.min(progress * 3, 1);
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            targetCard.style.visibility = 'visible';
+            wrapper.remove();
+        }
+    }
+
     requestAnimationFrame(animate);
 }
 

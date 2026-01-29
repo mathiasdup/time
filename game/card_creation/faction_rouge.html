@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Faction Rouge - 40 Cartes</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a0a0a 0%, #2d1515 100%);
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #ff6b6b;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
+            border-bottom: 2px solid #8b2020;
+            padding-bottom: 15px;
+        }
+        h2 {
+            color: #ff9999;
+            margin-top: 40px;
+            border-left: 4px solid #ff6b6b;
+            padding-left: 15px;
+        }
+        .card-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .card {
+            background: linear-gradient(135deg, #2a1515 0%, #3d2020 100%);
+            border: 1px solid #5a2020;
+            border-radius: 8px;
+            padding: 15px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(255, 107, 107, 0.3);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .card-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #ffcccc;
+        }
+        .card-cost {
+            background: #4a1a1a;
+            color: #6bb3ff;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border: 2px solid #6bb3ff;
+        }
+        .card-type {
+            font-size: 0.85em;
+            color: #999;
+            margin-bottom: 8px;
+            font-style: italic;
+        }
+        .card-stats {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0;
+        }
+        .stat {
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .stat-atk {
+            background: #8b3030;
+            color: #ffdddd;
+        }
+        .stat-hp {
+            background: #308b30;
+            color: #ddffdd;
+        }
+        .stat-dmg {
+            background: #8b5030;
+            color: #ffeecc;
+        }
+        .card-abilities {
+            color: #ffaa66;
+            font-weight: 500;
+            margin: 5px 0;
+        }
+        .card-desc {
+            font-size: 0.9em;
+            color: #bbb;
+            line-height: 1.4;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #3a2020;
+        }
+        .rarity {
+            font-size: 0.75em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 10px;
+        }
+        .common { background: #555; color: #ddd; }
+        .uncommon { background: #2d5a2d; color: #aaffaa; }
+        .rare { background: #2d2d5a; color: #aaaaff; }
+        .mythic { background: #5a2d5a; color: #ffaaff; }
+
+        .summary {
+            background: #2a1515;
+            border: 1px solid #5a2020;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .summary h3 {
+            color: #ff9999;
+            margin-top: 0;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            text-align: center;
+        }
+        .summary-item {
+            background: #3a2020;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .summary-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔥 Faction Rouge - Liste des 40 Cartes</h1>
+
+    <div class="summary">
+        <h3>Résumé de la faction</h3>
+        <p><strong>Thème :</strong> Agression, dégâts directs, célérité, sacrifice, rage</p>
+        <p><strong>Forces :</strong> Attaque rapide, dégâts au héros, créatures offensives</p>
+        <p><strong>Faiblesses :</strong> Créatures fragiles, peu de défense, auto-dégâts</p>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="summary-number">28</div>
+                <div>Créatures</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-number">8</div>
+                <div>Sorts</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-number">4</div>
+                <div>Pièges</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-number">40</div>
+                <div>Total</div>
+            </div>
+        </div>
+    </div>
+
+    <h2>🗡️ Créatures (28)</h2>
+
+    <h3 style="color: #cc9999; margin-left: 20px;">Coût 1 (6 créatures)</h3>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Pyromane novice <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Humain - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 1</span>
+            </div>
+            <div class="card-abilities">Célérité</div>
+            <div class="card-desc">Un apprenti pressé de prouver sa valeur.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Gobelin incendiaire <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Gobelin - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 1</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-desc">À sa mort, inflige 1 dégât au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Salamandre de braise <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Élémentaire - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 1</span>
+                <span class="stat stat-hp">HP 1</span>
+            </div>
+            <div class="card-abilities">Célérité</div>
+            <div class="card-desc">Quand cette créature attaque le héros adverse, elle gagne +1 ATK jusqu'à la fin du tour.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Torche vivante <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Élémentaire - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 1</span>
+            </div>
+            <div class="card-desc">À sa mort, inflige 1 dégât à la créature qui l'a tuée.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Recrue enragée <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Humain - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 1</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-desc">Statistiques défensives pour 1 mana, sans capacité.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Imp des cendres <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Créature - Démon - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 1</span>
+                <span class="stat stat-hp">HP 1</span>
+            </div>
+            <div class="card-abilities">Vol</div>
+            <div class="card-desc">Petit démon agile qui peut attaquer n'importe où.</div>
+        </div>
+    </div>
+
+    <h3 style="color: #cc9999; margin-left: 20px;">Coût 2 (7 créatures)</h3>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Berserker sanguinaire <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Humain - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-abilities">Célérité</div>
+            <div class="card-desc">Bonne créature agressive standard pour 2 mana.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Orque furieux <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Orque - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-desc">Stats solides pour 2 mana, sans capacité spéciale.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Lanceur de haches <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Humain - Tireur</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-abilities">Tireur</div>
+            <div class="card-desc">Attaque à distance sans recevoir de riposte.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Démon mineur <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Démon - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-desc">Quand cette créature inflige des dégâts au héros adverse, vous piochez une carte.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Chien infernal <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Bête - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-abilities">Célérité, Piétinement</div>
+            <div class="card-desc">Rapide et les dégâts excédentaires passent au héros.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Guerrier de lave <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Élémentaire - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-abilities">Puissance 1</div>
+            <div class="card-desc">Gagne +1 ATK chaque fois qu'il survit à des dégâts.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Chauve-souris de feu <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Créature - Bête - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 1</span>
+            </div>
+            <div class="card-abilities">Vol, Célérité</div>
+            <div class="card-desc">Très agressive mais fragile.</div>
+        </div>
+    </div>
+
+    <h3 style="color: #cc9999; margin-left: 20px;">Coût 3 (6 créatures)</h3>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Champion de l'arène <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Humain - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 4</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-abilities">Célérité</div>
+            <div class="card-desc">Un combattant expérimenté qui frappe vite et fort.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Élémentaire de magma <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Élémentaire - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 4</span>
+            </div>
+            <div class="card-desc">À sa mort, inflige 2 dégâts à toutes les créatures sur la même ligne.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Ogre des volcans <span class="rarity common">Commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Géant - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 4</span>
+                <span class="stat stat-hp">HP 4</span>
+            </div>
+            <div class="card-desc">Stats solides sans capacité.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Mage de bataille <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Humain - Tireur</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 2</span>
+            </div>
+            <div class="card-abilities">Tireur</div>
+            <div class="card-desc">Quand cette créature est invoquée, inflige 1 dégât à une créature adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Pillard orque <span class="rarity common">Commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Orque - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-abilities">Piétinement</div>
+            <div class="card-desc">Les dégâts excédentaires passent au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Drake cracheur <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Créature - Dragon - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 2</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-abilities">Vol</div>
+            <div class="card-desc">Quand cette créature attaque, inflige 1 dégât au héros adverse.</div>
+        </div>
+    </div>
+
+    <h3 style="color: #cc9999; margin-left: 20px;">Coût 4 (5 créatures)</h3>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Démon de la forge <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Créature - Démon - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 4</span>
+                <span class="stat stat-hp">HP 5</span>
+            </div>
+            <div class="card-desc">Quand cette créature est invoquée, vos autres créatures gagnent +1 ATK jusqu'à la fin du tour.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Géant des cendres <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Créature - Géant - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 5</span>
+                <span class="stat stat-hp">HP 4</span>
+            </div>
+            <div class="card-abilities">Piétinement</div>
+            <div class="card-desc">Un colosse dévastateur.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Pyromancien vétéran <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Créature - Humain - Tireur</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 4</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-abilities">Tireur</div>
+            <div class="card-desc">Quand cette créature tue une créature adverse, inflige 2 dégâts au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Wyverne écarlate <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Créature - Dragon - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 4</span>
+                <span class="stat stat-hp">HP 3</span>
+            </div>
+            <div class="card-abilities">Vol, Célérité</div>
+            <div class="card-desc">Menace aérienne rapide.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Bourreau infernal <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Créature - Démon - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 3</span>
+                <span class="stat stat-hp">HP 4</span>
+            </div>
+            <div class="card-abilities">Clivant 2</div>
+            <div class="card-desc">Inflige 2 dégâts aux créatures adjacentes quand il attaque.</div>
+        </div>
+    </div>
+
+    <h3 style="color: #cc9999; margin-left: 20px;">Coût 5+ (4 créatures)</h3>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Dragon de flammes <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">5</span>
+            </div>
+            <div class="card-type">Créature - Dragon - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 5</span>
+                <span class="stat stat-hp">HP 5</span>
+            </div>
+            <div class="card-abilities">Vol, Piétinement</div>
+            <div class="card-desc">Quand cette créature est invoquée, inflige 2 dégâts à une créature adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Seigneur démon <span class="rarity mythic">Mythique</span></span>
+                <span class="card-cost">6</span>
+            </div>
+            <div class="card-type">Créature - Démon - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 6</span>
+                <span class="stat stat-hp">HP 6</span>
+            </div>
+            <div class="card-abilities">Piétinement</div>
+            <div class="card-desc">Quand cette créature tue une créature adverse, elle gagne +2/+2 permanent.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Titan volcanique <span class="rarity mythic">Mythique</span></span>
+                <span class="card-cost">7</span>
+            </div>
+            <div class="card-type">Créature - Élémentaire - Mêlée</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 7</span>
+                <span class="stat stat-hp">HP 7</span>
+            </div>
+            <div class="card-abilities">Piétinement, Clivant 3</div>
+            <div class="card-desc">À la fin de chaque tour, inflige 1 dégât au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Phénix ancestral <span class="rarity mythic">Mythique</span></span>
+                <span class="card-cost">6</span>
+            </div>
+            <div class="card-type">Créature - Phénix - Volant</div>
+            <div class="card-stats">
+                <span class="stat stat-atk">ATK 5</span>
+                <span class="stat stat-hp">HP 4</span>
+            </div>
+            <div class="card-abilities">Vol, Célérité</div>
+            <div class="card-desc">La première fois que cette créature devrait mourir chaque tour, elle reste en vie avec 1 HP.</div>
+        </div>
+    </div>
+
+    <h2>✨ Sorts (8)</h2>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Étincelle <span class="rarity common">Commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 2</span>
+            </div>
+            <div class="card-desc">Inflige 2 dégâts à une créature ciblée.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Flamme furieuse <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 3</span>
+            </div>
+            <div class="card-desc">Inflige 3 dégâts à une créature ciblée.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Rage du berserker <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Sort - Utilitaire</div>
+            <div class="card-desc">Une créature alliée gagne +3 ATK et Célérité jusqu'à la fin du tour. Elle subit 2 dégâts à la fin du tour.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Pluie de feu <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 2</span>
+            </div>
+            <div class="card-desc">Inflige 2 dégâts à toutes les créatures adverses.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Brûlure infernale <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 3</span>
+            </div>
+            <div class="card-desc">Inflige 3 dégâts au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Embrasement <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 4</span>
+            </div>
+            <div class="card-desc">Inflige 4 dégâts à une créature ciblée. Si elle meurt, inflige 2 dégâts au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Sacrifice sanglant <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">1</span>
+            </div>
+            <div class="card-type">Sort - Utilitaire</div>
+            <div class="card-desc">Détruisez une créature alliée. Piochez 2 cartes.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Apocalypse de feu <span class="rarity mythic">Mythique</span></span>
+                <span class="card-cost">6</span>
+            </div>
+            <div class="card-type">Sort - Offensif</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 4</span>
+            </div>
+            <div class="card-desc">Inflige 4 dégâts à TOUTES les créatures et aux deux héros.</div>
+        </div>
+    </div>
+
+    <h2>🪤 Pièges (4)</h2>
+    <div class="card-list">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Piège explosif <span class="rarity common">Commune</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Piège</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 4</span>
+            </div>
+            <div class="card-desc">Inflige 4 dégâts à la première créature adverse qui attaque sur cette ligne.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Mur de flammes <span class="rarity uncommon">Peu commune</span></span>
+                <span class="card-cost">3</span>
+            </div>
+            <div class="card-type">Piège</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 3</span>
+            </div>
+            <div class="card-desc">Quand déclenché, inflige 3 dégâts à l'attaquant ET 2 dégâts aux créatures adjacentes sur la ligne adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Rune de vengeance <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">2</span>
+            </div>
+            <div class="card-type">Piège</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 2</span>
+            </div>
+            <div class="card-desc">Inflige 2 dégâts à l'attaquant. Si l'attaquant survit, inflige 3 dégâts au héros adverse.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-name">Champ de mines <span class="rarity rare">Rare</span></span>
+                <span class="card-cost">4</span>
+            </div>
+            <div class="card-type">Piège</div>
+            <div class="card-stats">
+                <span class="stat stat-dmg">DMG 5</span>
+            </div>
+            <div class="card-desc">Inflige 5 dégâts à l'attaquant. Ce piège se déclenche également si une créature est invoquée sur cette ligne.</div>
+        </div>
+    </div>
+
+    <h2 style="margin-top: 50px; color: #ff6b6b;">📊 Analyse de l'équilibre</h2>
+    <div class="summary" style="margin-top: 20px;">
+        <h3>Courbe de mana</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr style="background: #3a2020;">
+                <th style="padding: 10px; text-align: left;">Coût</th>
+                <th style="padding: 10px; text-align: center;">1</th>
+                <th style="padding: 10px; text-align: center;">2</th>
+                <th style="padding: 10px; text-align: center;">3</th>
+                <th style="padding: 10px; text-align: center;">4</th>
+                <th style="padding: 10px; text-align: center;">5</th>
+                <th style="padding: 10px; text-align: center;">6</th>
+                <th style="padding: 10px; text-align: center;">7</th>
+            </tr>
+            <tr>
+                <td style="padding: 10px;">Créatures</td>
+                <td style="padding: 10px; text-align: center;">6</td>
+                <td style="padding: 10px; text-align: center;">7</td>
+                <td style="padding: 10px; text-align: center;">6</td>
+                <td style="padding: 10px; text-align: center;">5</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">2</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+            </tr>
+            <tr style="background: #3a2020;">
+                <td style="padding: 10px;">Sorts</td>
+                <td style="padding: 10px; text-align: center;">2</td>
+                <td style="padding: 10px; text-align: center;">3</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px;">Pièges</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+                <td style="padding: 10px; text-align: center;">2</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">1</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+                <td style="padding: 10px; text-align: center;">0</td>
+            </tr>
+        </table>
+
+        <h3 style="margin-top: 30px;">Répartition des raretés</h3>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div><span class="rarity common">Commune</span> : 17 cartes (42.5%)</div>
+            <div><span class="rarity uncommon">Peu commune</span> : 13 cartes (32.5%)</div>
+            <div><span class="rarity rare">Rare</span> : 7 cartes (17.5%)</div>
+            <div><span class="rarity mythic">Mythique</span> : 3 cartes (7.5%)</div>
+        </div>
+
+        <h3 style="margin-top: 30px;">Capacités présentes</h3>
+        <ul>
+            <li><strong>Célérité (9)</strong> - Thème central de la faction rouge</li>
+            <li><strong>Piétinement (7)</strong> - Dégâts au héros, agressivité</li>
+            <li><strong>Vol (6)</strong> - Mobilité offensive</li>
+            <li><strong>Tireur (4)</strong> - Attaque à distance</li>
+            <li><strong>Clivant (2)</strong> - Dégâts de zone</li>
+            <li><strong>Puissance (1)</strong> - Montée en puissance</li>
+            <li><strong>Effets de mort (5)</strong> - Dégâts en mourant</li>
+            <li><strong>Dégâts directs au héros (8+)</strong> - Signature de la faction</li>
+        </ul>
+    </div>
+</body>
+</html>

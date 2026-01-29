@@ -602,6 +602,37 @@ class CombatAnimationSystem {
         });
     }
 
+    // ==================== COMBAT MUTUEL TIREURS ====================
+
+    /**
+     * Deux tireurs se tirent dessus EN MÊME TEMPS (projectiles croisés simultanés)
+     */
+    async animateMutualShooters(data) {
+        const { shooter1, shooter2, damage1, damage2 } = data;
+
+        // Lancer les deux projectiles en parallèle
+        await Promise.all([
+            this.animateProjectile({
+                startOwner: shooter1.owner,
+                startRow: shooter1.row,
+                startCol: shooter1.col,
+                targetOwner: shooter2.owner,
+                targetRow: shooter2.row,
+                targetCol: shooter2.col,
+                damage: damage1
+            }),
+            this.animateProjectile({
+                startOwner: shooter2.owner,
+                startRow: shooter2.row,
+                startCol: shooter2.col,
+                targetOwner: shooter1.owner,
+                targetRow: shooter1.row,
+                targetCol: shooter1.col,
+                damage: damage2
+            })
+        ]);
+    }
+
     // ==================== DÉGÂTS AU HÉROS ====================
 
     async animateHeroHit(data) {

@@ -959,7 +959,8 @@ const CombatVFX = new CombatVFXSystem();
 
 class SleepAnimationSystem {
     constructor() {
-        this.activeAnimations = new Map(); // cardElement -> animation data
+        this.activeAnimations = new Map(); // slotKey -> animation data
+        this.startTimes = new Map(); // slotKey -> startTime (persiste entre les renders)
         this.initialized = false;
     }
 
@@ -990,25 +991,36 @@ class SleepAnimationSystem {
         // Trouver toutes les cartes avec la classe just-played
         const sleepingCards = document.querySelectorAll('.card.just-played');
 
-        // Ajouter des animations aux nouvelles cartes
+        // Identifier les slots actifs ce frame
+        const activeSlotKeys = new Set();
+
         sleepingCards.forEach(card => {
-            if (!this.activeAnimations.has(card)) {
-                this.startAnimation(card);
+            // Trouver le slot parent pour identifier la carte de manière stable
+            const slot = card.closest('.card-slot');
+            if (!slot) return;
+            const slotKey = `${slot.dataset.owner}-${slot.dataset.row}-${slot.dataset.col}`;
+            activeSlotKeys.add(slotKey);
+
+            if (!this.activeAnimations.has(slotKey)) {
+                this.startAnimation(slotKey, card);
+            } else {
+                // Mettre à jour la référence DOM (peut changer à chaque render) et la position
+                const animData = this.activeAnimations.get(slotKey);
+                animData.cardRef = card;
+                this.updateAnimationPosition(card, animData);
             }
         });
 
-        // Supprimer les animations des cartes qui ne dorment plus
-        this.activeAnimations.forEach((animData, card) => {
-            if (!card.classList.contains('just-played') || !document.body.contains(card)) {
-                this.stopAnimation(card);
-            } else {
-                // Mettre à jour la position
-                this.updateAnimationPosition(card, animData);
+        // Supprimer les animations des slots qui ne dorment plus
+        this.activeAnimations.forEach((animData, slotKey) => {
+            if (!activeSlotKeys.has(slotKey)) {
+                this.stopAnimation(slotKey);
+                this.startTimes.delete(slotKey);
             }
         });
     }
 
-    startAnimation(card) {
+    startAnimation(slotKey, card) {
         if (!CombatVFX.initialized || !CombatVFX.container) return;
 
         const container = new PIXI.Container();
@@ -1033,19 +1045,25 @@ class SleepAnimationSystem {
                 index: i,
                 baseOffsetX: 5 + i * 8,
                 baseOffsetY: -5 - i * 12,
-                phase: i * (Math.PI * 2 / 3), // Décalage de phase
+                phase: i * (Math.PI * 2 / 3),
             };
             container.addChild(z);
             zTexts.push(z);
         }
 
+        // Réutiliser le startTime existant pour que l'animation continue sans à-coup
+        if (!this.startTimes.has(slotKey)) {
+            this.startTimes.set(slotKey, performance.now());
+        }
+
         const animData = {
             container,
             zTexts,
-            startTime: performance.now(),
+            cardRef: card,
+            startTime: this.startTimes.get(slotKey),
         };
 
-        this.activeAnimations.set(card, animData);
+        this.activeAnimations.set(slotKey, animData);
         this.updateAnimationPosition(card, animData);
     }
 
@@ -1092,13 +1110,13 @@ class SleepAnimationSystem {
         });
     }
 
-    stopAnimation(card) {
-        const animData = this.activeAnimations.get(card);
+    stopAnimation(slotKey) {
+        const animData = this.activeAnimations.get(slotKey);
         if (animData) {
             if (animData.container && animData.container.parent) {
                 animData.container.parent.removeChild(animData.container);
             }
-            this.activeAnimations.delete(card);
+            this.activeAnimations.delete(slotKey);
         }
     }
 

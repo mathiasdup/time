@@ -17,10 +17,12 @@ let zdejebelAnimationInProgress = false; // Bloque render() pour les HP pendant 
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
-    death: 600,        // Délai après une mort (batch)
+    death: 200,        // Délai après une mort (le gros est dans animateDeathToGraveyard)
     heroHit: 200,      // Délai après dégâts au héros (réduit)
     discard: 800,      // Délai après défausse
     burn: 1000,        // Délai après burn (pioche vers cimetière)
+    spell: 200,        // Délai après animation de sort (le gros est dans animateSpellReveal)
+    trapTrigger: 500,  // Délai après animation de piège (séparation entre pièges consécutifs)
     default: 300       // Délai par défaut
 };
 
@@ -64,10 +66,31 @@ function queueAnimation(type, data) {
         console.log('[Queue] Zdejebel: captured HP before =', currentDisplayedHp, 'for', target);
     }
 
+    // Pour burn et death, bloquer le render du cimetière IMMÉDIATEMENT (avant que render() ne l'affiche)
+    if (type === 'burn' || type === 'death') {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        graveRenderBlocked.add(owner);
+        console.log('[Queue] Blocked graveyard render for', owner, '(type:', type + ')');
+    }
+
     animationQueue.push({ type, data });
     if (!isAnimating) {
-        console.log('[Queue] Starting queue processing for:', type);
-        processAnimationQueue();
+        // Pour les types batchables (burn, death), différer le démarrage
+        // pour laisser les events du même batch serveur arriver
+        if (type === 'burn' || type === 'death') {
+            if (!queueAnimation._batchTimeout) {
+                queueAnimation._batchTimeout = setTimeout(() => {
+                    queueAnimation._batchTimeout = null;
+                    if (!isAnimating && animationQueue.length > 0) {
+                        console.log('[Queue] Deferred batch start, queue:', animationQueue.map(a => a.type).join(','));
+                        processAnimationQueue();
+                    }
+                }, 50);
+            }
+        } else {
+            console.log('[Queue] Starting queue processing for:', type);
+            processAnimationQueue();
+        }
     } else {
         console.log('[Queue] Animation in progress, queued:', type, 'will be processed after current');
     }
@@ -96,16 +119,28 @@ async function processAnimationQueue(processorId = null) {
         isAnimating = true;
         console.log('[Queue] Processor', processorId, '- Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
 
-        // Regrouper les animations de mort consécutives en batch
+        // Regrouper les animations de mort consécutives (jouées en parallèle)
         if (animationQueue[0].type === 'death') {
             const deathBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
                 deathBatch.push(animationQueue.shift().data);
             }
-            for (const data of deathBatch) {
-                animateDeath(data);
-            }
+            const deathPromises = deathBatch.map(data => animateDeathToGraveyard(data));
+            await Promise.all(deathPromises);
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
+            processAnimationQueue(processorId);
+            return;
+        }
+
+        // Regrouper les animations de burn consécutives (jouées en parallèle)
+        if (animationQueue[0].type === 'burn') {
+            const burnBatch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'burn') {
+                burnBatch.push(animationQueue.shift().data);
+            }
+            console.log('[Queue] Burn batch:', burnBatch.length, 'animations');
+            const burnPromises = burnBatch.map(data => animateBurn(data));
+            await Promise.all(burnPromises);
             processAnimationQueue(processorId);
             return;
         }
@@ -198,13 +233,19 @@ async function executeAnimationAsync(type, data) {
                 await animateZdejebelDamage(data);
                 return;
             case 'death':
-                animateDeath(data);
+                await animateDeathToGraveyard(data);
                 return;
             case 'discard':
                 await animateDiscard(data);
                 return;
             case 'burn':
                 await animateBurn(data);
+                return;
+            case 'spell':
+                await animateSpell(data);
+                return;
+            case 'trapTrigger':
+                await animateTrap(data);
                 return;
         }
     }
@@ -214,11 +255,13 @@ async function executeAnimationAsync(type, data) {
         case 'attack': animateAttackFallback(data); break;
         case 'damage': animateDamageFallback(data); break;
         case 'spellDamage': animateDamageFallback(data); break;
-        case 'death': animateDeath(data); break;
+        case 'death': await animateDeathToGraveyard(data); break;
         case 'heroHit': animateHeroHitFallback(data); break;
         case 'zdejebel': await animateZdejebelDamage(data); break;
         case 'discard': await animateDiscard(data); break;
         case 'burn': await animateBurn(data); break;
+        case 'spell': await animateSpell(data); break;
+        case 'trapTrigger': await animateTrap(data); break;
     }
 }
 
@@ -265,6 +308,19 @@ async function handlePixiAttack(data) {
                 damage: data.attack2.damage,
                 isShooter: data.attack2.isShooter
             }
+        });
+        return;
+    }
+
+    // Combat mutuel tireurs = deux projectiles croisés simultanés
+    if (data.combatType === 'mutual_shooters') {
+        const owner1 = data.attacker1 === myNum ? 'me' : 'opp';
+        const owner2 = data.attacker2 === myNum ? 'me' : 'opp';
+        await CombatAnimations.animateMutualShooters({
+            shooter1: { owner: owner1, row: data.row1, col: data.col1 },
+            shooter2: { owner: owner2, row: data.row2, col: data.col2 },
+            damage1: data.damage1,
+            damage2: data.damage2
         });
         return;
     }
@@ -361,7 +417,8 @@ async function animateZdejebelDamage(data) {
     zdejebelAnimationInProgress = true;
 
     // Restaurer les HP d'avant l'animation (render() les a déjà mis à jour)
-    const hpElement = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+    const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+    const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
     const currentHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
     const hpBeforeAnimation = data._displayHpBefore ?? (currentHp + data.damage); // Estimer si pas capturé
 
@@ -509,9 +566,145 @@ function animateHeroHitFallback(data) {
     }
 }
 
+// ==========================================
+// Custom Drag & Drop Setup
+// ==========================================
+function setupCustomDrag() {
+    CustomDrag.setCallbacks({
+        canDrag: () => canPlay(),
+
+        dragStart: (data, sourceEl) => {
+            hideCardPreview();
+            if (data.source === 'hand') {
+                dragged = { ...data.card, idx: data.idx, tooExpensive: data.tooExpensive, effectiveCost: data.effectiveCost };
+                draggedFromField = null;
+                highlightValidSlots(data.card);
+            } else if (data.source === 'field') {
+                draggedFromField = { row: data.row, col: data.col, card: data.card };
+                dragged = null;
+                highlightMoveTargets(data.row, data.col, data.card);
+            }
+        },
+
+        dragMove: (x, y, data) => {
+            // Cross-spell preview
+            if (data.source === 'hand' && data.card && data.card.type === 'spell' && data.card.pattern === 'cross') {
+                const target = CustomDrag.getDropTargetAt(x, y);
+                if (target && target.type === 'field' && target.element.classList.contains('valid-target')) {
+                    previewCrossTargets(target.owner, target.row, target.col);
+                } else {
+                    document.querySelectorAll('.card-slot.cross-target').forEach(s => s.classList.remove('cross-target'));
+                }
+            }
+        },
+
+        drop: (data, target, sourceEl) => {
+            if (data.source === 'hand') {
+                return handleHandDrop(data, target);
+            } else if (data.source === 'field') {
+                return handleFieldDrop(data, target);
+            }
+            return false;
+        },
+
+        dragEnd: (data, wasDropped) => {
+            if (!wasDropped && data && data.source === 'hand' && data.tooExpensive) {
+                // Shake la carte dans la main
+                const handCards = document.querySelectorAll('#my-hand .card');
+                if (handCards[data.idx]) {
+                    handCards[data.idx].classList.add('shake');
+                    setTimeout(() => handCards[data.idx].classList.remove('shake'), 400);
+                }
+            }
+            dragged = null;
+            draggedFromField = null;
+            clearHighlights();
+        }
+    });
+}
+
+function handleHandDrop(data, target) {
+    const card = data.card;
+
+    // Zone de sort global
+    if (target.type === 'global') {
+        if (card.type === 'spell' && ['global', 'all'].includes(card.pattern)) {
+            if (data.tooExpensive) {
+                data.triedToDrop = true;
+                return false;
+            }
+            socket.emit('castGlobalSpell', { handIndex: data.idx });
+            clearSel();
+            return true;
+        }
+        return false;
+    }
+
+    // Héros cible
+    if (target.type === 'hero') {
+        if (!canTargetHero(card, target.owner)) return false;
+        if (data.tooExpensive) {
+            data.triedToDrop = true;
+            return false;
+        }
+        const targetPlayer = target.owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+        socket.emit('castSpell', {
+            idx: data.idx,
+            targetPlayer: targetPlayer,
+            row: -1,
+            col: -1
+        });
+        clearSel();
+        return true;
+    }
+
+    // Piège
+    if (target.type === 'trap') {
+        if (!target.element.classList.contains('valid-target')) return false;
+        dragged = { ...card, idx: data.idx, tooExpensive: data.tooExpensive };
+        dropOnTrap(target.owner, target.row);
+        return !data.tooExpensive;
+    }
+
+    // Slot de terrain (créature ou sort ciblé)
+    if (target.type === 'field') {
+        if (!target.element.classList.contains('valid-target')) return false;
+        dragged = { ...card, idx: data.idx, tooExpensive: data.tooExpensive, effectiveCost: data.effectiveCost };
+        dropOnSlot(target.owner, target.row, target.col);
+        return !data.tooExpensive;
+    }
+
+    return false;
+}
+
+function handleFieldDrop(data, target) {
+    if (target.type !== 'field') return false;
+    if (!target.element.classList.contains('moveable')) return false;
+
+    socket.emit('moveCard', {
+        fromRow: data.row,
+        fromCol: data.col,
+        toRow: target.row,
+        toCol: target.col
+    });
+    clearSel();
+    return true;
+}
+
+function canTargetHero(spell, owner) {
+    if (!spell || spell.type !== 'spell') return false;
+    if (spell.pattern === 'hero') {
+        if (spell.targetEnemy && owner === 'me') return false;
+        if (spell.targetSelf && owner === 'opp') return false;
+        return true;
+    }
+    if (spell.canTargetHero) return true;
+    return false;
+}
+
 function initSocket() {
     socket = io();
-    
+
     socket.on('gameStart', (s) => {
         state = s;
         myNum = s.myPlayer;
@@ -554,71 +747,70 @@ function initSocket() {
         // Plus de message ici - tout est géré par newTurn avec "Planification"
     });
     
-    socket.on('timerUpdate', (t) => { 
+    socket.on('timerUpdate', (t) => {
         currentTimer = t;
         if(state) state.timeLeft = t;
         updateTimerDisplay(t);
     });
-    
+
     socket.on('phaseChange', (p) => {
-        if(state) state.phase = p; 
+        if(state) state.phase = p;
         updatePhaseDisplay();
-        
-        // Réinitialiser le bouton pendant la résolution
+
         if (p === 'resolution') {
             const endTurnBtn = document.getElementById('end-turn-btn');
-            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
-            endTurnBtn.classList.remove('has-timer', 'urgent');
+            endTurnBtn.classList.remove('waiting', 'has-timer');
+            endTurnBtn.classList.add('resolving');
+            showPhaseMessage('Résolution', 'resolution');
         }
     });
-    
+
     socket.on('phaseMessage', (data) => {
         showPhaseMessage(data.text, data.type);
     });
-    
+
     let meReady = false, oppReady = false;
-    
+
     socket.on('playerReady', (n) => {
         const isMe = n === myNum;
         if (isMe) {
             meReady = true;
             const endTurnBtn = document.getElementById('end-turn-btn');
             endTurnBtn.classList.add('waiting');
-            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
             endTurnBtn.classList.remove('has-timer', 'urgent');
         } else {
             oppReady = true;
         }
         log(isMe ? 'Vous êtes prêt' : 'Adversaire prêt', 'action');
-        
-        // Réinitialiser le bouton si les deux joueurs sont prêts
+
         if (meReady && oppReady) {
             const endTurnBtn = document.getElementById('end-turn-btn');
-            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
             endTurnBtn.classList.remove('has-timer', 'urgent');
         }
     });
-    
+
     socket.on('newTurn', (d) => {
+        console.log(`[newTurn] Received turn=${d.turn}, local turn=${state?.turn}`);
+
+        if (state) {
+            state.turn = d.turn;
+            state.phase = 'planning';
+        }
+
         currentTimer = 90;
         meReady = false;
         oppReady = false;
         const endTurnBtn = document.getElementById('end-turn-btn');
-        endTurnBtn.classList.remove('waiting', 'has-timer', 'urgent');
-        endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
+        endTurnBtn.classList.remove('waiting', 'resolving', 'has-timer', 'has-phase', 'urgent');
         clearSel();
 
-        // Nettoyage des états d'animation pour éviter les bugs de persistance
         resetAnimationStates();
 
         log(`🎮 Tour ${d.turn} — ⚡${d.maxEnergy} énergie`, 'phase');
-
-        // Message de début de tour - phase de Planification
-        showPhaseMessage('Planification', 'planning');
     });
-    
+
     socket.on('resolutionLog', (d) => log(d.msg, d.type));
-    
+
     socket.on('directDamage', (d) => {
         const heroEl = document.getElementById(d.defender === myNum ? 'hero-me' : 'hero-opp');
         heroEl.classList.add('hit');
@@ -649,28 +841,6 @@ function initSocket() {
         render();
     });
 
-    // Cacher les cartes qui vont être révélées plus tard (pendant les déplacements)
-    // Ces cartes sont cachées dans renderField via hiddenCards
-    socket.on('hideCards', (cards) => {
-        cards.forEach(c => {
-            // Cacher les cartes adverses OU les cartes locales si hideLocal est true
-            const isOpponent = c.player !== myNum;
-            const shouldHide = isOpponent || c.hideLocal;
-
-            if (shouldHide) {
-                const owner = c.player === myNum ? 'me' : 'opp';
-                const cardKey = `${owner}-${c.row}-${c.col}`;
-                hiddenCards.add(cardKey);
-            }
-        });
-    });
-
-    // Révéler une carte spécifique (appelé juste avant l'animation summon)
-    socket.on('revealCard', (c) => {
-        const owner = c.player === myNum ? 'me' : 'opp';
-        const cardKey = `${owner}-${c.row}-${c.col}`;
-        hiddenCards.delete(cardKey);
-    });
     
     // Highlight des cases pour les sorts
     socket.on('spellHighlight', (data) => {
@@ -721,6 +891,23 @@ function initSocket() {
     });
     
     socket.on('playerDisconnected', () => log('⚠️ Adversaire déconnecté', 'damage'));
+
+    // Resync quand la fenêtre revient au premier plan
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && state && state.phase) {
+            console.log('[visibilitychange] Window visible, requesting sync');
+            socket.emit('requestSync');
+        }
+    });
+
+    // Le serveur envoie périodiquement le numéro de tour pour détecter la désynchronisation
+    socket.on('turnCheck', (serverTurn) => {
+        console.log(`[turnCheck] Server turn=${serverTurn}, local turn=${state?.turn}`);
+        if (state && state.turn !== serverTurn) {
+            console.log(`[turnCheck] DESYNC DETECTED! Requesting sync...`);
+            socket.emit('requestSync');
+        }
+    });
 }
 
 function handleAnimation(data) {
@@ -728,24 +915,30 @@ function handleAnimation(data) {
     console.log('[Animation] Received:', type, data);
 
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn', 'zdejebel'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn', 'zdejebel', 'spell', 'trapTrigger'];
 
     if (queuedTypes.includes(type)) {
         queueAnimation(type, data);
     } else {
         // Les autres animations s'exécutent immédiatement
         switch(type) {
-            case 'spell': animateSpell(data); break;
             case 'spellMiss': animateSpellMiss(data); break;
             case 'heal': animateHeal(data); break;
             case 'buff': animateBuff(data); break;
-            case 'trapTrigger': animateTrap(data); break;
             case 'summon': animateSummon(data); break;
             case 'move': animateMove(data); break;
+            case 'atkBoost':
+                if (typeof animateAtkBoost === 'function') {
+                    animateAtkBoost(data);
+                }
+                break;
             case 'draw':
                 if (typeof GameAnimations !== 'undefined') {
                     GameAnimations.prepareDrawAnimation(data);
                 }
+                break;
+            case 'trapPlace':
+                animateTrapPlace(data);
                 break;
         }
     }
@@ -774,9 +967,7 @@ function handleAnimationBatch(animations) {
         }
 
         if (anim.type === 'death') {
-            // Appliquer l'animation de mort immédiatement
-            animateDeath(anim);
-            return Promise.resolve();
+            return animateDeathToGraveyard(anim);
         }
 
         return Promise.resolve();
@@ -882,193 +1073,434 @@ async function animateDiscard(data) {
 }
 
 /**
- * Animation de burn (pioche -> milieu de l'écran -> désintégration -> cimetière)
+ * Animation de burn professionnelle (style Hearthstone/Magic Arena)
+ *
+ * Phase 1 - Lift:    Dos de carte se soulève du deck
+ * Phase 2 - Flip:    La carte se retourne près du deck (révèle ce qui est brûlé)
+ * Phase 3 - Hold:    Pause brève + teinte rouge (la carte est condamnée)
+ * Phase 4 - Fly:     La carte vole vers le cimetière en rétrécissant
+ * Phase 5 - Impact:  Flash au cimetière, mise à jour du graveyard
  */
 async function animateBurn(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
+    const ownerKey = owner === 'me' ? 'me' : 'opp';
     const card = data.card;
 
-    // Position du deck
+    // Bloquer le render du cimetière pendant l'animation
+    graveRenderBlocked.add(ownerKey);
+
     const deckEl = document.getElementById(owner === 'me' ? 'me-deck-stack' : 'opp-deck-stack');
-    if (!deckEl) return;
+    if (!deckEl) {
+        graveRenderBlocked.delete(ownerKey);
+        return;
+    }
+
+    const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
 
     const deckRect = deckEl.getBoundingClientRect();
+    const cardWidth = 105;
+    const cardHeight = 140;
 
-    // Créer la carte (face visible pour montrer ce qui est burn)
-    const cardEl = createCardElementForAnimation(card);
-    const cardWidth = 90;
-    const cardHeight = 130;
+    const startX = deckRect.left + deckRect.width / 2 - cardWidth / 2;
+    const startY = deckRect.top;
 
-    // Position initiale (sur le deck)
-    cardEl.style.cssText = `
-        position: fixed;
-        left: ${deckRect.left + deckRect.width / 2 - cardWidth / 2}px;
-        top: ${deckRect.top + deckRect.height / 2 - cardHeight / 2}px;
-        width: ${cardWidth}px;
-        height: ${cardHeight}px;
-        z-index: 10000;
-        pointer-events: none;
-        opacity: 0;
-        transform: scale(0.8);
-        transition: all 0.4s ease-out;
+    // Cacher le cimetière temporairement (la carte n'y est pas encore visuellement)
+    const graveTopEl = document.getElementById(`${owner}-grave-top`);
+    let graveSnapshot = null;
+    if (graveTopEl) {
+        graveSnapshot = graveTopEl.innerHTML;
+    }
+
+    // Position et taille visuelle du cimetière (inclut perspective + rotateX du game-board)
+    let graveX = startX;
+    let graveY = startY + 200;
+    let graveScale = 1.0;
+    if (graveEl) {
+        const gRect = graveEl.getBoundingClientRect();
+        graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
+        graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
+        // Scale pour matcher la taille visuelle du cimetière (réduite par la perspective)
+        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+    }
+
+    // Position de reveal : à côté du deck (pas au centre)
+    const revealX = startX;
+    const revealY = startY - cardHeight - 20;
+
+    // Wrapper avec perspective
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed; z-index: 10000; pointer-events: none;
+        left: ${startX}px; top: ${startY}px;
+        width: ${cardWidth}px; height: ${cardHeight}px;
+        transform-origin: center center;
+        transform: scale(1); opacity: 0;
+        perspective: 800px;
     `;
-    document.body.appendChild(cardEl);
 
-    // Phase 1: Apparition et déplacement vers le centre
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Flipper 3D
+    const flipper = document.createElement('div');
+    flipper.style.cssText = `
+        width: 100%; height: 100%;
+        position: relative;
+        transform-style: preserve-3d;
+        transform: rotateY(0deg);
+    `;
 
-    const centerX = window.innerWidth / 2 - cardWidth / 2;
-    const centerY = window.innerHeight / 2 - cardHeight / 2;
+    // Dos de carte
+    const backFace = document.createElement('div');
+    backFace.className = 'opp-card-back';
+    backFace.style.cssText = `
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+        backface-visibility: hidden;
+        transform: rotateY(0deg);
+        border-radius: 6px;
+    `;
 
-    cardEl.style.left = centerX + 'px';
-    cardEl.style.top = centerY + 'px';
-    cardEl.style.opacity = '1';
-    cardEl.style.transform = 'scale(1.2)';
+    // Face avant
+    const frontFace = (typeof makeCard === 'function')
+        ? makeCard(card, true)
+        : createCardElementForAnimation(card);
+    const bgImage = frontFace.style.backgroundImage;
+    frontFace.style.position = 'absolute';
+    frontFace.style.top = '0';
+    frontFace.style.left = '0';
+    frontFace.style.width = '100%';
+    frontFace.style.height = '100%';
+    frontFace.style.margin = '0';
+    frontFace.style.backfaceVisibility = 'hidden';
+    frontFace.style.transform = 'rotateY(180deg)';
+    if (bgImage) frontFace.style.backgroundImage = bgImage;
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    flipper.appendChild(backFace);
+    flipper.appendChild(frontFace);
+    wrapper.appendChild(flipper);
 
-    // Phase 2: Désintégration avec timeout de sécurité
-    let timeoutId;
-    try {
-        await Promise.race([
-            animateDisintegration(cardEl, owner),
-            new Promise(resolve => {
-                timeoutId = setTimeout(() => {
-                    console.log('[Burn] Timeout reached, forcing completion');
-                    resolve();
-                }, 1500); // Timeout 1.5s max
-            })
-        ]);
-    } catch (e) {
-        console.error('[Burn] Animation error:', e);
-    } finally {
-        clearTimeout(timeoutId);
-        // Toujours nettoyer la carte
-        if (cardEl.parentNode) {
-            cardEl.remove();
+    // Conteneur perspective pour matcher l'inclinaison du game-board
+    const gameBoardWrapper = document.querySelector('.game-board-wrapper');
+    let perspContainer = null;
+    let graveTiltDeg = 0;
+    if (gameBoardWrapper) {
+        const gameBoard = document.querySelector('.game-board');
+        if (gameBoard) {
+            const computedTransform = getComputedStyle(gameBoard).transform;
+            if (computedTransform && computedTransform !== 'none') {
+                const mat = new DOMMatrix(computedTransform);
+                graveTiltDeg = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
+            }
         }
-    }
-    console.log('[Burn] Animation completed');
-}
-
-/**
- * Animation de désintégration avec particules vers le cimetière
- * Retourne une promesse qui se résout quand l'animation est terminée
- */
-async function animateDisintegration(cardEl, owner) {
-    const rect = cardEl.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    // Position du cimetière
-    const graveyardEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
-    let graveyardX = window.innerWidth / 2;
-    let graveyardY = owner === 'me' ? window.innerHeight - 50 : 50;
-
-    if (graveyardEl) {
-        const gRect = graveyardEl.getBoundingClientRect();
-        graveyardX = gRect.left + gRect.width / 2;
-        graveyardY = gRect.top + gRect.height / 2;
-    }
-
-    // Créer les particules
-    const particleCount = 20;
-    const particles = [];
-
-    for (let i = 0; i < particleCount; i++) {
-        const particle = document.createElement('div');
-        const size = 4 + Math.random() * 8;
-        const startOffsetX = (Math.random() - 0.5) * rect.width;
-        const startOffsetY = (Math.random() - 0.5) * rect.height;
-
-        particle.style.cssText = `
-            position: fixed;
-            left: ${centerX + startOffsetX}px;
-            top: ${centerY + startOffsetY}px;
-            width: ${size}px;
-            height: ${size}px;
-            background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 10001;
-            box-shadow: 0 0 ${size}px rgba(255, 107, 107, 0.8);
-            opacity: 1;
+        const gbwRect = gameBoardWrapper.getBoundingClientRect();
+        perspContainer = document.createElement('div');
+        perspContainer.style.cssText = `
+            position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+            z-index: 10000; pointer-events: none;
+            perspective: 1500px;
+            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height / 2}px;
         `;
-        document.body.appendChild(particle);
-        particles.push({
-            el: particle,
-            startX: centerX + startOffsetX,
-            startY: centerY + startOffsetY,
-            delay: Math.random() * 200
-        });
+        document.body.appendChild(perspContainer);
+        perspContainer.appendChild(wrapper);
+    } else {
+        document.body.appendChild(wrapper);
     }
 
-    // Commencer à faire disparaître la carte
-    cardEl.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
-    cardEl.style.opacity = '0';
-    cardEl.style.transform = 'scale(0.5)';
-
-    // Animer les particules vers le cimetière
-    const duration = 600;
-    const maxDuration = 1000; // Durée max absolue pour éviter les blocages
+    // Durées
+    const liftDuration = 200;
+    const flipDuration = 350;
+    const holdDuration = 600;
+    const flyDuration = 400;
+    const totalDuration = liftDuration + flipDuration + holdDuration + flyDuration;
 
     await new Promise(resolve => {
         const startTime = performance.now();
-        let cancelled = false;
 
-        // Sécurité : forcer la fin après maxDuration
         const safetyTimeout = setTimeout(() => {
-            console.log('[Disintegration] Safety timeout triggered');
-            cancelled = true;
-            cleanup();
+            graveRenderBlocked.delete(ownerKey);
+            wrapper.remove();
+            if (perspContainer) perspContainer.remove();
             resolve();
-        }, maxDuration);
-
-        function cleanup() {
-            console.log('[Disintegration] Cleanup - removing', particles.length, 'particles');
-            for (const p of particles) {
-                if (p.el.parentNode) p.el.remove();
-            }
-            if (cardEl.parentNode) cardEl.remove();
-        }
+        }, totalDuration + 500);
 
         function animate() {
-            if (cancelled) return;
-
             const elapsed = performance.now() - startTime;
-            let allDone = true;
+            const progress = Math.min(elapsed / totalDuration, 1);
 
-            for (const p of particles) {
-                const particleElapsed = Math.max(0, elapsed - p.delay);
-                const progress = Math.min(particleElapsed / duration, 1);
+            const t1 = liftDuration / totalDuration;
+            const t2 = (liftDuration + flipDuration) / totalDuration;
+            const t3 = (liftDuration + flipDuration + holdDuration) / totalDuration;
 
-                if (progress < 1) {
-                    allDone = false;
-                    const eased = 1 - Math.pow(1 - progress, 3);
+            let x, y, scale, opacity, flipDeg, redTint, tiltDeg;
 
-                    // Trajectoire courbe vers le cimetière
-                    const controlX = (p.startX + graveyardX) / 2 + (Math.random() - 0.5) * 100;
-                    const controlY = Math.min(p.startY, graveyardY) - 50;
+            if (progress <= t1) {
+                // === PHASE 1: LIFT ===
+                const p = progress / t1;
+                const ep = easeOutCubic(p);
+                x = startX;
+                y = startY - ep * 30;
+                scale = 1 + ep * 0.05;
+                opacity = 0.3 + ep * 0.7;
+                flipDeg = 0;
+                redTint = 0;
+                tiltDeg = 0;
 
-                    const t = eased;
-                    const x = (1 - t) * (1 - t) * p.startX + 2 * (1 - t) * t * controlX + t * t * graveyardX;
-                    const y = (1 - t) * (1 - t) * p.startY + 2 * (1 - t) * t * controlY + t * t * graveyardY;
+            } else if (progress <= t2) {
+                // === PHASE 2: FLIP (retourne la carte près du deck) ===
+                const p = (progress - t1) / (t2 - t1);
+                const ep = easeInOutCubic(p);
+                x = startX + (revealX - startX) * ep;
+                y = (startY - 30) + (revealY - (startY - 30)) * ep;
+                scale = 1.05 + (1.2 - 1.05) * ep;
+                opacity = 1;
+                flipDeg = easeInOutCubic(p) * 180;
+                redTint = 0;
+                tiltDeg = 0;
 
-                    p.el.style.left = x + 'px';
-                    p.el.style.top = y + 'px';
-                    p.el.style.opacity = (1 - progress * 0.5).toString();
-                    p.el.style.transform = `scale(${1 - progress * 0.5})`;
-                } else {
-                    p.el.style.opacity = '0';
-                }
+            } else if (progress <= t3) {
+                // === PHASE 3: HOLD (teinte rouge progressive) ===
+                const p = (progress - t2) / (t3 - t2);
+                x = revealX;
+                y = revealY;
+                scale = 1.2;
+                opacity = 1;
+                flipDeg = 180;
+                redTint = easeOutCubic(p) * 0.6;
+                tiltDeg = 0;
+
+            } else {
+                // === PHASE 4: FLY TO GRAVEYARD ===
+                const p = (progress - t3) / (1 - t3);
+                const ep = easeInOutCubic(p);
+                x = revealX + (graveX - revealX) * ep;
+                y = revealY + (graveY - revealY) * ep;
+                scale = 1.2 + (graveScale - 1.2) * ep;
+                opacity = 1 - 0.3 * ep;
+                flipDeg = 180;
+                redTint = 0.6;
+                // Inclinaison progressive pour matcher le game-board
+                tiltDeg = ep * graveTiltDeg;
             }
 
-            if (!allDone) {
+            wrapper.style.left = x + 'px';
+            wrapper.style.top = y + 'px';
+            wrapper.style.opacity = opacity;
+            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
+            flipper.style.transform = `rotateY(${flipDeg}deg)`;
+
+            // Teinte rouge via overlay
+            if (redTint > 0) {
+                wrapper.style.filter = `sepia(${redTint * 0.5}) saturate(${1 + redTint * 2}) hue-rotate(-10deg) brightness(${1 - redTint * 0.2})`;
+            } else {
+                wrapper.style.filter = 'none';
+            }
+
+            if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 clearTimeout(safetyTimeout);
-                // Nettoyer
-                cleanup();
+
+                // Débloquer et mettre à jour le cimetière
+                graveRenderBlocked.delete(ownerKey);
+                if (state) {
+                    const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+                    if (graveyard) {
+                        updateGraveDisplay(ownerKey, graveyard);
+                        updateGraveTopCard(ownerKey, graveyard);
+                    }
+                }
+
+                wrapper.remove();
+                if (perspContainer) perspContainer.remove();
+                resolve();
+            }
+        }
+
+        requestAnimationFrame(animate);
+    });
+}
+
+/**
+ * Animation de mort — la carte vole vers le cimetière (style Hearthstone/Arena)
+ * Phase 1 - Death Mark (400ms) : greyscale progressif + léger shrink
+ * Phase 2 - Fly to Graveyard (500ms) : vol vers le cimetière avec perspective tilt
+ */
+async function animateDeathToGraveyard(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const ownerKey = owner;
+
+    // Bloquer le render du cimetière pendant l'animation
+    graveRenderBlocked.add(ownerKey);
+
+    // 1. Trouver le slot et la carte
+    const slot = document.querySelector(
+        `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
+    );
+    const cardEl = slot?.querySelector('.card');
+
+    if (!slot) {
+        graveRenderBlocked.delete(ownerKey);
+        return;
+    }
+
+    // 2. Positions de départ (slot sur le battlefield)
+    const slotRect = slot.getBoundingClientRect();
+    const cardWidth = slotRect.width || 105;
+    const cardHeight = slotRect.height || 140;
+    const startX = slotRect.left;
+    const startY = slotRect.top;
+
+    // 3. Position cible : cimetière du propriétaire
+    const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
+    let graveX = startX;
+    let graveY = startY + 200;
+    let graveScale = 1.0;
+    if (graveEl) {
+        const gRect = graveEl.getBoundingClientRect();
+        graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
+        graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
+        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+    }
+
+    // 4. Créer le wrapper avec la carte
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed; z-index: 10000; pointer-events: none;
+        left: ${startX}px; top: ${startY}px;
+        width: ${cardWidth}px; height: ${cardHeight}px;
+        transform-origin: center center;
+        transform: scale(1); opacity: 1;
+    `;
+
+    // Créer la face de la carte
+    let cardFace;
+    if (data.card && typeof makeCard === 'function') {
+        cardFace = makeCard(data.card, true);
+    } else if (cardEl) {
+        cardFace = cardEl.cloneNode(true);
+    } else {
+        graveRenderBlocked.delete(ownerKey);
+        return;
+    }
+    const bgImage = cardFace.style.backgroundImage;
+    cardFace.style.position = 'absolute';
+    cardFace.style.top = '0';
+    cardFace.style.left = '0';
+    cardFace.style.width = '100%';
+    cardFace.style.height = '100%';
+    cardFace.style.margin = '0';
+    if (bgImage) cardFace.style.backgroundImage = bgImage;
+    wrapper.appendChild(cardFace);
+
+    // 5. Retirer la carte originale du slot immédiatement
+    if (cardEl) {
+        cardEl.remove();
+    }
+    slot.classList.remove('has-card');
+    slot.classList.remove('has-flying');
+
+    // 6. Perspective container (même technique que animateBurn)
+    const gameBoardWrapper = document.querySelector('.game-board-wrapper');
+    let perspContainer = null;
+    let graveTiltDeg = 0;
+    if (gameBoardWrapper) {
+        const gameBoard = document.querySelector('.game-board');
+        if (gameBoard) {
+            const computedTransform = getComputedStyle(gameBoard).transform;
+            if (computedTransform && computedTransform !== 'none') {
+                const mat = new DOMMatrix(computedTransform);
+                graveTiltDeg = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
+            }
+        }
+        const gbwRect = gameBoardWrapper.getBoundingClientRect();
+        perspContainer = document.createElement('div');
+        perspContainer.style.cssText = `
+            position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+            z-index: 10000; pointer-events: none;
+            perspective: 1500px;
+            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height / 2}px;
+        `;
+        document.body.appendChild(perspContainer);
+        perspContainer.appendChild(wrapper);
+    } else {
+        document.body.appendChild(wrapper);
+    }
+
+    // 7. Animation
+    const deathMarkDuration = 400;
+    const flyDuration = 500;
+    const totalDuration = deathMarkDuration + flyDuration;
+
+    await new Promise(resolve => {
+        const startTime = performance.now();
+
+        const safetyTimeout = setTimeout(() => {
+            graveRenderBlocked.delete(ownerKey);
+            wrapper.remove();
+            if (perspContainer) perspContainer.remove();
+            resolve();
+        }, totalDuration + 500);
+
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / totalDuration, 1);
+
+            const t1 = deathMarkDuration / totalDuration;
+
+            let x, y, scale, opacity, greyAmount, tiltDeg;
+
+            if (progress <= t1) {
+                // === PHASE 1: DEATH MARK ===
+                const p = progress / t1;
+                const ep = easeOutCubic(p);
+                x = startX;
+                y = startY;
+                scale = 1.0 - ep * 0.05;
+                opacity = 1.0;
+                greyAmount = ep;
+                tiltDeg = 0;
+            } else {
+                // === PHASE 2: FLY TO GRAVEYARD ===
+                const p = (progress - t1) / (1 - t1);
+                const ep = easeInOutCubic(p);
+                x = startX + (graveX - startX) * ep;
+                y = startY + (graveY - startY) * ep;
+                scale = 0.95 + (graveScale - 0.95) * ep;
+                opacity = 1.0 - 0.3 * ep;
+                greyAmount = 1.0;
+                tiltDeg = ep * graveTiltDeg;
+            }
+
+            wrapper.style.left = x + 'px';
+            wrapper.style.top = y + 'px';
+            wrapper.style.opacity = opacity;
+            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
+
+            // Effet visuel de mort : greyscale + darkening
+            if (greyAmount > 0) {
+                wrapper.style.filter = `grayscale(${greyAmount}) brightness(${1 - greyAmount * 0.3})`;
+            } else {
+                wrapper.style.filter = 'none';
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                clearTimeout(safetyTimeout);
+
+                // Cacher le wrapper AVANT de placer la carte
+                wrapper.style.display = 'none';
+
+                // Débloquer et mettre à jour le cimetière
+                graveRenderBlocked.delete(ownerKey);
+                if (state) {
+                    const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+                    if (graveyard) {
+                        updateGraveDisplay(ownerKey, graveyard);
+                        updateGraveTopCard(ownerKey, graveyard);
+                    }
+                }
+
+                wrapper.remove();
+                if (perspContainer) perspContainer.remove();
                 resolve();
             }
         }
@@ -1142,10 +1574,226 @@ function createCardElementForAnimation(card) {
     return el;
 }
 
-function animateSpell(data) {
-    // Afficher la carte du sort
+/**
+ * Animation de révélation d'un sort ou piège — style Hearthstone/Arena
+ * La carte apparaît en grand (gauche = joueur, droite = adversaire)
+ * puis vole vers le cimetière du propriétaire.
+ */
+async function animateSpellReveal(card, casterPlayerNum) {
+    const isMine = casterPlayerNum === myNum;
+    const side = isMine ? 'me' : 'opp';
+    const cardWidth = 105;
+    const cardHeight = 140;
+
+    // 1. Créer l'élément carte (version on-field : juste le nom, comme au cimetière)
+    const cardEl = (typeof makeCard === 'function')
+        ? makeCard(card, false)
+        : createCardElementForAnimation(card);
+    const bgImage = cardEl.style.backgroundImage;
+    cardEl.style.width = cardWidth + 'px';
+    cardEl.style.height = cardHeight + 'px';
+    cardEl.style.margin = '0';
+    cardEl.style.position = 'absolute';
+    cardEl.style.top = '0';
+    cardEl.style.left = '0';
+    if (bgImage) cardEl.style.backgroundImage = bgImage;
+
+    // 2. Calculer la position showcase (gauche ou droite du game-board)
+    const gameBoard = document.querySelector('.game-board');
+    if (!gameBoard) return;
+    const gbRect = gameBoard.getBoundingClientRect();
+    const showcaseScale = 1.8;
+    const showcaseX = isMine
+        ? gbRect.left + gbRect.width * 0.20 - (cardWidth * showcaseScale) / 2
+        : gbRect.left + gbRect.width * 0.80 - (cardWidth * showcaseScale) / 2;
+    const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardHeight * showcaseScale) / 2;
+
+    // 3. Calculer la position du cimetière du caster
+    const graveEl = document.getElementById(side + '-grave-box');
+    let graveX = showcaseX;
+    let graveY = showcaseY + 200;
+    let graveScale = 1.0;
+    if (graveEl) {
+        const gRect = graveEl.getBoundingClientRect();
+        graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
+        graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
+        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+    }
+
+    // 4. Wrapper positionné
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed; z-index: 10000; pointer-events: none;
+        left: ${showcaseX}px; top: ${showcaseY}px;
+        width: ${cardWidth}px; height: ${cardHeight}px;
+        transform-origin: center center;
+        transform: scale(0.3); opacity: 0;
+    `;
+    wrapper.appendChild(cardEl);
+
+    // 5. Perspective container pour le fly-to-graveyard (même technique que animateBurn)
+    const gameBoardWrapper = document.querySelector('.game-board-wrapper');
+    let perspContainer = null;
+    let graveTiltDeg = 0;
+    if (gameBoardWrapper) {
+        const gb = document.querySelector('.game-board');
+        if (gb) {
+            const computedTransform = getComputedStyle(gb).transform;
+            if (computedTransform && computedTransform !== 'none') {
+                const mat = new DOMMatrix(computedTransform);
+                graveTiltDeg = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
+            }
+        }
+        const gbwRect = gameBoardWrapper.getBoundingClientRect();
+        perspContainer = document.createElement('div');
+        perspContainer.style.cssText = `
+            position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+            z-index: 10000; pointer-events: none;
+            perspective: 1500px;
+            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height / 2}px;
+        `;
+        document.body.appendChild(perspContainer);
+        perspContainer.appendChild(wrapper);
+    } else {
+        document.body.appendChild(wrapper);
+    }
+
+    // 6. Durées des phases
+    const materializeDuration = 300;
+    const holdDuration = 1000;
+    const shrinkDuration = 300;
+    const flyDuration = 400;
+    const impactDuration = 100;
+    const totalDuration = materializeDuration + holdDuration + shrinkDuration + flyDuration + impactDuration;
+
+    await new Promise(resolve => {
+        const startTime = performance.now();
+
+        const safetyTimeout = setTimeout(() => {
+            wrapper.remove();
+            if (perspContainer) perspContainer.remove();
+            resolve();
+        }, totalDuration + 1000);
+
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / totalDuration, 1);
+
+            const t1 = materializeDuration / totalDuration;
+            const t2 = (materializeDuration + holdDuration) / totalDuration;
+            const t3 = (materializeDuration + holdDuration + shrinkDuration) / totalDuration;
+            const t4 = (materializeDuration + holdDuration + shrinkDuration + flyDuration) / totalDuration;
+
+            let x, y, scale, opacity, tiltDeg, glowIntensity;
+
+            if (progress <= t1) {
+                // === PHASE 1: MATERIALIZE ===
+                const p = progress / t1;
+                const ep = easeOutBack(p);
+                x = showcaseX;
+                y = showcaseY;
+                scale = 0.3 + (showcaseScale - 0.3) * ep;
+                opacity = easeOutCubic(p);
+                tiltDeg = 0;
+                glowIntensity = easeOutCubic(p);
+
+            } else if (progress <= t2) {
+                // === PHASE 2: HOLD / SHOWCASE ===
+                const p = (progress - t1) / (t2 - t1);
+                x = showcaseX;
+                y = showcaseY;
+                scale = showcaseScale;
+                opacity = 1;
+                tiltDeg = 0;
+                // Léger pulse du glow
+                glowIntensity = 0.8 + 0.2 * Math.sin(p * Math.PI * 2);
+
+            } else if (progress <= t3) {
+                // === PHASE 3: SHRINK ===
+                const p = (progress - t2) / (t3 - t2);
+                const ep = easeInOutCubic(p);
+                x = showcaseX;
+                y = showcaseY;
+                scale = showcaseScale + (1.0 - showcaseScale) * ep;
+                opacity = 1;
+                tiltDeg = 0;
+                glowIntensity = 1.0 - ep;
+
+            } else if (progress <= t4) {
+                // === PHASE 4: FLY TO GRAVEYARD ===
+                const p = (progress - t3) / (t4 - t3);
+                const ep = easeInOutCubic(p);
+                x = showcaseX + (graveX - showcaseX) * ep;
+                y = showcaseY + (graveY - showcaseY) * ep;
+                scale = 1.0 + (graveScale - 1.0) * ep;
+                opacity = 1 - 0.3 * ep;
+                tiltDeg = ep * graveTiltDeg;
+                glowIntensity = 0;
+
+            } else {
+                // === PHASE 5: IMPACT — pas de fade, transition nette ===
+                x = graveX;
+                y = graveY;
+                scale = graveScale;
+                opacity = 0.7;
+                tiltDeg = graveTiltDeg;
+                glowIntensity = 0;
+            }
+
+            wrapper.style.left = x + 'px';
+            wrapper.style.top = y + 'px';
+            wrapper.style.opacity = opacity;
+            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
+
+            // Glow doré
+            if (glowIntensity > 0) {
+                const glowSize1 = 30 * glowIntensity;
+                const glowSize2 = 60 * glowIntensity;
+                const glowAlpha1 = 0.8 * glowIntensity;
+                const glowAlpha2 = 0.4 * glowIntensity;
+                wrapper.style.boxShadow = `0 0 ${glowSize1}px rgba(255, 215, 0, ${glowAlpha1}), 0 0 ${glowSize2}px rgba(255, 215, 0, ${glowAlpha2})`;
+                wrapper.style.borderRadius = '8px';
+            } else {
+                wrapper.style.boxShadow = 'none';
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                clearTimeout(safetyTimeout);
+
+                // Cacher le wrapper AVANT de placer la carte pour éviter tout flash
+                wrapper.style.display = 'none';
+
+                // Mettre la carte directement dans le cimetière
+                const graveTopContainer = document.getElementById(side + '-grave-top');
+                if (graveTopContainer && typeof makeCard === 'function') {
+                    graveTopContainer.classList.remove('empty');
+                    graveTopContainer.innerHTML = '';
+                    const graveCardEl = makeCard(card, false);
+                    graveCardEl.classList.add('grave-card', 'in-graveyard');
+                    graveTopContainer.appendChild(graveCardEl);
+                }
+
+                // Bloquer le re-render du cimetière pour éviter le clignotement
+                // quand le state update arrive et que render() appelle updateGraveTopCard()
+                graveRenderBlocked.add(side);
+                setTimeout(() => graveRenderBlocked.delete(side), 500);
+
+                wrapper.remove();
+                if (perspContainer) perspContainer.remove();
+                resolve();
+            }
+        }
+
+        requestAnimationFrame(animate);
+    });
+}
+
+async function animateSpell(data) {
+    // Afficher la carte du sort avec animation de révélation
     if (data.spell) {
-        showCardShowcase(data.spell);
+        await animateSpellReveal(data.spell, data.caster);
     }
     
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
@@ -1198,14 +1846,47 @@ function animateHeal(data) {
     }
 }
 
-function animateTrap(data) {
-    // Afficher la carte du piège
-    if (data.trap) {
-        showCardShowcase(data.trap);
-    }
-    
+function animateTrapPlace(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
+    if (!trapSlot) return;
+
+    // Aura de révélation : flash + anneaux d'énergie
+    trapSlot.classList.add('revealing');
+
+    const flash = document.createElement('div');
+    flash.className = 'trap-reveal-flash';
+    trapSlot.appendChild(flash);
+
+    const ring1 = document.createElement('div');
+    ring1.className = 'trap-reveal-ring';
+    trapSlot.appendChild(ring1);
+
+    setTimeout(() => {
+        const ring2 = document.createElement('div');
+        ring2.className = 'trap-reveal-ring';
+        trapSlot.appendChild(ring2);
+        setTimeout(() => ring2.remove(), 700);
+    }, 150);
+
+    // Nettoyage
+    setTimeout(() => {
+        flash.remove();
+        ring1.remove();
+        trapSlot.classList.remove('revealing');
+    }, 800);
+}
+
+async function animateTrap(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
+
+    // 1. Afficher la carte du piège avec animation de révélation
+    if (data.trap) {
+        await animateSpellReveal(data.trap, data.player);
+    }
+
+    // 2. Explosion du slot du piège
     if (trapSlot) {
         trapSlot.classList.add('triggered');
         const rect = trapSlot.getBoundingClientRect();
@@ -1223,8 +1904,6 @@ function animateTrap(data) {
 // Slots en cours d'animation - render() ne doit pas les toucher
 let animatingSlots = new Set();
 
-// Cartes cachées en attente de révélation (pendant la phase de déplacement)
-let hiddenCards = new Set();
 
 /**
  * Réinitialise tous les états d'animation pour éviter les bugs de persistance
@@ -1233,7 +1912,6 @@ let hiddenCards = new Set();
 function resetAnimationStates() {
     // Vider les sets d'état
     animatingSlots.clear();
-    hiddenCards.clear();
 
     // NE PAS vider la file d'animation - laisser les animations se terminer naturellement
     // Cela évite de perdre des animations comme zdejebel qui arrivent en fin de tour
@@ -1293,11 +1971,8 @@ function startFlyingAnimation(cardEl) {
 // Animation d'invocation - overlay indépendant du render
 // La carte "tombe" sur le plateau avec un effet de rebond
 function animateSummon(data) {
-    // N'animer que les créatures de l'adversaire (pas les nôtres)
-    // SAUF si animateForLocal est true (cas où on déplace puis place sur le même slot)
-    if (data.animateForOpponent && data.player === myNum && !data.animateForLocal) {
-        return; // Notre carte est déjà visible, pas besoin d'animation
-    }
+    // N'animer que les créatures adverses (le joueur voit déjà ses propres cartes posées pendant le planning)
+    if (data.player === myNum) return;
 
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
@@ -1356,9 +2031,11 @@ function animateSummon(data) {
 }
 
 function animateMove(data) {
-    // N'animer que les déplacements de l'adversaire (pas les nôtres)
+    console.log('[animateMove] Called with:', data, 'myNum:', myNum);
+    // N'animer que les déplacements adverses (le joueur voit déjà ses propres déplacements)
     if (data.player === myNum) {
-        return; // Nos cartes sont déjà à leur nouvelle position
+        console.log('[animateMove] Skipped - own card');
+        return;
     }
 
     const owner = 'opp';
@@ -1368,11 +2045,17 @@ function animateMove(data) {
     const toKey = `${owner}-${data.toRow}-${data.toCol}`;
     animatingSlots.add(fromKey);
     animatingSlots.add(toKey);
+    console.log('[animateMove] Blocked slots:', fromKey, toKey);
 
     const fromSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.fromRow}"][data-col="${data.fromCol}"]`);
     const toSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
 
-    if (!fromSlot || !toSlot) return;
+    console.log('[animateMove] fromSlot:', fromSlot, 'toSlot:', toSlot);
+    console.log('[animateMove] fromSlot has card?', fromSlot?.classList.contains('has-card'), 'children:', fromSlot?.children.length);
+    if (!fromSlot || !toSlot) {
+        console.log('[animateMove] ABORT - slot not found');
+        return;
+    }
 
     // Vider les DEUX slots immédiatement (pour éviter le doublon visuel)
     const labelFrom = fromSlot.querySelector('.slot-label');
@@ -1388,30 +2071,39 @@ function animateMove(data) {
     // Récupérer les positions
     const fromRect = fromSlot.getBoundingClientRect();
     const toRect = toSlot.getBoundingClientRect();
+    const dx = toRect.left - fromRect.left;
+    const dy = toRect.top - fromRect.top;
+    console.log('[animateMove] from:', fromRect.left, fromRect.top, '→ to:', toRect.left, toRect.top, 'delta:', dx, dy);
 
-    // Créer une carte pour l'animation
+    // Créer une carte overlay (makeCard met le backgroundImage en inline, on ne doit pas l'écraser)
     const movingCard = makeCard(data.card, false);
-    movingCard.classList.add('card-moving');
+    movingCard.style.position = 'fixed';
     movingCard.style.left = fromRect.left + 'px';
     movingCard.style.top = fromRect.top + 'px';
     movingCard.style.width = fromRect.width + 'px';
     movingCard.style.height = fromRect.height + 'px';
+    movingCard.style.zIndex = '3000';
+    movingCard.style.pointerEvents = 'none';
+    movingCard.style.transform = 'translate3d(0px, 0px, 0px)';
+    movingCard.style.transition = 'transform 0.5s ease-in-out';
 
     document.body.appendChild(movingCard);
 
-    // Animer vers la destination
+    // Forcer le reflow puis déclencher la transition via transform
+    movingCard.getBoundingClientRect();
     requestAnimationFrame(() => {
-        movingCard.style.left = toRect.left + 'px';
-        movingCard.style.top = toRect.top + 'px';
+        console.log('[animateMove] Setting transform translate3d(%s, %s)', dx, dy);
+        movingCard.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
     });
 
-    // Nettoyer après l'animation
+    // Nettoyer après l'animation (500ms transition + 100ms marge)
     setTimeout(() => {
+        console.log('[animateMove] Cleanup - removing overlay');
         movingCard.remove();
         animatingSlots.delete(fromKey);
         animatingSlots.delete(toKey);
         render();
-    }, 550);
+    }, 600);
 }
 
 // Afficher une carte à l'écran (pour sorts et pièges)
@@ -1426,27 +2118,37 @@ function showCardShowcase(card) {
 }
 
 function canPlay() {
-    if (!state) return false;
-    if (state.phase !== 'planning') return false;
-    if (state.me.ready) return false;
+    if (!state) {
+        console.log('[canPlay] false: no state');
+        return false;
+    }
+    if (state.phase !== 'planning') {
+        console.log('[canPlay] false: phase is', state.phase, 'not planning');
+        return false;
+    }
+    if (state.me.ready) {
+        console.log('[canPlay] false: already ready');
+        return false;
+    }
     return true;
 }
 
 function updateTimerDisplay(t) {
     const endTurnBtn = document.getElementById('end-turn-btn');
-    
+    const timerSpan = endTurnBtn.querySelector('.end-turn-timer');
+
     if (t > 0 && t <= 15 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {
-        // Afficher le compteur dans le bouton
-        endTurnBtn.innerHTML = `<span class="btn-timer">${t}</span>`;
+        // Afficher le compteur dans le bouton (sans changer les couleurs)
+        if (timerSpan) timerSpan.textContent = t;
         endTurnBtn.classList.add('has-timer');
-        endTurnBtn.classList.toggle('urgent', t <= 5);
+        endTurnBtn.classList.remove('has-phase');
     } else {
-        // Remettre "FIN DU TOUR"
-        if (endTurnBtn.classList.contains('has-timer') || endTurnBtn.innerHTML.includes('btn-timer')) {
-            endTurnBtn.innerHTML = '<span>FIN DU</span><span>TOUR</span>';
-            endTurnBtn.classList.remove('has-timer', 'urgent');
+        // Masquer le timer
+        if (endTurnBtn.classList.contains('has-timer')) {
+            if (timerSpan) timerSpan.textContent = '';
+            endTurnBtn.classList.remove('has-timer');
         }
-        
+
         // À 0, griser immédiatement le bouton comme si on avait cliqué
         if (t <= 0 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {
             endTurnBtn.classList.add('waiting');
@@ -1458,48 +2160,40 @@ let phaseMessageTimeout = null;
 let phaseMessageFadeTimeout = null;
 
 function showPhaseMessage(text, type) {
-    const el = document.getElementById('phase-indicator');
-    
+    const endTurnBtn = document.getElementById('end-turn-btn');
+    const phaseEl = endTurnBtn.querySelector('.end-turn-phase');
+
     // Clear les timeouts précédents
     if (phaseMessageTimeout) clearTimeout(phaseMessageTimeout);
     if (phaseMessageFadeTimeout) clearTimeout(phaseMessageFadeTimeout);
-    
-    el.textContent = text;
-    el.className = 'phase-indicator ' + type + ' visible';
-    
-    // Marquer qu'un message est en cours d'affichage
-    el.dataset.showing = 'true';
-    
-    // Message éphémère sauf pour resolution
-    if (type !== 'resolution') {
+
+    // Afficher la phase dans le bouton
+    phaseEl.textContent = text;
+    endTurnBtn.classList.add('has-phase');
+    endTurnBtn.classList.remove('has-timer');
+
+    // Message éphémère sauf pendant la résolution - retour à "FIN DE TOUR" après 2s
+    if (type !== 'resolution' && (!state || state.phase !== 'resolution')) {
         phaseMessageTimeout = setTimeout(() => {
-            el.classList.add('fade-out');
-            phaseMessageFadeTimeout = setTimeout(() => {
-                el.classList.remove('visible');
-                el.dataset.showing = 'false';
-            }, 500);
+            endTurnBtn.classList.remove('has-phase');
         }, 2000);
     }
 }
 
 function hidePhaseMessage() {
-    const el = document.getElementById('phase-indicator');
+    const endTurnBtn = document.getElementById('end-turn-btn');
     if (phaseMessageTimeout) clearTimeout(phaseMessageTimeout);
     if (phaseMessageFadeTimeout) clearTimeout(phaseMessageFadeTimeout);
-    el.classList.add('fade-out');
-    phaseMessageFadeTimeout = setTimeout(() => {
-        el.classList.remove('visible');
-        el.dataset.showing = 'false';
-    }, 500);
+    endTurnBtn.classList.remove('has-phase');
 }
 
 function updatePhaseDisplay() {
     if (!state) return;
-    
+
     // Ne pas masquer si un message est en cours d'affichage (avec son propre timeout)
-    const el = document.getElementById('phase-indicator');
-    if (el.dataset.showing === 'true') return;
-    
+    const endTurnBtn = document.getElementById('end-turn-btn');
+    if (endTurnBtn.classList.contains('has-phase')) return;
+
     // Ne pas afficher de message ici - le serveur envoie les messages de sous-phases
     if (state.phase !== 'resolution') {
         hidePhaseMessage();
@@ -1557,6 +2251,7 @@ function startGame() {
     document.getElementById('mulligan-overlay').classList.add('hidden');
     document.getElementById('game-container').classList.add('active');
     buildBattlefield();
+    setupCustomDrag();
     render();
     log('🎮 Tour 1 - Partie lancée !', 'phase');
     // Pas de popup "Phase de repositionnement" au tour 1 car pas de créatures
@@ -1596,9 +2291,6 @@ function doMulligan() {
 }
 
 function setupHeroes() {
-    document.getElementById('me-name').textContent = state.me.heroName;
-    document.getElementById('opp-name').textContent = state.opponent.heroName;
-
     // Setup hero backgrounds et titres
     const meHero = state.me.hero;
     const oppHero = state.opponent.hero;
@@ -1675,53 +2367,10 @@ function setupHeroes() {
 }
 
 function setupHeroDragDrop(heroEl, owner) {
-    // Fonction pour vérifier si le sort peut cibler ce héros
-    const canTargetThisHero = (spell) => {
-        if (!spell || spell.type !== 'spell') return false;
-        if (spell.pattern === 'hero') {
-            if (spell.targetEnemy && owner === 'me') return false; // Frappe directe = adversaire seulement
-            if (spell.targetSelf && owner === 'opp') return false; // Cristal de mana = soi-même seulement
-            return true;
-        }
-        if (spell.canTargetHero) return true;
-        return false;
-    };
-    
-    heroEl.ondragover = (e) => {
-        e.preventDefault();
-        if (!dragged || !canTargetThisHero(dragged)) return;
-        heroEl.classList.add('hero-drag-over');
-    };
-    
-    heroEl.ondragleave = () => {
-        heroEl.classList.remove('hero-drag-over');
-    };
-    
-    heroEl.ondrop = (e) => {
-        e.preventDefault();
-        heroEl.classList.remove('hero-drag-over');
-        
-        if (!dragged || !canTargetThisHero(dragged)) return;
-        if (!canPlay()) return;
-        if (dragged.cost > state.me.energy) {
-            dragged.triedToDrop = true;
-            return;
-        }
-        
-        const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
-        
-        // Envoyer le sort sur le héros (row = -1 pour indiquer un héros)
-        socket.emit('castSpell', { 
-            idx: dragged.idx, 
-            targetPlayer: targetPlayer, 
-            row: -1, 
-            col: -1 
-        });
-        
-        clearSel();
-        dragged = null;
-    };
-    
+    // Les handlers drag natifs ont été supprimés.
+    // Le custom drag gère le hover et le drop via CustomDrag callbacks
+    // (updateHoverFeedback + handleHandDrop dans game.js)
+
     // Note: onclick est géré dans setupHeroes pour permettre à la fois
     // le lancer de sort ET l'affichage du détail du héros
 }
@@ -2056,11 +2705,21 @@ function render() {
     // L'animation zdejebel gère elle-même l'affichage des HP
     const hasZdejebelPending = animationQueue.some(a => a.type === 'zdejebel') || zdejebelAnimationInProgress;
     if (!hasZdejebelPending) {
-        document.getElementById('me-hp').textContent = me.hp;
-        document.getElementById('opp-hp').textContent = opp.hp;
+        const meHpNum = document.querySelector('#me-hp .hero-hp-number');
+        const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
+        if (meHpNum) meHpNum.textContent = me.hp;
+        if (oppHpNum) oppHpNum.textContent = opp.hp;
     }
-    document.getElementById('me-energy').textContent = `${me.energy}/${me.maxEnergy}`;
-    document.getElementById('opp-energy').textContent = `${opp.energy}/${opp.maxEnergy}`;
+    const meManaNum = document.querySelector('#me-energy .hero-mana-number');
+    const oppManaNum = document.querySelector('#opp-energy .hero-mana-number');
+    if (meManaNum) {
+        meManaNum.textContent = `${me.energy}/${me.maxEnergy}`;
+        meManaNum.style.fontSize = (me.energy >= 10 || me.maxEnergy >= 10) ? '1em' : '';
+    }
+    if (oppManaNum) {
+        oppManaNum.textContent = `${opp.energy}/${opp.maxEnergy}`;
+        oppManaNum.style.fontSize = (opp.energy >= 10 || opp.maxEnergy >= 10) ? '1em' : '';
+    }
     // Mettre à jour les tooltips du deck
     const meDeckTooltip = document.getElementById('me-deck-tooltip');
     const oppDeckTooltip = document.getElementById('opp-deck-tooltip');
@@ -2097,7 +2756,7 @@ function render() {
         GameAnimations.startPendingDrawAnimations();
     }
     
-    if (me.ready) {
+    if (me.ready && state.phase === 'planning') {
         document.getElementById('end-turn-btn').classList.add('waiting');
     }
 }
@@ -2126,7 +2785,11 @@ function updateDeckDisplay(owner, deckCount) {
     });
 }
 
+// Bloquer le render du cimetière pendant les animations de burn
+const graveRenderBlocked = new Set(); // 'me' ou 'opp'
+
 function updateGraveDisplay(owner, graveyard) {
+    if (graveRenderBlocked.has(owner)) return;
     const stack = document.getElementById(`${owner}-grave-stack`);
     if (!stack) return;
     
@@ -2143,45 +2806,18 @@ function updateGraveDisplay(owner, graveyard) {
 }
 
 function updateGraveTopCard(owner, graveyard) {
+    if (graveRenderBlocked.has(owner)) return;
     const container = document.getElementById(`${owner}-grave-top`);
     if (!container) return;
-    
+
     if (graveyard && graveyard.length > 0) {
         const topCard = graveyard[graveyard.length - 1];
         container.classList.remove('empty');
-        
-        if (topCard.type === 'creature') {
-            container.innerHTML = `
-                <div class="mini-card">
-                    <div class="card-icon">${topCard.icon || '❓'}</div>
-                    <div class="card-name">${topCard.name || 'Inconnu'}</div>
-                    <div class="card-stats">
-                        <span class="atk">⚔️${topCard.atk}</span>
-                        <span class="hp">❤️${topCard.hp}</span>
-                    </div>
-                </div>
-            `;
-        } else if (topCard.type === 'spell') {
-            container.innerHTML = `
-                <div class="mini-card">
-                    <div class="card-icon">${topCard.icon || '✨'}</div>
-                    <div class="card-name">${topCard.name || 'Sort'}</div>
-                    <div class="card-stats">
-                        <span style="color:#9b59b6;">🔮 Sort</span>
-                    </div>
-                </div>
-            `;
-        } else if (topCard.type === 'trap') {
-            container.innerHTML = `
-                <div class="mini-card">
-                    <div class="card-icon">${topCard.icon || '⚠️'}</div>
-                    <div class="card-name">${topCard.name || 'Piège'}</div>
-                    <div class="card-stats">
-                        <span style="color:#e74c3c;">💥 Piège</span>
-                    </div>
-                </div>
-            `;
-        }
+        container.innerHTML = '';
+        // Utiliser le même template arena que le battlefield
+        const cardEl = makeCard(topCard, false);
+        cardEl.classList.add('grave-card', 'in-graveyard');
+        container.appendChild(cardEl);
     } else {
         container.classList.add('empty');
         container.innerHTML = '';
@@ -2196,7 +2832,10 @@ function renderField(owner, field) {
 
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
-            if (animatingSlots.has(slotKey)) continue;
+            if (animatingSlots.has(slotKey)) {
+                console.log('[renderField] Slot BLOCKED by animation:', slotKey);
+                continue;
+            }
 
             const label = slot.querySelector('.slot-label');
             slot.innerHTML = '';
@@ -2205,12 +2844,6 @@ function renderField(owner, field) {
             slot.classList.remove('has-card');
             slot.classList.remove('has-flying');
             const card = field[r][c];
-
-            // Si la carte est cachée (en attente de révélation), ne pas l'afficher
-            const cardKey = `${owner}-${r}-${c}`;
-            if (hiddenCards.has(cardKey)) {
-                continue; // Ne pas afficher cette carte, elle sera révélée plus tard
-            }
 
             if (card) {
                 slot.classList.add('has-card');
@@ -2231,21 +2864,15 @@ function renderField(owner, field) {
                 cardEl.onmouseleave = hideCardPreview;
                 cardEl.onmousemove = (e) => moveCardPreview(e);
 
-                // Drag & drop pour redéploiement (seulement mes cartes)
+                // Custom drag pour redéploiement (seulement mes cartes)
                 if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn) {
-                    cardEl.draggable = true;
-                    cardEl.ondragstart = (e) => {
-                        if (!canPlay()) { e.preventDefault(); return; }
-                        draggedFromField = { row: r, col: c, card };
-                        cardEl.classList.add('dragging');
-                        hideCardPreview();
-                        highlightMoveTargets(r, c, card);
-                    };
-                    cardEl.ondragend = () => {
-                        cardEl.classList.remove('dragging');
-                        draggedFromField = null;
-                        clearHighlights();
-                    };
+                    CustomDrag.makeDraggable(cardEl, {
+                        source: 'field',
+                        card: card,
+                        row: r,
+                        col: c,
+                        owner: owner
+                    });
                 }
 
                 // Clic gauche = zoom sur la carte (pour toutes les cartes)
@@ -2352,6 +2979,35 @@ function showCardBackPreview() {
     });
 }
 
+function makeHeroCard(hero, hp) {
+    const faction = hero.faction || 'neutral';
+    const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+    const rarityClass = rarityMap[hero.edition] || 'common';
+    const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
+    const el = document.createElement('div');
+    el.className = `card creature arena-style faction-${faction}`;
+    el.style.backgroundImage = `url('/cards/${hero.image}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+
+    el.innerHTML = `
+        <div class="arena-title"><div class="arena-name">${hero.name}</div></div>
+        <div class="arena-hero-hp">
+            <div class="arena-hero-hp-border">
+                <div class="arena-hero-hp-inner">
+                    <span class="arena-hero-hp-number">${hp}</span>
+                </div>
+            </div>
+        </div>
+        <div class="arena-text-zone">
+            <div class="arena-type">Héros</div>
+            <div class="arena-special">${hero.ability}</div>
+        </div>
+        ${rarityDiamond}`;
+
+    return el;
+}
+
 function showHeroPreview(hero, hp) {
     if (!hero) {
         hero = window.heroData?.me || window.heroData?.opp;
@@ -2362,35 +3018,19 @@ function showHeroPreview(hero, hp) {
 
     hideCardPreview();
     previewEl = document.createElement('div');
-    previewEl.className = 'hero-preview'; // Classe unique sans card-preview
+    previewEl.className = 'hero-preview';
 
     if (hero && hero.image) {
-        previewEl.style.backgroundImage = `url('/cards/${hero.image}')`;
-        previewEl.style.backgroundSize = 'cover';
-        previewEl.style.backgroundPosition = 'center';
-        previewEl.innerHTML = `
-            <div class="hero-preview-title" style="background: ${hero.titleColor}">${hero.name}</div>
-            <div class="hero-preview-text-zone">
-                <div class="hero-preview-type">Héros</div>
-                <div class="hero-preview-ability">${hero.ability}</div>
-            </div>
-            <div class="hero-preview-edition">
-                <img src="/css/edition_${hero.edition}.png" alt="Edition">
-            </div>
-            <div class="hero-preview-hp">${hp}</div>
-        `;
+        const cardEl = makeHeroCard(hero, hp);
+        previewEl.appendChild(cardEl);
     } else {
-        previewEl.innerHTML = `
-            <div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>
-        `;
+        previewEl.innerHTML = `<div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>`;
     }
     document.body.appendChild(previewEl);
-    console.log('[HeroPreview] Created element:', previewEl, 'hero:', hero?.name);
-    const el = previewEl; // Garder une référence locale
+    const el = previewEl;
     requestAnimationFrame(() => {
         if (el && el.parentNode) {
             el.classList.add('visible');
-            console.log('[HeroPreview] Added visible class');
         }
     });
 }
@@ -2404,35 +3044,15 @@ function showHeroDetail(hero, hp) {
         hp = state?.me?.hp || state?.opponent?.hp || 20;
     }
 
-    // Créer la modal de détail du héros
-    const modal = document.createElement('div');
-    modal.className = 'hero-detail-modal';
-    modal.innerHTML = `
-        <div class="hero-detail-content">
-            <div class="hero-detail-card" style="background-image: url('/cards/${hero.image}')">
-                <div class="hero-detail-title" style="background: ${hero.titleColor}">${hero.name}</div>
-                <div class="hero-detail-text-zone">
-                    <div class="hero-detail-type">Héros</div>
-                    <div class="hero-detail-ability">${hero.ability}</div>
-                </div>
-                <div class="hero-detail-edition">
-                    <img src="/css/edition_${hero.edition}.png" alt="Edition ${hero.edition}">
-                </div>
-                <div class="hero-detail-hp">${hp}</div>
-            </div>
-        </div>
-    `;
+    const overlay = document.getElementById('card-zoom-overlay');
+    const container = document.getElementById('card-zoom-container');
 
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            modal.remove();
-        }
-    };
+    container.innerHTML = '';
+    const cardEl = makeHeroCard(hero, hp);
+    container.appendChild(cardEl);
 
-    document.body.appendChild(modal);
-    requestAnimationFrame(() => {
-        modal.classList.add('visible');
-    });
+    zoomCardData = hero;
+    overlay.classList.remove('hidden');
 }
 
 function moveCardPreview(e) {
@@ -2452,8 +3072,8 @@ function renderTraps() {
             slot.classList.remove('has-trap', 'mine');
             if (trap) {
                 slot.classList.add('has-trap', 'mine');
-                slot.textContent = '💣';
-                
+                slot.innerHTML = '<img class="trap-icon-img mine" src="/css/beartraparmed.png" alt="trap">';
+
                 // Hover preview pour voir le piège posé
                 const trapCard = state.me.trapCards ? state.me.trapCards[i] : null;
                 if (trapCard) {
@@ -2462,7 +3082,7 @@ function renderTraps() {
                     slot.onmousemove = (e) => moveCardPreview(e);
                 }
             } else {
-                slot.textContent = '';
+                slot.innerHTML = '';
                 slot.onmouseenter = null;
                 slot.onmouseleave = null;
                 slot.onmousemove = null;
@@ -2476,9 +3096,9 @@ function renderTraps() {
             slot.classList.remove('has-trap', 'mine');
             if (trap) {
                 slot.classList.add('has-trap');
-                slot.textContent = '❓';
+                slot.innerHTML = '<img class="trap-icon-img enemy" src="/css/beartraparmed.png" alt="trap">';
             } else {
-                slot.textContent = '';
+                slot.innerHTML = '';
             }
         }
     });
@@ -2519,8 +3139,15 @@ function renderHand(hand, energy) {
             el.style.visibility = 'hidden';
         }
 
-        // Toujours draggable
-        el.draggable = true;
+        // Custom drag
+        const tooExpensive = effectiveCost > energy;
+        CustomDrag.makeDraggable(el, {
+            source: 'hand',
+            card: card,
+            idx: i,
+            effectiveCost: effectiveCost,
+            tooExpensive: tooExpensive
+        });
 
         // Preview au survol
         el.onmouseenter = (e) => showCardPreview(card, e);
@@ -2530,33 +3157,6 @@ function renderHand(hand, energy) {
         el.onclick = (e) => {
             e.stopPropagation();
             showCardZoom(card);
-        };
-
-        el.ondragstart = (e) => {
-            if (!canPlay()) { e.preventDefault(); return; }
-
-            // Stocker si la carte est trop chère (avec coût effectif)
-            const tooExpensive = effectiveCost > energy;
-
-            dragged = { ...card, idx: i, tooExpensive, effectiveCost };
-            draggedFromField = null;
-            el.classList.add('dragging');
-            hideCardPreview(); // Cacher le preview quand on drag
-
-            // Highlight même si trop cher (pour montrer où ça irait)
-            highlightValidSlots(card);
-        };
-        el.ondragend = (e) => {
-            el.classList.remove('dragging');
-
-            // Si on a essayé de poser une carte trop chère, faire vibrer
-            if (dragged && dragged.tooExpensive && dragged.triedToDrop) {
-                el.classList.add('shake');
-                setTimeout(() => el.classList.remove('shake'), 400);
-            }
-
-            dragged = null;
-            clearHighlights();
         };
 
         panel.appendChild(el);
@@ -2625,6 +3225,9 @@ function makeCard(card, inHand, discountedCost = null) {
     // Carte style Arena (Magic Arena) : pilule stats en bas à droite, mana en rond bleu
     if (card.arenaStyle && card.image) {
         el.classList.add('arena-style');
+        if (card.faction) {
+            el.classList.add(`faction-${card.faction}`);
+        }
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
         // Capacités communes (sans shooter/fly car déjà dans le type)
@@ -2655,15 +3258,21 @@ function makeCard(card, inHand, discountedCost = null) {
 
         // Capacité spéciale/unique si présente
         let specialAbility = '';
-        if (card.onHeroHit === 'draw') {
-            specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
-        }
-        if (card.onDeath?.damageHero) {
-            specialAbility = `À la mort de cette créature, le héros adverse subit ${card.onDeath.damageHero} blessures.`;
+        if (card.description) {
+            specialAbility = card.description;
+        } else {
+            if (card.onHeroHit === 'draw') {
+                specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
+            }
+            if (card.onDeath?.damageHero) {
+                specialAbility = `À la mort de cette créature, le héros adverse subit ${card.onDeath.damageHero} blessures.`;
+            }
         }
 
-        // Icône d'édition
-        const editionIcon = card.edition ? `edition_${card.edition}.png` : null;
+        // Diamant de rareté basé sur l'édition
+        const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+        const rarityClass = rarityMap[card.edition] || 'common';
+        const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
 
         // Ligne de type complète
         let typeLineText = `Créature - ${combatTypeText}`;
@@ -2674,27 +3283,50 @@ function makeCard(card, inHand, discountedCost = null) {
         // Style du titre (couleur personnalisée si définie)
         const titleStyle = card.titleColor ? `style="background: ${card.titleColor}"` : '';
 
+        // Les sorts et pièges n'ont pas de stats
+        const isSpell = card.type === 'spell';
+        const isTrap = card.type === 'trap';
+        const noStats = isSpell || isTrap;
+
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
-            el.innerHTML = `
-                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
-                <div class="arena-mana">${card.cost}</div>
-                <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
+            if (noStats) {
+                el.innerHTML = `
+                    <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                    <div class="arena-mana">${card.cost}</div>`;
+            } else {
+                el.innerHTML = `
+                    <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                    <div class="arena-mana">${card.cost}</div>
+                    <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
+            }
             return el;
         }
 
         // Version complète (main, hover, cimetière)
-        el.innerHTML = `
-            <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
-            <div class="arena-text-zone">
-                <div class="arena-type">${typeLineText}</div>
-                ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
-                ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
-            </div>
-            ${editionIcon ? `<div class="arena-edition"><img src="/css/${editionIcon}" alt="Edition ${card.edition}"></div>` : ''}
-            <div class="arena-mana ${costClass}">${displayCost}</div>
-            <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
+        if (noStats) {
+            const typeName = isTrap ? 'Piège' : 'Sort';
+            el.innerHTML = `
+                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                <div class="arena-text-zone">
+                    <div class="arena-type">${typeName}</div>
+                    ${card.description ? `<div class="arena-special">${card.description}</div>` : ''}
+                </div>
+                ${rarityDiamond}
+                <div class="arena-mana ${costClass}">${displayCost}</div>`;
+        } else {
+            el.innerHTML = `
+                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                <div class="arena-text-zone">
+                    <div class="arena-type">${typeLineText}</div>
+                    ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
+                    ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
+                </div>
+                ${rarityDiamond}
+                <div class="arena-mana ${costClass}">${displayCost}</div>
+                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.atk}/${hp}</div>`;
+        }
         return el;
     }
 
@@ -2927,8 +3559,12 @@ function dropOnTrap(owner, row) {
 }
 
 function endTurn() {
+    console.log('[endTurn] called, canPlay:', canPlay(), 'state:', state ? { phase: state.phase, ready: state.me?.ready } : null);
     if (!canPlay()) return;
-    document.getElementById('end-turn-btn').classList.add('waiting');
+    const btn = document.getElementById('end-turn-btn');
+    // Ne pas accepter le clic si le bouton n'affiche pas "FIN DE TOUR"
+    if (btn.classList.contains('waiting') || btn.classList.contains('has-phase')) return;
+    btn.classList.add('waiting');
     socket.emit('ready');
 }
 
@@ -2938,8 +3574,9 @@ function openGraveyard(owner) {
     const container = document.getElementById('graveyard-cards');
     
     const graveyard = owner === 'me' ? state.me.graveyard : state.opponent.graveyard;
-    const playerName = owner === 'me' ? state.me.heroName : state.opponent.heroName;
-    
+    const pseudoEl = document.getElementById(owner === 'me' ? 'me-pseudo' : 'opp-pseudo');
+    const playerName = pseudoEl ? pseudoEl.textContent : (owner === 'me' ? 'Vous' : 'Adversaire');
+
     title.textContent = `Cimetière de ${playerName}`;
     container.innerHTML = '';
     
@@ -2948,6 +3585,7 @@ function openGraveyard(owner) {
     } else {
         graveyard.forEach(card => {
             const cardEl = makeCard(card, true);
+            cardEl.classList.add('in-graveyard');
             // Ajouter le preview au hover
             cardEl.onmouseenter = (e) => showCardPreview(card, e);
             cardEl.onmouseleave = hideCardPreview;
@@ -2986,22 +3624,69 @@ function clearSel() {
     clearHighlights();
 }
 
+// ==================== PANNEAUX UI ====================
+function closeAllPanels() {
+    document.getElementById('panelJournal').classList.remove('open');
+    document.getElementById('panelSettings').classList.remove('open');
+    document.getElementById('btnJournal').classList.remove('active');
+    document.getElementById('btnSettings').classList.remove('active');
+    document.getElementById('panel-overlay').classList.remove('visible');
+}
+
+function togglePanel(panelId, btnId) {
+    const panel = document.getElementById(panelId);
+    const btn = document.getElementById(btnId);
+    const isOpen = panel.classList.contains('open');
+    closeAllPanels();
+
+    if (!isOpen) {
+        panel.classList.add('open');
+        btn.classList.add('active');
+        document.getElementById('panel-overlay').classList.add('visible');
+    }
+}
+
 function toggleLog() {
-    document.getElementById('log-popup').classList.toggle('active');
+    togglePanel('panelJournal', 'btnJournal');
 }
 
 function toggleSettings() {
-    document.getElementById('settings-popup').classList.toggle('active');
+    togglePanel('panelSettings', 'btnSettings');
 }
+
+// Initialiser les event listeners des panneaux
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('btnJournal')?.addEventListener('click', () => togglePanel('panelJournal', 'btnJournal'));
+    document.getElementById('btnSettings')?.addEventListener('click', () => togglePanel('panelSettings', 'btnSettings'));
+    document.getElementById('closeJournal')?.addEventListener('click', closeAllPanels);
+    document.getElementById('closeSettings')?.addEventListener('click', closeAllPanels);
+    document.getElementById('panel-overlay')?.addEventListener('click', closeAllPanels);
+
+    // Update slider values display
+    const musicSlider = document.getElementById('musicVolume');
+    const sfxSlider = document.getElementById('sfxVolume');
+    if (musicSlider) {
+        musicSlider.addEventListener('input', (e) => {
+            document.getElementById('musicValue').textContent = e.target.value + '%';
+        });
+    }
+    if (sfxSlider) {
+        sfxSlider.addEventListener('input', (e) => {
+            document.getElementById('sfxValue').textContent = e.target.value + '%';
+        });
+    }
+});
 
 function setMusicVolume(val) {
     // TODO: Connecter à un système audio
     console.log('Music volume:', val);
+    document.getElementById('musicValue').textContent = val + '%';
 }
 
 function setSfxVolume(val) {
     // TODO: Connecter à un système audio
     console.log('SFX volume:', val);
+    document.getElementById('sfxValue').textContent = val + '%';
 }
 
 function surrender() {
@@ -3010,11 +3695,23 @@ function surrender() {
 
 function log(msg, type = 'action') {
     const el = document.createElement('div');
-    el.className = `log-entry log-${type}`;
-    el.textContent = msg;
+    el.className = `battle-log-entry ${type}`;
+
+    const time = document.createElement('div');
+    time.className = 'time';
+    const now = new Date();
+    time.textContent = now.toLocaleTimeString('fr-FR');
+
+    const message = document.createElement('div');
+    message.className = 'message';
+    message.textContent = msg;
+
+    el.appendChild(time);
+    el.appendChild(message);
+
     const c = document.getElementById('log-content');
-    c.appendChild(el);
-    c.scrollTop = c.scrollHeight;
+    // Insérer en haut (plus récent en premier)
+    c.insertBefore(el, c.firstChild);
 }
 
 // ==================== CARD ZOOM ====================
@@ -3054,7 +3751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('click', (e) => {
         // Fermer le log si on clique en dehors
         if (!e.target.closest('.log-popup') && !e.target.closest('.log-btn')) {
-            document.getElementById('log-popup').classList.remove('active');
+            document.getElementById('log-popup')?.classList.remove('active');
         }
         // Fermer settings si on clique en dehors
         if (!e.target.closest('.settings-popup') && !e.target.closest('.options-btn')) {

@@ -52,39 +52,27 @@
     <div class="game-container" id="game-container">
         <div class="top-bar">
             <div class="player-info-bar left">
-                <div class="rank-icon-container">
-                    <img src="/css/rangbronze.png" class="rank-icon" alt="Rang">
-                </div>
-                <div class="player-name-arrow-wrapper">
-                    <div class="player-name-arrow-border"></div>
-                    <div class="player-name-arrow">
-                        <span class="player-name-text" id="me-pseudo">DarkSlayer42</span>
-                        <span class="player-rank-title" id="me-name">Héros</span>
-                    </div>
-                </div>
-                <div class="energy-display">
-                    <div class="mana-orb" id="me-energy">1</div>
+                <div class="player-name-badge">
+                    <img src="/css/rangbronze.png" class="rank-icon" id="me-rank-icon" alt="Rang">
+                    <span class="player-name-text" id="me-pseudo">DarkSlayer42</span>
                 </div>
             </div>
             <div class="header-center">
                 <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
-                    <span>FIN DU</span>
-                    <span>TOUR</span>
+                    <div class="end-turn-inner">
+                        <span class="end-turn-text">FIN DE TOUR</span>
+                        <span class="end-turn-timer"></span>
+                        <span class="end-turn-phase"></span>
+                        <svg class="end-turn-hourglass" viewBox="0 0 24 24">
+                            <path d="M6 2v6l4 4-4 4v6h12v-6l-4-4 4-4V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5l-4-4V4h8v3.5l-4 4z"/>
+                        </svg>
+                    </div>
                 </button>
             </div>
             <div class="player-info-bar right">
-                <div class="energy-display">
-                    <div class="mana-orb" id="opp-energy">1</div>
-                </div>
-                <div class="player-name-arrow-wrapper">
-                    <div class="player-name-arrow-border"></div>
-                    <div class="player-name-arrow">
-                        <span class="player-name-text" id="opp-pseudo">ShadowMage99</span>
-                        <span class="player-rank-title" id="opp-name">Héros</span>
-                    </div>
-                </div>
-                <div class="rank-icon-container">
-                    <img src="/css/rangbronze.png" class="rank-icon" alt="Rang">
+                <div class="player-name-badge">
+                    <span class="player-name-text" id="opp-pseudo">ShadowMage99</span>
+                    <img src="/css/rangbronze.png" class="rank-icon" id="opp-rank-icon" alt="Rang">
                 </div>
             </div>
         </div>
@@ -99,7 +87,16 @@
                         <div class="hero-card-inner" id="me-hero-inner">
                             <div class="hero-title" id="me-hero-title">Hyrule, prophète ultime</div>
                         </div>
-                        <div class="hero-hp" id="me-hp">20</div>
+                        <div class="hero-hp" id="me-hp">
+                            <div class="hero-hp-inner">
+                                <span class="hero-hp-number">20</span>
+                            </div>
+                        </div>
+                        <div class="hero-mana" id="me-energy">
+                            <div class="hero-mana-inner">
+                                <span class="hero-mana-number">1/1</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="deck-grave-row">
                         <div class="deck-box" id="me-deck-box">
@@ -134,7 +131,16 @@
                         <div class="hero-card-inner" id="opp-hero-inner">
                             <div class="hero-title" id="opp-hero-title">Zdejebel, fille de satan</div>
                         </div>
-                        <div class="hero-hp" id="opp-hp">20</div>
+                        <div class="hero-hp" id="opp-hp">
+                            <div class="hero-hp-inner">
+                                <span class="hero-hp-number">20</span>
+                            </div>
+                        </div>
+                        <div class="hero-mana" id="opp-energy">
+                            <div class="hero-mana-inner">
+                                <span class="hero-mana-number">1/1</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="deck-grave-row">
                         <div class="grave-box clickable" id="opp-grave-box" onclick="openGraveyard('opp')">
@@ -164,41 +170,111 @@
         
         <div class="my-hand" id="my-hand"></div>
         <div class="opp-hand" id="opp-hand"></div>
-        
-        <div class="log-btn" onclick="toggleLog()">Journal de bataille</div>
-        <button class="options-btn" id="options-btn" onclick="toggleSettings()">⚙️</button>
-        <div class="log-popup" id="log-popup">
-            <div class="log-popup-header">
-                <h3>Journal de Bataille</h3>
-                <button class="popup-close-btn" onclick="toggleLog()">✕</button>
+
+        <!-- Overlay pour fermer les panneaux -->
+        <div class="panel-overlay" id="panel-overlay"></div>
+
+        <!-- Boutons sur le côté droit -->
+        <div class="buttons-right">
+            <div class="half-button bronze" id="btnJournal" title="Journal de bataille">
+                <div class="half-button-inner">
+                    <svg class="icon icon-book" viewBox="0 0 24 24">
+                        <path d="M6 2C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V4C20 2.9 19.11 2 18 2H6ZM6 4H11V12L8.5 10.5L6 12V4Z"/>
+                    </svg>
+                </div>
             </div>
-            <div class="log-content" id="log-content"></div>
+            <div class="half-button bronze" id="btnSettings" title="Paramètres">
+                <div class="half-button-inner">
+                    <svg class="icon icon-settings" viewBox="0 0 24 24">
+                        <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5A3.5 3.5 0 0 1 15.5 12A3.5 3.5 0 0 1 12 15.5M19.43 12.97C19.47 12.65 19.5 12.33 19.5 12C19.5 11.67 19.47 11.34 19.43 11L21.54 9.37C21.73 9.22 21.78 8.95 21.66 8.73L19.66 5.27C19.54 5.05 19.27 4.96 19.05 5.05L16.56 6.05C16.04 5.66 15.5 5.32 14.87 5.07L14.5 2.42C14.46 2.18 14.25 2 14 2H10C9.75 2 9.54 2.18 9.5 2.42L9.13 5.07C8.5 5.32 7.96 5.66 7.44 6.05L4.95 5.05C4.73 4.96 4.46 5.05 4.34 5.27L2.34 8.73C2.21 8.95 2.27 9.22 2.46 9.37L4.57 11C4.53 11.34 4.5 11.67 4.5 12C4.5 12.33 4.53 12.65 4.57 12.97L2.46 14.63C2.27 14.78 2.21 15.05 2.34 15.27L4.34 18.73C4.46 18.95 4.73 19.03 4.95 18.95L7.44 17.94C7.96 18.34 8.5 18.68 9.13 18.93L9.5 21.58C9.54 21.82 9.75 22 10 22H14C14.25 22 14.46 21.82 14.5 21.58L14.87 18.93C15.5 18.67 16.04 18.34 16.56 17.94L19.05 18.95C19.27 19.03 19.54 18.95 19.66 18.73L21.66 15.27C21.78 15.05 21.73 14.78 21.54 14.63L19.43 12.97Z"/>
+                    </svg>
+                </div>
+            </div>
         </div>
-        <div class="settings-popup" id="settings-popup">
-            <div class="settings-popup-header">
-                <h3>Paramètres</h3>
-                <button class="popup-close-btn" onclick="toggleSettings()">✕</button>
+
+        <!-- Panneau Journal de Bataille -->
+        <div class="panel" id="panelJournal">
+            <div class="panel-border">
+                <div class="panel-inner">
+                    <div class="panel-header">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M6 2C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V4C20 2.9 19.11 2 18 2H6ZM6 4H11V12L8.5 10.5L6 12V4Z"/>
+                        </svg>
+                        <span class="panel-title">Journal de Bataille</span>
+                        <button class="panel-close" id="closeJournal">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="panel-content" id="log-content"></div>
+                </div>
             </div>
-            <div class="settings-row">
-                <label>🎵 Musique</label>
-                <input type="range" min="0" max="100" value="50" onchange="setMusicVolume(this.value)">
+        </div>
+
+        <!-- Panneau Settings -->
+        <div class="panel" id="panelSettings">
+            <div class="panel-border">
+                <div class="panel-inner">
+                    <div class="panel-header">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5A3.5 3.5 0 0 1 15.5 12A3.5 3.5 0 0 1 12 15.5M19.43 12.97C19.47 12.65 19.5 12.33 19.5 12C19.5 11.67 19.47 11.34 19.43 11L21.54 9.37C21.73 9.22 21.78 8.95 21.66 8.73L19.66 5.27C19.54 5.05 19.27 4.96 19.05 5.05L16.56 6.05C16.04 5.66 15.5 5.32 14.87 5.07L14.5 2.42C14.46 2.18 14.25 2 14 2H10C9.75 2 9.54 2.18 9.5 2.42L9.13 5.07C8.5 5.32 7.96 5.66 7.44 6.05L4.95 5.05C4.73 4.96 4.46 5.05 4.34 5.27L2.34 8.73C2.21 8.95 2.27 9.22 2.46 9.37L4.57 11C4.53 11.34 4.5 11.67 4.5 12C4.5 12.33 4.53 12.65 4.57 12.97L2.46 14.63C2.27 14.78 2.21 15.05 2.34 15.27L4.34 18.73C4.46 18.95 4.73 19.03 4.95 18.95L7.44 17.94C7.96 18.34 8.5 18.68 9.13 18.93L9.5 21.58C9.54 21.82 9.75 22 10 22H14C14.25 22 14.46 21.82 14.5 21.58L14.87 18.93C15.5 18.67 16.04 18.34 16.56 17.94L19.05 18.95C19.27 19.03 19.54 18.95 19.66 18.73L21.66 15.27C21.78 15.05 21.73 14.78 21.54 14.63L19.43 12.97Z"/>
+                        </svg>
+                        <span class="panel-title">Paramètres</span>
+                        <button class="panel-close" id="closeSettings">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="panel-content">
+                        <div class="setting-group">
+                            <div class="setting-label">Audio</div>
+                            <div class="setting-row">
+                                <span class="setting-name">Musique</span>
+                                <div class="slider-container">
+                                    <input type="range" class="setting-slider" min="0" max="100" value="50" id="musicVolume" onchange="setMusicVolume(this.value)">
+                                    <span class="slider-value" id="musicValue">50%</span>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <span class="setting-name">Effets sonores</span>
+                                <div class="slider-container">
+                                    <input type="range" class="setting-slider" min="0" max="100" value="50" id="sfxVolume" onchange="setSfxVolume(this.value)">
+                                    <span class="slider-value" id="sfxValue">50%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <div class="setting-label">Actions</div>
+                            <div class="surrender-pill" onclick="surrender()">
+                                <div class="surrender-pill-inner">
+                                    <span class="surrender-text">Capituler</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="settings-row">
-                <label>🔊 Effets sonores</label>
-                <input type="range" min="0" max="100" value="50" onchange="setSfxVolume(this.value)">
-            </div>
-            <button class="surrender-btn" onclick="surrender()">Capituler</button>
         </div>
     </div>
     
     <!-- Popup Cimetière -->
     <div class="graveyard-popup" id="graveyard-popup">
-        <div class="graveyard-popup-header">
-            <span class="graveyard-popup-title" id="graveyard-popup-title">Cimetière</span>
-            <button class="popup-close-btn" onclick="closeGraveyard()">✕</button>
-        </div>
-        <div class="graveyard-cards" id="graveyard-cards">
-            <div class="graveyard-empty">Aucune carte au cimetière</div>
+        <div class="graveyard-border">
+            <div class="graveyard-inner">
+                <div class="graveyard-header">
+                    <span class="graveyard-title" id="graveyard-popup-title">Cimetière</span>
+                    <button class="panel-close" onclick="closeGraveyard()">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="graveyard-cards" id="graveyard-cards">
+                    <div class="graveyard-empty">Aucune carte au cimetière</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -214,6 +290,8 @@
     <script src="/js/combat-vfx.js"></script>
     <script src="/js/combat-animation.js"></script>
     <script src="/js/card-renderer.js"></script>
+    <script src="/js/animations/effects.js"></script>
+    <script src="/js/custom-drag.js"></script>
     <script src="/js/game.js"></script>
 </body>
 </html>
