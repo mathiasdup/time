@@ -132,6 +132,18 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
+        // Regrouper les animations de deathTransform consécutives (jouées en parallèle)
+        if (animationQueue[0].type === 'deathTransform') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'deathTransform') {
+                batch.push(animationQueue.shift().data);
+            }
+            await Promise.all(batch.map(data => animateDeathTransform(data)));
+            await new Promise(resolve => setTimeout(resolve, 200));
+            processAnimationQueue(processorId);
+            return;
+        }
+
         // Regrouper les animations de burn consécutives (jouées en parallèle)
         if (animationQueue[0].type === 'burn') {
             const burnBatch = [];
@@ -235,6 +247,9 @@ async function executeAnimationAsync(type, data) {
             case 'death':
                 await animateDeathToGraveyard(data);
                 return;
+            case 'deathTransform':
+                await animateDeathTransform(data);
+                return;
             case 'discard':
                 await animateDiscard(data);
                 return;
@@ -256,6 +271,7 @@ async function executeAnimationAsync(type, data) {
         case 'damage': animateDamageFallback(data); break;
         case 'spellDamage': animateDamageFallback(data); break;
         case 'death': await animateDeathToGraveyard(data); break;
+        case 'deathTransform': await animateDeathTransform(data); break;
         case 'heroHit': animateHeroHitFallback(data); break;
         case 'zdejebel': await animateZdejebelDamage(data); break;
         case 'discard': await animateDiscard(data); break;
@@ -388,21 +404,55 @@ async function handlePixiHeroHit(data) {
 async function handleOnDeathDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
 
-    // Afficher un effet visuel spécial pour les dégâts de mort
+    // Cas 1 : dégâts à une créature (damageKiller — Torche vivante)
+    if (data.targetRow !== undefined && data.targetCol !== undefined) {
+        const slot = document.querySelector(
+            `.card-slot[data-owner="${owner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`
+        );
+        if (slot) {
+            // Secousse sur le slot
+            slot.classList.add('hit');
+            setTimeout(() => slot.classList.remove('hit'), 500);
+
+            // Slash VFX (style Zdejebel) si PixiJS disponible
+            const vfxReady = typeof CombatVFX !== 'undefined' && CombatVFX.initialized && CombatVFX.container;
+            if (vfxReady) {
+                try {
+                    const rect = slot.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+                    CombatVFX.createSlashEffect(x, y, data.damage);
+                } catch (e) {
+                    showDamageNumber(slot, data.damage);
+                }
+            } else {
+                showDamageNumber(slot, data.damage);
+            }
+
+            // Label "💀 Source"
+            const deathEffect = document.createElement('div');
+            deathEffect.className = 'on-death-effect';
+            deathEffect.innerHTML = `<span class="death-source">💀 ${data.source}</span>`;
+            slot.appendChild(deathEffect);
+            setTimeout(() => deathEffect.classList.add('active'), 50);
+            setTimeout(() => deathEffect.remove(), 1500);
+        }
+        await new Promise(r => setTimeout(r, 600));
+        return;
+    }
+
+    // Cas 2 : dégâts au héros (damageHero — Dragon Crépitant)
     const heroZone = document.querySelector(`.hero-zone.${owner}`);
     if (heroZone) {
-        // Créer un effet de flamme/explosion sur le héros
         const deathEffect = document.createElement('div');
         deathEffect.className = 'on-death-effect';
         deathEffect.innerHTML = `<span class="death-source">💀 ${data.source}</span>`;
         heroZone.appendChild(deathEffect);
 
-        // Animer l'effet
         setTimeout(() => deathEffect.classList.add('active'), 50);
         setTimeout(() => deathEffect.remove(), 1500);
     }
 
-    // Utiliser l'animation de dégâts sur héros existante
     await CombatAnimations.animateHeroHit({
         owner: owner,
         amount: data.damage
@@ -580,6 +630,7 @@ function setupCustomDrag() {
                 draggedFromField = null;
                 highlightValidSlots(data.card);
             } else if (data.source === 'field') {
+                if (data.card.abilities?.includes('immovable')) return;
                 draggedFromField = { row: data.row, col: data.col, card: data.card };
                 dragged = null;
                 highlightMoveTargets(data.row, data.col, data.card);
@@ -915,7 +966,7 @@ function handleAnimation(data) {
     console.log('[Animation] Received:', type, data);
 
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'heroHit', 'discard', 'burn', 'zdejebel', 'spell', 'trapTrigger'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'spell', 'trapTrigger'];
 
     if (queuedTypes.includes(type)) {
         queueAnimation(type, data);
@@ -939,6 +990,12 @@ function handleAnimation(data) {
                 break;
             case 'trapPlace':
                 animateTrapPlace(data);
+                break;
+            case 'shield':
+                animateShieldBreak(data);
+                break;
+            case 'startOfTurnTransform':
+                animateStartOfTurnTransform(data);
                 break;
         }
     }
@@ -970,6 +1027,10 @@ function handleAnimationBatch(animations) {
             return animateDeathToGraveyard(anim);
         }
 
+        if (anim.type === 'deathTransform') {
+            return animateDeathTransform(anim);
+        }
+
         return Promise.resolve();
     });
 
@@ -994,6 +1055,217 @@ function animateBuff(data) {
     }
 }
 
+let shieldIdCounter = 0;
+const shieldStartTimes = new Map(); // slotKey -> timestamp de première apparition
+
+/**
+ * Crée l'overlay SVG Bouclier Nid d'Abeilles (7 hexagones)
+ * avec animations de glow, reflet diagonal et rune centrale.
+ */
+function createShieldOverlay(slotKey) {
+    const n = ++shieldIdCounter;
+    const el = document.createElement('div');
+    el.className = 'shield-indicator';
+
+    el.innerHTML = `
+        <div class="shield-3d">
+            <svg viewBox="30 40 140 140" class="shield-svg">
+                <defs>
+                    <polygon id="hxB${n}" points="18,0 36,10.5 36,31.5 18,42 0,31.5 0,10.5"/>
+                    <linearGradient id="lnC${n}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:rgba(255,255,255,0.4)"/>
+                        <stop offset="50%" style="stop-color:rgba(200,220,250,0.25)"/>
+                        <stop offset="100%" style="stop-color:rgba(60,80,120,0.3)"/>
+                    </linearGradient>
+                    <radialGradient id="hxG${n}" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" style="stop-color:rgba(0,220,255,0.3)"/>
+                        <stop offset="60%" style="stop-color:rgba(0,200,240,0.12)"/>
+                        <stop offset="100%" style="stop-color:rgba(0,180,220,0)"/>
+                    </radialGradient>
+                    <clipPath id="hcC${n}">
+                        <polygon points="82,53 100,63.5 100,84.5 82,95 64,84.5 64,63.5"/>
+                        <polygon points="118,53 136,63.5 136,84.5 118,95 100,84.5 100,63.5"/>
+                        <polygon points="64,84 82,94.5 82,115.5 64,126 46,115.5 46,94.5"/>
+                        <polygon points="100,84 118,94.5 118,115.5 100,126 82,115.5 82,94.5"/>
+                        <polygon points="136,84 154,94.5 154,115.5 136,126 118,115.5 118,94.5"/>
+                        <polygon points="82,115 100,125.5 100,146.5 82,157 64,146.5 64,125.5"/>
+                        <polygon points="118,115 136,125.5 136,146.5 118,157 100,146.5 100,125.5"/>
+                    </clipPath>
+                    <linearGradient id="shG${n}" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" style="stop-color:rgba(255,255,255,0)"/>
+                        <stop offset="40%" style="stop-color:rgba(255,255,255,0.1)"/>
+                        <stop offset="50%" style="stop-color:rgba(255,255,255,0.3)"/>
+                        <stop offset="60%" style="stop-color:rgba(255,255,255,0.1)"/>
+                        <stop offset="100%" style="stop-color:rgba(255,255,255,0)"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- Hexagones structurels -->
+                <use href="#hxB${n}" x="64" y="53" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+                <use href="#hxB${n}" x="100" y="53" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+                <use href="#hxB${n}" x="46" y="84" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+                <use href="#hxB${n}" x="82" y="84" fill="none" stroke="url(#lnC${n})" stroke-width="1.3"/>
+                <use href="#hxB${n}" x="118" y="84" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+                <use href="#hxB${n}" x="64" y="115" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+                <use href="#hxB${n}" x="100" y="115" fill="none" stroke="url(#lnC${n})" stroke-width="1.2"/>
+
+                <!-- Hexagones lumineux animés — pulsation séquentielle -->
+                <use href="#hxB${n}" x="82" y="84" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.5)" stroke-width="1.5" opacity="0">
+                    <animate attributeName="opacity" values="0;0.8;0" dur="8s" repeatCount="indefinite" begin="0s"/>
+                </use>
+                <use href="#hxB${n}" x="64" y="53" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="1.3s"/>
+                </use>
+                <use href="#hxB${n}" x="100" y="53" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="2.6s"/>
+                </use>
+                <use href="#hxB${n}" x="46" y="84" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="3.9s"/>
+                </use>
+                <use href="#hxB${n}" x="118" y="84" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="5.2s"/>
+                </use>
+                <use href="#hxB${n}" x="64" y="115" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="6.5s"/>
+                </use>
+                <use href="#hxB${n}" x="100" y="115" fill="url(#hxG${n})" stroke="rgba(0,220,255,0.4)" stroke-width="1.2" opacity="0">
+                    <animate attributeName="opacity" values="0;0.6;0" dur="8s" repeatCount="indefinite" begin="7.8s"/>
+                </use>
+
+                <!-- Reflet diagonal animé -->
+                <g clip-path="url(#hcC${n})">
+                    <rect x="-50" y="0" width="35" height="220" fill="url(#shG${n})" transform="rotate(18 100 110)">
+                        <animate attributeName="x" values="-50;200;200;-50" dur="5s" repeatCount="indefinite" keyTimes="0;0.4;0.5;1"/>
+                        <animate attributeName="opacity" values="0;1;1;0;0" dur="5s" repeatCount="indefinite" keyTimes="0;0.05;0.4;0.45;1"/>
+                    </rect>
+                </g>
+
+                <!-- Rune centrale -->
+                <text x="100" y="112" font-size="16" fill="rgba(180,210,255,0.5)" text-anchor="middle" dominant-baseline="middle" style="filter: drop-shadow(0 0 6px rgba(150,200,255,0.8));">
+                    <animate attributeName="opacity" values="0.3;0.9;0.3" dur="4s" repeatCount="indefinite"/>
+                    \u16DF
+                </text>
+            </svg>
+        </div>
+    `;
+
+    // Reprendre l'animation là où elle en était (pas de reset au render)
+    if (slotKey) {
+        const now = performance.now();
+        if (!shieldStartTimes.has(slotKey)) {
+            shieldStartTimes.set(slotKey, now);
+        }
+        const elapsed = now - shieldStartTimes.get(slotKey);
+        const delayMs = -elapsed;
+        el.style.animationDelay = `${delayMs}ms`;
+        const shield3d = el.querySelector('.shield-3d');
+        if (shield3d) shield3d.style.animationDelay = `${delayMs}ms`;
+    }
+
+    return el;
+}
+
+function animateShieldBreak(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    if (!slot) return;
+    const cardEl = slot.querySelector('.card');
+    if (!cardEl) return;
+
+    // Nettoyer le startTime pour que le prochain bouclier sur ce slot reparte à zéro
+    const shieldSlotKey = `${owner}-${data.row}-${data.col}`;
+    shieldStartTimes.delete(shieldSlotKey);
+
+    const rect = slot.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    // Flash + disparition du bouclier SVG
+    const shieldEl = cardEl.querySelector('.shield-indicator');
+    if (shieldEl) {
+        shieldEl.style.animation = 'none'; // Stopper le flottement
+        shieldEl.style.transition = 'opacity 0.3s, filter 0.15s, transform 0.3s';
+        shieldEl.style.filter = 'brightness(3) saturate(2)';
+        setTimeout(() => {
+            shieldEl.style.opacity = '0';
+            shieldEl.style.transform = 'translate(-50%, -50%) scale(1.4)';
+        }, 150);
+        setTimeout(() => shieldEl.remove(), 500);
+    }
+
+    // Fragments hexagonaux qui se dispersent
+    const fragAngles = [0, 51, 103, 154, 206, 257, 309];
+    for (let i = 0; i < 7; i++) {
+        const frag = document.createElement('div');
+        const angle = (fragAngles[i] * Math.PI) / 180;
+        const dist = 35 + Math.random() * 25;
+        const endX = Math.cos(angle) * dist;
+        const endY = Math.sin(angle) * dist;
+        const size = 10 + Math.random() * 6;
+
+        frag.style.cssText = `
+            position: fixed;
+            left: ${cx - size / 2}px;
+            top: ${cy - size / 2}px;
+            width: ${size}px;
+            height: ${size}px;
+            background: rgba(0, 220, 255, 0.7);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            z-index: 10001;
+            pointer-events: none;
+            opacity: 1;
+            transition: all 0.5s ease-out;
+            box-shadow: 0 0 6px rgba(0, 220, 255, 0.8);
+        `;
+        document.body.appendChild(frag);
+
+        requestAnimationFrame(() => {
+            frag.style.left = `${cx - size / 2 + endX}px`;
+            frag.style.top = `${cy - size / 2 + endY}px`;
+            frag.style.opacity = '0';
+            frag.style.transform = `rotate(${Math.random() * 360}deg) scale(0.3)`;
+        });
+        setTimeout(() => frag.remove(), 600);
+    }
+
+    // Flash radial sur la carte
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        background: radial-gradient(circle, rgba(0, 220, 255, 0.6), transparent 70%);
+        border: 2px solid rgba(0, 220, 255, 0.8);
+        border-radius: 8px;
+        z-index: 10001;
+        pointer-events: none;
+        animation: shieldBreakFlash 0.6s ease-out forwards;
+    `;
+    document.body.appendChild(flash);
+
+    // Texte "Bloqué!"
+    const text = document.createElement('div');
+    text.style.cssText = `
+        position: fixed;
+        left: ${cx}px;
+        top: ${cy}px;
+        transform: translate(-50%, -50%);
+        color: #00dcff;
+        font-size: 14px;
+        font-weight: bold;
+        text-shadow: 0 0 8px rgba(0, 220, 255, 0.9);
+        z-index: 10002;
+        pointer-events: none;
+        animation: shieldText 0.8s ease-out forwards;
+    `;
+    text.textContent = 'IMMUNE';
+    document.body.appendChild(text);
+
+    setTimeout(() => { flash.remove(); text.remove(); }, 1000);
+}
+
 // Les fonctions animateAttack et animateDamage sont maintenant gérées par le système PixiJS
 // Voir combat-animations.js et les fonctions handlePixiAttack/handlePixiDamage ci-dessus
 
@@ -1002,6 +1274,195 @@ function animateDeath(data) {
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
     if (card) card.classList.add('dying');
+}
+
+/**
+ * Animation de transformation à la mort (Petit Os → Pile d'Os)
+ * Phase 1: Death mark (400ms) - greyscale, shrink, icône 💀
+ * Phase 2: Flash blanc (150ms) - flash lumineux
+ * Phase 3: Nouvelle carte apparaît (300ms) - le state update montre la nouvelle carte
+ */
+async function animateDeathTransform(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(
+        `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
+    );
+    if (!slot) return;
+
+    const cardEl = slot.querySelector('.card');
+    const rect = slot.getBoundingClientRect();
+
+    // Phase 1: Death mark — greyscale + shrink + skull icon
+    if (cardEl) {
+        cardEl.style.transition = 'filter 0.4s, transform 0.4s';
+        cardEl.style.filter = 'grayscale(1) brightness(0.5)';
+        cardEl.style.transform = 'scale(0.85)';
+    }
+
+    // Skull overlay
+    const skull = document.createElement('div');
+    skull.style.cssText = `
+        position: fixed;
+        left: ${rect.left + rect.width / 2}px;
+        top: ${rect.top + rect.height / 2}px;
+        transform: translate(-50%, -50%) scale(0.5);
+        font-size: 32px;
+        z-index: 10001;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s, transform 0.3s;
+    `;
+    skull.textContent = '💀';
+    document.body.appendChild(skull);
+    requestAnimationFrame(() => {
+        skull.style.opacity = '1';
+        skull.style.transform = 'translate(-50%, -50%) scale(1)';
+    });
+
+    await new Promise(r => setTimeout(r, 400));
+
+    // Phase 2: Flash blanc
+    skull.remove();
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        background: white;
+        border-radius: 6px;
+        z-index: 10001;
+        pointer-events: none;
+        opacity: 0.9;
+        transition: opacity 0.15s;
+    `;
+    document.body.appendChild(flash);
+
+    await new Promise(r => setTimeout(r, 150));
+    flash.style.opacity = '0';
+
+    // Phase 3: Transform text + cleanup
+    const transformText = document.createElement('div');
+    transformText.style.cssText = `
+        position: fixed;
+        left: ${rect.left + rect.width / 2}px;
+        top: ${rect.top + rect.height / 2}px;
+        transform: translate(-50%, -50%);
+        color: #a855f7;
+        font-size: 13px;
+        font-weight: bold;
+        text-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
+        z-index: 10002;
+        pointer-events: none;
+        animation: shieldText 1s ease-out forwards;
+    `;
+    transformText.textContent = '🔄 Transformation!';
+    document.body.appendChild(transformText);
+
+    await new Promise(r => setTimeout(r, 300));
+
+    // Cleanup
+    flash.remove();
+    setTimeout(() => transformText.remove(), 700);
+
+    // Reset le style de la carte (le render() mettra la nouvelle carte)
+    if (cardEl) {
+        cardEl.style.transition = '';
+        cardEl.style.filter = '';
+        cardEl.style.transform = '';
+    }
+}
+
+/**
+ * Animation de transformation en début de tour (Pile d'Os → Petit Os)
+ * Glow + flash + la nouvelle carte apparaît via render()
+ */
+function animateStartOfTurnTransform(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(
+        `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
+    );
+    if (!slot) return;
+
+    const rect = slot.getBoundingClientRect();
+    const cardEl = slot.querySelector('.card');
+
+    // Phase 1: Glow effect on the card
+    if (cardEl) {
+        cardEl.style.transition = 'filter 0.4s, transform 0.4s';
+        cardEl.style.filter = 'brightness(2) saturate(1.5)';
+        cardEl.style.transform = 'scale(1.1)';
+    }
+
+    // Sparkle particles
+    for (let i = 0; i < 6; i++) {
+        const sparkle = document.createElement('div');
+        const angle = (i / 6) * Math.PI * 2;
+        const dist = 20 + Math.random() * 15;
+        sparkle.style.cssText = `
+            position: fixed;
+            left: ${rect.left + rect.width / 2 + Math.cos(angle) * dist}px;
+            top: ${rect.top + rect.height / 2 + Math.sin(angle) * dist}px;
+            transform: translate(-50%, -50%);
+            font-size: ${10 + Math.random() * 8}px;
+            z-index: 10001;
+            pointer-events: none;
+            animation: sparkle ${0.6 + Math.random() * 0.4}s ease-out forwards;
+            animation-delay: ${Math.random() * 0.2}s;
+        `;
+        sparkle.textContent = '✨';
+        document.body.appendChild(sparkle);
+        setTimeout(() => sparkle.remove(), 1200);
+    }
+
+    // Phase 2: Flash + transform text after glow
+    setTimeout(() => {
+        const flash = document.createElement('div');
+        flash.style.cssText = `
+            position: fixed;
+            left: ${rect.left}px;
+            top: ${rect.top}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            background: rgba(168, 85, 247, 0.6);
+            border-radius: 6px;
+            z-index: 10001;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 0.3s;
+        `;
+        document.body.appendChild(flash);
+        setTimeout(() => { flash.style.opacity = '0'; }, 50);
+        setTimeout(() => flash.remove(), 400);
+
+        const transformText = document.createElement('div');
+        transformText.style.cssText = `
+            position: fixed;
+            left: ${rect.left + rect.width / 2}px;
+            top: ${rect.top + rect.height / 2}px;
+            transform: translate(-50%, -50%);
+            color: #a855f7;
+            font-size: 13px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
+            z-index: 10002;
+            pointer-events: none;
+            animation: shieldText 1s ease-out forwards;
+        `;
+        transformText.textContent = '🔄 Renaissance!';
+        document.body.appendChild(transformText);
+        setTimeout(() => transformText.remove(), 1200);
+    }, 400);
+
+    // Phase 3: Reset card style
+    setTimeout(() => {
+        if (cardEl) {
+            cardEl.style.transition = '';
+            cardEl.style.filter = '';
+            cardEl.style.transform = '';
+        }
+    }, 700);
 }
 
 /**
@@ -1524,10 +1985,13 @@ function createCardElementForAnimation(card) {
 
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
             return abilityNames[a] || a;
         }).join(', ');
 
@@ -1548,7 +2012,8 @@ function createCardElementForAnimation(card) {
 
     const icons = {
         fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', initiative: '🗡️', power: '💪', cleave: '⛏️'
+        trample: '🦏', power: '💪', cleave: '⛏️', immovable: '🪨', regeneration: '💚',
+        protection: '🛡️'
     };
     const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
 
@@ -2559,6 +3024,11 @@ function getValidSlots(card) {
     if (!card || !state) return valid;
     
     if (card.type === 'creature') {
+        // Vérifier les conditions d'invocation spéciales (ex: Kraken Colossal)
+        if (card.requiresGraveyardCreatures) {
+            const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatures < card.requiresGraveyardCreatures) return valid;
+        }
         for (let row = 0; row < 4; row++) {
             for (let col = 0; col < 2; col++) {
                 if (canPlaceAt(card, col) && !state.me.field[row][col]) {
@@ -2665,6 +3135,7 @@ function getCrossTargetsClient(targetPlayer, row, col) {
 
 function highlightMoveTargets(fromRow, fromCol, card) {
     clearHighlights();
+    if (card.abilities?.includes('immovable')) return;
     const isFlying = card.abilities?.includes('fly');
     
     // Déplacements verticaux (toutes les créatures)
@@ -2859,6 +3330,13 @@ function renderField(owner, field) {
                     slot.classList.remove('has-flying');
                 }
 
+                // Indicateur de bouclier (Protection) — Bouclier Nid d'Abeilles SVG
+                if (card.hasProtection) {
+                    cardEl.style.position = 'relative';
+                    cardEl.style.overflow = 'visible';
+                    cardEl.appendChild(createShieldOverlay(slotKey));
+                }
+
                 // Hover preview pour voir la carte en grand
                 cardEl.onmouseenter = (e) => showCardPreview(card, e);
                 cardEl.onmouseleave = hideCardPreview;
@@ -2895,9 +3373,12 @@ const ABILITY_DESCRIPTIONS = {
     haste: { name: 'Célérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
     intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
     trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
-    initiative: { name: 'Initiative', desc: 'Quand cette créature attaque, ses dégâts sont appliqués en priorité. Si la créature adverse est détruite, elle ne peut pas riposter.' },
-    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +1 ATK.' },
-    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' }
+
+    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
+    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' },
+    immovable: { name: 'Immobile', desc: 'Cette créature ne peut pas se déplacer.' },
+    regeneration: { name: 'Régénération', desc: 'En fin de tour, cette créature récupère X PV (sans dépasser ses PV max).' },
+    protection: { name: 'Protection', desc: 'Cette créature est protégée contre la prochaine source de dégâts qu\'elle subirait. Le bouclier est consommé après avoir bloqué une source.' }
 };
 
 function showCardPreview(card, e) {
@@ -3139,8 +3620,18 @@ function renderHand(hand, energy) {
             el.style.visibility = 'hidden';
         }
 
+        // Vérifier les conditions d'invocation spéciales (ex: Kraken Colossal)
+        let cantSummon = false;
+        if (card.requiresGraveyardCreatures) {
+            const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatures < card.requiresGraveyardCreatures) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+
         // Custom drag
-        const tooExpensive = effectiveCost > energy;
+        const tooExpensive = effectiveCost > energy || cantSummon;
         CustomDrag.makeDraggable(el, {
             source: 'hand',
             card: card,
@@ -3233,13 +3724,16 @@ function makeCard(card, inHand, discountedCost = null) {
         // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
             haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
         // Filtrer shooter et fly des capacités affichées
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+                if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
                 return commonAbilityNames[a] || a;
             });
         const abilitiesText = commonAbilities.join(', ');
@@ -3349,12 +3843,15 @@ function makeCard(card, inHand, discountedCost = null) {
         // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
             haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+                if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
                 return commonAbilityNames[a] || a;
             });
         const abilitiesText = commonAbilities.join(', ');
@@ -3382,10 +3879,13 @@ function makeCard(card, inHand, discountedCost = null) {
 
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance'
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
             return abilityNames[a] || a;
         }).join(', ');
 
@@ -3411,9 +3911,11 @@ function makeCard(card, inHand, discountedCost = null) {
         haste: '⚡',
         intangible: '👻',
         trample: '🦏',
-        initiative: '🗡️',
         power: '💪',
-        cleave: '⛏️'
+        cleave: '⛏️',
+        immovable: '🪨',
+        regeneration: '💚',
+        protection: '🛡️'
     };
     const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
 
@@ -3467,14 +3969,15 @@ function clickFieldCard(row, col, card) {
     if (!canPlay()) return;
     if (state.me.inDeployPhase) return;
     if (card.movedThisTurn) return;
-    
+    if (card.abilities?.includes('immovable')) return;
+
     clearSel();
     selected = { ...card, fromField: true, row, col };
-    
+
     const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${row}"][data-col="${col}"]`);
     const cardEl = slot?.querySelector('.card');
     if (cardEl) cardEl.classList.add('field-selected');
-    
+
     highlightMoveTargets(row, col, card);
 }
 

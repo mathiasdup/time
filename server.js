@@ -141,6 +141,59 @@ function emitAnimation(room, type, data) {
 }
 
 /**
+ * Applique des dégâts à une créature avec gestion de la Protection.
+ * Retourne les dégâts réellement infligés (0 si bloqué par protection).
+ */
+function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sourceCreature) {
+    if (card.hasProtection) {
+        card.hasProtection = false;
+        log(`🛡️ ${card.name} : Protection absorbe ${damage} dégâts!`, 'buff');
+        emitAnimation(room, 'shield', { player: ownerPlayer, row: row, col: col });
+        return 0;
+    }
+    card.currentHp -= damage;
+    card.damagedThisTurn = true;
+    // Track which creature killed this one (for onDeath.damageKiller)
+    if (sourceCreature && card.currentHp <= 0) {
+        card.killedBy = sourceCreature;
+    }
+    return damage;
+}
+
+/**
+ * Gère la mort d'une créature : transformation (onDeath.transformInto) ou cimetière.
+ * Retourne { transformed: boolean, newCard: Card|null }
+ */
+function handleCreatureDeath(room, card, playerNum, row, col, log) {
+    const player = room.gameState.players[playerNum];
+
+    if (card.onDeath && card.onDeath.transformInto) {
+        const template = CardDB.creatures.find(c => c.id === card.onDeath.transformInto);
+        if (template) {
+            const newCard = {
+                ...template,
+                abilities: [...(template.abilities || [])],
+                uid: `${Date.now()}-transform-${Math.random()}`,
+                currentHp: template.hp,
+                baseAtk: template.atk,
+                baseHp: template.hp,
+                canAttack: false,
+                turnsOnField: 0,
+                movedThisTurn: false,
+            };
+            if (newCard.abilities.includes('protection')) newCard.hasProtection = true;
+            player.field[row][col] = newCard;
+            log(`🔄 ${card.name} se transforme en ${newCard.name}!`, 'special');
+            return { transformed: true, newCard };
+        }
+    }
+
+    addToGraveyard(player, card);
+    player.field[row][col] = null;
+    return { transformed: false, newCard: null };
+}
+
+/**
  * Pioche count cartes pour un joueur avec gestion main pleine + animations.
  * @param {Object} room - La room
  * @param {number} playerNum - Numéro du joueur (1 ou 2)
@@ -213,6 +266,43 @@ async function processOnDeathAbility(room, card, ownerPlayer, log, sleep) {
         });
         await sleep(800);
         emitStateToBoth(room);
+    }
+
+    // Capacité: infliger des dégâts à la créature responsable de la mort
+    if (card.onDeath.damageKiller && card.killedBy) {
+        const killerInfo = card.killedBy;
+        const killerCard = room.gameState.players[killerInfo.player].field[killerInfo.row][killerInfo.col];
+        // Vérifier que le tueur est toujours là (même uid) et vivant
+        if (killerCard && killerCard.uid === killerInfo.uid && killerCard.currentHp > 0) {
+            const dmg = card.onDeath.damageKiller;
+            applyCreatureDamage(killerCard, dmg, room, log, killerInfo.player, killerInfo.row, killerInfo.col);
+            log(`🔥 ${card.name} inflige ${dmg} blessure à ${killerCard.name}!`, 'damage');
+            emitAnimation(room, 'onDeathDamage', {
+                source: card.name,
+                targetPlayer: killerInfo.player,
+                targetRow: killerInfo.row,
+                targetCol: killerInfo.col,
+                damage: dmg
+            });
+            await sleep(800);
+            emitStateToBoth(room);
+
+            // Si le tueur meurt aussi de cette blessure
+            if (killerCard.currentHp <= 0) {
+                const result = handleCreatureDeath(room, killerCard, killerInfo.player, killerInfo.row, killerInfo.col, log);
+                if (result.transformed) {
+                    emitAnimation(room, 'deathTransform', { player: killerInfo.player, row: killerInfo.row, col: killerInfo.col, fromCard: killerCard, toCard: result.newCard });
+                } else {
+                    log(`☠️ ${killerCard.name} détruit!`, 'damage');
+                    emitAnimation(room, 'death', { player: killerInfo.player, row: killerInfo.row, col: killerInfo.col, card: killerCard });
+                }
+                emitStateToBoth(room);
+                await sleep(1100);
+                if (!result.transformed) {
+                    await processOnDeathAbility(room, killerCard, killerInfo.player, log, sleep);
+                }
+            }
+        }
     }
 }
 
@@ -351,6 +441,75 @@ async function startResolution(room) {
     // Envoyer l'état initial de révélation (adversaire = snapshot pré-tour)
     emitStateToBoth(room);
     await sleep(100);
+
+    // Reset damagedThisTurn pour toutes les créatures
+    for (let p = 1; p <= 2; p++) {
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 2; c++) {
+                const card = room.gameState.players[p].field[r][c];
+                if (card) card.damagedThisTurn = false;
+            }
+        }
+    }
+
+    // PHASE 0 : EFFETS DE DÉBUT DE TOUR (transformations Pile d'Os → Petit Os, etc.)
+    {
+        let anyTransform = false;
+        const transformAnimations = [];
+
+        for (let p = 1; p <= 2; p++) {
+            const player = room.gameState.players[p];
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const card = player.field[r][c];
+                    if (card && card.transformsInto) {
+                        const template = CardDB.creatures.find(cr => cr.id === card.transformsInto);
+                        if (template) {
+                            const newCard = {
+                                ...template,
+                                abilities: [...(template.abilities || [])],
+                                uid: `${Date.now()}-retransform-${Math.random()}`,
+                                currentHp: template.hp,
+                                baseAtk: template.atk,
+                                baseHp: template.hp,
+                                canAttack: false,
+                                turnsOnField: 0,
+                                movedThisTurn: false,
+                            };
+                            if (newCard.abilities.includes('protection')) newCard.hasProtection = true;
+
+                            transformAnimations.push({
+                                player: p, row: r, col: c,
+                                fromCard: { ...card }, toCard: newCard
+                            });
+                            player.field[r][c] = newCard;
+                            anyTransform = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (anyTransform) {
+            io.to(room.code).emit('phaseMessage', { text: 'Effets de début de tour', type: 'revelation' });
+            log('🔄 Effets de début de tour', 'phase');
+            await sleep(ANIM_TIMING.phaseIntro);
+
+            for (const t of transformAnimations) {
+                emitAnimation(room, 'startOfTurnTransform', {
+                    player: t.player, row: t.row, col: t.col,
+                    fromCard: t.fromCard, toCard: t.toCard
+                });
+            }
+            // Mettre à jour revealField aussi
+            for (const t of transformAnimations) {
+                const p = room.gameState.players[t.player];
+                if (p.revealField) p.revealField[t.row][t.col] = p.field[t.row][t.col];
+            }
+            emitStateToBoth(room);
+            await sleep(1200);
+        }
+    }
 
     // 1. PHASE DE DÉPLACEMENTS (par paires)
     if (allActions.moves.length > 0) {
@@ -565,6 +724,20 @@ async function startResolution(room) {
         }
     }
     
+    // EFFETS DE FIN DE TOUR (onDamagedThisTurn: draw) — collecter les piochées bonus
+    const bonusDraws = { 1: 0, 2: 0 };
+    for (let p = 1; p <= 2; p++) {
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 2; c++) {
+                const card = room.gameState.players[p].field[r][c];
+                if (card && card.onDamagedThisTurn === 'draw' && card.damagedThisTurn) {
+                    log(`🐉 ${card.name} a subi des blessures ce tour — pioche supplémentaire!`, 'special');
+                    bonusDraws[p]++;
+                }
+            }
+        }
+    }
+
     // Vérifier victoire finale
     const finalWinner = checkVictory();
     if (finalWinner) {
@@ -602,10 +775,11 @@ async function startResolution(room) {
     log('🎴 Pioche', 'phase');
     await sleep(800);
 
-    // Les deux joueurs piochent
+    // Les deux joueurs piochent 1 carte normale
     const drawnCards = [];
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
+        if (player.deck.length === 0) continue;
         const card = player.deck.shift();
         if (card.type === 'creature') {
             card.currentHp = card.hp;
@@ -613,7 +787,7 @@ async function startResolution(room) {
             card.turnsOnField = 0;
             card.movedThisTurn = false;
         }
-        
+
         if (player.hand.length >= 9) {
             addToGraveyard(player, card);
             log(`📦 ${player.heroName} a la main pleine, la carte va au cimetière`, 'damage');
@@ -654,6 +828,13 @@ async function startResolution(room) {
     log('✨ Effet de fin de tour', 'phase');
     await sleep(800);
 
+    // Piochées bonus (Dragon d'Éclat blessé, etc.)
+    for (let p = 1; p <= 2; p++) {
+        for (let i = 0; i < (bonusDraws[p] || 0); i++) {
+            await drawCards(room, p, 1, log, sleep, `${room.gameState.players[p].heroName} (effet de créature)`);
+        }
+    }
+
     // Capacité Zdejebel: fin du tour, si le héros adverse a été attaqué, il subit 1 blessure
     for (let playerNum = 1; playerNum <= 2; playerNum++) {
         const player = room.gameState.players[playerNum];
@@ -675,6 +856,32 @@ async function startResolution(room) {
                 return;
             }
         }
+    }
+
+    // Régénération: soigner les créatures avec l'ability regeneration
+    let anyRegen = false;
+    for (let playerNum = 1; playerNum <= 2; playerNum++) {
+        const player = room.gameState.players[playerNum];
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 2; c++) {
+                const card = player.field[r][c];
+                if (card && card.abilities.includes('regeneration') && card.currentHp < card.hp) {
+                    const regenAmount = card.regenerationX || 1;
+                    const oldHp = card.currentHp;
+                    card.currentHp = Math.min(card.hp, card.currentHp + regenAmount);
+                    const healed = card.currentHp - oldHp;
+                    if (healed > 0) {
+                        log(`💚 ${card.name} régénère +${healed} PV! (${card.currentHp}/${card.hp})`, 'heal');
+                        emitAnimation(room, 'heal', { player: playerNum, row: r, col: c, amount: healed });
+                        anyRegen = true;
+                    }
+                }
+            }
+        }
+    }
+    if (anyRegen) {
+        emitStateToBoth(room);
+        await sleep(600);
     }
 
     startNewTurn(room);
@@ -730,9 +937,16 @@ async function processTrapsForRow(room, row, log, sleep) {
 
                 if (trap.damage) {
                     for (const t of lineTargets) {
-                        t.card.currentHp -= trap.damage;
-                        emitAnimation(room, 'damage', { player: attackerPlayer, row: row, col: t.col, amount: trap.damage });
-                        log(`  🔥 ${t.card.name} subit ${trap.damage} dégâts du piège!`, 'damage');
+                        const actualDmg = applyCreatureDamage(t.card, trap.damage, room, log, attackerPlayer, row, t.col);
+                        if (actualDmg > 0) {
+                            emitAnimation(room, 'damage', { player: attackerPlayer, row: row, col: t.col, amount: trap.damage });
+                            log(`  🔥 ${t.card.name} subit ${trap.damage} dégâts du piège!`, 'damage');
+                            if (t.card.currentHp > 0 && t.card.abilities.includes('power')) {
+                                const powerBonus = t.card.powerX || 1;
+                                t.card.atk += powerBonus;
+                                log(`💪 ${t.card.name} gagne +${powerBonus} ATK!`, 'buff');
+                            }
+                        }
                     }
                     await sleep(500);
                 }
@@ -745,22 +959,25 @@ async function processTrapsForRow(room, row, log, sleep) {
                 await sleep(500);
 
                 // Vérifier les morts
+                const trapLineNormalDeaths = [];
                 for (const t of lineTargets) {
                     if (t.card.currentHp <= 0) {
-                        addToGraveyard(attackerState, t.card);
-                        attackerState.field[row][t.col] = null;
-                        log(`  ☠️ ${t.card.name} détruit par le piège!`, 'damage');
-                        emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: t.col, card: t.card });
+                        const result = handleCreatureDeath(room, t.card, attackerPlayer, row, t.col, log);
+                        if (result.transformed) {
+                            emitAnimation(room, 'deathTransform', { player: attackerPlayer, row: row, col: t.col, fromCard: t.card, toCard: result.newCard });
+                        } else {
+                            log(`  ☠️ ${t.card.name} détruit par le piège!`, 'damage');
+                            emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: t.col, card: t.card });
+                            trapLineNormalDeaths.push(t);
+                        }
                     }
                 }
                 const anyDead = lineTargets.some(t => t.card.currentHp <= 0);
                 if (anyDead) {
                     emitStateToBoth(room);
                     await sleep(1100);
-                    for (const t of lineTargets) {
-                        if (t.card.currentHp <= 0) {
-                            await processOnDeathAbility(room, t.card, attackerPlayer, log, sleep);
-                        }
+                    for (const t of trapLineNormalDeaths) {
+                        await processOnDeathAbility(room, t.card, attackerPlayer, log, sleep);
                     }
                 }
             } else if (trap.effect === 'bounce') {
@@ -806,9 +1023,16 @@ async function processTrapsForRow(room, row, log, sleep) {
                 log(`🪤 Piège "${trap.name}" déclenché sur ${firstAttacker.card.name}!`, 'trap');
 
                 if (trap.damage) {
-                    firstAttacker.card.currentHp -= trap.damage;
-                    emitAnimation(room, 'damage', { player: attackerPlayer, row: row, col: firstAttacker.col, amount: trap.damage });
+                    const actualDmg = applyCreatureDamage(firstAttacker.card, trap.damage, room, log, attackerPlayer, row, firstAttacker.col);
+                    if (actualDmg > 0) {
+                        emitAnimation(room, 'damage', { player: attackerPlayer, row: row, col: firstAttacker.col, amount: trap.damage });
+                    }
                     await sleep(500);
+                    if (actualDmg > 0 && firstAttacker.card.currentHp > 0 && firstAttacker.card.abilities.includes('power')) {
+                        const powerBonus = firstAttacker.card.powerX || 1;
+                        firstAttacker.card.atk += powerBonus;
+                        log(`💪 ${firstAttacker.card.name} gagne +${powerBonus} ATK!`, 'buff');
+                    }
                 }
 
                 const wasStunned = trap.effect === 'stun';
@@ -827,14 +1051,18 @@ async function processTrapsForRow(room, row, log, sleep) {
                 // Vérifier si la créature meurt du piège
                 if (firstAttacker.card.currentHp <= 0) {
                     const deadCard = firstAttacker.card;
-                    addToGraveyard(attackerState, deadCard);
-                    attackerState.field[row][firstAttacker.col] = null;
-                    log(`  ☠️ ${deadCard.name} détruit par le piège!`, 'damage');
-                    emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: firstAttacker.col, card: deadCard });
+                    const result = handleCreatureDeath(room, deadCard, attackerPlayer, row, firstAttacker.col, log);
+                    if (result.transformed) {
+                        emitAnimation(room, 'deathTransform', { player: attackerPlayer, row: row, col: firstAttacker.col, fromCard: deadCard, toCard: result.newCard });
+                    } else {
+                        log(`  ☠️ ${deadCard.name} détruit par le piège!`, 'damage');
+                        emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: firstAttacker.col, card: deadCard });
+                    }
                     emitStateToBoth(room);
                     await sleep(1100);
-                    // Capacité onDeath
-                    await processOnDeathAbility(room, deadCard, attackerPlayer, log, sleep);
+                    if (!result.transformed) {
+                        await processOnDeathAbility(room, deadCard, attackerPlayer, log, sleep);
+                    }
                 }
             }
         }
@@ -906,10 +1134,10 @@ async function applySpell(room, action, log, sleep) {
                 for (let c = 0; c < 2; c++) {
                     const target = targetPlayer.field[r][c];
                     if (target) {
-                        target.currentHp -= spell.damage;
+                        const actualDmg = applyCreatureDamage(target, spell.damage, room, log, p, r, c);
 
-                        if (target.currentHp > 0 && target.abilities.includes('power')) {
-                            target.atk += 1;
+                        if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
+                            target.atk += (target.powerX || 1);
                         }
 
                         if (target.currentHp <= 0) {
@@ -926,11 +1154,16 @@ async function applySpell(room, action, log, sleep) {
             const slotsToBlock = deaths.map(d => ({ player: d.p, row: d.r, col: d.c }));
             io.to(room.code).emit('blockSlots', slotsToBlock);
 
+            const normalDeaths = [];
             for (const d of deaths) {
-                addToGraveyard(d.player, d.target);
-                d.player.field[d.r][d.c] = null;
-                log(`    ☠️ ${d.target.name} détruit!`, 'damage');
-                emitAnimation(room, 'death', { player: d.p, row: d.r, col: d.c, card: d.target });
+                const result = handleCreatureDeath(room, d.target, d.p, d.r, d.c, log);
+                if (result.transformed) {
+                    emitAnimation(room, 'deathTransform', { player: d.p, row: d.r, col: d.c, fromCard: d.target, toCard: result.newCard });
+                } else {
+                    log(`    ☠️ ${d.target.name} détruit!`, 'damage');
+                    emitAnimation(room, 'death', { player: d.p, row: d.r, col: d.c, card: d.target });
+                    normalDeaths.push(d);
+                }
             }
 
             // Envoyer l'état maintenant (les slots bloqués ne seront pas touchés par render)
@@ -942,8 +1175,8 @@ async function applySpell(room, action, log, sleep) {
             // Débloquer les slots
             io.to(room.code).emit('unblockSlots', slotsToBlock);
 
-            // Capacités onDeath
-            for (const d of deaths) {
+            // Capacités onDeath (seulement pour les morts normales)
+            for (const d of normalDeaths) {
                 await processOnDeathAbility(room, d.target, d.p, log, sleep);
             }
         }
@@ -1018,11 +1251,13 @@ async function applySpell(room, action, log, sleep) {
             const target = targetField[t.row][t.col];
 
             if (target) {
-                target.currentHp -= spell.damage;
-                log(`    🔥 ${target.name} (-${spell.damage})`, 'damage');
+                const actualDmg = applyCreatureDamage(target, spell.damage, room, log, t.player, t.row, t.col);
+                if (actualDmg > 0) {
+                    log(`    🔥 ${target.name} (-${spell.damage})`, 'damage');
+                }
 
-                if (target.currentHp > 0 && target.abilities.includes('power')) {
-                    target.atk += 1;
+                if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
+                    target.atk += (target.powerX || 1);
                 }
 
                 if (target.currentHp <= 0) {
@@ -1038,11 +1273,16 @@ async function applySpell(room, action, log, sleep) {
             const slotsToBlock = deaths.map(d => ({ player: d.t.player, row: d.t.row, col: d.t.col }));
             io.to(room.code).emit('blockSlots', slotsToBlock);
 
+            const normalDeaths = [];
             for (const d of deaths) {
-                addToGraveyard(d.owner, d.target);
-                d.field[d.t.row][d.t.col] = null;
-                log(`    ☠️ ${d.target.name} détruit!`, 'damage');
-                emitAnimation(room, 'death', { player: d.t.player, row: d.t.row, col: d.t.col, card: d.target });
+                const result = handleCreatureDeath(room, d.target, d.t.player, d.t.row, d.t.col, log);
+                if (result.transformed) {
+                    emitAnimation(room, 'deathTransform', { player: d.t.player, row: d.t.row, col: d.t.col, fromCard: d.target, toCard: result.newCard });
+                } else {
+                    log(`    ☠️ ${d.target.name} détruit!`, 'damage');
+                    emitAnimation(room, 'death', { player: d.t.player, row: d.t.row, col: d.t.col, card: d.target });
+                    normalDeaths.push(d);
+                }
             }
 
             // Envoyer l'état maintenant (les slots bloqués ne seront pas touchés par render)
@@ -1054,8 +1294,8 @@ async function applySpell(room, action, log, sleep) {
             // Débloquer les slots
             io.to(room.code).emit('unblockSlots', slotsToBlock);
 
-            // Capacités onDeath
-            for (const d of deaths) {
+            // Capacités onDeath (seulement pour les morts normales)
+            for (const d of normalDeaths) {
                 await processOnDeathAbility(room, d.target, d.t.player, log, sleep);
             }
         }
@@ -1098,22 +1338,28 @@ async function applySpell(room, action, log, sleep) {
                     emitAnimation(room, 'spellDamage', { player: action.targetPlayer, row: action.row, col: action.col, amount: spell.damage });
                     await sleep(800);
 
-                    target.currentHp -= spell.damage;
-                    log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${spell.damage})`, 'damage');
+                    const actualDmg = applyCreatureDamage(target, spell.damage, room, log, action.targetPlayer, action.row, action.col);
+                    if (actualDmg > 0) {
+                        log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${spell.damage})`, 'damage');
+                    }
 
-                    if (target.currentHp > 0 && target.abilities.includes('power')) {
-                        target.atk += 1;
+                    if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
+                        target.atk += (target.powerX || 1);
                     }
 
                     if (target.currentHp <= 0) {
-                        const targetOwner = action.targetPlayer === playerNum ? player : opponent;
-                        addToGraveyard(targetOwner, target);
-                        targetField[action.row][action.col] = null;
-                        log(`  ☠️ ${target.name} détruit!`, 'damage');
-                        emitAnimation(room, 'death', { player: action.targetPlayer, row: action.row, col: action.col, card: target });
+                        const result = handleCreatureDeath(room, target, action.targetPlayer, action.row, action.col, log);
+                        if (result.transformed) {
+                            emitAnimation(room, 'deathTransform', { player: action.targetPlayer, row: action.row, col: action.col, fromCard: target, toCard: result.newCard });
+                        } else {
+                            log(`  ☠️ ${target.name} détruit!`, 'damage');
+                            emitAnimation(room, 'death', { player: action.targetPlayer, row: action.row, col: action.col, card: target });
+                        }
                         await sleep(1100);
-                        // Capacité onDeath
-                        await processOnDeathAbility(room, target, action.targetPlayer, log, sleep);
+                        if (!result.transformed) {
+                            // Capacité onDeath
+                            await processOnDeathAbility(room, target, action.targetPlayer, log, sleep);
+                        }
 
                         // Effet onKill du sort (ex: piocher une carte)
                         if (spell.onKill) {
@@ -1179,7 +1425,6 @@ async function applyAction(room, playerNum, action, log, sleep) {
 // Règles:
 // - Si les deux créatures PEUVENT attaquer et se ciblent mutuellement → dégâts SIMULTANÉS
 // - Si une seule peut attaquer → elle attaque, l'autre RIPOSTE (si survit et conditions remplies)
-// - Initiative: attaque en premier, si cible meurt pas de riposte/contre-attaque
 async function processCombatSlot(room, row, col, log, sleep) {
     const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
     
@@ -1206,12 +1451,11 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 targetRow: target.row !== undefined ? target.row : row,
                 targetCol: target.col,
                 targetIsHero: target.isHero,
-                hasInitiative: p1Card.abilities.includes('initiative'),
                 hasTrample: p1Card.abilities.includes('trample')
             });
         }
     }
-    
+
     // Créature du joueur 2 à ce slot
     if (p2Card && p2Card.canAttack) {
         const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row, col);
@@ -1226,7 +1470,6 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 targetRow: target.row !== undefined ? target.row : row,
                 targetCol: target.col,
                 targetIsHero: target.isHero,
-                hasInitiative: p2Card.abilities.includes('initiative'),
                 hasTrample: p2Card.abilities.includes('trample')
             });
         }
@@ -1279,9 +1522,6 @@ async function processCombatSlot(room, row, col, log, sleep) {
         const mutualCombat = atk1TargetsAtk2 && atk2TargetsAtk1;
         
         if (mutualCombat) {
-            const bothHaveInitiative = atk1.hasInitiative && atk2.hasInitiative;
-            const oneHasInitiative = atk1.hasInitiative !== atk2.hasInitiative;
-            
             // Helper pour appliquer le clivant
             const applyCleave = (attacker, atkData) => {
                 if (!attacker.abilities.includes('cleave')) return [];
@@ -1292,19 +1532,21 @@ async function processCombatSlot(room, row, col, log, sleep) {
 
                 for (const adjRow of adjacentRows) {
                     const adjTarget = targetOwner.field[adjRow][atkData.targetCol];
-                    if (adjTarget && !adjTarget.abilities.includes('intangible')) {
+                    if (adjTarget) {
                         const attackerIsFlying = attacker.abilities.includes('fly');
                         const attackerIsShooter = attacker.abilities.includes('shooter');
                         if (adjTarget.abilities.includes('fly') && !attackerIsFlying && !attackerIsShooter) {
                             continue;
                         }
 
-                        adjTarget.currentHp -= damage;
-                        log(`⛏️ Clivant ${damage}: ${attacker.name} → ${adjTarget.name} (-${damage})`, 'damage');
-                        emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: adjRow, col: atkData.targetCol, amount: damage });
+                        const actualCDmg = applyCreatureDamage(adjTarget, damage, room, log, atkData.targetPlayer, adjRow, atkData.targetCol, { player: atkData.attackerPlayer, row: atkData.attackerRow, col: atkData.attackerCol, uid: attacker.uid });
+                        if (actualCDmg > 0) {
+                            log(`⛏️ Clivant ${damage}: ${attacker.name} → ${adjTarget.name} (-${damage})`, 'damage');
+                            emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: adjRow, col: atkData.targetCol, amount: damage });
+                        }
 
-                        if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
-                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + 1;
+                        if (actualCDmg > 0 && adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
+                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + (adjTarget.powerX || 1);
                         }
 
                         cleaveTargets.push({ row: adjRow, col: atkData.targetCol });
@@ -1346,13 +1588,15 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     trampleTarget = null;
                 }
 
-                if (trampleTarget && !trampleTarget.abilities.includes('intangible')) {
-                    trampleTarget.currentHp -= excessDamage;
-                    log(`🦏 Piétinement: ${attacker.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: atkData.targetRow, col: trampleCol, amount: excessDamage });
-                    
-                    if (trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
-                        trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + 1;
+                if (trampleTarget) {
+                    const actualTrDmg = applyCreatureDamage(trampleTarget, excessDamage, room, log, atkData.targetPlayer, atkData.targetRow, trampleCol, { player: atkData.attackerPlayer, row: atkData.attackerRow, col: atkData.attackerCol, uid: attacker.uid });
+                    if (actualTrDmg > 0) {
+                        log(`🦏 Piétinement: ${attacker.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atkData.targetPlayer, row: atkData.targetRow, col: trampleCol, amount: excessDamage });
+                    }
+
+                    if (actualTrDmg > 0 && trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
+                        trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + (trampleTarget.powerX || 1);
                     }
                 } else if (excessDamage > 0) {
                     targetOwner.hp -= excessDamage;
@@ -1363,66 +1607,39 @@ async function processCombatSlot(room, row, col, log, sleep) {
                 }
             };
 
-            if (bothHaveInitiative || !oneHasInitiative) {
-                // Dégâts SIMULTANÉS - les deux s'infligent des dégâts en même temps
-                const dmg1to2 = atk1.attacker.atk;
-                const dmg2to1 = atk2.attacker.atk;
-                
-                atk2.attacker.currentHp -= dmg1to2;
-                atk1.attacker.currentHp -= dmg2to1;
-                
-                log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1to2} / -${dmg2to1})`, 'damage');
-                emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: dmg1to2 });
-                emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: dmg2to1 });
-                
-                // Power bonus (stocké pour après)
-                if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
-                    atk1.attacker.pendingPowerBonus = (atk1.attacker.pendingPowerBonus || 0) + 1;
-                }
-                if (atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
-                    atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + 1;
-                }
-                
-                // Clivant - s'applique même si l'attaquant meurt car il a attaqué
+            // Dégâts SIMULTANÉS - les deux s'infligent des dégâts en même temps
+            const dmg1to2 = atk1.attacker.atk;
+            const dmg2to1 = atk2.attacker.atk;
+
+            const actualDmg1to2 = applyCreatureDamage(atk2.attacker, dmg1to2, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: atk1.attacker.uid });
+            const actualDmg2to1 = applyCreatureDamage(atk1.attacker, dmg2to1, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: atk2.attacker.uid });
+
+            log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${actualDmg1to2} / -${actualDmg2to1})`, 'damage');
+            if (actualDmg1to2 > 0) emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: dmg1to2 });
+            if (actualDmg2to1 > 0) emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: dmg2to1 });
+
+            // Power bonus (stocké pour après)
+            if (actualDmg2to1 > 0 && atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
+                atk1.attacker.pendingPowerBonus = (atk1.attacker.pendingPowerBonus || 0) + (atk1.attacker.powerX || 1);
+            }
+            if (actualDmg1to2 > 0 && atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
+                atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + (atk2.attacker.powerX || 1);
+            }
+
+            // Clivant - en combat mutuel, ne se déclenche que si la cible est un tireur (immobile)
+            if (atk2.attacker.abilities.includes('shooter')) {
                 atk1.cleaveTargets = applyCleave(atk1.attacker, atk1);
+            }
+            if (atk1.attacker.abilities.includes('shooter')) {
                 atk2.cleaveTargets = applyCleave(atk2.attacker, atk2);
+            }
 
-                // Piétinement - s'applique même si l'attaquant meurt car il a attaqué
+            // Piétinement en combat mutuel - seulement si la cible est un tireur
+            if (atk2.attacker.abilities.includes('shooter')) {
                 await applyTrample(atk1.attacker, atk2.attacker, atk1);
+            }
+            if (atk1.attacker.abilities.includes('shooter')) {
                 await applyTrample(atk2.attacker, atk1.attacker, atk2);
-
-            } else {
-                // Une seule a initiative - elle attaque en premier
-                const first = atk1.hasInitiative ? atk1 : atk2;
-                const second = atk1.hasInitiative ? atk2 : atk1;
-                
-                // Premier attaque
-                const dmgFirst = first.attacker.atk;
-                second.attacker.currentHp -= dmgFirst;
-                log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-                emitAnimation(room, 'damage', { player: second.attackerPlayer, row: second.attackerRow, col: second.attackerCol, amount: dmgFirst });
-                
-                if (second.attacker.currentHp > 0 && second.attacker.abilities.includes('power')) {
-                    second.attacker.pendingPowerBonus = (second.attacker.pendingPowerBonus || 0) + 1;
-                }
-                
-                // Clivant du premier
-                first.cleaveTargets = applyCleave(first.attacker, first);
-
-                // Piétinement du premier (même si le second va riposter et le tuer)
-                await applyTrample(first.attacker, second.attacker, first);
-
-                // Second riposte seulement s'il survit
-                if (second.attacker.currentHp > 0) {
-                    const dmgSecond = second.attacker.atk;
-                    first.attacker.currentHp -= dmgSecond;
-                    log(`↩️ ${second.attacker.name} contre-attaque → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-                    emitAnimation(room, 'damage', { player: first.attackerPlayer, row: first.attackerRow, col: first.attackerCol, amount: dmgSecond });
-                    
-                    if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                        first.attacker.pendingPowerBonus = (first.attacker.pendingPowerBonus || 0) + 1;
-                    }
-                }
             }
             
             // Appliquer les bonus Power
@@ -1456,11 +1673,6 @@ async function processCombatSlot(room, row, col, log, sleep) {
     }
     
     // CAS 2: Attaques non-mutuelles ou attaques sur héros - traitement séquentiel
-    const bothHaveInitiative = attacks.length === 2 && attacks[0].hasInitiative && attacks[1].hasInitiative;
-    if (bothHaveInitiative) {
-        attacks.forEach(a => a.hasInitiative = false);
-    }
-    attacks.sort((a, b) => (b.hasInitiative ? 1 : 0) - (a.hasInitiative ? 1 : 0));
     
     for (const atk of attacks) {
         const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
@@ -1500,12 +1712,14 @@ async function processCombatSlot(room, row, col, log, sleep) {
             if (!targetCard) continue;
 
             const damage = attackerCard.atk;
-            targetCard.currentHp -= damage;
-            log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
-            emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
+            const actualMainDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
+            if (actualMainDmg > 0) {
+                log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
+                emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
+            }
 
-            if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
-                targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + 1;
+            if (actualMainDmg > 0 && targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
+                targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + (targetCard.powerX || 1);
             }
 
             // Clivant - inflige les dégâts aux créatures sur les lignes adjacentes (même colonne)
@@ -1516,7 +1730,7 @@ async function processCombatSlot(room, row, col, log, sleep) {
 
                 for (const adjRow of adjacentRows) {
                     const adjTarget = targetOwner.field[adjRow][atk.targetCol];
-                    if (adjTarget && !adjTarget.abilities.includes('intangible')) {
+                    if (adjTarget) {
                         // Vérifier si on peut toucher une cible volante
                         const attackerIsFlying = attackerCard.abilities.includes('fly');
                         const attackerIsShooter = attackerCard.abilities.includes('shooter');
@@ -1524,13 +1738,15 @@ async function processCombatSlot(room, row, col, log, sleep) {
                             continue; // Ne peut pas toucher une créature volante
                         }
 
-                        adjTarget.currentHp -= cleaveDamage;
-                        log(`⛏️ Clivant ${cleaveDamage}: ${attackerCard.name} → ${adjTarget.name} (-${cleaveDamage})`, 'damage');
-                        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: adjRow, col: atk.targetCol, amount: cleaveDamage });
+                        const actualCleaveDmg = applyCreatureDamage(adjTarget, cleaveDamage, room, log, atk.targetPlayer, adjRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
+                        if (actualCleaveDmg > 0) {
+                            log(`⛏️ Clivant ${cleaveDamage}: ${attackerCard.name} → ${adjTarget.name} (-${cleaveDamage})`, 'damage');
+                            emitAnimation(room, 'damage', { player: atk.targetPlayer, row: adjRow, col: atk.targetCol, amount: cleaveDamage });
+                        }
 
                         // Les cibles adjacentes ne ripostent PAS mais peuvent gagner Power
-                        if (adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
-                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + 1;
+                        if (actualCleaveDmg > 0 && adjTarget.currentHp > 0 && adjTarget.abilities.includes('power')) {
+                            adjTarget.pendingPowerBonus = (adjTarget.pendingPowerBonus || 0) + (adjTarget.powerX || 1);
                         }
 
                         // Stocker pour vérifier les morts plus tard
@@ -1544,14 +1760,14 @@ async function processCombatSlot(room, row, col, log, sleep) {
             if (atk.hasTrample && targetCard.currentHp < 0) {
                 const excessDamage = Math.abs(targetCard.currentHp);
                 const targetOwner = room.gameState.players[atk.targetPlayer];
-                
+
                 let trampleTarget = null;
                 let trampleCol = -1;
                 if (atk.targetCol === 1) {
                     trampleTarget = targetOwner.field[atk.targetRow][0];
                     trampleCol = 0;
                 }
-                
+
                 const attackerIsFlying = attackerCard.abilities.includes('fly');
                 const attackerIsShooter = attackerCard.abilities.includes('shooter');
 
@@ -1569,13 +1785,15 @@ async function processCombatSlot(room, row, col, log, sleep) {
                     trampleTarget = null;
                 }
 
-                if (trampleTarget && !trampleTarget.abilities.includes('intangible')) {
-                    trampleTarget.currentHp -= excessDamage;
-                    log(`🦏 Piétinement: ${attackerCard.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: trampleCol, amount: excessDamage });
+                if (trampleTarget) {
+                    const actualTrampleDmg = applyCreatureDamage(trampleTarget, excessDamage, room, log, atk.targetPlayer, atk.targetRow, trampleCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
+                    if (actualTrampleDmg > 0) {
+                        log(`🦏 Piétinement: ${attackerCard.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: trampleCol, amount: excessDamage });
+                    }
 
-                    if (trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
-                        trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + 1;
+                    if (actualTrampleDmg > 0 && trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
+                        trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + (trampleTarget.powerX || 1);
                     }
                 } else if (excessDamage > 0) {
                     targetOwner.hp -= excessDamage;
@@ -1590,33 +1808,25 @@ async function processCombatSlot(room, row, col, log, sleep) {
 
             // RIPOSTE: seulement si la cible NE PEUT PAS attaquer ce tour
             // Les tireurs ne reçoivent JAMAIS de riposte (attaque à distance)
-            // La riposte est SIMULTANÉE (même si la cible meurt) SAUF si l'attaquant a INITIATIVE (et pas la cible)
             const targetCanAttack = targetCard.canAttack;
-            const targetDied = targetCard.currentHp <= 0;
             const attackerIsShooter = attackerCard.abilities.includes('shooter');
-            const attackerHasInitiative = attackerCard.abilities.includes('initiative');
-            const targetHasInitiative = targetCard.abilities.includes('initiative');
-            
-            // Initiative effective : seulement si l'attaquant a initiative ET la cible ne l'a pas
-            const effectiveInitiative = attackerHasInitiative && !targetHasInitiative;
-            
-            // Riposte si :
-            // - La cible ne peut pas attaquer
-            // - L'attaquant n'est pas un tireur
-            // - ET (l'attaquant n'a pas initiative effective OU la cible survit)
-            if (!targetCanAttack && !attackerIsShooter && (!effectiveInitiative || !targetDied)) {
+
+            // Riposte si la cible ne peut pas attaquer et l'attaquant n'est pas un tireur
+            if (!targetCanAttack && !attackerIsShooter) {
                 const riposteDamage = targetCard.atk;
-                attackerCard.currentHp -= riposteDamage;
-                log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDamage})`, 'damage');
-                emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
-                
-                if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
-                    attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + 1;
+                const actualRiposteDmg = applyCreatureDamage(attackerCard, riposteDamage, room, log, atk.attackerPlayer, atk.attackerRow, atk.attackerCol, { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, uid: targetCard.uid });
+                if (actualRiposteDmg > 0) {
+                    log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDamage})`, 'damage');
+                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
+                }
+
+                if (actualRiposteDmg > 0 && attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
+                    attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + (attackerCard.powerX || 1);
                 }
             }
         }
     }
-    
+
     // Appliquer les bonus Power
     applyPendingPowerBonuses(room, log);
     
@@ -1669,11 +1879,14 @@ async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
         for (let p = 1; p <= 2; p++) {
             const card = room.gameState.players[p].field[r][c];
             if (card && card.currentHp <= 0) {
-                deadCards.push({ card, player: p, row: r, col: c });
-                addToGraveyard(room.gameState.players[p], card);
-                room.gameState.players[p].field[r][c] = null;
-                log(`☠️ ${card.name} détruit!`, 'damage');
-                deathAnimations.push({ type: 'death', player: p, row: r, col: c, card: card });
+                const result = handleCreatureDeath(room, card, p, r, c, log);
+                if (result.transformed) {
+                    deathAnimations.push({ type: 'deathTransform', player: p, row: r, col: c, fromCard: card, toCard: result.newCard });
+                } else {
+                    deadCards.push({ card, player: p, row: r, col: c });
+                    log(`☠️ ${card.name} détruit!`, 'damage');
+                    deathAnimations.push({ type: 'death', player: p, row: r, col: c, card: card });
+                }
             }
         }
     }
@@ -1718,7 +1931,6 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 targetRow: target.row,
                 targetCol: target.col,
                 targetIsHero: target.isHero,
-                hasInitiative: p1Card.abilities.includes('initiative'),
                 hasTrample: p1Card.abilities.includes('trample'),
                 isShooter: p1Card.abilities.includes('shooter'),
                 isFlying: p1Card.abilities.includes('fly')
@@ -1739,7 +1951,6 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 targetRow: target.row,
                 targetCol: target.col,
                 targetIsHero: target.isHero,
-                hasInitiative: p2Card.abilities.includes('initiative'),
                 hasTrample: p2Card.abilities.includes('trample'),
                 isShooter: p2Card.abilities.includes('shooter'),
                 isFlying: p2Card.abilities.includes('fly')
@@ -1783,289 +1994,119 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             const shooterDmg = shooter.attacker.atk;
             const otherDmg = other.attacker.atk;
 
-            // Vérifier l'initiative
-            const shooterHasInit = shooter.hasInitiative;
-            const otherHasInit = other.hasInitiative;
-            const oneHasInit = shooterHasInit !== otherHasInit;
+            emitAnimation(room, 'attack', {
+                combatType: 'shooter_vs_flyer',
+                attacker: shooter.attackerPlayer,
+                row: shooter.attackerRow,
+                col: shooter.attackerCol,
+                targetPlayer: other.attackerPlayer,
+                targetRow: other.attackerRow,
+                targetCol: other.attackerCol,
+                shooterDamage: shooterDmg,
+                flyerDamage: otherDmg,
+                isShooter: true
+            });
+            await sleep(1200);
 
-            if (oneHasInit) {
-                // Un seul a initiative - il attaque en premier
-                const first = shooterHasInit ? shooter : other;
-                const second = shooterHasInit ? other : shooter;
-                const dmgFirst = first.attacker.atk;
+            // Dégâts simultanés
+            const actualShooterDmg = applyCreatureDamage(other.attacker, shooterDmg, room, log, other.attackerPlayer, other.attackerRow, other.attackerCol, { player: shooter.attackerPlayer, row: shooter.attackerRow, col: shooter.attackerCol, uid: shooter.attacker.uid });
+            const actualOtherDmg = applyCreatureDamage(shooter.attacker, otherDmg, room, log, shooter.attackerPlayer, shooter.attackerRow, shooter.attackerCol, { player: other.attackerPlayer, row: other.attackerRow, col: other.attackerCol, uid: other.attacker.uid });
 
-                emitAnimation(room, 'attack', {
-                    combatType: first.isShooter ? 'shooter' : 'solo',
-                    attacker: first.attackerPlayer,
-                    row: first.attackerRow,
-                    col: first.attackerCol,
-                    targetPlayer: second.attackerPlayer,
-                    targetRow: second.attackerRow,
-                    targetCol: second.attackerCol,
-                    damage: dmgFirst,
-                    isShooter: first.isShooter,
-                    isFlying: first.isFlying
-                });
-                await sleep(800);
+            log(`⚔️ ${shooter.attacker.name} ↔ ${other.attacker.name} (-${actualShooterDmg} / -${actualOtherDmg})`, 'damage');
 
-                second.attacker.currentHp -= dmgFirst;
-                log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-
-                if (second.attacker.currentHp > 0) {
-                    if (second.attacker.abilities.includes('power')) {
-                        second.attacker.atk += 1;
-                        log(`💪 ${second.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                    const dmgSecond = second.attacker.atk;
-
-                    emitAnimation(room, 'attack', {
-                        combatType: second.isShooter ? 'shooter' : 'solo',
-                        attacker: second.attackerPlayer,
-                        row: second.attackerRow,
-                        col: second.attackerCol,
-                        targetPlayer: first.attackerPlayer,
-                        targetRow: first.attackerRow,
-                        targetCol: first.attackerCol,
-                        damage: dmgSecond,
-                        isShooter: second.isShooter,
-                        isFlying: second.isFlying
-                    });
-                    await sleep(800);
-
-                    first.attacker.currentHp -= dmgSecond;
-                    log(`↩️ ${second.attacker.name} → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-
-                    if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                        first.attacker.atk += 1;
-                        log(`💪 ${first.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                }
-            } else {
-                // Les deux ont initiative OU aucun n'a initiative - combat simultané
-                emitAnimation(room, 'attack', {
-                    combatType: 'shooter_vs_flyer',
-                    attacker: shooter.attackerPlayer,
-                    row: shooter.attackerRow,
-                    col: shooter.attackerCol,
-                    targetPlayer: other.attackerPlayer,
-                    targetRow: other.attackerRow,
-                    targetCol: other.attackerCol,
-                    shooterDamage: shooterDmg,
-                    flyerDamage: otherDmg,
-                    isShooter: true
-                });
-                await sleep(1200);
-
-                // Dégâts simultanés
-                other.attacker.currentHp -= shooterDmg;
-                shooter.attacker.currentHp -= otherDmg;
-
-                log(`⚔️ ${shooter.attacker.name} ↔ ${other.attacker.name} (-${shooterDmg} / -${otherDmg})`, 'damage');
-
-                if (shooter.attacker.currentHp > 0 && shooter.attacker.abilities.includes('power')) {
-                    shooter.attacker.atk += 1;
-                    log(`💪 ${shooter.attacker.name} gagne +1 ATK!`, 'buff');
-                }
-                if (other.attacker.currentHp > 0 && other.attacker.abilities.includes('power')) {
-                    other.attacker.atk += 1;
-                    log(`💪 ${other.attacker.name} gagne +1 ATK!`, 'buff');
-                }
+            if (actualOtherDmg > 0 && shooter.attacker.currentHp > 0 && shooter.attacker.abilities.includes('power')) {
+                const powerBonus = shooter.attacker.powerX || 1;
+                shooter.attacker.atk += powerBonus;
+                log(`💪 ${shooter.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
+            }
+            if (actualShooterDmg > 0 && other.attacker.currentHp > 0 && other.attacker.abilities.includes('power')) {
+                const powerBonus = other.attacker.powerX || 1;
+                other.attacker.atk += powerBonus;
+                log(`💪 ${other.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
             }
         } else if (bothShooters) {
-            // Deux tireurs - vérifier l'initiative
-            const oneHasInit = atk1.hasInitiative !== atk2.hasInitiative;
+            // Deux tireurs - projectiles croisés simultanés
+            emitAnimation(room, 'attack', {
+                combatType: 'mutual_shooters',
+                attacker1: atk1.attackerPlayer,
+                row1: atk1.attackerRow,
+                col1: atk1.attackerCol,
+                attacker2: atk2.attackerPlayer,
+                row2: atk2.attackerRow,
+                col2: atk2.attackerCol,
+                damage1: dmg1,
+                damage2: dmg2
+            });
+            await sleep(800);
 
-            if (oneHasInit) {
-                // Un seul a initiative - il tire en premier
-                const first = atk1.hasInitiative ? atk1 : atk2;
-                const second = atk1.hasInitiative ? atk2 : atk1;
-                const dmgFirst = first.attacker.atk;
+            // Dégâts simultanés
+            const actualD1bs = applyCreatureDamage(atk2.attacker, dmg1, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: atk1.attacker.uid });
+            const actualD2bs = applyCreatureDamage(atk1.attacker, dmg2, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: atk2.attacker.uid });
 
-                emitAnimation(room, 'attack', {
-                    combatType: 'shooter',
-                    attacker: first.attackerPlayer,
-                    row: first.attackerRow,
-                    col: first.attackerCol,
-                    targetPlayer: second.attackerPlayer,
-                    targetRow: second.attackerRow,
-                    targetCol: second.attackerCol,
-                    damage: dmgFirst,
-                    isShooter: true
-                });
-                await sleep(800);
+            log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${actualD1bs} / -${actualD2bs})`, 'damage');
 
-                second.attacker.currentHp -= dmgFirst;
-                log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-
-                if (second.attacker.currentHp > 0) {
-                    if (second.attacker.abilities.includes('power')) {
-                        second.attacker.atk += 1;
-                        log(`💪 ${second.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                    const dmgSecond = second.attacker.atk;
-
-                    emitAnimation(room, 'attack', {
-                        combatType: 'shooter',
-                        attacker: second.attackerPlayer,
-                        row: second.attackerRow,
-                        col: second.attackerCol,
-                        targetPlayer: first.attackerPlayer,
-                        targetRow: first.attackerRow,
-                        targetCol: first.attackerCol,
-                        damage: dmgSecond,
-                        isShooter: true
-                    });
-                    await sleep(800);
-
-                    first.attacker.currentHp -= dmgSecond;
-                    log(`↩️ ${second.attacker.name} → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-
-                    if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                        first.attacker.atk += 1;
-                        log(`💪 ${first.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                }
-            } else {
-                // Les deux ont initiative OU aucun n'a initiative - projectiles croisés simultanés
-                emitAnimation(room, 'attack', {
-                    combatType: 'mutual_shooters',
-                    attacker1: atk1.attackerPlayer,
-                    row1: atk1.attackerRow,
-                    col1: atk1.attackerCol,
-                    attacker2: atk2.attackerPlayer,
-                    row2: atk2.attackerRow,
-                    col2: atk2.attackerCol,
-                    damage1: dmg1,
-                    damage2: dmg2
-                });
-                await sleep(800);
-
-                // Dégâts simultanés
-                atk2.attacker.currentHp -= dmg1;
-                atk1.attacker.currentHp -= dmg2;
-
-                log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1} / -${dmg2})`, 'damage');
-
-                if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
-                    atk1.attacker.atk += 1;
-                    log(`💪 ${atk1.attacker.name} gagne +1 ATK!`, 'buff');
-                }
-                if (atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
-                    atk2.attacker.atk += 1;
-                    log(`💪 ${atk2.attacker.name} gagne +1 ATK!`, 'buff');
-                }
+            if (actualD2bs > 0 && atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
+                const powerBonus = atk1.attacker.powerX || 1;
+                atk1.attacker.atk += powerBonus;
+                log(`💪 ${atk1.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
+            }
+            if (actualD1bs > 0 && atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
+                const powerBonus = atk2.attacker.powerX || 1;
+                atk2.attacker.atk += powerBonus;
+                log(`💪 ${atk2.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
             }
         } else {
-            // Combat mêlée mutuel - vérifier l'initiative AVANT l'animation
-            const bothInit = atk1.hasInitiative && atk2.hasInitiative;
-            const neitherInit = !atk1.hasInitiative && !atk2.hasInitiative;
-            const oneHasInit = !bothInit && !neitherInit;
+            // Combat mêlée mutuel - combat simultané
+            emitAnimation(room, 'attack', {
+                combatType: 'mutual_melee',
+                attacker: atk1.attackerPlayer,
+                row: atk1.attackerRow,
+                col: atk1.attackerCol,
+                targetPlayer: atk2.attackerPlayer,
+                targetRow: atk2.attackerRow,
+                targetCol: atk2.attackerCol,
+                damage1: dmg1,
+                damage2: dmg2,
+                isMutual: true
+            });
+            await sleep(900);
 
-            if (oneHasInit) {
-                // Une seule a initiative - animation séquentielle
-                const first = atk1.hasInitiative ? atk1 : atk2;
-                const second = atk1.hasInitiative ? atk2 : atk1;
-                const dmgFirst = first.attacker.atk;
+            // Dégâts simultanés
+            const actualD1mm = applyCreatureDamage(atk2.attacker, dmg1, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: atk1.attacker.uid });
+            const actualD2mm = applyCreatureDamage(atk1.attacker, dmg2, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: atk2.attacker.uid });
 
-                // D'abord la créature avec initiative attaque
-                emitAnimation(room, 'attack', {
-                    combatType: 'solo',
-                    attacker: first.attackerPlayer,
-                    row: first.attackerRow,
-                    col: first.attackerCol,
-                    targetPlayer: second.attackerPlayer,
-                    targetRow: second.attackerRow,
-                    targetCol: second.attackerCol,
-                    damage: dmgFirst,
-                    isFlying: first.isFlying
-                });
-                await sleep(800);
+            log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${actualD1mm} / -${actualD2mm})`, 'damage');
 
-                // Appliquer les dégâts
-                second.attacker.currentHp -= dmgFirst;
-                log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-
-                if (second.attacker.currentHp > 0) {
-                    // La cible survit - elle riposte
-                    if (second.attacker.abilities.includes('power')) {
-                        second.attacker.atk += 1;
-                        log(`💪 ${second.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                    const dmgSecond = second.attacker.atk;
-
-                    // Animation de riposte
-                    emitAnimation(room, 'attack', {
-                        combatType: 'solo',
-                        attacker: second.attackerPlayer,
-                        row: second.attackerRow,
-                        col: second.attackerCol,
-                        targetPlayer: first.attackerPlayer,
-                        targetRow: first.attackerRow,
-                        targetCol: first.attackerCol,
-                        damage: dmgSecond,
-                        isFlying: second.isFlying
-                    });
-                    await sleep(800);
-
-                    first.attacker.currentHp -= dmgSecond;
-                    log(`↩️ ${second.attacker.name} → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-
-                    if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                        first.attacker.atk += 1;
-                        log(`💪 ${first.attacker.name} gagne +1 ATK!`, 'buff');
-                    }
-                }
-                // Pas besoin de l'animation mutual_melee ni du sleep(900) après
-            } else {
-                // Les deux ont initiative OU aucune n'a initiative - combat simultané
-                emitAnimation(room, 'attack', {
-                    combatType: 'mutual_melee',
-                    attacker: atk1.attackerPlayer,
-                    row: atk1.attackerRow,
-                    col: atk1.attackerCol,
-                    targetPlayer: atk2.attackerPlayer,
-                    targetRow: atk2.attackerRow,
-                    targetCol: atk2.attackerCol,
-                    damage1: dmg1,
-                    damage2: dmg2,
-                    isMutual: true
-                });
-                await sleep(900);
-
-                // Dégâts simultanés
-                atk2.attacker.currentHp -= dmg1;
-                atk1.attacker.currentHp -= dmg2;
-
-                log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1} / -${dmg2})`, 'damage');
-
-                // Power
-                if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
-                    atk1.attacker.atk += 1;
-                    log(`💪 ${atk1.attacker.name} gagne +1 ATK!`, 'buff');
-                }
-                if (atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
-                    atk2.attacker.atk += 1;
-                    log(`💪 ${atk2.attacker.name} gagne +1 ATK!`, 'buff');
-                }
+            // Power
+            if (actualD2mm > 0 && atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
+                const powerBonus = atk1.attacker.powerX || 1;
+                atk1.attacker.atk += powerBonus;
+                log(`💪 ${atk1.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
             }
+            if (actualD1mm > 0 && atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
+                const powerBonus = atk2.attacker.powerX || 1;
+                atk2.attacker.atk += powerBonus;
+                log(`💪 ${atk2.attacker.name} gagne +${powerBonus} ATK!`, 'buff');
+            }
+        }
+
+        // Piétinement en combat mutuel - seulement si la cible est un tireur
+        if (atk2.isShooter) {
+            await applyTrampleDamage(room, atk1, log, sleep);
+        }
+        if (atk1.isShooter) {
+            await applyTrampleDamage(room, atk2, log, sleep);
         }
     } else {
         // Pas de combat mutuel - traiter les attaques
 
         // CAS SPÉCIAL : 2 attaques qui peuvent se faire en parallèle
-        // (pas de combat mutuel, pas d'initiative exclusive)
         if (attacks.length === 2) {
             const atk1 = attacks[0];
             const atk2 = attacks[1];
 
-            // Vérifier si l'une a une initiative exclusive sur l'autre
-            const atk1HasExclusiveInit = atk1.hasInitiative && !atk2.hasInitiative;
-            const atk2HasExclusiveInit = atk2.hasInitiative && !atk1.hasInitiative;
-
-            // Si aucune n'a d'initiative exclusive, on les fait en parallèle
-            if (!atk1HasExclusiveInit && !atk2HasExclusiveInit) {
-                const attackerCard1 = room.gameState.players[atk1.attackerPlayer].field[atk1.attackerRow][atk1.attackerCol];
-                const attackerCard2 = room.gameState.players[atk2.attackerPlayer].field[atk2.attackerRow][atk2.attackerCol];
+            const attackerCard1 = room.gameState.players[atk1.attackerPlayer].field[atk1.attackerRow][atk1.attackerCol];
+            const attackerCard2 = room.gameState.players[atk2.attackerPlayer].field[atk2.attackerRow][atk2.attackerCol];
 
                 if (attackerCard1 && attackerCard1.currentHp > 0 && attackerCard2 && attackerCard2.currentHp > 0) {
                     const damage1 = attackerCard1.atk;
@@ -2113,19 +2154,29 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     } else {
                         const targetCard1 = room.gameState.players[atk1.targetPlayer].field[atk1.targetRow][atk1.targetCol];
                         if (targetCard1) {
-                            targetCard1.currentHp -= damage1;
-                            log(`⚔️ ${attackerCard1.name} → ${targetCard1.name} (-${damage1})`, 'damage');
-                            if (targetCard1.currentHp > 0 && targetCard1.abilities.includes('power')) {
-                                targetCard1.atk += 1;
-                                log(`💪 ${targetCard1.name} gagne +1 ATK!`, 'buff');
+                            const actualDmg1p = applyCreatureDamage(targetCard1, damage1, room, log, atk1.targetPlayer, atk1.targetRow, atk1.targetCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: attackerCard1.uid });
+                            if (actualDmg1p > 0) log(`⚔️ ${attackerCard1.name} → ${targetCard1.name} (-${damage1})`, 'damage');
+                            if (actualDmg1p > 0 && targetCard1.currentHp > 0 && targetCard1.abilities.includes('power')) {
+                                const powerBonus = targetCard1.powerX || 1;
+                                targetCard1.atk += powerBonus;
+                                log(`💪 ${targetCard1.name} gagne +${powerBonus} ATK!`, 'buff');
                             }
                             // Riposte pour atk1 (toutes les créatures ripostent sauf si attaquées par un tireur)
                             if (!atk1.isShooter) {
                                 const riposteDmg = targetCard1.atk;
-                                attackerCard1.currentHp -= riposteDmg;
-                                log(`↩️ ${targetCard1.name} riposte → ${attackerCard1.name} (-${riposteDmg})`, 'damage');
-                                emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: riposteDmg });
+                                const actualRip1 = applyCreatureDamage(attackerCard1, riposteDmg, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk1.targetPlayer, row: atk1.targetRow, col: atk1.targetCol, uid: targetCard1.uid });
+                                if (actualRip1 > 0) {
+                                    log(`↩️ ${targetCard1.name} riposte → ${attackerCard1.name} (-${riposteDmg})`, 'damage');
+                                    emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: riposteDmg });
+                                }
+                                if (actualRip1 > 0 && attackerCard1.currentHp > 0 && attackerCard1.abilities.includes('power')) {
+                                    const powerBonus = attackerCard1.powerX || 1;
+                                    attackerCard1.atk += powerBonus;
+                                    log(`💪 ${attackerCard1.name} gagne +${powerBonus} ATK!`, 'buff');
+                                }
                             }
+                            // Piétinement (attaque unilatérale)
+                            await applyTrampleDamage(room, atk1, log, sleep);
                         }
                     }
 
@@ -2143,19 +2194,29 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     } else {
                         const targetCard2 = room.gameState.players[atk2.targetPlayer].field[atk2.targetRow][atk2.targetCol];
                         if (targetCard2) {
-                            targetCard2.currentHp -= damage2;
-                            log(`⚔️ ${attackerCard2.name} → ${targetCard2.name} (-${damage2})`, 'damage');
-                            if (targetCard2.currentHp > 0 && targetCard2.abilities.includes('power')) {
-                                targetCard2.atk += 1;
-                                log(`💪 ${targetCard2.name} gagne +1 ATK!`, 'buff');
+                            const actualDmg2p = applyCreatureDamage(targetCard2, damage2, room, log, atk2.targetPlayer, atk2.targetRow, atk2.targetCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: attackerCard2.uid });
+                            if (actualDmg2p > 0) log(`⚔️ ${attackerCard2.name} → ${targetCard2.name} (-${damage2})`, 'damage');
+                            if (actualDmg2p > 0 && targetCard2.currentHp > 0 && targetCard2.abilities.includes('power')) {
+                                const powerBonus = targetCard2.powerX || 1;
+                                targetCard2.atk += powerBonus;
+                                log(`💪 ${targetCard2.name} gagne +${powerBonus} ATK!`, 'buff');
                             }
                             // Riposte pour atk2 (toutes les créatures ripostent sauf si attaquées par un tireur)
                             if (!atk2.isShooter) {
                                 const riposteDmg = targetCard2.atk;
-                                attackerCard2.currentHp -= riposteDmg;
-                                log(`↩️ ${targetCard2.name} riposte → ${attackerCard2.name} (-${riposteDmg})`, 'damage');
-                                emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: riposteDmg });
+                                const actualRip2 = applyCreatureDamage(attackerCard2, riposteDmg, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk2.targetPlayer, row: atk2.targetRow, col: atk2.targetCol, uid: targetCard2.uid });
+                                if (actualRip2 > 0) {
+                                    log(`↩️ ${targetCard2.name} riposte → ${attackerCard2.name} (-${riposteDmg})`, 'damage');
+                                    emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: riposteDmg });
+                                }
+                                if (actualRip2 > 0 && attackerCard2.currentHp > 0 && attackerCard2.abilities.includes('power')) {
+                                    const powerBonus = attackerCard2.powerX || 1;
+                                    attackerCard2.atk += powerBonus;
+                                    log(`💪 ${attackerCard2.name} gagne +${powerBonus} ATK!`, 'buff');
+                                }
                             }
+                            // Piétinement (attaque unilatérale)
+                            await applyTrampleDamage(room, atk2, log, sleep);
                         }
                     }
 
@@ -2184,25 +2245,29 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
 
                     // Envoyer toutes les animations de mort EN MÊME TEMPS
                     if (deaths.length > 0) {
+                        const normalDeaths = [];
                         for (const d of deaths) {
-                            addToGraveyard(room.gameState.players[d.player], d.card);
-                            room.gameState.players[d.player].field[d.row][d.col] = null;
-                            log(`☠️ ${d.card.name} détruit!`, 'damage');
-                            emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
+                            const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
+                            if (result.transformed) {
+                                emitAnimation(room, 'deathTransform', { player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
+                            } else {
+                                log(`☠️ ${d.card.name} détruit!`, 'damage');
+                                emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
+                                normalDeaths.push(d);
+                            }
                         }
                         await sleep(1100);
                         emitStateToBoth(room);
-                        // Capacités onDeath
-                        for (const d of deaths) {
+                        // Capacités onDeath (seulement pour les morts normales)
+                        for (const d of normalDeaths) {
                             await processOnDeathAbility(room, d.card, d.player, log, sleep);
                         }
                     }
                     return false;
                 }
-            }
         }
 
-        // Traitement séquentiel standard (1 attaque ou initiative exclusive)
+        // Traitement séquentiel standard (1 attaque)
         for (const atk of attacks) {
             // Vérifier si l'attaquant est encore en vie
             const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
@@ -2279,35 +2344,37 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 });
                 await sleep(800); // Attendre la fin de l'animation d'attaque
 
-                targetCard.currentHp -= damage;
-                log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
+                const actualSeqDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
+                if (actualSeqDmg > 0) {
+                    log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${actualSeqDmg})`, 'damage');
+                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualSeqDmg });
+                }
 
                 // Power pour la cible
-                if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
-                    targetCard.atk += 1;
-                    log(`💪 ${targetCard.name} gagne +1 ATK!`, 'buff');
+                if (actualSeqDmg > 0 && targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
+                    const powerBonus = targetCard.powerX || 1;
+                    targetCard.atk += powerBonus;
+                    log(`💪 ${targetCard.name} gagne +${powerBonus} ATK!`, 'buff');
                 }
 
-                // RIPOSTE - toutes les créatures ripostent sauf:
-                // - L'attaquant EST un tireur (le tireur ne reçoit jamais de riposte)
-                // - L'attaquant a initiative effective ET la cible meurt
-                const targetDied = targetCard.currentHp <= 0;
-                const attackerHasInitiative = attackerCard.abilities.includes('initiative');
-                const targetHasInitiative = targetCard.abilities?.includes('initiative') || false;
-                const effectiveInitiative = attackerHasInitiative && !targetHasInitiative;
-
-                if (!atk.isShooter && (!effectiveInitiative || !targetDied)) {
+                // RIPOSTE - toutes les créatures ripostent sauf si l'attaquant est un tireur
+                if (!atk.isShooter) {
                     const riposteDmg = targetCard.atk;
-                    attackerCard.currentHp -= riposteDmg;
-                    log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDmg})`, 'damage');
-                    // Afficher les dégâts de riposte
-                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDmg });
+                    const actualSeqRip = applyCreatureDamage(attackerCard, riposteDmg, room, log, atk.attackerPlayer, atk.attackerRow, atk.attackerCol, { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, uid: targetCard.uid });
+                    if (actualSeqRip > 0) {
+                        log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${actualSeqRip})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: actualSeqRip });
+                    }
 
-                    if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
-                        attackerCard.atk += 1;
-                        log(`💪 ${attackerCard.name} gagne +1 ATK!`, 'buff');
+                    if (actualSeqRip > 0 && attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
+                        const powerBonus = attackerCard.powerX || 1;
+                        attackerCard.atk += powerBonus;
+                        log(`💪 ${attackerCard.name} gagne +${powerBonus} ATK!`, 'buff');
                     }
                 }
+
+                // Piétinement (attaque unilatérale)
+                await applyTrampleDamage(room, atk, log, sleep);
             }
         }
     }
@@ -2330,16 +2397,21 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
 
     // Envoyer toutes les animations de mort EN MÊME TEMPS
     if (deaths.length > 0) {
+        const normalDeaths = [];
         for (const d of deaths) {
-            addToGraveyard(room.gameState.players[d.player], d.card);
-            room.gameState.players[d.player].field[d.row][d.col] = null;
-            log(`☠️ ${d.card.name} détruit!`, 'damage');
-            emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
+            const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
+            if (result.transformed) {
+                emitAnimation(room, 'deathTransform', { player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
+            } else {
+                log(`☠️ ${d.card.name} détruit!`, 'damage');
+                emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
+                normalDeaths.push(d);
+            }
         }
-        await sleep(1100); // Attendre l'animation de mort (une seule fois pour toutes)
+        await sleep(1100);
         emitStateToBoth(room);
-        // Capacités onDeath
-        for (const d of deaths) {
+        // Capacités onDeath (seulement pour les morts normales)
+        for (const d of normalDeaths) {
             await processOnDeathAbility(room, d.card, d.player, log, sleep);
         }
     }
@@ -2376,7 +2448,6 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
                     targetRow: target.row,
                     targetCol: target.col,
                     targetIsHero: target.isHero,
-                    hasInitiative: p1Card.abilities.includes('initiative'),
                     hasTrample: p1Card.abilities.includes('trample'),
                     isShooter: p1Card.abilities.includes('shooter'),
                     isFlying: p1Card.abilities.includes('fly'),
@@ -2400,7 +2471,6 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
                     targetRow: target.row,
                     targetCol: target.col,
                     targetIsHero: target.isHero,
-                    hasInitiative: p2Card.abilities.includes('initiative'),
                     hasTrample: p2Card.abilities.includes('trample'),
                     isShooter: p2Card.abilities.includes('shooter'),
                     isFlying: p2Card.abilities.includes('fly'),
@@ -2474,57 +2544,38 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
         // Traiter le combat mutuel s'il y en a un
         if (mutualPair) {
             const [atk1, atk2] = mutualPair;
-            const bothHaveInitiative = atk1.hasInitiative && atk2.hasInitiative;
-            const oneHasInitiative = atk1.hasInitiative !== atk2.hasInitiative;
 
-            if (bothHaveInitiative || !oneHasInitiative) {
-                // Dégâts SIMULTANÉS
-                const dmg1to2 = atk1.attacker.atk;
-                const dmg2to1 = atk2.attacker.atk;
+            // Dégâts SIMULTANÉS
+            const dmg1to2 = atk1.attacker.atk;
+            const dmg2to1 = atk2.attacker.atk;
 
-                atk2.attacker.currentHp -= dmg1to2;
-                atk1.attacker.currentHp -= dmg2to1;
+            const actualMR1 = applyCreatureDamage(atk2.attacker, dmg1to2, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: atk1.attacker.uid });
+            const actualMR2 = applyCreatureDamage(atk1.attacker, dmg2to1, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: atk2.attacker.uid });
 
-                log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${dmg1to2} / -${dmg2to1})`, 'damage');
-                emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: dmg1to2 });
-                emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: dmg2to1 });
+            if (actualMR1 > 0 || actualMR2 > 0) {
+                log(`⚔️ ${atk1.attacker.name} ↔ ${atk2.attacker.name} (-${actualMR1} / -${actualMR2})`, 'damage');
+            }
+            if (actualMR1 > 0) {
+                emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: actualMR1 });
+            }
+            if (actualMR2 > 0) {
+                emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: actualMR2 });
+            }
 
-                // Power bonus
-                if (atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
-                    atk1.attacker.pendingPowerBonus = (atk1.attacker.pendingPowerBonus || 0) + 1;
-                }
-                if (atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
-                    atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + 1;
-                }
+            // Power bonus
+            if (actualMR2 > 0 && atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
+                atk1.attacker.pendingPowerBonus = (atk1.attacker.pendingPowerBonus || 0) + (atk1.attacker.powerX || 1);
+            }
+            if (actualMR1 > 0 && atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
+                atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + (atk2.attacker.powerX || 1);
+            }
 
+            // Piétinement en combat mutuel - seulement si la cible est un tireur
+            if (atk2.attacker.abilities.includes('shooter')) {
                 await applyTrampleDamage(room, atk1, log, sleep);
+            }
+            if (atk1.attacker.abilities.includes('shooter')) {
                 await applyTrampleDamage(room, atk2, log, sleep);
-            } else {
-                // Une seule a initiative
-                const first = atk1.hasInitiative ? atk1 : atk2;
-                const second = atk1.hasInitiative ? atk2 : atk1;
-
-                const dmgFirst = first.attacker.atk;
-                second.attacker.currentHp -= dmgFirst;
-                log(`⚔️ ${first.attacker.name} → ${second.attacker.name} (-${dmgFirst}) [Initiative]`, 'damage');
-                emitAnimation(room, 'damage', { player: second.attackerPlayer, row: second.attackerRow, col: second.attackerCol, amount: dmgFirst });
-
-                if (second.attacker.currentHp > 0 && second.attacker.abilities.includes('power')) {
-                    second.attacker.pendingPowerBonus = (second.attacker.pendingPowerBonus || 0) + 1;
-                }
-
-                await applyTrampleDamage(room, first, log, sleep);
-
-                if (second.attacker.currentHp > 0) {
-                    const dmgSecond = second.attacker.atk;
-                    first.attacker.currentHp -= dmgSecond;
-                    log(`↩️ ${second.attacker.name} contre-attaque → ${first.attacker.name} (-${dmgSecond})`, 'damage');
-                    emitAnimation(room, 'damage', { player: first.attackerPlayer, row: first.attackerRow, col: first.attackerCol, amount: dmgSecond });
-
-                    if (first.attacker.currentHp > 0 && first.attacker.abilities.includes('power')) {
-                        first.attacker.pendingPowerBonus = (first.attacker.pendingPowerBonus || 0) + 1;
-                    }
-                }
             }
         }
 
@@ -2573,32 +2624,31 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
 
                 const hpBeforeThisAttack = targetCard.currentHp;
                 const damage = attackerCard.atk;
-                targetCard.currentHp -= damage;
-                log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${damage})`, 'damage');
-                emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: damage });
+                const actualUniDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
+                if (actualUniDmg > 0) {
+                    log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${actualUniDmg})`, 'damage');
+                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualUniDmg });
+                }
 
-                if (targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
-                    targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + 1;
+                if (actualUniDmg > 0 && targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
+                    targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + (targetCard.powerX || 1);
                 }
 
                 await applyTrampleDamage(room, atk, log, sleep);
 
                 // RIPOSTE si la cible était vivante et que l'attaquant n'est pas un tireur
                 const targetWasAlive = hpBeforeThisAttack > 0;
-                const targetDiedFromThisAttack = hpBeforeThisAttack > 0 && targetCard.currentHp <= 0;
-                const attackerHasInitiative = attackerCard.abilities.includes('initiative');
-                const targetHasInitiative = targetCard.abilities?.includes('initiative');
-                const effectiveInitiative = attackerHasInitiative && !targetHasInitiative;
 
-                // Riposte si: cible vivante, attaquant pas tireur, pas d'initiative effective qui tue
-                if (targetWasAlive && !atk.isShooter && (!effectiveInitiative || !targetDiedFromThisAttack)) {
+                if (targetWasAlive && !atk.isShooter) {
                     const riposteDamage = targetCard.atk;
-                    attackerCard.currentHp -= riposteDamage;
-                    log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${riposteDamage})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: riposteDamage });
+                    const actualUniRip = applyCreatureDamage(attackerCard, riposteDamage, room, log, atk.attackerPlayer, atk.attackerRow, atk.attackerCol, { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, uid: targetCard.uid });
+                    if (actualUniRip > 0) {
+                        log(`↩️ ${targetCard.name} riposte → ${attackerCard.name} (-${actualUniRip})`, 'damage');
+                        emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: actualUniRip });
+                    }
 
-                    if (attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
-                        attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + 1;
+                    if (actualUniRip > 0 && attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
+                        attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + (attackerCard.powerX || 1);
                     }
                 }
             }
@@ -2664,13 +2714,15 @@ async function applyTrampleDamage(room, atk, log, sleep) {
         trampleTarget = null;
     }
     
-    if (trampleTarget && !trampleTarget.abilities.includes('intangible')) {
-        trampleTarget.currentHp -= excessDamage;
-        log(`🦏 Piétinement: ${atk.attacker.name} → ${trampleTarget.name} (-${excessDamage})`, 'damage');
-        emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: trampleCol, amount: excessDamage });
-        
-        if (trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
-            trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + 1;
+    if (trampleTarget) {
+        const actualTrDmg = applyCreatureDamage(trampleTarget, excessDamage, room, log, atk.targetPlayer, atk.targetRow, trampleCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: atk.attacker.uid });
+        if (actualTrDmg > 0) {
+            log(`🦏 Piétinement: ${atk.attacker.name} → ${trampleTarget.name} (-${actualTrDmg})`, 'damage');
+            emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: trampleCol, amount: actualTrDmg });
+        }
+
+        if (actualTrDmg > 0 && trampleTarget.currentHp > 0 && trampleTarget.abilities.includes('power')) {
+            trampleTarget.pendingPowerBonus = (trampleTarget.pendingPowerBonus || 0) + (trampleTarget.powerX || 1);
         }
     } else if (excessDamage > 0 && !trampleTarget) {
         targetOwner.hp -= excessDamage;
@@ -2915,6 +2967,12 @@ io.on('connection', (socket) => {
         if (!card || card.type !== 'creature' || card.cost > player.energy) return;
         if (player.field[row][col]) return;
         if (!canPlaceAt(card, col)) return;
+
+        // Vérification des conditions d'invocation spéciales
+        if (card.requiresGraveyardCreatures) {
+            const graveyardCreatures = (player.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatures < card.requiresGraveyardCreatures) return;
+        }
         
         player.energy -= card.cost;
         const placed = { 
@@ -2945,6 +3003,7 @@ io.on('connection', (socket) => {
         const { fromRow, fromCol, toRow, toCol } = data;
         const card = player.field[fromRow][fromCol];
         if (!card || card.movedThisTurn) return;
+        if (card.abilities?.includes('immovable')) return;
         if (player.field[toRow][toCol]) return;
         
         const isFlying = card.abilities?.includes('fly');

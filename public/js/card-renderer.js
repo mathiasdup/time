@@ -152,9 +152,15 @@ const CardRenderer = {
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité',
             intangible: 'Intangible', trample: 'Piétinement',
-            initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
-        const abilities = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        const abilities = (card.abilities || []).map(a => {
+            if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            return abilityNames[a] || a;
+        }).join(', ');
 
         if (abilities) {
             const abStyle = new PIXI.TextStyle({

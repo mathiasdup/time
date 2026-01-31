@@ -827,6 +827,8 @@
         }
         .hero-card.hit { animation: heroHit 0.5s ease-out; }
         @keyframes heroHit { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 30px rgba(255,0,0,0.8), inset 0 0 20px rgba(255,0,0,0.3); } }
+        .card-slot.hit { animation: slotHit 0.5s ease-out; }
+        @keyframes slotHit { 0%, 100% { transform: translateX(0); box-shadow: none; } 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); box-shadow: 0 0 20px rgba(255,80,0,0.7); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
         .hero-title {
             display: none; /* Caché sur le terrain, visible uniquement en hover/preview */
         }
@@ -1755,7 +1757,7 @@
         }
         .card.arena-style .arena-abilities {
             font-family: 'Quicksand', sans-serif;
-            font-size: 0.22em;
+            font-size: 5px;
             font-weight: 600;
             color: #e5e5e5;
             margin-top: 1px;
@@ -1763,11 +1765,11 @@
         }
         .card.arena-style .arena-special {
             font-family: 'Quicksand', sans-serif;
-            font-size: 0.2em;
+            font-size: 5px;
             font-weight: 500;
             color: #d0d0d0;
             margin-top: 2px;
-            line-height: 1.1;
+            line-height: 1.2;
             text-align: left;
         }
 
@@ -2052,6 +2054,7 @@
             background: rgba(0, 0, 0, 0.5) !important;
         }
         .card.arena-style.faction-green .arena-stats {
+            background: #29573c6b !important;
             border: none !important;
         }
         .card.arena-style[class*="faction-"] .arena-stats::before {
@@ -2120,6 +2123,7 @@
             0%, 100% { box-shadow: 0 0 5px rgba(98, 215, 255, 0.4); border-color: #62d7ff; }
             50% { box-shadow: 0 0 14px rgba(98, 215, 255, 0.9); border-color: #90e4ff; }
         }
+
 
         /* ANIMATIONS */
         .card.attacking { animation: attackAnim 0.4s ease-out; }
@@ -2251,6 +2255,55 @@
             position: relative;
             z-index: 10;
         }
+        /* Bouclier Nid d'Abeilles (Protection) — overlay SVG */
+        .card .shield-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 110%;
+            height: 110%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            pointer-events: none;
+            perspective: 800px;
+            animation: shieldHover 3s infinite ease-in-out;
+        }
+        .shield-indicator .shield-3d {
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            animation: shieldTilt 6s infinite ease-in-out;
+        }
+        .shield-indicator .shield-svg {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 0 4px rgba(0, 220, 255, 0.3));
+        }
+        @keyframes shieldHover {
+            0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+            50% { transform: translate(-50%, -50%) translateY(-6px); }
+        }
+        @keyframes shieldTilt {
+            0%, 100% { transform: rotateX(3deg) rotateY(0deg); }
+            25% { transform: rotateX(1deg) rotateY(4deg); }
+            50% { transform: rotateX(-2deg) rotateY(0deg); }
+            75% { transform: rotateX(1deg) rotateY(-4deg); }
+        }
+        @keyframes shieldBreakFlash {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.1); }
+            100% { opacity: 0; transform: scale(1.3); }
+        }
+        @keyframes shieldText {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+            30% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+            100% { opacity: 0; transform: translate(-50%, -80%) scale(1); }
+        }
+        @keyframes sparkle {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2) translateY(-20px); }
+        }
+
         /* Le slot avec un volant - pas de couleur spéciale */
         /* Ombre au sol pour les volants */
         .card-slot.has-flying::after {
@@ -2498,7 +2551,7 @@
             width: 24px;
             height: 24px;
             border-radius: 50%;
-            padding: 1.4px;
+            padding: 1.6px;
             background: linear-gradient(135deg,
                 #8b7355 0%,
                 #d4c4a8 15%,

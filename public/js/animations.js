@@ -74,9 +74,15 @@ function createCardElement(card) {
 
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', initiative: 'Initiative', power: 'Puissance', cleave: 'Clivant'
+            trample: 'Piétinement', power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection'
         };
-        const abilitiesText = (card.abilities || []).map(a => abilityNames[a] || a).join(', ');
+        const abilitiesText = (card.abilities || []).map(a => {
+            if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
+            if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            return abilityNames[a] || a;
+        }).join(', ');
 
         let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
@@ -95,7 +101,8 @@ function createCardElement(card) {
 
     const icons = {
         fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', initiative: '🗡️', power: '💪', cleave: '⛏️'
+        trample: '🦏', power: '💪', cleave: '⛏️', immovable: '🪨', regeneration: '💚',
+        protection: '🛡️'
     };
     const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
 

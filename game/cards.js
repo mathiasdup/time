@@ -98,7 +98,8 @@ const CardDB = {
             creatureType: 'elemental',
             combatType: 'melee',
             edition: 1,
-            onDeath: { damageKiller: 1 }
+            onDeath: { damageKiller: 1 },
+            description: 'Quand Torche vivante meurt, elle inflige 1 blessure à la créature responsable de sa mort.'
         },
         {
             id: 'salamandre_braise',
@@ -119,7 +120,7 @@ const CardDB = {
         },
         { id: 'storm_guard', name: 'Garde Tempête', atk: 3, hp: 1, cost: 0, abilities: ['fly'], type: 'creature', image: 'white/oiseau.png', combatType: 'fly', arenaStyle: true, faction: 'white', creatureType: 'beast', edition: 1 },
         { id: 'skeleton_archer', name: 'Archer Squelette', atk: 4, hp: 1, cost: 0, abilities: ['shooter'], type: 'creature', image: 'green/squelette-archer.jpg', combatType: 'shooter', arenaStyle: true, faction: 'green', onHeroHit: 'draw', creatureType: 'undead', edition: 1 },
-        { id: 'forest_guardian', name: 'Gardien de Forêt', atk: 3, hp: 3, cost: 0, abilities: ['Protection'], type: 'creature', image: 'green/dryade.png', combatType: 'melee', arenaStyle: true, faction: 'green', creatureType: 'spirit', edition: 2 },
+        { id: 'forest_guardian', name: 'Gardien de Forêt', atk: 3, hp: 3, cost: 0, abilities: ['protection'], type: 'creature', image: 'green/dryade.png', combatType: 'melee', arenaStyle: true, faction: 'green', creatureType: 'spirit', edition: 2 },
         { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 0, abilities: ['fly', 'cleave', 'trample'], cleaveX: 3, type: 'creature', image: 'red/dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, faction: 'red', creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 } },
         { id: 'radiant_dragon', name: 'Dragon d\'Éclat', atk: 6, hp: 6, cost: 0, abilities: ['fly'], type: 'creature', image: 'blue/dragon-glace.png', combatType: 'fly', arenaStyle: true, faction: 'blue', creatureType: 'dragon', edition: 3, onDamagedThisTurn: 'draw', description: 'À la fin du tour, si le Dragon d\'Éclat a subi des blessures ce tour-ci, piochez une carte.' },
         { id: 'sea_serpent', name: 'Serpent de mer', atk: 1, hp: 5, cost: 0, abilities: ['intangible', 'power'], powerX: 2, type: 'creature', image: 'blue/serpentdemer.png', combatType: 'melee', arenaStyle: true, faction: 'blue', creatureType: 'serpent', edition: 3 },
@@ -192,7 +193,11 @@ function resetCardForGraveyard(card) {
     const baseCard = CardDB.creatures.find(c => c.id === card.id) ||
                      CardDB.spells.find(c => c.id === card.id) ||
                      CardDB.traps.find(c => c.id === card.id);
-    return baseCard ? { ...baseCard } : { ...card };
+    const reset = baseCard ? { ...baseCard } : { ...card };
+    if (reset.abilities && reset.abilities.includes('protection')) {
+        reset.hasProtection = true;
+    }
+    return reset;
 }
 
 // Ajouter une carte au cimetière
@@ -227,6 +232,7 @@ function createDeck() {
         card.canAttack = false;
         card.turnsOnField = 0;
         card.movedThisTurn = false;
+        if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
         deck.push(card);
     }
 
@@ -245,6 +251,7 @@ function createDeck() {
         card.canAttack = false;
         card.turnsOnField = 0;
         card.movedThisTurn = false;
+        if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
         deck.push(card);
     }
 
@@ -265,6 +272,7 @@ function createDeck() {
             card.canAttack = false;
             card.turnsOnField = 0;
             card.movedThisTurn = false;
+            if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
         }
         deck.push(card);
     }
@@ -297,7 +305,8 @@ function createPlayerState() {
             baseHp: krakenTemplate.hp,
             canAttack: false,
             turnsOnField: 0,
-            movedThisTurn: false
+            movedThisTurn: false,
+            hasProtection: (krakenTemplate.abilities || []).includes('protection')
         };
         console.log(`[createPlayerState] Created Kraken Colossal with abilities: ${JSON.stringify(kraken.abilities)}, requiresGraveyardCreatures: ${kraken.requiresGraveyardCreatures}`);
         deck.unshift(kraken);
@@ -323,7 +332,8 @@ function createPlayerState() {
             baseHp: dryadeTemplate.hp,
             canAttack: false,
             turnsOnField: 0,
-            movedThisTurn: false
+            movedThisTurn: false,
+            hasProtection: (dryadeTemplate.abilities || []).includes('protection')
         };
         console.log(`[createPlayerState] Created dryade with abilities: ${JSON.stringify(dryade.abilities)}`);
         deck.unshift(dryade);
