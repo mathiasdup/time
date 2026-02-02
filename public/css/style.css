@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+        *, *::before, *::after { cursor: none !important; }
+
         body {
             font-family: 'Cinzel', serif;
             background: url('background.png') no-repeat center center fixed;
@@ -8,6 +9,59 @@
             min-height: 100vh;
             color: white;
             overflow: hidden;
+        }
+
+        /* ── Curseur fantasy custom ── */
+        .cursor-fantasy {
+            position: fixed;
+            pointer-events: none;
+            z-index: 99999;
+        }
+        .cursor-fantasy-main {
+            width: 40px;
+            height: 40px;
+            transform: translate(-3px, -3px) rotate(15deg);
+            transform-origin: 3px 3px;
+        }
+        .cursor-fantasy-main svg {
+            width: 100%;
+            height: 100%;
+        }
+        .cursor-fantasy.clicking {
+            transform: scale(0.95);
+        }
+        .cursor-trail {
+            position: fixed;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,171,64,0.9) 0%, rgba(255,109,0,0) 70%);
+            pointer-events: none;
+            z-index: 99998;
+            animation: trail-fade 0.35s ease-out forwards;
+        }
+        @keyframes trail-fade {
+            to { opacity: 0; transform: scale(0.5); }
+        }
+        .click-effect {
+            position: fixed;
+            pointer-events: none;
+            z-index: 99997;
+            width: 30px;
+            height: 30px;
+            transform: translate(-50%, -50%);
+        }
+        .click-ring {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border: 2px solid rgba(255,171,64,0.85);
+            border-radius: 50%;
+            animation: click-expand 0.35s ease-out forwards;
+        }
+        @keyframes click-expand {
+            from { transform: scale(0.4); opacity: 1; }
+            to { transform: scale(1.8); opacity: 0; }
         }
         
         .lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; background: rgba(0,0,0,0.7); }
@@ -76,13 +130,44 @@
             align-items: center;
             gap: 0;
         }
-        .player-name-badge .rank-icon {
+        .player-name-badge .rank-badge-wrapper {
             width: 70px;
-            height: 70px;
-            object-fit: contain;
+            height: 80px;
             z-index: 2;
             position: relative;
-            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 26px;
+        }
+        .rank-badge {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+        .rank-gem {
+            width: 54px;
+            height: 54px;
+            position: relative;
+            z-index: 1;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+        }
+        .rank-gem svg {
+            width: 100%;
+            height: 100%;
+        }
+        .rank-tier-label {
+            font-family: 'Cinzel', serif;
+            font-size: 0.72em;
+            font-weight: 900;
+            letter-spacing: 1px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+            margin-top: -2px;
+            z-index: 1;
         }
         .player-name-badge .player-name-text {
             font-size: 1em;
@@ -803,8 +888,8 @@
             transition: all 0.3s;
         }
         .hero-card.hero-targetable {
-            border-color: #2ecc71 !important;
-            box-shadow: 0 0 15px rgba(46,204,113,0.5);
+            border-color: #62d7ff !important;
+            box-shadow: 0 0 15px rgba(98,215,255,0.5);
             animation: validPulse 1s infinite;
         }
         .hero-card.hero-drag-over {
@@ -829,6 +914,58 @@
         @keyframes heroHit { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 30px rgba(255,0,0,0.8), inset 0 0 20px rgba(255,0,0,0.3); } }
         .card-slot.hit { animation: slotHit 0.5s ease-out; }
         @keyframes slotHit { 0%, 100% { transform: translateX(0); box-shadow: none; } 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); box-shadow: 0 0 20px rgba(255,80,0,0.7); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+
+        /* ATK Boost Animation (Salamandre de braise) */
+        .atk-boost-aura {
+            position: absolute;
+            inset: 0;
+            border-radius: 8px;
+            pointer-events: none;
+            animation: atkBoostAura 0.9s ease-out forwards;
+        }
+        @keyframes atkBoostAura {
+            0% { box-shadow: 0 0 0 rgba(255, 120, 20, 0); opacity: 0; }
+            10% { box-shadow: 0 0 25px rgba(255, 120, 20, 0.9), 0 0 50px rgba(255, 60, 0, 0.5), inset 0 0 20px rgba(255, 100, 0, 0.4); opacity: 1; }
+            35% { box-shadow: 0 0 35px rgba(255, 140, 40, 1), 0 0 70px rgba(255, 80, 0, 0.6), inset 0 0 25px rgba(255, 120, 20, 0.5); opacity: 1; }
+            70% { box-shadow: 0 0 20px rgba(255, 140, 40, 0.6), 0 0 40px rgba(255, 80, 0, 0.3), inset 0 0 10px rgba(255, 120, 20, 0.2); opacity: 0.8; }
+            100% { box-shadow: 0 0 0 rgba(255, 120, 20, 0); opacity: 0; }
+        }
+        .atk-boost-particle {
+            position: absolute;
+            bottom: 30%;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #ffe066, #ff8800);
+            box-shadow: 0 0 6px rgba(255, 180, 0, 0.8);
+            pointer-events: none;
+            animation: atkBoostParticle 0.8s ease-out forwards;
+        }
+        @keyframes atkBoostParticle {
+            0% { opacity: 1; transform: translateY(0) scale(0.8); }
+            40% { opacity: 1; transform: translateY(-20px) scale(1.2); }
+            100% { opacity: 0; transform: translateY(-55px) scale(0.2); }
+        }
+        .atk-boost-label {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.3);
+            font-size: 1.3em;
+            font-weight: 900;
+            color: #ffdd44;
+            text-shadow: 0 0 12px rgba(255, 100, 0, 1), 0 0 25px rgba(255, 60, 0, 0.7), 0 2px 4px rgba(0,0,0,0.9);
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            white-space: nowrap;
+            letter-spacing: 1px;
+        }
+        .atk-boost-label.active {
+            opacity: 1;
+            transform: translate(-50%, -60%) scale(1.1);
+        }
+
         .hero-title {
             display: none; /* Caché sur le terrain, visible uniquement en hover/preview */
         }
@@ -1057,31 +1194,36 @@
             width: 105px;
             height: 140px;
         }
-        /* Cartes empilées du cimetière style Magic Arena */
+        /* Cartes empilées du cimetière — vraies cartes */
         .grave-card-layer {
             position: absolute;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, rgba(50,50,70,0.95), rgba(30,30,50,0.95));
-            border: 2px solid rgba(255,255,255,0.3);
             border-radius: 6px;
             display: none;
+            overflow: hidden;
+        }
+        .grave-card-layer .card {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
         }
         /* Couches empilées vers la droite pour le joueur */
-        .side-panel.left .grave-card-layer:nth-child(1) { transform: translate(6px, 2px); z-index: 1; }
-        .side-panel.left .grave-card-layer:nth-child(2) { transform: translate(3px, 1px); z-index: 2; }
-        .side-panel.left .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
-        
+        .side-panel.left .grave-card-layer:nth-child(1) { transform: translate(8px, 3px); z-index: 1; }
+        .side-panel.left .grave-card-layer:nth-child(2) { transform: translate(5px, 2px); z-index: 2; }
+        .side-panel.left .grave-card-layer:nth-child(3) { transform: translate(2px, 1px); z-index: 3; }
+
         /* Couches empilées vers la gauche pour l'adversaire (miroir) */
-        .side-panel.right .grave-card-layer:nth-child(1) { transform: translate(-6px, 2px); z-index: 1; }
-        .side-panel.right .grave-card-layer:nth-child(2) { transform: translate(-3px, 1px); z-index: 2; }
-        .side-panel.right .grave-card-layer:nth-child(3) { transform: translate(0px, 0px); z-index: 3; }
-        
-        /* Afficher les couches selon le nombre de cartes */
+        .side-panel.right .grave-card-layer:nth-child(1) { transform: translate(-8px, 3px); z-index: 1; }
+        .side-panel.right .grave-card-layer:nth-child(2) { transform: translate(-5px, 2px); z-index: 2; }
+        .side-panel.right .grave-card-layer:nth-child(3) { transform: translate(-2px, 1px); z-index: 3; }
+
+        /* Afficher les couches selon le nombre de cartes (1 carte = 0 layers, 2 = 1, 3 = 2, 4+ = 3) */
         .grave-stack.has-cards .grave-card-layer { display: block; }
-        .grave-stack.cards-1 .grave-card-layer:nth-child(1),
-        .grave-stack.cards-1 .grave-card-layer:nth-child(2) { display: none; }
-        .grave-stack.cards-2 .grave-card-layer:nth-child(1) { display: none; }
+        .grave-stack.cards-1 .grave-card-layer { display: none; }
+        .grave-stack.cards-2 .grave-card-layer:nth-child(1),
+        .grave-stack.cards-2 .grave-card-layer:nth-child(2) { display: none; }
+        .grave-stack.cards-3 .grave-card-layer:nth-child(1) { display: none; }
         
         .card.in-graveyard .arena-stats {
             display: none;
@@ -1100,6 +1242,15 @@
             border: 2px solid rgba(255,255,255,0.3);
             z-index: 5;
         }
+        .grave-top-card:not(.empty) {
+            background: transparent;
+            border: none;
+        }
+        .grave-top-card:not(.empty) .card {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+        }
         .grave-top-card.empty {
             background: rgba(255,255,255,0.05);
             border: 2px solid rgba(255,255,255,0.2);
@@ -1114,7 +1265,7 @@
             width: 40px;
             height: 40px;
             background: url('death.png') center/contain no-repeat;
-            opacity: 0.2;
+            opacity: 0.3;
             filter: brightness(0) invert(1);
         }
         .grave-top-card .mini-card {
@@ -1233,12 +1384,12 @@
             cursor: default;
             transition: none;
         }
-        .card-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.25) !important; box-shadow: 0 0 15px rgba(46,204,113,0.5); animation: validPulse 1s infinite; }
+        .card-slot.valid-target { border-color: #62d7ff !important; background: rgba(98,215,255,0.25) !important; box-shadow: 0 0 15px rgba(98,215,255,0.5); animation: validPulse 1s infinite; }
+        .card-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.35) !important; box-shadow: 0 0 25px rgba(241,196,15,0.8); }
         .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
         @keyframes crossPulse { 0%,100% { box-shadow: 0 0 10px rgba(243,156,18,0.4); } 50% { box-shadow: 0 0 25px rgba(243,156,18,0.8); } }
-        .card-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.35) !important; box-shadow: 0 0 25px rgba(241,196,15,0.8); }
         .card-slot.moveable { border-color: #3498db !important; background: rgba(52,152,219,0.25) !important; box-shadow: 0 0 15px rgba(52,152,219,0.5); }
-        @keyframes validPulse { 0%,100% { box-shadow: 0 0 10px rgba(46,204,113,0.4); } 50% { box-shadow: 0 0 25px rgba(46,204,113,0.8); } }
+        @keyframes validPulse { 0%,100% { box-shadow: 0 0 10px rgba(98,215,255,0.4); } 50% { box-shadow: 0 0 25px rgba(98,215,255,0.8); } }
         
         .trap-slot { 
             width: 55px; 
@@ -1289,7 +1440,7 @@
         .trap-icon-img.enemy {
             filter: brightness(0) saturate(100%) invert(30%) sepia(90%) saturate(2000%) hue-rotate(340deg) brightness(90%);
         }
-        .trap-slot.valid-target { border-color: #2ecc71 !important; background: rgba(46,204,113,0.3) !important; }
+        .trap-slot.valid-target { border-color: #62d7ff !important; background: rgba(98,215,255,0.3) !important; }
         .trap-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.4) !important; }
         .trap-slot.triggered { animation: trapExplode 0.6s ease-out; }
         @keyframes trapExplode { 0% { transform: scale(1); } 50% { transform: scale(1.8); background: rgba(255,100,0,0.8); } 100% { transform: scale(0); opacity: 0; } }
@@ -1346,8 +1497,88 @@
             60% { box-shadow: 0 0 15px rgba(255,170,50,0.6), 0 0 35px rgba(255,120,20,0.2); border-color: rgba(255,170,50,0.8); }
             100% { box-shadow: none; border-color: rgba(255,255,255,0.25); }
         }
-        
-        .card { 
+
+        /* Effet d'invocation pour ses propres créatures */
+        .summon-ring {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 15;
+            border: 2px solid rgba(98, 215, 255, 0.9);
+            animation: summonRingExpand 700ms ease-out forwards;
+        }
+        @keyframes summonRingExpand {
+            0% { width: 20px; height: 20px; opacity: 1; border-width: 3px; }
+            60% { opacity: 0.8; border-width: 2px; }
+            100% { width: 140px; height: 140px; opacity: 0; border-width: 1px; }
+        }
+        .summon-flash {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px; height: 60px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 16;
+            background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(98,215,255,0.5) 40%, transparent 70%);
+            animation: summonFlash 500ms ease-out forwards;
+        }
+        @keyframes summonFlash {
+            0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+            20% { opacity: 1; }
+            50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.8; }
+            100% { transform: translate(-50%, -50%) scale(2.0); opacity: 0; }
+        }
+        .card-slot.summoning {
+            animation: summonSlotGlow 800ms ease-out;
+            z-index: 14;
+        }
+        @keyframes summonSlotGlow {
+            0% { box-shadow: 0 0 5px rgba(98,215,255,0.3); border-color: rgba(98,215,255,0.5); }
+            30% { box-shadow: 0 0 25px rgba(98,215,255,0.9), 0 0 50px rgba(50,150,255,0.4); border-color: rgba(130,220,255,1); }
+            60% { box-shadow: 0 0 15px rgba(98,215,255,0.6), 0 0 35px rgba(50,150,255,0.2); border-color: rgba(98,215,255,0.8); }
+            100% { box-shadow: none; border-color: rgba(255,255,255,0.25); }
+        }
+
+        /* Effet coup de vent pour déplacement de ses propres créatures */
+        .wind-gust {
+            position: absolute;
+            inset: -15px;
+            overflow: hidden;
+            transform-origin: center center;
+        }
+        .wind-streak {
+            position: absolute;
+            height: 2px;
+            left: -60%;
+            background: linear-gradient(90deg, transparent 0%, rgba(200,235,255,0.5) 15%, rgba(255,255,255,0.9) 45%, rgba(255,255,255,0.9) 55%, rgba(200,235,255,0.5) 85%, transparent 100%);
+            border-radius: 1px;
+            opacity: 0;
+            animation: windSweep 380ms ease-out forwards;
+            filter: blur(0.5px);
+        }
+        @keyframes windSweep {
+            0% { left: -60%; opacity: 0; }
+            10% { opacity: 0.85; }
+            100% { left: 120%; opacity: 0; }
+        }
+        .wind-flash {
+            position: absolute;
+            inset: 0;
+            border-radius: 6px;
+            background: radial-gradient(ellipse at center, rgba(255,255,255,0.25) 0%, transparent 70%);
+            opacity: 0;
+            animation: windFlash 400ms ease-out forwards;
+        }
+        @keyframes windFlash {
+            0% { opacity: 0; }
+            15% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .card {
             width: 100px; 
             height: 135px; 
             border-radius: 6px; 
@@ -1366,11 +1597,9 @@
         .drag-ghost-container {
             contain: layout style;
             will-change: transform;
-            filter: drop-shadow(0 20px 40px rgba(0,0,0,0.5));
         }
         .drag-ghost-container.lifting {
-            transition: transform 180ms cubic-bezier(0.34, 1.2, 0.64, 1),
-                        filter 180ms ease-out;
+            transition: transform 180ms cubic-bezier(0.34, 1.2, 0.64, 1);
         }
         .drag-ghost-container.snapping {
             transition: transform 200ms cubic-bezier(0.2, 0, 0, 1),
@@ -1382,21 +1611,53 @@
         }
         .drag-ghost-card,
         .drag-ghost-card.card.arena-style[class*="faction-"] {
-            border: 3px solid #e67e22 !important;
-            border-radius: 8px !important;
-            box-shadow: 0 0 8px rgba(230, 126, 34, 0.5);
-            width: 100% !important;
-            height: 100% !important;
+            border: 2px solid #e67e22 !important;
+            border-radius: 4px !important;
+            box-shadow: 0 0 8px rgba(230, 126, 34, 0.5), 0 20px 40px rgba(0,0,0,0.5);
+            width: 100px !important;
+            height: 135px !important;
             margin: 0 !important;
             cursor: grabbing;
             animation: dragGhostGlow 1.5s ease-in-out infinite !important;
+            transform-origin: top left;
+            transform: scale(1.3);
         }
         @keyframes dragGhostGlow {
-            0%, 100% { box-shadow: 0 0 6px rgba(230, 126, 34, 0.4); border-color: #e67e22; }
-            50% { box-shadow: 0 0 16px rgba(230, 126, 34, 0.9); border-color: #f0a060; }
+            0%, 100% { box-shadow: 0 0 6px rgba(230, 126, 34, 0.4), 0 20px 40px rgba(0,0,0,0.5); border-color: #e67e22; }
+            50% { box-shadow: 0 0 16px rgba(230, 126, 34, 0.9), 0 20px 40px rgba(0,0,0,0.5); border-color: #f0a060; }
         }
         .card.custom-dragging {
             visibility: hidden;
+        }
+
+        /* === Arrow Targeting Mode (sorts/pièges) === */
+        #gl-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        .my-hand .card.arrow-dragging,
+        .my-hand .card.arena-style.arrow-dragging[class*="faction-"] {
+            transform: translateY(-50px) scale(1.3) !important;
+            z-index: 1000 !important;
+            border: 2px solid #e67e22 !important;
+            pointer-events: none;
+            animation: none !important;
+        }
+        .my-hand .card.arrow-dragging::after,
+        .my-hand .card.arena-style.arrow-dragging[class*="faction-"]::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            animation: arrowDragGlow 1.5s ease-in-out infinite;
+        }
+        @keyframes arrowDragGlow {
+            0%, 100% { box-shadow: 0 0 6px rgba(230, 126, 34, 0.4); }
+            50% { box-shadow: 0 0 16px rgba(230, 126, 34, 0.9); }
         }
         .card-cost { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; background: radial-gradient(circle at 30% 30%, #4fc3f7, #0277bd); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; border: 2px solid #81d4fa; z-index: 5; }
         .card-cost.discounted { color: #4caf50; text-shadow: 0 0 6px #1b5e20, 0 0 10px rgba(76, 175, 80, 0.8); }
@@ -1417,9 +1678,9 @@
         .stat-hp.reduced { background: linear-gradient(135deg, #e67e22, #d35400); }
         .stat-atk.reduced { background: linear-gradient(135deg, #e74c3c, #c0392b); }
         .stat-atk.boosted, .stat-hp.boosted { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.8); }
-        .card.creature { border: 3px solid #3498db; }
-        .card.spell { border: 3px solid #9b59b6; }
-        .card.trap-card { border: 3px solid #e74c3c; }
+        .card.creature { border: 2px solid #3498db; }
+        .card.spell { border: 2px solid #9b59b6; }
+        .card.trap-card { border: 2px solid #e74c3c; }
 
         /* Cartes avec image de fond (nouveau système) */
         /* Template original: 636x934 pixels */
@@ -1524,8 +1785,8 @@
             color: #2ecc71;
             text-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
         }
-        .card.has-image.just-played { border: 3px solid rgba(255,255,255,0.6) !important; }
-        .card.has-image.can-attack { border: 3px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
+        .card.has-image.just-played { border: 2px solid rgba(255,255,255,0.6) !important; }
+        .card.has-image.can-attack { border: 2px solid #2ecc71 !important; box-shadow: 0 0 8px rgba(46,204,113,0.6); }
 
         /* === CARTES FULL ART === */
         .card.full-art {
@@ -2124,6 +2385,14 @@
             50% { box-shadow: 0 0 14px rgba(98, 215, 255, 0.9); border-color: #90e4ff; }
         }
 
+        /* Surbrillance orange quand un sort/piège cible une créature */
+        .card.card.spell-hover-target, .card.arena-style.spell-hover-target[class*="faction-"] {
+            border: 2px solid #f39c12 !important;
+            box-shadow: 0 0 18px rgba(243,156,18,0.7), 0 0 6px rgba(243,156,18,0.4) inset !important;
+            animation: none !important;
+            transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out;
+        }
+
 
         /* ANIMATIONS */
         .card.attacking { animation: attackAnim 0.4s ease-out; }
@@ -2304,6 +2573,30 @@
             100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2) translateY(-20px); }
         }
 
+        /* Death Transform: Petit Os -> Pile d'Os (tout en rAF, pas de keyframes) */
+
+        /* Revive Transform: Pile d'Os -> Petit Os */
+        @keyframes reviveParticleConverge {
+            0% { opacity: 0.8; }
+            80% { opacity: 0.6; }
+            100% { opacity: 0; left: var(--target-x); top: var(--target-y); }
+        }
+        @keyframes reviveFlash {
+            0% { opacity: 1; width: 0; height: 0; background: radial-gradient(circle, rgba(250, 204, 21, 0.95), transparent); transform: translate(-50%, -50%) scale(0); border-radius: 50%; }
+            50% { opacity: 0.9; width: 80px; height: 80px; background: radial-gradient(circle, rgba(250, 204, 21, 0.8), transparent); transform: translate(-50%, -50%) scale(1); border-radius: 50%; }
+            100% { opacity: 0; width: 120px; height: 120px; background: radial-gradient(circle, rgba(250, 204, 21, 0.3), transparent); transform: translate(-50%, -50%) scale(1.2); border-radius: 50%; }
+        }
+        @keyframes reviveParticleBurst {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y))) scale(0.3); }
+        }
+        @keyframes reviveTextAppear {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            25% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+            50% { opacity: 1; transform: translate(-50%, -53%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -75%) scale(0.95); }
+        }
+
         /* Le slot avec un volant - pas de couleur spéciale */
         /* Ombre au sol pour les volants */
         .card-slot.has-flying::after {
@@ -2330,18 +2623,35 @@
             max-width: calc(50% - 150px); 
             z-index: 20;
         }
-        .my-hand .card { 
-            margin-left: -40px; 
-            transition: transform 0.2s ease-out, z-index 0s; 
+        .my-hand .card {
+            margin-left: -40px;
+            transition: transform 0.2s ease-out, z-index 0s;
             flex-shrink: 0;
             position: relative;
             z-index: 1;
             transform-origin: bottom center;
         }
         .my-hand .card:first-child { margin-left: 0; }
-        .my-hand .card:hover:not(.dragging), .my-hand .card.dragging { 
-            transform: translateY(-50px) scale(1.3); 
+        .my-hand .card:hover:not(.dragging), .my-hand .card.dragging {
+            transform: translateY(-50px) scale(1.3);
             z-index: 100 !important;
+            animation: none !important;
+        }
+        .my-hand .card.playable:hover:not(.dragging) {
+            border-color: #62d7ff !important;
+            box-shadow: none !important;
+        }
+        .my-hand .card.playable:hover:not(.dragging)::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            animation: hoverGlow 1.5s ease-in-out infinite;
+        }
+        @keyframes hoverGlow {
+            0%, 100% { box-shadow: 0 0 6px rgba(98, 215, 255, 0.4); }
+            50% { box-shadow: 0 0 16px rgba(98, 215, 255, 0.9); }
         }
         .my-hand .card.selected { 
             transform: translateY(-55px) scale(1.35); 
@@ -2474,6 +2784,7 @@
         .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(196, 184, 150, 0.3); border-radius: 3px; }
         .graveyard-cards::-webkit-scrollbar-thumb:hover { background: rgba(196, 184, 150, 0.5); }
         .graveyard-cards .card { flex-shrink: 0; }
+        .graveyard-cards .card .arena-stats { display: flex; }
         .graveyard-empty {
             color: rgba(196, 184, 150, 0.4);
             font-family: 'Cinzel', serif;
@@ -2543,7 +2854,7 @@
         /* Cercle HP bronze pour les héros (preview/zoom arena uniquement) */
         .arena-hero-hp {
             position: absolute;
-            top: 20px;
+            top: 18px;
             right: 2px;
             z-index: 10;
         }
@@ -2734,6 +3045,24 @@
             0% { box-shadow: 0 0 30px rgba(231, 76, 60, 0.9); }
             100% { box-shadow: none; }
         }
+        /* Fallback flamme CSS pour sorts de zone (si PixiJS non dispo) */
+        .spell-flame-effect {
+            position: fixed;
+            pointer-events: none;
+            width: 60px;
+            height: 80px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(ellipse at bottom, rgba(255, 100, 0, 0.9) 0%, rgba(255, 50, 0, 0.6) 40%, rgba(255, 200, 0, 0.3) 70%, transparent 100%);
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            animation: flameRise 0.8s ease-out forwards;
+            z-index: 10000;
+        }
+        @keyframes flameRise {
+            0% { opacity: 0; transform: translate(-50%, -50%) scaleY(0.3); }
+            20% { opacity: 1; transform: translate(-50%, -60%) scaleY(1.2); }
+            100% { opacity: 0; transform: translate(-50%, -80%) scaleY(0.5); }
+        }
+
         .card-slot.spell-highlight-heal {
             animation: spellFlashHeal 1.5s ease-out;
         }
@@ -2886,6 +3215,253 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
+        }
+
+        /* ==================== MODE SELECTOR ==================== */
+        .mode-selector-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .mode-selector-overlay.hidden { display: none; }
+        .mode-selector-title {
+            font-size: 2em;
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+            font-family: 'Cinzel', serif;
+        }
+        .mode-selector-subtitle {
+            color: #aaa;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        .mode-selector-buttons {
+            display: flex;
+            gap: 40px;
+        }
+        .mode-btn {
+            background: rgba(20,20,40,0.95);
+            border: 3px solid #8b7355;
+            border-radius: 15px;
+            padding: 40px 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            min-width: 220px;
+            color: #ccc;
+        }
+        .mode-btn:hover {
+            transform: scale(1.05);
+            border-color: #ffd700;
+            box-shadow: 0 0 30px rgba(255,215,0,0.3);
+        }
+        .mode-btn-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        .mode-btn-label {
+            font-size: 1.4em;
+            color: #ffd700;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+            margin-bottom: 8px;
+        }
+        .mode-btn-desc {
+            color: #aaa;
+            font-size: 0.95em;
+        }
+        .mode-normal .mode-btn-icon { color: #27ae60; }
+        .mode-test .mode-btn-icon { color: #e67e22; }
+
+        /* ==================== CARD PICKER ==================== */
+        .card-picker-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.97);
+            display: flex;
+            flex-direction: column;
+            z-index: 9999;
+            overflow: hidden;
+        }
+        .card-picker-overlay.hidden { display: none; }
+        .card-picker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px 10px;
+            flex-shrink: 0;
+        }
+        .card-picker-title {
+            font-size: 1.6em;
+            color: #ffd700;
+            font-family: 'Cinzel', serif;
+            text-shadow: 0 0 15px rgba(255,215,0,0.4);
+        }
+        .card-picker-counter {
+            font-size: 1.3em;
+            color: #e67e22;
+            font-weight: bold;
+        }
+        .card-picker-tabs {
+            display: flex;
+            gap: 10px;
+            padding: 10px 30px;
+            flex-shrink: 0;
+        }
+        .picker-tab {
+            padding: 10px 25px;
+            background: rgba(40,40,60,0.8);
+            border: 2px solid #555;
+            border-radius: 8px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .picker-tab.active {
+            background: rgba(60,60,100,0.9);
+            border-color: #ffd700;
+            color: #ffd700;
+        }
+        .picker-tab:hover:not(.active) {
+            border-color: #888;
+            color: #ddd;
+        }
+        .card-picker-grid {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 15px;
+            align-content: start;
+        }
+        .picker-card-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .picker-card-wrapper .card {
+            cursor: default !important;
+            transform: none !important;
+            margin: 0 !important;
+        }
+        .picker-card-wrapper .card:hover {
+            transform: scale(1.05) !important;
+        }
+        .picker-add-btn {
+            padding: 6px 20px;
+            background: linear-gradient(135deg, #27ae60, #1e8449);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .picker-add-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(39,174,96,0.5);
+        }
+        .picker-add-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .card-picker-selection {
+            flex-shrink: 0;
+            padding: 10px 30px;
+            border-top: 2px solid rgba(255,215,0,0.3);
+            background: rgba(10,10,20,0.9);
+        }
+        .card-picker-selection-label {
+            color: #aaa;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+        .card-picker-selection-row {
+            display: flex;
+            gap: 10px;
+            min-height: 120px;
+            align-items: center;
+            overflow-x: auto;
+        }
+        .picker-selection-thumb {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .picker-selection-thumb .card {
+            margin: 0 !important;
+        }
+        .picker-selection-thumb:hover {
+            transform: scale(1.05);
+        }
+        .picker-selection-thumb:hover .picker-remove-badge {
+            opacity: 1;
+        }
+        .picker-remove-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .card-picker-footer {
+            flex-shrink: 0;
+            padding: 15px 30px;
+            text-align: center;
+            background: rgba(10,10,20,0.9);
+        }
+        .picker-start-btn {
+            padding: 16px 60px;
+            font-size: 1.2em;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #e67e22, #d35400);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .picker-start-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(230,126,34,0.6);
+        }
+        .picker-start-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .picker-loading {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #aaa;
+            font-size: 1.3em;
+            padding: 60px 0;
         }
 
         /* Animation onDeath - dégâts au héros à la mort d'une créature */

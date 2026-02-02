@@ -14,6 +14,42 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+    <!-- Curseur fantasy custom -->
+    <div class="cursor-fantasy" id="cursor-fantasy">
+        <div class="cursor-fantasy-main">
+            <svg viewBox="-6 -6 38 38" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="orangeFill" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#ffab40"/>
+                        <stop offset="15%" stop-color="#ff9100"/>
+                        <stop offset="30%" stop-color="#ff6d00"/>
+                        <stop offset="50%" stop-color="#e65100"/>
+                        <stop offset="70%" stop-color="#ff6d00"/>
+                        <stop offset="85%" stop-color="#bf360c"/>
+                        <stop offset="100%" stop-color="#e65100"/>
+                    </linearGradient>
+                    <linearGradient id="silverStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#6a6a6a"/>
+                        <stop offset="15%" stop-color="#9a9a9a"/>
+                        <stop offset="30%" stop-color="#808080"/>
+                        <stop offset="50%" stop-color="#5a5a5a"/>
+                        <stop offset="70%" stop-color="#808080"/>
+                        <stop offset="85%" stop-color="#a0a0a0"/>
+                        <stop offset="100%" stop-color="#6a6a6a"/>
+                    </linearGradient>
+                    <linearGradient id="cursorShine" x1="0%" y1="0%" x2="60%" y2="60%">
+                        <stop offset="0%" stop-color="#ffcc80" stop-opacity="0.4"/>
+                        <stop offset="50%" stop-color="#ffab40" stop-opacity="0.2"/>
+                        <stop offset="100%" stop-color="#ff9100" stop-opacity="0"/>
+                    </linearGradient>
+                </defs>
+                <path d="M -2,-2 L 10,26 L 14,14 L 26,10 Z" fill="rgba(0,0,0,0.4)" transform="translate(2, 2)"/>
+                <path d="M -2,-2 L 10,26 L 14,14 L 26,10 Z" fill="url(#orangeFill)" stroke="url(#silverStroke)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+                <path d="M -1,-1 L 5,14 L 8,8 L 14,5 Z" fill="url(#cursorShine)"/>
+            </svg>
+        </div>
+    </div>
+
     <div class="lobby" id="lobby">
         <h1 class="lobby-title">⚔️ Bataille des Héros</h1>
         <div class="lobby-box" id="lobby-menu">
@@ -49,11 +85,50 @@
         <div class="mulligan-waiting hidden" id="mulligan-waiting">⏳ En attente de l'adversaire...</div>
     </div>
 
+    <!-- Mode Selector Overlay -->
+    <div class="mode-selector-overlay hidden" id="mode-selector-overlay">
+        <div class="mode-selector-title">Mode de jeu</div>
+        <div class="mode-selector-subtitle">Choisissez comment commencer cette partie</div>
+        <div class="mode-selector-buttons">
+            <button class="mode-btn mode-normal" onclick="selectMode('normal')">
+                <div class="mode-btn-icon">&#9876;</div>
+                <div class="mode-btn-label">Partie normale</div>
+                <div class="mode-btn-desc">Main aléatoire classique</div>
+            </button>
+            <button class="mode-btn mode-test" onclick="selectMode('test')">
+                <div class="mode-btn-icon">&#9881;</div>
+                <div class="mode-btn-label">Mode test</div>
+                <div class="mode-btn-desc">Choisissez vos cartes</div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Card Picker Overlay (Test Mode) -->
+    <div class="card-picker-overlay hidden" id="card-picker-overlay">
+        <div class="card-picker-header">
+            <div class="card-picker-title">Choisissez vos cartes</div>
+            <div class="card-picker-counter" id="card-picker-counter">0 / 7 cartes</div>
+        </div>
+        <div class="card-picker-tabs">
+            <button class="picker-tab active" data-tab="creatures" onclick="switchPickerTab('creatures')">Créatures</button>
+            <button class="picker-tab" data-tab="spells" onclick="switchPickerTab('spells')">Sorts</button>
+            <button class="picker-tab" data-tab="traps" onclick="switchPickerTab('traps')">Pièges</button>
+        </div>
+        <div class="card-picker-grid" id="card-picker-grid"></div>
+        <div class="card-picker-selection">
+            <div class="card-picker-selection-label">Votre main :</div>
+            <div class="card-picker-selection-row" id="card-picker-selection-row"></div>
+        </div>
+        <div class="card-picker-footer">
+            <button class="picker-start-btn" id="picker-start-btn" onclick="confirmTestHand()" disabled>Commencer la partie</button>
+        </div>
+    </div>
+
     <div class="game-container" id="game-container">
         <div class="top-bar">
             <div class="player-info-bar left">
                 <div class="player-name-badge">
-                    <img src="/css/rangbronze.png" class="rank-icon" id="me-rank-icon" alt="Rang">
+                    <div class="rank-badge-wrapper" id="me-rank-badge"></div>
                     <span class="player-name-text" id="me-pseudo">DarkSlayer42</span>
                 </div>
             </div>
@@ -72,7 +147,7 @@
             <div class="player-info-bar right">
                 <div class="player-name-badge">
                     <span class="player-name-text" id="opp-pseudo">ShadowMage99</span>
-                    <img src="/css/rangbronze.png" class="rank-icon" id="opp-rank-icon" alt="Rang">
+                    <div class="rank-badge-wrapper" id="opp-rank-badge"></div>
                 </div>
             </div>
         </div>
@@ -278,6 +353,8 @@
         </div>
     </div>
 
+    <canvas id="gl-canvas"></canvas>
+
     <div class="game-over hidden" id="game-over">
         <div class="game-over-box">
             <div class="game-over-title">🏆 Fin de Partie</div>
@@ -291,6 +368,7 @@
     <script src="/js/combat-animation.js"></script>
     <script src="/js/card-renderer.js"></script>
     <script src="/js/animations/effects.js"></script>
+    <script src="/js/arrow-targeting.js"></script>
     <script src="/js/custom-drag.js"></script>
     <script src="/js/game.js"></script>
 </body>

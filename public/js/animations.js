@@ -7,6 +7,11 @@ const pendingDrawAnimations = {
     me: new Map(),   // handIndex -> card
     opp: new Map()   // handIndex -> card
 };
+// Animations déjà lancées (éviter les doublons)
+const startedDrawAnimations = {
+    me: new Set(),
+    opp: new Set()
+};
 
 /**
  * Appelé quand l'animation 'draw' est reçue (AVANT l'état)
@@ -14,27 +19,73 @@ const pendingDrawAnimations = {
  */
 function prepareDrawAnimation(data) {
     if (!data.cards || data.cards.length === 0) return;
-    
+
     // Déterminer myNum depuis la variable globale
     const myPlayerNum = typeof myNum !== 'undefined' ? myNum : 1;
-    
+
     for (const drawData of data.cards) {
         if (drawData.burned) continue;
-        
+
         const owner = drawData.player === myPlayerNum ? 'me' : 'opp';
         const handIndex = drawData.handIndex;
         const card = drawData.card;
-        
+
+        // Le vrai event draw remplace l'auto-hide
+        autoHiddenCards[owner].delete(handIndex);
         // Stocker pour que le render crée la carte cachée
         pendingDrawAnimations[owner].set(handIndex, card);
     }
 }
 
+// Cartes auto-cachées (sécurité si l'état arrive avant l'event draw)
+const autoHiddenCards = {
+    me: new Set(),
+    opp: new Set()
+};
+
 /**
  * Vérifie si une carte doit être cachée au render
  */
 function shouldHideCard(owner, handIndex) {
-    return pendingDrawAnimations[owner].has(handIndex);
+    return pendingDrawAnimations[owner].has(handIndex) || autoHiddenCards[owner].has(handIndex);
+}
+
+/**
+ * Vérifie si des animations de pioche sont actives (pending ou started) pour un owner
+ */
+function hasActiveDrawAnimation(owner) {
+    return pendingDrawAnimations[owner].size > 0 || startedDrawAnimations[owner].size > 0;
+}
+
+/**
+ * Auto-cache les nouvelles cartes quand le handCount augmente sans draw event préalable.
+ * Sécurité contre les cas où l'état arrive avant l'événement d'animation.
+ */
+function autoHideNewDraws(owner, oldCount, newCount) {
+    for (let i = oldCount; i < newCount; i++) {
+        if (!pendingDrawAnimations[owner].has(i)) {
+            autoHiddenCards[owner].add(i);
+            const capturedIndex = i;
+            setTimeout(() => {
+                autoHiddenCards[owner].delete(capturedIndex);
+            }, 2000);
+        }
+    }
+}
+
+/**
+ * Remappe les indices de pioche adverse pour cibler les nouvelles cartes en fin de main.
+ * Le serveur renvoie un handIndex basé sur le tableau interne, mais côté DOM
+ * toutes les cartes adverses sont des dos identiques — on anime toujours la fin.
+ */
+function remapOppDrawIndices(newStartIdx) {
+    if (pendingDrawAnimations.opp.size === 0) return;
+    const cards = [...pendingDrawAnimations.opp.values()];
+    pendingDrawAnimations.opp.clear();
+    for (let i = 0; i < cards.length; i++) {
+        const newIdx = newStartIdx + i;
+        pendingDrawAnimations.opp.set(newIdx, cards[i]);
+    }
 }
 
 /**
@@ -43,19 +94,38 @@ function shouldHideCard(owner, handIndex) {
 function startPendingDrawAnimations() {
     // Attendre le prochain frame pour s'assurer que le DOM est rendu
     requestAnimationFrame(() => {
-        // Animer les cartes du joueur
+        // Animer les cartes du joueur (seulement si pas déjà lancé)
         for (const [handIndex, card] of pendingDrawAnimations.me) {
-            animateCardDraw(card, 'me', handIndex);
+            if (startedDrawAnimations.me.has(handIndex)) continue;
+            startedDrawAnimations.me.add(handIndex);
+            animateCardDraw(card, 'me', handIndex, () => {
+                pendingDrawAnimations.me.delete(handIndex);
+                startedDrawAnimations.me.delete(handIndex);
+                // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
+                const panel = document.querySelector('#my-hand');
+                if (panel) {
+                    const cards = panel.querySelectorAll('.card');
+                    if (cards[handIndex]) cards[handIndex].style.visibility = 'visible';
+                }
+            });
         }
-        
-        // Animer les cartes de l'adversaire
+
+        // Animer les cartes de l'adversaire (seulement si pas déjà lancé)
         for (const [handIndex, card] of pendingDrawAnimations.opp) {
-            animateCardDraw(card, 'opp', handIndex);
+            if (startedDrawAnimations.opp.has(handIndex)) continue;
+            startedDrawAnimations.opp.add(handIndex);
+            animateCardDraw(card, 'opp', handIndex, () => {
+                pendingDrawAnimations.opp.delete(handIndex);
+                startedDrawAnimations.opp.delete(handIndex);
+                autoHiddenCards.opp.delete(handIndex);
+                // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
+                const panel = document.querySelector('#opp-hand');
+                if (panel) {
+                    const cards = panel.querySelectorAll('.opp-card-back');
+                    if (cards[handIndex]) cards[handIndex].style.visibility = 'visible';
+                }
+            });
         }
-        
-        // Vider les pending
-        pendingDrawAnimations.me.clear();
-        pendingDrawAnimations.opp.clear();
     });
 }
 
@@ -169,17 +239,17 @@ function easeOutBack(t) {
  * Pour l'adversaire (opp):
  *   Animation simplifiée, arc rapide du deck vers sa main
  */
-function animateCardDraw(card, owner, handIndex) {
+function animateCardDraw(card, owner, handIndex, onComplete) {
     const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
     const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
 
-    if (!handEl) return;
+    if (!handEl) { if (onComplete) onComplete(); return; }
 
     const handCards = handEl.querySelectorAll(cardSelector);
     const targetCard = handCards[handIndex];
 
-    if (!targetCard) return;
+    if (!targetCard) { if (onComplete) onComplete(); return; }
 
     const targetRect = targetCard.getBoundingClientRect();
     const endX = targetRect.left;
@@ -190,6 +260,7 @@ function animateCardDraw(card, owner, handIndex) {
     const deckEl = document.querySelector(`#${owner}-deck-stack`);
     if (!deckEl) {
         targetCard.style.visibility = 'visible';
+        if (onComplete) onComplete();
         return;
     }
 
@@ -253,7 +324,7 @@ function animateCardDraw(card, owner, handIndex) {
         wrapper.appendChild(flipper);
         document.body.appendChild(wrapper);
 
-        animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard);
+        animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
     } else {
         // Adversaire : pas de flip, juste un dos de carte
         const backCard = createCardBackElement();
@@ -265,7 +336,7 @@ function animateCardDraw(card, owner, handIndex) {
         wrapper.appendChild(backCard);
         document.body.appendChild(wrapper);
 
-        animateDrawForOpp(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard);
+        animateDrawForOpp(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
     }
 }
 
@@ -277,7 +348,7 @@ function animateCardDraw(card, owner, handIndex) {
  * Phase 3 - Hold:       Pause au centre, carte face visible
  * Phase 4 - To hand:    Carte glisse dans la main
  */
-function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, cardH, targetCard) {
+function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
@@ -362,6 +433,7 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
         } else {
             targetCard.style.visibility = 'visible';
             wrapper.remove();
+            if (onComplete) onComplete();
         }
     }
 
@@ -371,12 +443,13 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
 /**
  * Animation de pioche pour l'adversaire — arc simple et rapide
  */
-function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard) {
+function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
     const duration = 450;
     const startTime = performance.now();
-
     const controlX = (startX + endX) / 2;
     const controlY = Math.min(startY, endY) - 60;
+
+    wrapper.style.opacity = '0';
 
     function animate() {
         const elapsed = performance.now() - startTime;
@@ -388,13 +461,14 @@ function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, ta
 
         wrapper.style.left = x + 'px';
         wrapper.style.top = y + 'px';
-        wrapper.style.opacity = Math.min(progress * 3, 1);
+        wrapper.style.opacity = Math.min(1, progress * 3);
 
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
             targetCard.style.visibility = 'visible';
             wrapper.remove();
+            if (onComplete) onComplete();
         }
     }
 
@@ -412,7 +486,16 @@ const GameAnimations = {
     
     // Vérifie si une carte doit être cachée
     shouldHideCard: shouldHideCard,
-    
+
+    // Vérifie si des animations de pioche sont actives
+    hasActiveDrawAnimation: hasActiveDrawAnimation,
+
+    // Auto-cache les nouvelles cartes (sécurité état avant draw event)
+    autoHideNewDraws: autoHideNewDraws,
+
+    // Remappe les indices de pioche opp vers la fin de la main DOM
+    remapOppDrawIndices: remapOppDrawIndices,
+
     // Lance les animations après le render
     startPendingDrawAnimations: startPendingDrawAnimations,
     
@@ -422,6 +505,8 @@ const GameAnimations = {
     clear: () => {
         pendingDrawAnimations.me.clear();
         pendingDrawAnimations.opp.clear();
+        autoHiddenCards.me.clear();
+        autoHiddenCards.opp.clear();
     },
     
     get isReady() { return true; }
