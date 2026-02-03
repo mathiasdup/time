@@ -209,18 +209,6 @@ const CustomDrag = (function() {
             if (!updateHoverFeedback._logThrottle || Date.now() - updateHoverFeedback._logThrottle > 500) {
                 updateHoverFeedback._logThrottle = Date.now();
                 const cardInSlot = target.element.querySelector('.card');
-                console.log('[HoverFeedback]', {
-                    type: target.type,
-                    owner: target.owner,
-                    row: target.row,
-                    col: target.col,
-                    isValid,
-                    slotClasses: target.element.className,
-                    hasCard: !!cardInSlot,
-                    cardClasses: cardInSlot ? cardInSlot.className : 'N/A',
-                    elementTag: target.element.tagName,
-                    isArrowMode
-                });
             }
 
             if (isValid) {
@@ -233,7 +221,6 @@ const CustomDrag = (function() {
                     target.element.classList.add('drag-hover', 'drag-over');
                     // Si le slot contient une créature, la mettre en surbrillance orange
                     const cardInSlot = target.element.querySelector('.card');
-                    console.log('[HoverFeedback] Adding spell-hover-target, cardInSlot:', cardInSlot, 'slot:', target.element);
                     if (cardInSlot) cardInSlot.classList.add('spell-hover-target');
                 }
             } else {

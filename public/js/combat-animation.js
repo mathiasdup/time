@@ -24,13 +24,10 @@ class CombatAnimationSystem {
             try {
                 await CombatVFX.init();
                 this.vfxReady = true;
-                console.log('✅ Combat Animation System ready (DOM + PixiJS VFX)');
             } catch (e) {
-                console.warn('VFX init failed, using fallback:', e);
                 this.vfxReady = false;
             }
         } else {
-            console.warn('CombatVFX not found, using DOM fallback');
         }
 
         return Promise.resolve();
@@ -150,7 +147,6 @@ class CombatAnimationSystem {
             : this.getSlotCenter(targetOwner, targetRow, targetCol);
 
         if (!startPos || !endPos) {
-            console.warn('Positions not found for projectile');
             return;
         }
 
@@ -363,7 +359,6 @@ class CombatAnimationSystem {
         const card2 = this.getCardElement(attacker2.owner, attacker2.row, attacker2.col);
 
         if (!card1 || !card2) {
-            console.warn('Cards not found for mutual melee');
             return;
         }
 

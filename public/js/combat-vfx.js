@@ -39,10 +39,8 @@ class CombatVFXSystem {
             this.app.ticker.add(() => this.update());
 
             this.initialized = true;
-            console.log('✅ Combat VFX System initialized');
 
         } catch (e) {
-            console.error('❌ Combat VFX init failed:', e);
             throw e;
         }
     }
@@ -99,13 +97,13 @@ class CombatVFXSystem {
 
         // Particules d'explosion
         const particles = [];
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < 8; i++) {
             const particle = new PIXI.Graphics();
             const size = 4 + Math.random() * 6;
             particle.circle(0, 0, size);
             particle.fill({ color: i % 2 === 0 ? 0xFFFFFF : color });
             particle.particleData = {
-                angle: (i / 16) * Math.PI * 2 + Math.random() * 0.4,
+                angle: (i / 8) * Math.PI * 2 + Math.random() * 0.4,
                 speed: 80 + Math.random() * 100,
             };
             effectContainer.addChild(particle);
@@ -307,13 +305,13 @@ class CombatVFXSystem {
 
         // Ondes de choc concentriques (5 anneaux)
         const shockwaves = [];
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
             const wave = new PIXI.Graphics();
             wave.waveData = {
-                delay: i * 0.08,
-                maxRadius: 180 + i * 40,
-                thickness: 12 - i * 2,
-                color: i < 2 ? shockColor1 : (i < 4 ? shockColor2 : shockColor3),
+                delay: i * 0.1,
+                maxRadius: 180 + i * 50,
+                thickness: 12 - i * 3,
+                color: i === 0 ? shockColor1 : (i === 1 ? shockColor2 : shockColor3),
             };
             effectContainer.addChild(wave);
             shockwaves.push(wave);
@@ -321,10 +319,10 @@ class CombatVFXSystem {
 
         // Éclairs radiaux
         const lightningBolts = [];
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 4; i++) {
             const bolt = new PIXI.Graphics();
             bolt.boltData = {
-                angle: (i / 8) * Math.PI * 2,
+                angle: (i / 4) * Math.PI * 2,
                 length: 80 + Math.random() * 60,
                 segments: 4 + Math.floor(Math.random() * 3),
             };
@@ -334,7 +332,7 @@ class CombatVFXSystem {
 
         // Étincelles explosives
         const sparks = [];
-        for (let i = 0; i < 35; i++) {
+        for (let i = 0; i < 12; i++) {
             const spark = new PIXI.Graphics();
             const size = 2 + Math.random() * 6;
             spark.circle(0, 0, size);
@@ -353,7 +351,7 @@ class CombatVFXSystem {
 
         // Particules de débris
         const debris = [];
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 8; i++) {
             const particle = new PIXI.Graphics();
             const w = 3 + Math.random() * 8;
             const h = 2 + Math.random() * 4;
@@ -764,8 +762,6 @@ class CombatVFXSystem {
      * Pour la capacité de Zdejebel
      */
     createSlashEffect(x, y, damage) {
-        console.log('[SlashEffect] Creating at', x, y, 'with', this.activeEffects.length, 'active effects');
-        console.log('[SlashEffect] Container children:', this.container?.children?.length);
 
         const effectContainer = new PIXI.Container();
         effectContainer.position.set(x, y);
@@ -836,7 +832,6 @@ class CombatVFXSystem {
             const progress = Math.min(elapsed / effect.duration, 1);
 
             if (frameCount === 1) {
-                console.log('[SlashEffect] Animation started, first frame');
             }
 
             // Flash initial
@@ -901,7 +896,6 @@ class CombatVFXSystem {
 
             if (progress >= 1) {
                 effect.finished = true;
-                console.log('[SlashEffect] Animation finished after', frameCount, 'frames');
             } else {
                 requestAnimationFrame(animate);
             }
@@ -909,7 +903,6 @@ class CombatVFXSystem {
 
         requestAnimationFrame(animate);
         this.activeEffects.push(effect);
-        console.log('[SlashEffect] Effect added, total effects:', this.activeEffects.length);
 
         // Afficher les dégâts
         if (damage !== undefined && damage > 0) {
@@ -973,7 +966,6 @@ class SleepAnimationSystem {
         }
 
         this.initialized = true;
-        console.log('✅ Sleep Animation System initialized');
 
         // Démarrer la boucle de mise à jour
         this.startUpdateLoop();
@@ -1134,6 +1126,6 @@ const SleepAnimations = new SleepAnimationSystem();
 // Initialiser quand le DOM est prêt
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
-        SleepAnimations.init().catch(e => console.warn('Sleep animations init failed:', e));
+        SleepAnimations.init().catch(() => {});
     }, 1000);
 });

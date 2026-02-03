@@ -506,8 +506,9 @@ const ArrowTargeting = (function() {
         const projectionMatrix = ortho(-w/2, w/2, -h/2, h/2, -1000, 1000);
         gl.uniformMatrix4fv(uProjectionMatrix, false, projectionMatrix);
 
-        const colorFront = [0.75, 0.12, 0.06];
-        const colorBack = [0.5, 0.1, 0.1];
+        // Blanc quand pas de cible, orange quand cible valide
+        const colorFront = tiltTarget ? [0.95, 0.55, 0.15] : [0.85, 0.85, 0.85];
+        const colorBack  = tiltTarget ? [0.70, 0.35, 0.08] : [0.55, 0.55, 0.55];
         const maxTiltAngle = currentTilt * Math.PI * 0.35;
         const transparency = 0.5;
 

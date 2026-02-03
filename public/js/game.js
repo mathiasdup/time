@@ -8,6 +8,13 @@ let cardCatalog = null;
 
 const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
+// Tracking pour l'animation FLIP de la main (reflow fluide quand une carte est jouée)
+let handCardRemovedIndex = -1;
+
+// Sorts engagés : sorts joués pendant la planification, visibles dans la main en grisé
+let committedSpells = [];
+let commitIdCounter = 0;
+
 // ==================== SYSTÈME DE FILE D'ATTENTE D'ANIMATIONS ====================
 const animationQueue = [];
 let isAnimating = false;
@@ -34,14 +41,11 @@ async function initCombatAnimations() {
         try {
             await CombatAnimations.init();
             combatAnimReady = true;
-            console.log('✅ Combat animations ready');
         } catch (e) {
-            console.warn('Combat animations init error:', e);
             // Le système DOM fonctionne quand même
             combatAnimReady = true;
         }
     } else {
-        console.warn('CombatAnimations not found');
         combatAnimReady = false;
     }
 
@@ -49,29 +53,24 @@ async function initCombatAnimations() {
     if (typeof CardRenderer !== 'undefined') {
         try {
             await CardRenderer.init();
-            console.log('✅ CardRenderer PixiJS ready');
         } catch (e) {
-            console.warn('CardRenderer init error:', e);
         }
     }
 }
 
 function queueAnimation(type, data) {
-    console.log('[Queue] Adding:', type, 'isAnimating:', isAnimating, 'queueLength:', animationQueue.length, 'currentQueue:', animationQueue.map(a => a.type));
 
     // Pour zdejebel et onDeathDamage héros, capturer les HP actuels AVANT que render() ne les mette à jour
     if ((type === 'zdejebel' || (type === 'onDeathDamage' && data.targetRow === undefined)) && state) {
         const target = data.targetPlayer === myNum ? 'me' : 'opp';
         const currentDisplayedHp = target === 'me' ? state.me?.hp : state.opponent?.hp;
         data._displayHpBefore = currentDisplayedHp;
-        console.log('[Queue] HP capture for', type, ': HP before =', currentDisplayedHp, 'for', target);
     }
 
     // Pour burn, death, spell, trapTrigger, bloquer le render du cimetière IMMÉDIATEMENT
     if (type === 'burn' || type === 'death' || type === 'spell' || type === 'trapTrigger') {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
-        console.log('[Queue] Blocked graveyard render for', owner, '(type:', type + ')');
     }
 
     // Pour death, bloquer aussi le slot du terrain pour que render() ne retire pas
@@ -80,7 +79,6 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
-        console.log('[Queue] Blocked slot for death:', slotKey);
     }
 
     // Pour deathTransform, bloquer le slot IMMÉDIATEMENT pour que render() ne remplace pas la carte
@@ -88,7 +86,6 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
-        console.log('[Queue] Blocked slot for deathTransform:', slotKey);
     }
 
     // Pour bounce, bloquer le slot pour que render() ne retire pas la carte
@@ -96,7 +93,6 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
-        console.log('[Queue] Blocked slot for bounce:', slotKey);
     }
 
     // Pour onDeathDamage créature (Torche vivante), bloquer le slot pour que render()
@@ -105,7 +101,6 @@ function queueAnimation(type, data) {
         const owner = data.targetPlayer === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.targetRow}-${data.targetCol}`;
         animatingSlots.add(slotKey);
-        console.log('[Queue] Blocked slot for onDeathDamage creature:', slotKey);
     }
 
     // Pour damage/spellDamage, bloquer le slot pour que render() ne mette pas à jour
@@ -114,6 +109,40 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+    }
+
+    // Pour attack, bloquer le(s) slot(s) de l'attaquant pour que render() ne recrée pas
+    // l'élément DOM pendant l'animation de charge/retour
+    if (type === 'attack') {
+        const attackerSlots = [];
+        if (data.combatType === 'parallel_attacks') {
+            if (data.attack1) {
+                const o = data.attack1.attacker === myNum ? 'me' : 'opp';
+                attackerSlots.push(`${o}-${data.attack1.row}-${data.attack1.col}`);
+            }
+            if (data.attack2) {
+                const o = data.attack2.attacker === myNum ? 'me' : 'opp';
+                attackerSlots.push(`${o}-${data.attack2.row}-${data.attack2.col}`);
+            }
+        } else if (data.combatType === 'mutual_shooters') {
+            attackerSlots.push(`${data.attacker1 === myNum ? 'me' : 'opp'}-${data.row1}-${data.col1}`);
+            attackerSlots.push(`${data.attacker2 === myNum ? 'me' : 'opp'}-${data.row2}-${data.col2}`);
+        } else {
+            // solo, shooter, mutual_melee, shooter_vs_flyer
+            const o = data.attacker === myNum ? 'me' : 'opp';
+            attackerSlots.push(`${o}-${data.row}-${data.col}`);
+            // Pour mutual_melee et shooter_vs_flyer, bloquer aussi la cible (elle bouge)
+            if (data.combatType === 'mutual_melee' || data.isMutual || data.combatType === 'shooter_vs_flyer') {
+                const to = data.targetPlayer === myNum ? 'me' : 'opp';
+                if (data.targetRow !== undefined && data.targetCol !== undefined && data.targetCol !== -1) {
+                    attackerSlots.push(`${to}-${data.targetRow}-${data.targetCol}`);
+                }
+            }
+        }
+        data._attackerSlots = attackerSlots;
+        for (const sk of attackerSlots) {
+            animatingSlots.add(sk);
+        }
     }
 
     animationQueue.push({ type, data });
@@ -125,17 +154,14 @@ function queueAnimation(type, data) {
                 queueAnimation._batchTimeout = setTimeout(() => {
                     queueAnimation._batchTimeout = null;
                     if (!isAnimating && animationQueue.length > 0) {
-                        console.log('[Queue] Deferred batch start, queue:', animationQueue.map(a => a.type).join(','));
                         processAnimationQueue();
                     }
                 }, 50);
             }
         } else {
-            console.log('[Queue] Starting queue processing for:', type);
             processAnimationQueue();
         }
     } else {
-        console.log('[Queue] Animation in progress, queued:', type, 'will be processed after current');
     }
 }
 
@@ -149,18 +175,15 @@ async function processAnimationQueue(processorId = null) {
     try {
         // Vérifier si un autre processeur a pris le relais
         if (processorId !== currentProcessorId) {
-            console.log('[Queue] Processor', processorId, 'stopping - newer processor', currentProcessorId, 'is active');
             return;
         }
 
         if (animationQueue.length === 0) {
-            console.log('[Queue] Empty, stopping. Processor:', processorId);
             isAnimating = false;
             return;
         }
 
         isAnimating = true;
-        console.log('[Queue] Processor', processorId, '- Processing, queueLength:', animationQueue.length, 'items:', animationQueue.map(a => a.type).join(','));
 
         // Regrouper les animations de mort consécutives (jouées en parallèle)
         if (animationQueue[0].type === 'death') {
@@ -168,7 +191,6 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
                 deathBatch.push(animationQueue.shift().data);
             }
-            console.log(`[Queue] Death batch: ${deathBatch.length} deaths:`, deathBatch.map(d => `${d.card?.name||'?'}(p${d.player},r${d.row},c${d.col})`).join(', '), '| animatingSlots:', [...animatingSlots]);
             const deathPromises = deathBatch.map(data => animateDeathToGraveyard(data));
             await Promise.all(deathPromises);
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
@@ -194,7 +216,6 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'zdejebel') {
                 batch.push(animationQueue.shift().data);
             }
-            console.log('[Queue] Zdejebel batch:', batch.length, 'animations');
             await Promise.all(batch.map(data => animateZdejebelDamage(data)));
             processAnimationQueue(processorId);
             return;
@@ -206,7 +227,6 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'burn') {
                 burnBatch.push(animationQueue.shift().data);
             }
-            console.log('[Queue] Burn batch:', burnBatch.length, 'animations');
             const burnPromises = burnBatch.map(data => animateBurn(data));
             await Promise.all(burnPromises);
             processAnimationQueue(processorId);
@@ -260,7 +280,6 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'onDeathDamage') {
                 batch.push(animationQueue.shift().data);
             }
-            console.log(`[Queue] onDeathDamage batch: ${batch.length} effects, timestamp=${Date.now()}`);
             // Bloquer le render HP pour toute la durée du batch
             const hasHeroTarget = batch.some(d => d.targetRow === undefined);
             if (hasHeroTarget) {
@@ -277,7 +296,6 @@ async function processAnimationQueue(processorId = null) {
 
         const { type, data } = animationQueue.shift();
         const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
-        console.log('[Queue] Processor', processorId, '- Shifted:', type, '- remaining:', animationQueue.length);
 
         // Exécuter l'animation avec timeout de sécurité
         try {
@@ -286,9 +304,22 @@ async function processAnimationQueue(processorId = null) {
                 setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
             );
             await Promise.race([animationPromise, timeoutPromise]);
-            console.log('[Queue] Processor', processorId, '- Animation completed:', type);
         } catch (e) {
-            console.error('[Queue] Animation error:', type, e);
+        }
+
+        // Débloquer les slots d'attaquant après l'animation d'attaque
+        // SAUF si une animation de damage/death est en attente pour ce slot
+        if (type === 'attack' && data._attackerSlots) {
+            for (const sk of data._attackerSlots) {
+                const hasPending = animationQueue.some(item =>
+                    (item.type === 'damage' || item.type === 'death' || item.type === 'spellDamage') && item.data &&
+                    `${(item.data.player === myNum ? 'me' : 'opp')}-${item.data.row}-${item.data.col}` === sk
+                );
+                if (!hasPending) {
+                    animatingSlots.delete(sk);
+                } else {
+                }
+            }
         }
 
         // Débloquer les slots de dégâts après l'animation
@@ -305,13 +336,11 @@ async function processAnimationQueue(processorId = null) {
                 animatingSlots.delete(dmgSlotKey);
                 render(); // Mettre à jour les stats visuellement après déblocage du slot
             } else {
-                console.log('[Queue] Keeping slot blocked for pending death:', dmgSlotKey);
             }
         }
 
         // Vérifier encore si on est toujours le processeur actif
         if (processorId !== currentProcessorId) {
-            console.log('[Queue] Processor', processorId, 'stopping after animation - newer processor active');
             return;
         }
 
@@ -319,20 +348,16 @@ async function processAnimationQueue(processorId = null) {
         await new Promise(resolve => setTimeout(resolve, delay));
 
         // Continuer la file (avec le même processorId)
-        console.log('[Queue] Processor', processorId, '- After delay, remaining:', animationQueue.length);
         processAnimationQueue(processorId);
     } catch (globalError) {
-        console.error('[Queue] GLOBAL ERROR in processAnimationQueue:', globalError);
         isAnimating = false;
         if (animationQueue.length > 0) {
-            console.log('[Queue] Attempting recovery, remaining:', animationQueue.length);
             setTimeout(() => processAnimationQueue(), 100);
         }
     }
 }
 
 async function executeAnimationAsync(type, data) {
-    console.log('[executeAnimationAsync] type:', type, 'combatAnimReady:', combatAnimReady);
     // Utiliser le système PixiJS si disponible
     if (combatAnimReady && CombatAnimations) {
         switch(type) {
@@ -525,7 +550,6 @@ async function handlePixiHeroHit(data) {
 }
 
 async function handleOnDeathDamage(data) {
-    console.log(`[ONDEATH ANIM] START source=${data.source} targetPlayer=${data.targetPlayer} targetRow=${data.targetRow} targetCol=${data.targetCol} timestamp=${Date.now()}`);
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
 
     // Cas 1 : dégâts à une créature (damageKiller — Torche vivante)
@@ -566,7 +590,6 @@ async function handleOnDeathDamage(data) {
         // Débloquer le slot après l'animation — la carte a été visible pendant les dégâts
         const slotKey = `${owner}-${data.targetRow}-${data.targetCol}`;
         animatingSlots.delete(slotKey);
-        console.log('[OnDeathDamage] Unblocked slot:', slotKey);
         return;
     }
 
@@ -583,7 +606,6 @@ async function handleOnDeathDamage(data) {
 
     if (hpElement && hpBeforeAnimation !== undefined) {
         hpElement.textContent = hpBeforeAnimation;
-        console.log('[OnDeathDamage] Restored HP display to', hpBeforeAnimation, '(actual:', currentHp, ')');
     }
 
     // Label "💀 Source" sur la zone héros
@@ -622,19 +644,16 @@ async function handleOnDeathDamage(data) {
     // Mettre à jour les HP APRÈS l'animation
     if (hpElement && currentHp !== undefined) {
         hpElement.textContent = currentHp;
-        console.log('[OnDeathDamage] Updated HP display to', currentHp);
     }
 
     // Débloquer render()
     zdejebelAnimationInProgress = false;
 
     await new Promise(r => setTimeout(r, 200));
-    console.log(`[ONDEATH ANIM] END source=${data.source} timestamp=${Date.now()}`);
 }
 
 async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
-    console.log('[Zdejebel] START - owner:', owner, 'damage:', data.damage, 'timestamp:', Date.now());
 
     // Bloquer render() pour les HP pendant toute l'animation
     zdejebelAnimationInProgress = true;
@@ -646,9 +665,7 @@ async function animateZdejebelDamage(data) {
     const hpBefore = domHp ?? data._displayHpBefore ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-    console.log('[Zdejebel] HP: DOM=', domHp, 'before=', hpBefore, 'after=', hpAfter);
-
-    if (hpElement) {
+if (hpElement) {
         // S'assurer que les HP d'avant sont affichés pendant l'animation
         hpElement.textContent = hpBefore;
     }
@@ -663,27 +680,22 @@ async function animateZdejebelDamage(data) {
 
         // Utiliser l'effet slash PixiJS si disponible
         const vfxReady = typeof CombatVFX !== 'undefined' && CombatVFX.initialized && CombatVFX.container;
-        console.log('[Zdejebel] VFX ready:', vfxReady, 'CombatVFX:', typeof CombatVFX, 'initialized:', CombatVFX?.initialized);
 
         if (vfxReady) {
             try {
                 const rect = heroCard.getBoundingClientRect();
                 const x = rect.left + rect.width / 2;
                 const y = rect.top + rect.height / 2;
-                console.log('[Zdejebel] Creating slash effect at', x, y);
                 CombatVFX.createSlashEffect(x, y, data.damage);
             } catch (e) {
-                console.error('[Zdejebel] Slash effect error:', e);
                 // Fallback en cas d'erreur - afficher les dégâts avec le système standard
                 showDamageNumber(heroCard, data.damage);
             }
         } else {
-            console.log('[Zdejebel] Using fallback animation');
             // Fallback : afficher juste les dégâts
             showDamageNumber(heroCard, data.damage);
         }
     } else {
-        console.warn('[Zdejebel] Hero card not found for', owner);
     }
 
     // Attendre que l'animation soit visible
@@ -692,7 +704,6 @@ async function animateZdejebelDamage(data) {
     // Mettre à jour les HP APRÈS l'animation (hpBefore - damage, indépendant du state)
     if (hpElement) {
         hpElement.textContent = hpAfter;
-        console.log('[Zdejebel] Updated HP display to', hpAfter);
     }
 
     // Débloquer render() pour les HP
@@ -783,7 +794,6 @@ async function animateTrampleDamage(data) {
 // Animation de dégâts de piétinement sur le héros
 async function animateTrampleHeroHit(data) {
     const owner = data.defender === myNum ? 'me' : 'opp';
-    console.log('[TrampleHero] START - owner:', owner, 'damage:', data.damage);
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
     if (!heroCard) return;
@@ -798,9 +808,7 @@ async function animateTrampleHeroHit(data) {
     const hpBefore = domHp ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-    console.log('[TrampleHero] domHp:', domHp, 'hpBefore:', hpBefore, 'hpAfter:', hpAfter);
-
-    if (hpElement) {
+if (hpElement) {
         hpElement.textContent = hpBefore;
     }
 
@@ -828,11 +836,9 @@ async function animateTrampleHeroHit(data) {
     // Mettre à jour les HP APRÈS l'animation (hpBefore - damage, indépendant du state)
     if (hpElement) {
         hpElement.textContent = hpAfter;
-        console.log('[TrampleHero] Updated display to hpAfter:', hpAfter);
     }
 
     zdejebelAnimationInProgress = false;
-    console.log('[TrampleHero] DONE - unblocked render');
     await new Promise(r => setTimeout(r, 200));
 }
 
@@ -1008,7 +1014,21 @@ function setupCustomDrag() {
 
         drop: (data, target, sourceEl) => {
             if (data.source === 'hand') {
-                return handleHandDrop(data, target);
+                const accepted = handleHandDrop(data, target);
+                if (accepted) {
+                    if (data.card.type === 'spell') {
+                        // Sort engagé : stocker pour affichage grisé dans la main
+                        const tp = target.owner === 'me' ? myNum : (target.owner === 'opp' ? (myNum === 1 ? 2 : 1) : 0);
+                        commitSpell(data.card, target.type, tp, target.row, target.col);
+                    }
+                    handCardRemovedIndex = data.idx;
+                    // Fade pour pièges (mode flèche — la carte est encore visible dans la main)
+                    if (sourceEl && data.card.type === 'trap') {
+                        sourceEl.style.transition = 'opacity 0.15s ease-out';
+                        sourceEl.style.opacity = '0';
+                    }
+                }
+                return accepted;
             } else if (data.source === 'field') {
                 return handleFieldDrop(data, target);
             }
@@ -1028,6 +1048,18 @@ function setupCustomDrag() {
             draggedFromField = null;
             clearHighlights();
         }
+    });
+}
+
+function commitSpell(card, targetType, targetPlayer, row, col) {
+    committedSpells.push({
+        card: { ...card },
+        commitId: ++commitIdCounter,
+        order: committedSpells.length + 1,
+        targetType: targetType,
+        targetPlayer: targetPlayer,
+        row: row !== undefined ? row : -1,
+        col: col !== undefined ? col : -1
     });
 }
 
@@ -1133,12 +1165,9 @@ function initSocket() {
         const oppGrave = s.opponent?.graveyard || [];
         const prevMeGrave = state?.me?.graveyard?.length || 0;
         const prevOppGrave = state?.opponent?.graveyard?.length || 0;
-        console.log('[STATE UPDATE] me.graveyard:', meGrave.length, meGrave.map(c => c.id), '| opp.graveyard:', oppGrave.length, oppGrave.map(c => c.id), '| graveRenderBlocked:', [...graveRenderBlocked]);
         if (meGrave.length > prevMeGrave && !graveRenderBlocked.has('me')) {
-            console.warn('[STATE UPDATE] ⚠️ me graveyard INCREASED but graveRenderBlocked is NOT set! Was:', prevMeGrave, 'Now:', meGrave.length);
         }
         if (oppGrave.length > prevOppGrave && !graveRenderBlocked.has('opp')) {
-            console.warn('[STATE UPDATE] ⚠️ opp graveyard INCREASED but graveRenderBlocked is NOT set! Was:', prevOppGrave, 'Now:', oppGrave.length);
         }
         // Auto-cacher les nouvelles cartes adverses si le count augmente pendant la résolution
         // (sécurité anti-flash si l'état arrive avant l'event draw)
@@ -1220,7 +1249,6 @@ function initSocket() {
     });
 
     socket.on('newTurn', (d) => {
-        console.log(`[newTurn] Received turn=${d.turn}, local turn=${state?.turn}`);
 
         if (state) {
             state.turn = d.turn;
@@ -1235,6 +1263,7 @@ function initSocket() {
         clearSel();
 
         resetAnimationStates();
+        committedSpells = [];
 
         log(`🎮 Tour ${d.turn} — ⚡${d.maxEnergy} énergie`, 'phase');
     });
@@ -1271,8 +1300,7 @@ function initSocket() {
         render();
     });
 
-    
-    // Highlight des cases pour les sorts
+// Highlight des cases pour les sorts
     socket.on('spellHighlight', (data) => {
         data.targets.forEach((t, index) => {
             const owner = t.player === myNum ? 'me' : 'opp';
@@ -1332,16 +1360,13 @@ function initSocket() {
     // Resync quand la fenêtre revient au premier plan
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && state && state.phase) {
-            console.log('[visibilitychange] Window visible, requesting sync');
             socket.emit('requestSync');
         }
     });
 
     // Le serveur envoie périodiquement le numéro de tour pour détecter la désynchronisation
     socket.on('turnCheck', (serverTurn) => {
-        console.log(`[turnCheck] Server turn=${serverTurn}, local turn=${state?.turn}`);
         if (state && state.turn !== serverTurn) {
-            console.log(`[turnCheck] DESYNC DETECTED! Requesting sync...`);
             socket.emit('requestSync');
         }
     });
@@ -1349,7 +1374,6 @@ function initSocket() {
 
 function handleAnimation(data) {
     const { type } = data;
-    console.log('[Animation] Received:', type, data);
 
     // Les animations de combat utilisent la file d'attente
     const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce'];
@@ -1358,18 +1382,15 @@ function handleAnimation(data) {
         // Bloquer render() immédiatement pour les animations trample (avant traitement de la queue)
         if (type === 'trampleHeroHit') {
             zdejebelAnimationInProgress = true;
-            console.log('[Animation] trampleHeroHit received - blocking hero HP render immediately');
         }
         if (type === 'trampleDamage') {
             const owner = data.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${data.row}-${data.col}`;
             animatingSlots.add(slotKey);
-            console.log('[Animation] trampleDamage received - blocking slot', slotKey, 'immediately');
         }
         // Bloquer render() immédiatement pour onDeathDamage héros (Dragon Crépitant)
         if (type === 'onDeathDamage' && data.targetRow === undefined) {
             zdejebelAnimationInProgress = true;
-            console.log('[Animation] onDeathDamage (hero) received - blocking hero HP render immediately');
         }
         queueAnimation(type, data);
     } else {
@@ -1411,16 +1432,13 @@ function handleAnimation(data) {
 
 // Handler pour les batches d'animations (sorts de zone - jouées en parallèle)
 function handleAnimationBatch(animations) {
-    console.log('[AnimationBatch] Received batch of', animations.length, 'animations');
 
     // Bloquer immédiatement les slots des deathTransform pour que render() ne les écrase pas
     for (const anim of animations) {
-        console.log('[AnimationBatch] Processing anim type:', anim.type, 'player:', anim.player, 'row:', anim.row, 'col:', anim.col);
         if (anim.type === 'deathTransform') {
             const owner = anim.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${anim.row}-${anim.col}`;
             animatingSlots.add(slotKey);
-            console.log('[AnimationBatch] Blocked slot for deathTransform:', slotKey);
         }
     }
 
@@ -1444,20 +1462,16 @@ function handleAnimationBatch(animations) {
             const target = anim.targetPlayer === myNum ? 'me' : 'opp';
             const stateHp = target === 'me' ? state?.me?.hp : state?.opponent?.hp;
             const displayedHp = document.querySelector(`#${target === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`)?.textContent;
-            console.log(`[AnimationBatch] Zdejebel targetPlayer=${anim.targetPlayer} target=${target} stateHp=${stateHp} displayedHp=${displayedHp} _displayHpBefore=${anim._displayHpBefore}`);
             immediatePromises.push(animateZdejebelDamage(anim));
         } else if (anim.type === 'death' || anim.type === 'deathTransform') {
             // Passer par la file pour respecter l'ordre des animations (après damage, etc.)
-            console.log(`[AnimationBatch] Routing ${anim.type} to queue for player=${anim.player} row=${anim.row} col=${anim.col}`);
             queueAnimation(anim.type, anim);
         } else {
-            console.log(`[AnimationBatch] Unknown type in batch:`, anim.type);
         }
     }
 
     if (immediatePromises.length > 0) {
         Promise.all(immediatePromises).then(() => {
-            console.log('[AnimationBatch] Immediate animations completed');
         });
     }
 }
@@ -1773,7 +1787,6 @@ async function animateDeathTransform(data) {
 
     // --- Animation flip (600ms) — rotateY dans le slot ---
     const TOTAL = 600;
-    console.log(`[DeathTransform] START flip owner=${owner} slot=${slotKey} fromCard=${data.fromCard.id} toCard=${data.toCard.id}`);
 
     await new Promise(resolve => {
         const startTime = performance.now();
@@ -1887,7 +1900,6 @@ async function animateStartOfTurnTransform(data) {
 
     // --- Animation flip inverse (600ms) — rotateY dans le slot ---
     const TOTAL = 600;
-    console.log(`[Revive] START flip owner=${owner} slot=${slotKey} fromCard=${data.fromCard.id} toCard=${data.toCard.id}`);
 
     await new Promise(resolve => {
         const startTime = performance.now();
@@ -1931,24 +1943,19 @@ async function animateStartOfTurnTransform(data) {
  * Animation de défausse depuis la main (désintégration sur place)
  */
 async function animateDiscard(data) {
-    console.log('[Discard] START - data:', JSON.stringify(data));
     const owner = data.player === myNum ? 'me' : 'opp';
     const handEl = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
     if (!handEl) {
-        console.log('[Discard] END - No hand element found for owner:', owner);
         return;
     }
 
     const cards = handEl.querySelectorAll(owner === 'me' ? '.card' : '.opp-card-back');
-    console.log('[Discard] Found', cards.length, 'cards in hand, looking for index', data.handIndex);
     const cardEl = cards[data.handIndex];
     if (!cardEl) {
-        console.log('[Discard] END - No card at index', data.handIndex, '- hand may have been updated by render()');
         return;
     }
 
     const rect = cardEl.getBoundingClientRect();
-    console.log('[Discard] Card found at', rect.left, rect.top);
 
     // Créer un clone pour l'animation
     const clone = cardEl.cloneNode(true);
@@ -1970,29 +1977,23 @@ async function animateDiscard(data) {
 
     // Animation de désintégration avec timeout de sécurité
     let timeoutId;
-    console.log('[Discard] Starting disintegration animation');
     try {
         await Promise.race([
             animateDisintegration(clone, owner),
             new Promise(resolve => {
                 timeoutId = setTimeout(() => {
-                    console.log('[Discard] TIMEOUT reached after 1.5s, forcing completion');
                     resolve();
                 }, 1500); // Timeout 1.5s max
             })
         ]);
-        console.log('[Discard] Disintegration finished normally');
     } catch (e) {
-        console.error('[Discard] Animation error:', e);
     } finally {
         clearTimeout(timeoutId);
         // Toujours nettoyer le clone
         if (clone.parentNode) {
             clone.remove();
-            console.log('[Discard] Clone removed');
         }
     }
-    console.log('[Discard] END - Animation completed');
 }
 
 /**
@@ -2008,7 +2009,6 @@ async function animateBurn(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const ownerKey = owner === 'me' ? 'me' : 'opp';
     const card = data.card;
-    console.log(`[BURN ANIM] START ${card?.name || card?.id} owner=${owner} graveBlocked=${graveRenderBlocked.has(ownerKey)} timestamp=${Date.now()}`);
 
     // Bloquer le render du cimetière pendant l'animation
     graveRenderBlocked.add(ownerKey);
@@ -2251,7 +2251,6 @@ async function animateDeathToGraveyard(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const ownerKey = owner;
     const deathSlotKey = `${owner}-${data.row}-${data.col}`;
-    console.log(`[DeathAnim] START ${data.card?.name || '?'} owner=${owner} row=${data.row} col=${data.col} slotBlocked=${animatingSlots.has(deathSlotKey)}`);
 
     // Bloquer le render du cimetière pendant l'animation
     graveRenderBlocked.add(ownerKey);
@@ -2261,10 +2260,8 @@ async function animateDeathToGraveyard(data) {
         `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
     );
     const cardEl = slot?.querySelector('.card');
-    console.log(`[DeathAnim] ${data.card?.name || '?'} slot=${!!slot} cardEl=${!!cardEl} hasCard=${slot?.classList.contains('has-card')} data.card=${!!data.card}`);
 
     if (!slot) {
-        console.log(`[DeathAnim] ${data.card?.name || '?'} ABORT: no slot found`);
         graveRenderBlocked.delete(ownerKey);
         animatingSlots.delete(deathSlotKey);
         return;
@@ -2308,7 +2305,6 @@ async function animateDeathToGraveyard(data) {
     } else if (cardEl) {
         cardFace = cardEl.cloneNode(true);
     } else {
-        console.log(`[DeathAnim] ${data.card?.name || '?'} ABORT: no cardFace (no data.card and no cardEl)`);
         graveRenderBlocked.delete(ownerKey);
         animatingSlots.delete(deathSlotKey);
         return;
@@ -2529,7 +2525,7 @@ function createCardElementForAnimation(card) {
  * La carte apparaît en grand (gauche = joueur, droite = adversaire)
  * puis vole vers le cimetière du propriétaire.
  */
-async function animateSpellReveal(card, casterPlayerNum) {
+async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const isMine = casterPlayerNum === myNum;
     const side = isMine ? 'me' : 'opp';
     const cardWidth = 105;
@@ -2570,14 +2566,20 @@ async function animateSpellReveal(card, casterPlayerNum) {
         graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
     }
 
-    // 4. Wrapper positionné
+    // 4. Position de départ : depuis la main (startRect) ou materialisation classique
+    const hasStartRect = !!startRect;
+    const initX = hasStartRect ? startRect.left + startRect.width / 2 - cardWidth / 2 : showcaseX;
+    const initY = hasStartRect ? startRect.top + startRect.height / 2 - cardHeight / 2 : showcaseY;
+    const initScale = hasStartRect ? (startRect.width / cardWidth) : 0.3;
+    const initOpacity = hasStartRect ? 0.85 : 0;
+
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
         position: fixed; z-index: 10000; pointer-events: none;
-        left: ${showcaseX}px; top: ${showcaseY}px;
+        left: ${initX}px; top: ${initY}px;
         width: ${cardWidth}px; height: ${cardHeight}px;
         transform-origin: center center;
-        transform: scale(0.3); opacity: 0;
+        transform: scale(${initScale}); opacity: ${initOpacity};
     `;
     wrapper.appendChild(cardEl);
 
@@ -2637,13 +2639,13 @@ async function animateSpellReveal(card, casterPlayerNum) {
             let x, y, scale, opacity, tiltDeg, glowIntensity;
 
             if (progress <= t1) {
-                // === PHASE 1: MATERIALIZE ===
+                // === PHASE 1: MATERIALIZE (ou fly-from-hand si startRect) ===
                 const p = progress / t1;
-                const ep = easeOutBack(p);
-                x = showcaseX;
-                y = showcaseY;
-                scale = 0.3 + (showcaseScale - 0.3) * ep;
-                opacity = easeOutCubic(p);
+                const ep = hasStartRect ? easeInOutCubic(p) : easeOutBack(p);
+                x = initX + (showcaseX - initX) * ep;
+                y = initY + (showcaseY - initY) * ep;
+                scale = initScale + (showcaseScale - initScale) * ep;
+                opacity = initOpacity + (1 - initOpacity) * easeOutCubic(p);
                 tiltDeg = 0;
                 glowIntensity = easeOutCubic(p);
 
@@ -2726,7 +2728,6 @@ async function animateSpellReveal(card, casterPlayerNum) {
                     graveCardEl.classList.add('grave-card', 'in-graveyard');
                     graveTopContainer.appendChild(graveCardEl);
                     graveTopContainer.dataset.topCardUid = card.uid || card.id;
-                    console.log(`[SpellReveal] Card placed in graveyard DOM: ${card.name || card.id} uid=${card.uid || card.id} side=${side} graveBlocked=${graveRenderBlocked.has(side)}`);
                 }
                 // graveRenderBlocked reste actif (posé par queueAnimation)
                 // updateGraveTopCard le retirera quand le state aura rattrapé
@@ -2753,9 +2754,28 @@ async function animateSpell(data) {
             await flyFromOppHand({ left: showcaseX, top: showcaseY, width: cardW * sc, height: cardH * sc }, 300);
         }
     }
+    // Pour nos propres sorts : récupérer la position du sort engagé dans la main
+    let startRect = null;
+    if (data.spell && data.caster === myNum && committedSpells.length > 0) {
+        const handPanel = document.getElementById('my-hand');
+        const committedEls = handPanel ? handPanel.querySelectorAll('.committed-spell') : [];
+        const csIdx = committedSpells.findIndex(cs => cs.card.id === data.spell.id);
+        if (csIdx >= 0) {
+            const commitId = committedSpells[csIdx].commitId;
+            for (const el of committedEls) {
+                if (parseInt(el.dataset.commitId) === commitId) {
+                    startRect = el.getBoundingClientRect();
+                    el.style.visibility = 'hidden';
+                    setTimeout(() => el.remove(), 50);
+                    break;
+                }
+            }
+            committedSpells.splice(csIdx, 1);
+        }
+    }
     // Afficher la carte du sort avec animation de révélation
     if (data.spell) {
-        await animateSpellReveal(data.spell, data.caster);
+        await animateSpellReveal(data.spell, data.caster, startRect);
     }
 }
 
@@ -2840,13 +2860,11 @@ function animateTrapPlace(data) {
 async function animateTrap(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
-    console.log(`[TRAP] animateTrap START owner=${owner} row=${data.row} hasTrap=${!!data.trap} graveBlocked=${graveRenderBlocked.has(owner)} trapSlotHasTrap=${trapSlot?.classList.contains('has-trap')}`);
 
     // 1. Afficher la carte du piège avec animation de révélation
     if (data.trap) {
         await animateSpellReveal(data.trap, data.player);
     }
-    console.log(`[TRAP] animateSpellReveal DONE owner=${owner} graveBlocked=${graveRenderBlocked.has(owner)} trapSlotHasTrap=${trapSlot?.classList.contains('has-trap')}`);
 
     // 2. Explosion du slot du piège
     if (trapSlot) {
@@ -2861,10 +2879,8 @@ async function animateTrap(data) {
         setTimeout(() => effect.remove(), 600);
         setTimeout(() => {
             trapSlot.classList.remove('triggered');
-            console.log(`[TRAP] explosion cleanup DONE owner=${owner} row=${data.row}`);
         }, 600);
     }
-    console.log(`[TRAP] animateTrap END owner=${owner} row=${data.row}`);
 }
 
 // === Système de bounce (Voyage inattendu) ===
@@ -2882,7 +2898,6 @@ function checkPendingBounce(owner, cardElements) {
     if (!target) return;
     target.style.visibility = 'hidden';
     const rect = target.getBoundingClientRect();
-    console.log(`[Bounce] checkPendingBounce owner=${owner} targetIndex=${cardElements.length - 1} rect=`, rect.left.toFixed(1), rect.top.toFixed(1), rect.width.toFixed(1), rect.height.toFixed(1), 'tagName=', target.tagName, 'className=', target.className);
     pendingBounce.resolveTarget({
         el: target,
         x: rect.left,
@@ -3079,7 +3094,6 @@ let animatingSlots = new Set();
 // Slots avec deathTransform EN COURS D'EXÉCUTION (protégés contre resetAnimationStates)
 let activeDeathTransformSlots = new Set();
 
-
 /**
  * Réinitialise tous les états d'animation pour éviter les bugs de persistance
  * Appelé au début de chaque nouveau tour
@@ -3112,11 +3126,9 @@ function resetAnimationStates() {
     }
     for (const key of [...animatingSlots]) {
         if (activeDeathTransformSlots.has(key)) {
-            console.log('[Reset] Keeping animatingSlot (active deathTransform running):', key);
         } else if (!slotsStillNeeded.has(key)) {
             animatingSlots.delete(key);
         } else {
-            console.log('[Reset] Keeping animatingSlot (pending in queue):', key);
         }
     }
 
@@ -3124,7 +3136,6 @@ function resetAnimationStates() {
     // Cela évite de perdre des animations comme zdejebel qui arrivent en fin de tour
     // animationQueue.length = 0;
     // isAnimating = false;
-    console.log('[Reset] Animation states reset, queue preserved:', animationQueue.length, 'items');
 
     // Nettoyer les animations de pioche en attente
     if (typeof GameAnimations !== 'undefined') {
@@ -3455,15 +3466,11 @@ function animateMove(data) {
     const toKey = `${owner}-${data.toRow}-${data.toCol}`;
     animatingSlots.add(fromKey);
     animatingSlots.add(toKey);
-    console.log('[animateMove] Blocked slots:', fromKey, toKey);
 
     const fromSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.fromRow}"][data-col="${data.fromCol}"]`);
     const toSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
 
-    console.log('[animateMove] fromSlot:', fromSlot, 'toSlot:', toSlot);
-    console.log('[animateMove] fromSlot has card?', fromSlot?.classList.contains('has-card'), 'children:', fromSlot?.children.length);
     if (!fromSlot || !toSlot) {
-        console.log('[animateMove] ABORT - slot not found');
         return;
     }
 
@@ -3483,7 +3490,6 @@ function animateMove(data) {
     const toRect = toSlot.getBoundingClientRect();
     const dx = toRect.left - fromRect.left;
     const dy = toRect.top - fromRect.top;
-    console.log('[animateMove] from:', fromRect.left, fromRect.top, '→ to:', toRect.left, toRect.top, 'delta:', dx, dy);
 
     // Créer une carte overlay (makeCard met le backgroundImage en inline, on ne doit pas l'écraser)
     const movingCard = makeCard(data.card, false);
@@ -3502,13 +3508,11 @@ function animateMove(data) {
     // Forcer le reflow puis déclencher la transition via transform
     movingCard.getBoundingClientRect();
     requestAnimationFrame(() => {
-        console.log('[animateMove] Setting transform translate3d(%s, %s)', dx, dy);
         movingCard.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
     });
 
     // Nettoyer après l'animation (500ms transition + 100ms marge)
     setTimeout(() => {
-        console.log('[animateMove] Cleanup - removing overlay');
         movingCard.remove();
         animatingSlots.delete(fromKey);
         animatingSlots.delete(toKey);
@@ -3529,15 +3533,12 @@ function showCardShowcase(card) {
 
 function canPlay() {
     if (!state) {
-        console.log('[canPlay] false: no state');
         return false;
     }
     if (state.phase !== 'planning') {
-        console.log('[canPlay] false: phase is', state.phase, 'not planning');
         return false;
     }
     if (state.me.ready) {
-        console.log('[canPlay] false: already ready');
         return false;
     }
     return true;
@@ -3727,7 +3728,6 @@ function showCardPicker() {
     socket.emit('requestCardCatalog', (catalog) => {
         if (!catalog || (!catalog.creatures && !catalog.spells && !catalog.traps)) {
             grid.innerHTML = '<div class="picker-loading" style="color:#e74c3c;">Erreur: catalogue vide</div>';
-            console.error('requestCardCatalog returned empty catalog:', catalog);
             return;
         }
         cardCatalog = catalog;
@@ -3739,7 +3739,6 @@ function showCardPicker() {
     setTimeout(() => {
         if (!cardCatalog) {
             grid.innerHTML = '<div class="picker-loading" style="color:#e74c3c;">Le serveur ne répond pas. Rechargez la page.</div>';
-            console.error('requestCardCatalog timeout - no response from server');
         }
     }, 5000);
 }
@@ -3830,7 +3829,6 @@ function confirmTestHand() {
             document.getElementById('card-picker-overlay').classList.add('hidden');
             showMulligan();
         } else {
-            console.error('setTestHand failed:', response.error);
         }
     });
 }
@@ -3872,6 +3870,8 @@ function setupHeroes() {
                 const canTarget = selected.pattern === 'hero' || selected.canTargetHero;
                 if (canTarget && canPlay() && selected.cost <= state.me.energy) {
                     const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+                    commitSpell(selected, 'hero', targetPlayer, -1, -1);
+                    handCardRemovedIndex = selected.idx;
                     socket.emit('castSpell', {
                         idx: selected.idx,
                         targetPlayer: targetPlayer,
@@ -3998,6 +3998,8 @@ function buildBattlefield() {
             if (dragged.tooExpensive) {
                 dragged.triedToDrop = true;
             } else {
+                commitSpell(dragged, 'global', 0, -1, -1);
+                handCardRemovedIndex = dragged.idx;
                 socket.emit('castGlobalSpell', { handIndex: dragged.idx });
             }
         }
@@ -4285,155 +4287,421 @@ function clearHighlights() {
 // ==========================================
 // Rank Badge System
 // ==========================================
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 const RANK_CONFIG = {
     bronze: {
-        name: 'Bronze',
-        primary: '#E88A4C', secondary: '#C46A30', highlight: '#FFB87A',
-        dark: '#8B4513', glow: 'rgba(232, 138, 76, 0.5)',
-        borderLight: '#FFEECC', borderMid: '#FFD4A8'
+        gem: {
+            body: '#C47A3A', light: '#FFD4A0', bright: '#FFF0D0',
+            mid: '#D4884C', deep: '#8B4513', darkest: '#3A1808',
+            glow: 'rgba(232, 138, 76, 0.6)',
+            frame: '#5A4A3A', frameMid: '#8A7A6A', frameLight: '#A09080',
+            hotspot: '#FFFFFF', rimLight: '#FFD090',
+            fire1: '#FFE8C0', fire2: '#FFBA60', fire3: '#FF8830',
+        },
     },
     silver: {
-        name: 'Argent',
-        primary: '#B8C8D8', secondary: '#8BA4BC', highlight: '#E8F0FF',
-        dark: '#5A7088', glow: 'rgba(184, 200, 216, 0.5)',
-        borderLight: '#FFFFFF', borderMid: '#D8E4F0'
+        gem: {
+            body: '#A8A8A8', light: '#E0E0E0', bright: '#FFFFFF',
+            mid: '#909090', deep: '#606060', darkest: '#303030',
+            glow: 'rgba(180, 180, 180, 0.5)',
+            frame: '#505050', frameMid: '#808080', frameLight: '#A8A8A8',
+            hotspot: '#FFFFFF', rimLight: '#D0D0D0',
+            fire1: '#F0F0F0', fire2: '#B8B8B8', fire3: '#888888',
+        },
     },
     gold: {
-        name: 'Or',
-        primary: '#FFD060', secondary: '#E8A830', highlight: '#FFF0A0',
-        dark: '#A87820', glow: 'rgba(255, 208, 96, 0.6)',
-        borderLight: '#FFFFD8', borderMid: '#FFE898'
+        gem: {
+            body: '#F0C030', light: '#FFF090', bright: '#FFFFF0',
+            mid: '#E0A020', deep: '#B07010', darkest: '#4A2800',
+            glow: 'rgba(255, 208, 60, 0.6)',
+            frame: '#5A4830', frameMid: '#8A7850', frameLight: '#B0A070',
+            hotspot: '#FFFFFF', rimLight: '#FFE870',
+            fire1: '#FFFFC0', fire2: '#FFD840', fire3: '#FFB000',
+        },
     },
     emerald: {
-        name: 'Émeraude',
-        primary: '#50D080', secondary: '#30A858', highlight: '#90FFB0',
-        dark: '#1A7838', glow: 'rgba(80, 208, 128, 0.5)',
-        borderLight: '#C0FFD8', borderMid: '#80F0A8'
+        gem: {
+            body: '#40C070', light: '#80FFB0', bright: '#C0FFD8',
+            mid: '#30A050', deep: '#187038', darkest: '#042810',
+            glow: 'rgba(80, 208, 128, 0.5)',
+            frame: '#3A5040', frameMid: '#5A7860', frameLight: '#80A080',
+            hotspot: '#FFFFFF', rimLight: '#80FFAA',
+            fire1: '#C0FFE0', fire2: '#50E080', fire3: '#20B050',
+        },
     },
     diamond: {
-        name: 'Diamant',
-        primary: '#D8C8F8', secondary: '#A890E0', highlight: '#FFFFFF',
-        dark: '#7860B8', glow: 'rgba(216, 200, 248, 0.6)',
-        borderLight: '#FFFFFF', borderMid: '#E8DCF8'
+        gem: {
+            body: '#E0DCE8', light: '#F8F6FF', bright: '#FFFFFF',
+            mid: '#D0CAD8', deep: '#A8A0B8', darkest: '#706888',
+            glow: 'rgba(230, 225, 240, 0.6)',
+            frame: '#686068', frameMid: '#8A8490', frameLight: '#B0AAB8',
+            hotspot: '#FFFFFF', rimLight: '#F0ECFF',
+            fire1: '#FEFCFF', fire2: '#E8E4F0', fire3: '#D0CCD8',
+        },
     },
-    mythic: {
-        name: 'Mythique',
-        primary: '#FF6B35', secondary: '#E84A10', highlight: '#FFAA80',
-        dark: '#A02800', glow: 'rgba(255, 107, 53, 0.6)',
-        borderLight: '#FFDDCC', borderMid: '#FFAA80'
-    }
 };
 
-function generateRankGemSVG(rank, tier, uniqueId) {
-    const c = RANK_CONFIG[rank];
-    const gradId = `bg-${uniqueId}`;
-    const gradDef = `<defs><linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">` +
-        `<stop offset="0%" stop-color="${c.borderLight}"/>` +
-        `<stop offset="30%" stop-color="${c.borderMid}"/>` +
-        `<stop offset="50%" stop-color="${c.borderLight}"/>` +
-        `<stop offset="70%" stop-color="${c.borderMid}"/>` +
-        `<stop offset="100%" stop-color="${c.borderLight}"/>` +
-        `</linearGradient></defs>`;
+const MYTHIC_GEM = {
+    body: '#E04020', light: '#FF8060', bright: '#FFDDCC',
+    mid: '#C83010', deep: '#901808', darkest: '#400800',
+    glow: 'rgba(255, 80, 40, 0.7)',
+    frame: '#5A3A2A', frameMid: '#8A6A4A', frameLight: '#B08860',
+    hotspot: '#FFFFFF', rimLight: '#FF9050',
+    fire1: '#FFDDBB', fire2: '#FF7030', fire3: '#E04010',
+};
 
-    if (rank === 'mythic') {
-        const pts = [], gPts = [];
-        for (let i = 0; i < 12; i++) {
-            const a = (i * 30 - 90) * Math.PI / 180;
-            pts.push(`${(50+42*Math.cos(a)).toFixed(1)},${(50+42*Math.sin(a)).toFixed(1)}`);
-            gPts.push({x: 50+41*Math.cos(a), y: 50+41*Math.sin(a)});
-        }
-        let facets = '';
-        gPts.forEach((p, i) => {
-            const np = gPts[(i+1)%12];
-            let fill, op;
-            if (i < 3) { fill = c.highlight; op = 0.55 - i*0.08; }
-            else if (i < 6) { fill = c.primary; op = 0.7; }
-            else if (i < 9) { fill = c.secondary; op = 0.6 + (i-6)*0.1; }
-            else { fill = c.dark; op = 0.55; }
-            facets += `<path d="M50 50 L${p.x.toFixed(1)} ${p.y.toFixed(1)} L${np.x.toFixed(1)} ${np.y.toFixed(1)} Z" fill="${fill}" opacity="${op}"/>`;
-        });
-        return gradDef +
-            `<polygon points="${pts.join(' ')}" fill="none" stroke="url(#${gradId})" stroke-width="3" stroke-linejoin="round"/>` +
-            `<polygon points="${gPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="${c.primary}"/>` +
-            facets;
-    }
+const TIER_LABELS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
+const TIER_Y_SHIFT = { 1: 16, 2: 0, 3: 6, 4: 0 };
 
-    if (tier === 1) {
-        return gradDef +
-            `<path d="M50 8 L92 50 L50 92 L8 50 Z" fill="none" stroke="url(#${gradId})" stroke-width="3" stroke-linejoin="round"/>` +
-            `<path d="M50 9 L91 50 L50 91 L9 50 Z" fill="${c.primary}"/>` +
-            `<path d="M50 9 L9 50 L50 50 Z" fill="${c.highlight}" opacity="0.5"/>` +
-            `<path d="M50 9 L91 50 L50 50 Z" fill="${c.highlight}" opacity="0.3"/>` +
-            `<path d="M50 91 L9 50 L50 50 Z" fill="${c.secondary}"/>` +
-            `<path d="M50 91 L91 50 L50 50 Z" fill="${c.dark}" opacity="0.6"/>`;
-    }
-    if (tier === 2) {
-        return gradDef +
-            `<path d="M50 8 L87 29 L87 71 L50 92 L13 71 L13 29 Z" fill="none" stroke="url(#${gradId})" stroke-width="3" stroke-linejoin="round"/>` +
-            `<path d="M50 9 L86 29.5 L86 70.5 L50 91 L14 70.5 L14 29.5 Z" fill="${c.primary}"/>` +
-            `<path d="M50 9 L14 29.5 L50 50 Z" fill="${c.highlight}" opacity="0.6"/>` +
-            `<path d="M50 9 L86 29.5 L50 50 Z" fill="${c.highlight}" opacity="0.35"/>` +
-            `<path d="M14 29.5 L14 70.5 L50 50 Z" fill="${c.highlight}" opacity="0.3"/>` +
-            `<path d="M86 29.5 L86 70.5 L50 50 Z" fill="${c.secondary}" opacity="0.5"/>` +
-            `<path d="M50 91 L14 70.5 L50 50 Z" fill="${c.secondary}" opacity="0.9"/>` +
-            `<path d="M50 91 L86 70.5 L50 50 Z" fill="${c.dark}" opacity="0.6"/>`;
-    }
-    if (tier === 3) {
-        return gradDef +
-            `<path d="M50 8 L79 21 L92 50 L79 79 L50 92 L21 79 L8 50 L21 21 Z" fill="none" stroke="url(#${gradId})" stroke-width="3" stroke-linejoin="round"/>` +
-            `<path d="M50 9 L78.5 21.5 L91 50 L78.5 78.5 L50 91 L21.5 78.5 L9 50 L21.5 21.5 Z" fill="${c.primary}"/>` +
-            `<path d="M50 9 L21.5 21.5 L50 50 Z" fill="${c.highlight}" opacity="0.6"/>` +
-            `<path d="M50 9 L78.5 21.5 L50 50 Z" fill="${c.highlight}" opacity="0.4"/>` +
-            `<path d="M21.5 21.5 L9 50 L50 50 Z" fill="${c.highlight}" opacity="0.45"/>` +
-            `<path d="M78.5 21.5 L91 50 L50 50 Z" fill="${c.primary}" opacity="0.8"/>` +
-            `<path d="M9 50 L21.5 78.5 L50 50 Z" fill="${c.secondary}" opacity="0.6"/>` +
-            `<path d="M91 50 L78.5 78.5 L50 50 Z" fill="${c.dark}" opacity="0.4"/>` +
-            `<path d="M50 91 L21.5 78.5 L50 50 Z" fill="${c.secondary}" opacity="0.9"/>` +
-            `<path d="M50 91 L78.5 78.5 L50 50 Z" fill="${c.dark}" opacity="0.65"/>`;
-    }
-    // tier 4 - decagon
-    const pts = [], gPts = [];
-    for (let i = 0; i < 10; i++) {
-        const a = (i * 36 - 90) * Math.PI / 180;
-        pts.push(`${(50+42*Math.cos(a)).toFixed(1)},${(50+42*Math.sin(a)).toFixed(1)}`);
-        gPts.push({x: 50+41*Math.cos(a), y: 50+41*Math.sin(a)});
-    }
-    let facets = '';
-    gPts.forEach((p, i) => {
-        const np = gPts[(i+1)%10];
-        let fill, op;
-        if (i < 3) { fill = c.highlight; op = 0.5 - i*0.1; }
-        else if (i < 5) { fill = c.primary; op = 0.7; }
-        else if (i < 8) { fill = c.secondary; op = 0.6 + (i-5)*0.1; }
-        else { fill = c.dark; op = 0.5; }
-        facets += `<path d="M50 50 L${p.x.toFixed(1)} ${p.y.toFixed(1)} L${np.x.toFixed(1)} ${np.y.toFixed(1)} Z" fill="${fill}" opacity="${op}"/>`;
-    });
-    return gradDef +
-        `<polygon points="${pts.join(' ')}" fill="none" stroke="url(#${gradId})" stroke-width="3" stroke-linejoin="round"/>` +
-        `<polygon points="${gPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="${c.primary}"/>` +
-        facets;
+function svgEl(tag, attrs) {
+    const el = document.createElementNS(SVG_NS, tag);
+    if (attrs) Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
 }
 
-function createRankBadge(rank, tier, mythicPosition) {
-    const c = RANK_CONFIG[rank];
-    const tierLabels = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
-    const uid = `rank-${rank}-${tier}-${Date.now()}`;
+function rankRegularPoly(sides, r) {
+    const pts = [];
+    for (let i = 0; i < sides; i++) {
+        const a = (i * (360 / sides) - 90) * (Math.PI / 180);
+        pts.push({ x: 50 + r * Math.cos(a), y: 50 + r * Math.sin(a) });
+    }
+    return { pts, d: 'M' + pts.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' L') + ' Z' };
+}
+
+function getGemShape(tier) {
+    switch (tier) {
+        case 1: return rankRegularPoly(3, 42);
+        case 2: return { pts: [{x:50,y:13},{x:87,y:50},{x:50,y:87},{x:13,y:50}], d: 'M50,13 L87,50 L50,87 L13,50 Z' };
+        case 3: return rankRegularPoly(5, 38);
+        case 4: return rankRegularPoly(6, 37);
+        default: return { pts: [], d: '' };
+    }
+}
+
+function buildGemSVG(c, uid, gem, n, translate) {
+    const svg = svgEl('svg', { viewBox: '0 0 100 100' });
+    Object.assign(svg.style, { width: '100%', height: '100%' });
+
+    const g = svgEl('g', { transform: 'translate(' + translate[0] + ',' + translate[1] + ')' });
+
+    const midPts = gem.pts.map((p, i) => {
+        const next = gem.pts[(i + 1) % n];
+        return { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 };
+    });
+    const innerPts = gem.pts.map(p => ({ x: 50 + (p.x - 50) * 0.48, y: 50 + (p.y - 50) * 0.48 }));
+    const deepInnerPts = gem.pts.map(p => ({ x: 50 + (p.x - 50) * 0.22, y: 50 + (p.y - 50) * 0.22 }));
+
+    const defs = svgEl('defs');
+
+    // Frame gradient
+    const fg = svgEl('linearGradient', { id: 'fg-' + uid, x1: '0%', y1: '0%', x2: '100%', y2: '100%' });
+    [[0, c.frameLight], [40, c.frameMid], [60, c.frameLight], [100, c.frameMid]].forEach(([o, col]) => {
+        fg.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col }));
+    });
+    defs.appendChild(fg);
+
+    // Radial body gradient
+    const gr = svgEl('radialGradient', { id: 'gr-' + uid, cx: '32%', cy: '28%', r: '72%' });
+    [[0, c.light, '0.9'], [15, c.body, null], [45, c.mid, null], [75, c.deep, null], [100, c.darkest, null]].forEach(([o, col, op]) => {
+        const s = svgEl('stop', { offset: o + '%', 'stop-color': col });
+        if (op) s.setAttribute('stop-opacity', op);
+        gr.appendChild(s);
+    });
+    defs.appendChild(gr);
+
+    // Inner glow
+    const ig = svgEl('radialGradient', { id: 'ig-' + uid, cx: '44%', cy: '40%', r: '30%' });
+    [[0, c.fire1, '0.5'], [50, c.fire2, '0.15'], [100, c.fire3, '0']].forEach(([o, col, op]) => {
+        ig.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col, 'stop-opacity': op }));
+    });
+    defs.appendChild(ig);
+
+    // Specular highlight
+    const hs = svgEl('radialGradient', { id: 'hs-' + uid, cx: '50%', cy: '50%', r: '50%' });
+    [[0, '#FFFFFF', '0.5'], [25, c.hotspot, '0.3'], [60, c.bright, '0.08'], [100, c.bright, '0']].forEach(([o, col, op]) => {
+        hs.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col, 'stop-opacity': op }));
+    });
+    defs.appendChild(hs);
+
+    // Ambient occlusion
+    const ao = svgEl('radialGradient', { id: 'ao-' + uid, cx: '50%', cy: '50%', r: '50%' });
+    [[50, c.darkest, '0'], [85, c.darkest, '0.2'], [100, c.darkest, '0.5']].forEach(([o, col, op]) => {
+        ao.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col, 'stop-opacity': op }));
+    });
+    defs.appendChild(ao);
+
+    // Caustic
+    const ca = svgEl('radialGradient', { id: 'ca-' + uid, cx: '50%', cy: '50%', r: '50%' });
+    [[0, c.fire1, '0.4'], [60, c.fire2, '0.1'], [100, c.fire3, '0']].forEach(([o, col, op]) => {
+        ca.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col, 'stop-opacity': op }));
+    });
+    defs.appendChild(ca);
+
+    // Per-facet gradients
+    gem.pts.forEach((p, i) => {
+        const next = gem.pts[(i + 1) % n];
+        const mx = (p.x + next.x) / 2;
+        const my = (p.y + next.y) / 2;
+        const ratio = i / n;
+        const isLight = ratio < 0.35;
+        const grad = svgEl('linearGradient', {
+            id: 'facg-' + uid + '-' + i,
+            x1: '50%', y1: '50%',
+            x2: ((mx - 50) / 50 * 50 + 50).toFixed(0) + '%',
+            y2: ((my - 50) / 50 * 50 + 50).toFixed(0) + '%',
+        });
+        grad.appendChild(svgEl('stop', {
+            offset: '0%', 'stop-color': isLight ? c.light : c.deep,
+            'stop-opacity': isLight ? '0.3' : '0.4',
+        }));
+        grad.appendChild(svgEl('stop', {
+            offset: '100%', 'stop-color': isLight ? c.body : c.darkest,
+            'stop-opacity': isLight ? '0.05' : '0.2',
+        }));
+        defs.appendChild(grad);
+    });
+
+    // Clip path
+    const cp = svgEl('clipPath', { id: 'gc-' + uid });
+    cp.appendChild(svgEl('path', { d: gem.d }));
+    defs.appendChild(cp);
+
+    // Frame bevel
+    const fb = svgEl('linearGradient', { id: 'fb-' + uid, x1: '30%', y1: '0%', x2: '70%', y2: '100%' });
+    [[0, c.frameLight], [35, c.frameMid], [70, c.frame], [100, c.frame]].forEach(([o, col]) => {
+        fb.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col }));
+    });
+    defs.appendChild(fb);
+
+    // Frame highlight
+    const fh = svgEl('linearGradient', { id: 'fh-' + uid, x1: '20%', y1: '0%', x2: '80%', y2: '100%' });
+    [[0, 'rgba(255,255,255,0.2)'], [50, 'rgba(255,255,255,0.05)'], [100, 'rgba(0,0,0,0.2)']].forEach(([o, col]) => {
+        fh.appendChild(svgEl('stop', { offset: o + '%', 'stop-color': col }));
+    });
+    defs.appendChild(fh);
+
+    g.appendChild(defs);
+
+    // Border / bezel
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'none', stroke: 'url(#fb-' + uid + ')', 'stroke-width': '12', 'stroke-linejoin': 'round' }));
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'none', stroke: 'url(#fg-' + uid + ')', 'stroke-width': '10', 'stroke-linejoin': 'round' }));
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'none', stroke: 'url(#fh-' + uid + ')', 'stroke-width': '10', 'stroke-linejoin': 'round' }));
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': '1', 'stroke-linejoin': 'round' }));
+    g.appendChild(svgEl('path', { d: gem.d, fill: c.deep }));
+
+    // Gem base
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'url(#gr-' + uid + ')' }));
+
+    // Outer facets (gradient)
+    gem.pts.forEach((p, i) => {
+        const next = gem.pts[(i + 1) % n];
+        g.appendChild(svgEl('path', {
+            d: 'M50,50 L' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ' L' + next.x.toFixed(1) + ',' + next.y.toFixed(1) + ' Z',
+            fill: 'url(#facg-' + uid + '-' + i + ')',
+        }));
+    });
+
+    // Outer facets (flat overlay)
+    gem.pts.forEach((p, i) => {
+        const next = gem.pts[(i + 1) % n];
+        const ratio = i / n;
+        let fill, opacity;
+        if (ratio < 0.2) { fill = c.light; opacity = 0.4; }
+        else if (ratio < 0.35) { fill = c.body; opacity = 0.15; }
+        else if (ratio < 0.55) { fill = c.mid; opacity = 0.15; }
+        else if (ratio < 0.75) { fill = c.deep; opacity = 0.35; }
+        else { fill = c.darkest; opacity = 0.4; }
+        g.appendChild(svgEl('path', {
+            d: 'M50,50 L' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ' L' + next.x.toFixed(1) + ',' + next.y.toFixed(1) + ' Z',
+            fill: fill, opacity: opacity,
+        }));
+    });
+
+    // Inner ring facets
+    gem.pts.forEach((p, i) => {
+        const next = gem.pts[(i + 1) % n];
+        const ip = innerPts[i];
+        const ipNext = innerPts[(i + 1) % n];
+        const ratio = i / n;
+        const isTop = ratio < 0.3;
+        const isMid = ratio >= 0.3 && ratio < 0.6;
+        g.appendChild(svgEl('path', {
+            d: 'M' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ' L' + next.x.toFixed(1) + ',' + next.y.toFixed(1) + ' L' + ipNext.x.toFixed(1) + ',' + ipNext.y.toFixed(1) + ' L' + ip.x.toFixed(1) + ',' + ip.y.toFixed(1) + ' Z',
+            fill: isTop ? c.light : isMid ? c.mid : c.deep,
+            opacity: isTop ? 0.18 : 0.12,
+        }));
+    });
+
+    // Deep inner ring
+    gem.pts.forEach((p, i) => {
+        const ip = innerPts[i];
+        const ipNext = innerPts[(i + 1) % n];
+        const dp = deepInnerPts[i];
+        const dpNext = deepInnerPts[(i + 1) % n];
+        const ratio = i / n;
+        g.appendChild(svgEl('path', {
+            d: 'M' + ip.x.toFixed(1) + ',' + ip.y.toFixed(1) + ' L' + ipNext.x.toFixed(1) + ',' + ipNext.y.toFixed(1) + ' L' + dpNext.x.toFixed(1) + ',' + dpNext.y.toFixed(1) + ' L' + dp.x.toFixed(1) + ',' + dp.y.toFixed(1) + ' Z',
+            fill: ratio < 0.35 ? c.fire1 : c.deep,
+            opacity: ratio < 0.35 ? 0.12 : 0.1,
+        }));
+    });
+
+    // Facet edge lines
+    gem.pts.forEach((p) => {
+        g.appendChild(svgEl('line', {
+            x1: p.x.toFixed(1), y1: p.y.toFixed(1), x2: '50', y2: '50',
+            stroke: c.darkest, 'stroke-width': '0.6', opacity: '0.3',
+        }));
+    });
+    midPts.forEach((p) => {
+        g.appendChild(svgEl('line', {
+            x1: p.x.toFixed(1), y1: p.y.toFixed(1), x2: '50', y2: '50',
+            stroke: c.darkest, 'stroke-width': '0.25', opacity: '0.12',
+        }));
+    });
+    innerPts.forEach((p, i) => {
+        const next = innerPts[(i + 1) % n];
+        g.appendChild(svgEl('line', {
+            x1: p.x.toFixed(1), y1: p.y.toFixed(1),
+            x2: next.x.toFixed(1), y2: next.y.toFixed(1),
+            stroke: c.darkest, 'stroke-width': '0.4', opacity: '0.15',
+        }));
+    });
+
+    // Inner glow
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'url(#ig-' + uid + ')' }));
+
+    // Ambient occlusion
+    g.appendChild(svgEl('path', { d: gem.d, fill: 'url(#ao-' + uid + ')' }));
+
+    // Inner shadow
+    g.appendChild(svgEl('path', {
+        d: gem.d, fill: 'none', stroke: 'rgba(0,0,0,0.3)',
+        'stroke-width': '1.5', 'stroke-linejoin': 'round',
+    }));
+
+    // Clipped highlights
+    const clipG = svgEl('g', { 'clip-path': 'url(#gc-' + uid + ')' });
+
+    // Rim light top edge
+    clipG.appendChild(svgEl('line', {
+        x1: gem.pts[0].x, y1: gem.pts[0].y,
+        x2: gem.pts[n - 1].x, y2: gem.pts[n - 1].y,
+        stroke: c.rimLight, 'stroke-width': '2', opacity: '0.5',
+    }));
+    if (n > 3) {
+        clipG.appendChild(svgEl('line', {
+            x1: gem.pts[0].x, y1: gem.pts[0].y,
+            x2: gem.pts[1].x, y2: gem.pts[1].y,
+            stroke: c.rimLight, 'stroke-width': '1.2', opacity: '0.3',
+        }));
+    }
+
+    // Caustic
+    clipG.appendChild(svgEl('ellipse', {
+        cx: '60', cy: '64', rx: '9', ry: '4',
+        fill: 'url(#ca-' + uid + ')', transform: 'rotate(20 60 64)',
+    }));
+
+    // Refraction streaks
+    clipG.appendChild(svgEl('line', { x1: '44', y1: '58', x2: '40', y2: '32', stroke: c.fire1, 'stroke-width': '1.2', opacity: '0.12' }));
+    clipG.appendChild(svgEl('line', { x1: '52', y1: '62', x2: '56', y2: '36', stroke: c.fire1, 'stroke-width': '0.8', opacity: '0.08' }));
+    clipG.appendChild(svgEl('line', { x1: '48', y1: '56', x2: '45', y2: '34', stroke: c.fire2, 'stroke-width': '0.6', opacity: '0.1' }));
+
+    // Edge dispersion
+    clipG.appendChild(svgEl('line', {
+        x1: gem.pts[n - 1].x, y1: gem.pts[n - 1].y,
+        x2: innerPts[n - 1].x, y2: innerPts[n - 1].y,
+        stroke: c.fire1, 'stroke-width': '1.5', opacity: '0.15',
+    }));
+
+    // Bottom edge glow
+    if (n > 3) {
+        const half = Math.floor(n * 0.5);
+        clipG.appendChild(svgEl('line', {
+            x1: gem.pts[half].x, y1: gem.pts[half].y,
+            x2: gem.pts[half + 1].x, y2: gem.pts[half + 1].y,
+            stroke: c.fire3, 'stroke-width': '0.8', opacity: '0.15',
+        }));
+    }
+
+    g.appendChild(clipG);
+    svg.appendChild(g);
+    return svg;
+}
+
+function createRankBadge(rank, tier) {
+    const c = RANK_CONFIG[rank].gem;
+    const uid = rank + '-' + tier + '-' + Date.now();
+    const gem = getGemShape(tier);
+    const n = gem.pts.length;
 
     const wrapper = document.createElement('div');
     wrapper.className = 'rank-badge';
 
-    // SVG gem
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svgWrapper = document.createElement('div');
-    svgWrapper.className = 'rank-gem';
-    svgWrapper.innerHTML = `<svg viewBox="0 0 100 100">${generateRankGemSVG(rank, tier, uid)}</svg>`;
-    wrapper.appendChild(svgWrapper);
+    const box = document.createElement('div');
+    box.className = 'rank-gem';
+    if (tier === 1) {
+        box.style.width = '59px';
+        box.style.height = '59px';
+    }
 
-    // Tier label
+    // Outer glow
+    const glow = document.createElement('div');
+    Object.assign(glow.style, {
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '55px', height: '55px',
+        background: 'radial-gradient(circle, ' + c.glow + ' 0%, transparent 70%)',
+        filter: 'blur(12px)', opacity: '0.9',
+    });
+    box.appendChild(glow);
+    box.appendChild(buildGemSVG(c, uid, gem, n, [0, TIER_Y_SHIFT[tier]]));
+    wrapper.appendChild(box);
+
     const label = document.createElement('div');
     label.className = 'rank-tier-label';
-    label.style.color = c.primary;
-    label.textContent = rank === 'mythic' ? `#${mythicPosition || 1}` : tierLabels[tier];
+    label.style.color = c.body;
+    label.textContent = TIER_LABELS[tier];
+    wrapper.appendChild(label);
+
+    return wrapper;
+}
+
+function createMythicBadge(mythicPosition) {
+    const c = MYTHIC_GEM;
+    const uid = 'mythic-' + Date.now();
+    const n = 8;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i * 45 - 90) * (Math.PI / 180);
+        pts.push({ x: 50 + 36 * Math.cos(a), y: 50 + 36 * Math.sin(a) });
+    }
+    const gem = { pts, d: 'M' + pts.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' L') + ' Z' };
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rank-badge';
+
+    const box = document.createElement('div');
+    box.className = 'rank-gem';
+
+    const glow = document.createElement('div');
+    Object.assign(glow.style, {
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '55px', height: '55px',
+        background: 'radial-gradient(circle, ' + c.glow + ' 0%, transparent 70%)',
+        filter: 'blur(12px)', opacity: '0.9',
+    });
+    box.appendChild(glow);
+    box.appendChild(buildGemSVG(c, uid, gem, n, [0, 0]));
+    wrapper.appendChild(box);
+
+    const label = document.createElement('div');
+    label.className = 'rank-tier-label';
+    label.style.color = c.body;
+    label.textContent = '#' + (mythicPosition || 1);
     wrapper.appendChild(label);
 
     return wrapper;
@@ -4443,7 +4711,6 @@ function setRandomRanks() {
     const ranks = ['bronze', 'silver', 'gold', 'emerald', 'diamond'];
     const tiers = [1, 2, 3, 4];
 
-    // Inclure mythic avec une petite chance
     const useMythic = Math.random() < 0.1;
 
     const meContainer = document.getElementById('me-rank-badge');
@@ -4451,19 +4718,27 @@ function setRandomRanks() {
 
     if (meContainer) {
         meContainer.innerHTML = '';
+        let meBadge, meTier;
         if (useMythic) {
-            meContainer.appendChild(createRankBadge('mythic', 1, Math.floor(Math.random() * 200) + 1));
+            meBadge = createMythicBadge(Math.floor(Math.random() * 200) + 1);
+            meTier = 0;
         } else {
             const r = ranks[Math.floor(Math.random() * ranks.length)];
-            const t = tiers[Math.floor(Math.random() * tiers.length)];
-            meContainer.appendChild(createRankBadge(r, t));
+            meTier = tiers[Math.floor(Math.random() * tiers.length)];
+            meBadge = createRankBadge(r, meTier);
         }
+        meBadge.style.marginLeft = '10px';
+        meContainer.style.marginTop = meTier === 1 ? '16px' : '';
+        meContainer.appendChild(meBadge);
     }
     if (oppContainer) {
         oppContainer.innerHTML = '';
         const r = ranks[Math.floor(Math.random() * ranks.length)];
         const t = tiers[Math.floor(Math.random() * tiers.length)];
-        oppContainer.appendChild(createRankBadge(r, t));
+        const oppBadge = createRankBadge(r, t);
+        oppBadge.style.marginRight = '10px';
+        oppContainer.style.marginTop = t === 1 ? '16px' : '';
+        oppContainer.appendChild(oppBadge);
     }
 }
 
@@ -4481,12 +4756,10 @@ function render() {
         if (meHpNum) meHpNum.textContent = me.hp;
         if (oppHpNum) oppHpNum.textContent = opp.hp;
         if (meOld !== String(me.hp) || oppOld !== String(opp.hp)) {
-            console.log(`[render] HP updated: me ${meOld}→${me.hp} opp ${oppOld}→${opp.hp}`);
         }
     } else {
         const meHpNum = document.querySelector('#me-hp .hero-hp-number');
         const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
-        console.log(`[render] HP BLOCKED (zdejebelInProgress=${zdejebelAnimationInProgress} queueTypes=${animationQueue.map(a=>a.type)}) DOM: me=${meHpNum?.textContent} opp=${oppHpNum?.textContent} state: me=${me.hp} opp=${opp.hp}`);
     }
     const meManaNum = document.querySelector('#me-energy .hero-mana-number');
     const oppManaNum = document.querySelector('#opp-energy .hero-mana-number');
@@ -4611,18 +4884,15 @@ function updateGraveTopCard(owner, graveyard) {
     if (graveRenderBlocked.has(owner)) {
         // Rester bloqué — l'animation (burn, death, spell, trap) débloquera elle-même
         // quand elle sera terminée et appellera updateGraveTopCard à ce moment-là
-        console.log('[GRAVE TOP] BLOCKED for', owner, '(graveRenderBlocked active)');
         return;
     }
     const container = document.getElementById(`${owner}-grave-top`);
     if (!container) return;
-    console.log('[GRAVE TOP] Updating', owner, '| graveyard:', graveyard?.length, graveyard?.map(c => c.id), '| current topCardUid:', container.dataset.topCardUid);
 
     if (graveyard && graveyard.length > 0) {
         const topCard = graveyard[graveyard.length - 1];
         const topId = topCard.uid || topCard.id;
         if (container.dataset.topCardUid === topId) return;
-        console.log(`[GRAVE TOP] RE-RENDERING ${owner} topCard=${topId} (was: ${container.dataset.topCardUid}) childCount=${container.children.length}`);
         container.dataset.topCardUid = topId;
         container.classList.remove('empty');
         container.innerHTML = '';
@@ -4631,7 +4901,6 @@ function updateGraveTopCard(owner, graveyard) {
         container.appendChild(cardEl);
     } else {
         if (container.classList.contains('empty') && container.children.length === 0) return;
-        console.log(`[GRAVE TOP] CLEARING ${owner} graveyard empty (was: ${container.dataset.topCardUid} childCount=${container.children.length})`);
         delete container.dataset.topCardUid;
         container.classList.add('empty');
         container.innerHTML = '';
@@ -4647,7 +4916,6 @@ function renderField(owner, field) {
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
             if (animatingSlots.has(slotKey)) {
-                console.log('[renderField] Slot BLOCKED by animation:', slotKey);
                 continue;
             }
 
@@ -4662,7 +4930,6 @@ function renderField(owner, field) {
 
             // Log quand une carte disparait du slot (aide au debug des animations de mort)
             if (hadCard && !card) {
-                console.log(`[renderField] Card REMOVED from slot ${slotKey} by render (state=null)`);
             }
 
             if (card) {
@@ -4914,7 +5181,6 @@ function renderTraps() {
                 }
             } else {
                 if (hadTrap) {
-                    console.log(`[renderTraps] me trap row=${i} CLEARED (was has-trap, now null) triggered=${slot.classList.contains('triggered')}`, new Error().stack.split('\n').slice(1,4).join(' <- '));
                 }
                 slot.innerHTML = '';
                 slot.onmouseenter = null;
@@ -4934,7 +5200,6 @@ function renderTraps() {
                 slot.innerHTML = '<img class="trap-icon-img enemy" src="/css/beartraparmed.png" alt="trap">';
             } else {
                 if (hadTrap) {
-                    console.log(`[renderTraps] opp trap row=${i} CLEARED (was has-trap, now null) triggered=${slot.classList.contains('triggered')}`, new Error().stack.split('\n').slice(1,4).join(' <- '));
                 }
                 slot.innerHTML = '';
             }
@@ -4944,6 +5209,23 @@ function renderTraps() {
 
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
+
+    // FLIP step 1 : snapshot des positions avant de vider le DOM (exclure sorts engagés)
+    let oldPositions = null;
+    const removedIdx = handCardRemovedIndex;
+    if (removedIdx >= 0) {
+        oldPositions = {};
+        const oldCards = panel.querySelectorAll('.card:not(.committed-spell)');
+        oldCards.forEach(card => {
+            const idx = parseInt(card.dataset.idx);
+            if (idx !== removedIdx) {
+                const newIdx = idx > removedIdx ? idx - 1 : idx;
+                oldPositions[newIdx] = card.getBoundingClientRect().left;
+            }
+        });
+        handCardRemovedIndex = -1;
+    }
+
     panel.innerHTML = '';
 
     // Vérifier si Hyrule peut réduire le coût du 2ème sort
@@ -5015,11 +5297,113 @@ function renderHand(hand, energy) {
         panel.appendChild(el);
     });
 
+    // Sorts engagés : afficher les sorts joués (grisés avec numéro d'ordre)
+    committedSpells.forEach((cs, csIdx) => {
+        const el = makeCard(cs.card, false);
+        el.classList.add('committed-spell');
+        el.dataset.commitId = cs.commitId;
+        el.dataset.order = cs.order;
+        el.style.zIndex = hand.length + csIdx + 1;
+
+        el.onmouseenter = (e) => {
+            showCardPreview(cs.card, e);
+            highlightCommittedSpellTargets(cs);
+        };
+        el.onmouseleave = () => {
+            hideCardPreview();
+            clearCommittedSpellHighlights();
+        };
+        el.onclick = (e) => {
+            e.stopPropagation();
+            showCardZoom(cs.card);
+        };
+
+        panel.appendChild(el);
+    });
+
     // Bounce : cacher la dernière carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'me') {
         const allCards = panel.querySelectorAll('.card');
         checkPendingBounce('me', allCards);
     }
+
+    // FLIP step 2 : animer les cartes restantes de l'ancienne position vers la nouvelle (exclure sorts engagés)
+    if (oldPositions && Object.keys(oldPositions).length > 0) {
+        const newCards = panel.querySelectorAll('.card:not(.committed-spell)');
+        const toAnimate = [];
+
+        // Batch : poser tous les transforms d'un coup (sans transition)
+        newCards.forEach(card => {
+            const idx = parseInt(card.dataset.idx);
+            if (oldPositions[idx] !== undefined) {
+                const dx = oldPositions[idx] - card.getBoundingClientRect().left;
+                if (Math.abs(dx) > 1) {
+                    card.style.transition = 'none';
+                    card.style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(card);
+                }
+            }
+        });
+
+        if (toAnimate.length > 0) {
+            // Un seul reflow pour tout le batch
+            panel.getBoundingClientRect();
+            // Double rAF : garantit que le navigateur peint l'ancienne position
+            // avant de lancer la transition vers la nouvelle
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    toAnimate.forEach(card => {
+                        card.style.transition = 'transform 0.25s ease-out';
+                        card.style.transform = '';
+                    });
+                    setTimeout(() => {
+                        toAnimate.forEach(card => { card.style.transition = ''; });
+                    }, 270);
+                });
+            });
+        }
+    }
+}
+
+function highlightCommittedSpellTargets(cs) {
+    clearCommittedSpellHighlights();
+    if (cs.targetType === 'hero') {
+        const heroOwner = cs.targetPlayer === myNum ? 'me' : 'opp';
+        const heroEl = document.getElementById(`hero-${heroOwner}`);
+        if (heroEl) heroEl.classList.add('committed-target-highlight');
+    } else if (cs.targetType === 'global') {
+        const targetSide = cs.card.pattern === 'all' ? null : 'opp';
+        document.querySelectorAll('.card-slot').forEach(slot => {
+            if (!targetSide || slot.dataset.owner === targetSide) {
+                slot.classList.add('cross-target');
+                const card = slot.querySelector('.card');
+                if (card) card.classList.add('spell-hover-target');
+            }
+        });
+    } else if (cs.targetType === 'field') {
+        const owner = cs.targetPlayer === myNum ? 'me' : 'opp';
+        if (cs.card.pattern === 'cross') {
+            previewCrossTargets(owner, cs.row, cs.col);
+        } else {
+            const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${cs.row}"][data-col="${cs.col}"]`);
+            if (slot) {
+                slot.classList.add('cross-target');
+                const card = slot.querySelector('.card');
+                if (card) card.classList.add('spell-hover-target');
+            }
+        }
+    }
+}
+
+function clearCommittedSpellHighlights() {
+    document.querySelectorAll('.committed-target-highlight').forEach(el => {
+        el.classList.remove('committed-target-highlight');
+    });
+    document.querySelectorAll('.card-slot.cross-target').forEach(s => {
+        s.classList.remove('cross-target');
+        const card = s.querySelector('.card');
+        if (card) card.classList.remove('spell-hover-target');
+    });
 }
 
 function renderOppHand(count, oppHand) {
@@ -5444,6 +5828,8 @@ function clickSlot(owner, row, col) {
     
     if (selected && selected.fromHand && selected.type === 'spell') {
         const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
+        commitSpell(selected, 'field', targetPlayer, row, col);
+        handCardRemovedIndex = selected.idx;
         socket.emit('castSpell', { handIndex: selected.idx, targetPlayer, row, col });
         clearSel();
         return;
@@ -5520,7 +5906,6 @@ function dropOnTrap(owner, row) {
 }
 
 function endTurn() {
-    console.log('[endTurn] called, canPlay:', canPlay(), 'state:', state ? { phase: state.phase, ready: state.me?.ready } : null);
     if (!canPlay()) return;
     const btn = document.getElementById('end-turn-btn');
     // Ne pas accepter le clic si le bouton n'affiche pas "FIN DE TOUR"
@@ -5575,7 +5960,6 @@ document.addEventListener('click', (e) => {
         }
     }
 });
-
 
 function clearSel() {
     selected = null;
@@ -5640,13 +6024,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setMusicVolume(val) {
     // TODO: Connecter à un système audio
-    console.log('Music volume:', val);
     document.getElementById('musicValue').textContent = val + '%';
 }
 
 function setSfxVolume(val) {
     // TODO: Connecter à un système audio
-    console.log('SFX volume:', val);
     document.getElementById('sfxValue').textContent = val + '%';
 }
 

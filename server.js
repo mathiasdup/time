@@ -472,29 +472,55 @@ async function startResolution(room) {
     
     // Collecter toutes les actions par type
     const allActions = { moves: [], places: [], spellsDefensive: [], spellsOffensive: [], traps: [] };
-    
+
+    // Sorts par joueur pour interleaving par vitesse
+    const spellsByPlayer = { defensive: { 1: [], 2: [] }, offensive: { 1: [], 2: [] } };
+
     for (let p = 1; p <= 2; p++) {
         const player = room.gameState.players[p];
         const actions = player.pendingActions || [];
-        
+
         for (const action of actions) {
             action.playerNum = p;
             action.heroName = player.heroName;
-            
+
             if (action.type === 'move') allActions.moves.push(action);
             else if (action.type === 'place') allActions.places.push(action);
             else if (action.type === 'trap') allActions.traps.push(action);
             else if (action.type === 'spell') {
-                const isDefensive = action.targetPlayer === p || 
+                const isDefensive = action.targetPlayer === p ||
                                    action.spell.pattern === 'global' && !action.spell.damage;
                 if (isDefensive) {
-                    allActions.spellsDefensive.push(action);
+                    spellsByPlayer.defensive[p].push(action);
                 } else {
-                    allActions.spellsOffensive.push(action);
+                    spellsByPlayer.offensive[p].push(action);
                 }
             }
         }
     }
+
+    // Interleave les sorts : le joueur le plus rapide (1er sort) commence, puis alternance
+    function interleaveSpells(spellsP1, spellsP2) {
+        if (spellsP1.length === 0) return spellsP2;
+        if (spellsP2.length === 0) return spellsP1;
+
+        // Comparer le timestamp du 1er sort de chaque joueur
+        const t1 = spellsP1[0].timestamp || 0;
+        const t2 = spellsP2[0].timestamp || 0;
+        const first = t1 <= t2 ? spellsP1 : spellsP2;
+        const second = t1 <= t2 ? spellsP2 : spellsP1;
+
+        const result = [];
+        const maxLen = Math.max(first.length, second.length);
+        for (let i = 0; i < maxLen; i++) {
+            if (i < first.length) result.push(first[i]);
+            if (i < second.length) result.push(second[i]);
+        }
+        return result;
+    }
+
+    allActions.spellsDefensive = interleaveSpells(spellsByPlayer.defensive[1], spellsByPlayer.defensive[2]);
+    allActions.spellsOffensive = interleaveSpells(spellsByPlayer.offensive[1], spellsByPlayer.offensive[2]);
     
     // Vérifier s'il y a des créatures sur le terrain
     const hasCreaturesOnField = () => {
@@ -3420,14 +3446,15 @@ io.on('connection', (socket) => {
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
         
-        player.pendingActions.push({ 
-            type: 'spell', 
-            spell: deepClone(spell), 
-            targetPlayer, 
-            row, 
+        player.pendingActions.push({
+            type: 'spell',
+            spell: deepClone(spell),
+            targetPlayer,
+            row,
             col,
             heroName: player.heroName,
-            playerNum: info.playerNum
+            playerNum: info.playerNum,
+            timestamp: Date.now()
         });
         
         emitStateToPlayer(room, info.playerNum);
@@ -3465,7 +3492,7 @@ io.on('connection', (socket) => {
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
 
-        player.pendingActions.push({ type: 'spell', spell: deepClone(spell), targetPlayer: info.playerNum === 1 ? 2 : 1, row: -1, col: -1 });
+        player.pendingActions.push({ type: 'spell', spell: deepClone(spell), targetPlayer: info.playerNum === 1 ? 2 : 1, row: -1, col: -1, timestamp: Date.now() });
         
         emitStateToPlayer(room, info.playerNum);
     });

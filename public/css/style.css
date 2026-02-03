@@ -1385,8 +1385,8 @@
             transition: none;
         }
         .card-slot.valid-target { border-color: #62d7ff !important; background: rgba(98,215,255,0.25) !important; box-shadow: 0 0 15px rgba(98,215,255,0.5); animation: validPulse 1s infinite; }
-        .card-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.35) !important; box-shadow: 0 0 25px rgba(241,196,15,0.8); }
-        .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite; }
+        .card-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.35) !important; box-shadow: 0 0 25px rgba(241,196,15,0.8); animation: none !important; }
+        .card-slot.cross-target { border-color: #f39c12 !important; background: rgba(243,156,18,0.3) !important; box-shadow: 0 0 15px rgba(243,156,18,0.6); animation: crossPulse 1s infinite !important; }
         @keyframes crossPulse { 0%,100% { box-shadow: 0 0 10px rgba(243,156,18,0.4); } 50% { box-shadow: 0 0 25px rgba(243,156,18,0.8); } }
         .card-slot.moveable { border-color: #3498db !important; background: rgba(52,152,219,0.25) !important; box-shadow: 0 0 15px rgba(52,152,219,0.5); }
         @keyframes validPulse { 0%,100% { box-shadow: 0 0 10px rgba(98,215,255,0.4); } 50% { box-shadow: 0 0 25px rgba(98,215,255,0.8); } }
@@ -3524,6 +3524,43 @@
             opacity: 0.8;
             transition: all 0.4s ease-out;
             box-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+        }
+
+        /* Sorts engagés dans la main (joués pendant la planification) */
+        .committed-spell {
+            filter: grayscale(80%) brightness(0.7);
+            opacity: 0.75;
+            pointer-events: auto;
+            position: relative;
+            transition: filter 0.2s, opacity 0.2s;
+        }
+        .committed-spell:hover {
+            filter: grayscale(50%) brightness(0.85);
+            opacity: 0.9;
+        }
+        .committed-spell::before {
+            content: attr(data-order);
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #e67e22;
+            color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 13px;
+            z-index: 5;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        }
+
+        /* Highlight des cibles d'un sort engagé (hover) */
+        .committed-target-highlight {
+            box-shadow: 0 0 12px 4px rgba(230, 126, 34, 0.7) !important;
+            border-color: #e67e22 !important;
         }
 
         /* Animation de shake pour Petit Os */

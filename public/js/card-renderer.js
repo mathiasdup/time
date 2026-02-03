@@ -29,18 +29,16 @@ const CardRenderer = {
             // Précharger les icônes (optionnel - ne bloque pas si absent)
             try {
                 this.textureCache.mana = await PIXI.Assets.load('/css/mana.png');
-            } catch (e) { console.warn('[CardRenderer] mana.png not found'); }
+            } catch (e) {  }
             try {
                 this.textureCache.damage = await PIXI.Assets.load('/css/damage.png');
-            } catch (e) { console.warn('[CardRenderer] damage.png not found'); }
+            } catch (e) {  }
             try {
                 this.textureCache.health = await PIXI.Assets.load('/css/health.png');
-            } catch (e) { console.warn('[CardRenderer] health.png not found'); }
+            } catch (e) {  }
 
             this.isReady = true;
-            console.log('[CardRenderer] Prêt');
         } catch (e) {
-            console.error('[CardRenderer] Erreur init:', e);
             this.isReady = false;
         }
 
@@ -96,7 +94,6 @@ const CardRenderer = {
                 sprite.mask = mask;
                 container.addChild(sprite);
             } catch (e) {
-                console.warn('[CardRenderer] Image error:', e);
             }
         }
 
@@ -254,10 +251,8 @@ const CardRenderer = {
         try {
             const dataUrl = await this.app.renderer.extract.base64(this.app.stage);
             this.cache.set(cacheKey, dataUrl);
-            console.log('[CardRenderer] Carte générée:', card.name);
             return dataUrl;
         } catch (e) {
-            console.error('[CardRenderer] Extract error:', e);
             return null;
         }
     },

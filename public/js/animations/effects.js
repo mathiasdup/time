@@ -51,7 +51,6 @@ function animateDeath(data) {
  */
 async function animateZdejebelDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
-    console.log('[Zdejebel] START - owner:', owner, 'damage:', data.damage);
 
     zdejebelAnimationInProgress = true;
 
@@ -78,7 +77,6 @@ async function animateZdejebelDamage(data) {
                 const y = rect.top + rect.height / 2;
                 CombatVFX.createSlashEffect(x, y, data.damage);
             } catch (e) {
-                console.error('[Zdejebel] Slash effect error:', e);
                 showDamageNumber(heroCard, data.damage);
             }
         } else {
@@ -114,7 +112,6 @@ function showDamageNumber(element, damage) {
  * Animation de transformation à la mort (Petit Os → Pile d'os)
  */
 async function animateDeathTransform(data) {
-    console.log('[DeathTransform] START');
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
@@ -228,7 +225,6 @@ async function animateDeathTransform(data) {
  * Animation de résurrection (Pile d'os → Petit Os)
  */
 async function animateBoneRevive(data) {
-    console.log('[BoneRevive] START');
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
@@ -396,12 +392,10 @@ function animateBuff(data) {
  * Aura de feu + particules convergentes + impact flash + pulse
  */
 async function animateAtkBoost(data) {
-    console.log('[AtkBoost] START - data:', data);
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
     const card = slot?.querySelector('.card');
     if (!card) {
-        console.log('[AtkBoost] No card found at slot', owner, data.row, data.col);
         return;
     }
 
