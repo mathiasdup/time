@@ -205,18 +205,11 @@ const CustomDrag = (function() {
                            target.element.classList.contains('hero-targetable') ||
                            target.element.classList.contains('active');
 
-            // DEBUG logs
-            if (!updateHoverFeedback._logThrottle || Date.now() - updateHoverFeedback._logThrottle > 500) {
-                updateHoverFeedback._logThrottle = Date.now();
-                const cardInSlot = target.element.querySelector('.card');
-            }
-
             if (isValid) {
                 if (target.type === 'hero') {
                     target.element.classList.add('hero-drag-over');
                 } else if (target.type === 'global') {
-                    target.element.style.borderColor = 'rgba(46, 204, 113, 1)';
-                    target.element.style.background = 'rgba(46, 204, 113, 0.2)';
+                    target.element.classList.add('drag-over');
                 } else {
                     target.element.classList.add('drag-hover', 'drag-over');
                     // Si le slot contient une créature, la mettre en surbrillance orange
@@ -243,8 +236,7 @@ const CustomDrag = (function() {
         // Reset global zone style si on la quitte
         if (lastHoverTarget && lastHoverTarget.type === 'global' &&
             (!target || target.element !== lastHoverTarget.element)) {
-            lastHoverTarget.element.style.borderColor = '';
-            lastHoverTarget.element.style.background = '';
+            lastHoverTarget.element.classList.remove('drag-over');
         }
 
         lastHoverTarget = target;
@@ -348,8 +340,7 @@ const CustomDrag = (function() {
         // Reset global zone
         const globalZone = document.querySelector('.global-spell-zone');
         if (globalZone) {
-            globalZone.style.borderColor = '';
-            globalZone.style.background = '';
+            globalZone.classList.remove('drag-over');
         }
 
         dragState = null;

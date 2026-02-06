@@ -54,6 +54,54 @@ const CardDB = {
             edition: 1
         },
         {
+            id: 'gobelin_jumele',
+            name: 'Gobelin jumelé',
+            atk: 2,
+            hp: 1,
+            cost: 0,
+            abilities: [],
+            type: 'creature',
+            image: 'unknown/creature.png',
+            arenaStyle: true,
+            faction: 'red',
+            creatureType: 'goblin',
+            combatType: 'melee',
+            edition: 2,
+            onDeath: { transformInto: 'faux_jumeau' },
+            description: 'Quand Gobelin jumelé meurt, transformez-le en Faux jumeau.'
+        },
+        {
+            id: 'faux_jumeau',
+            name: 'Faux jumeau',
+            atk: 2,
+            hp: 1,
+            cost: 0,
+            abilities: ['haste'],
+            type: 'creature',
+            image: 'unknown/creature.png',
+            arenaStyle: true,
+            faction: 'red',
+            creatureType: 'goblin',
+            combatType: 'melee',
+            edition: 2,
+            isToken: true
+        },
+        {
+            id: 'ogre_tapageur',
+            name: 'Ogre tapageur',
+            atk: 4,
+            hp: 2,
+            cost: 0,
+            abilities: ['immovable'],
+            type: 'creature',
+            image: 'unknown/creature.png',
+            arenaStyle: true,
+            faction: 'red',
+            creatureType: 'ogre',
+            combatType: 'melee',
+            edition: 2
+        },
+        {
             id: 'gobelin_incendiaire',
             name: 'Gobelin incendiaire',
             atk: 2,
@@ -118,6 +166,40 @@ const CardDB = {
             onHeroAttack: { atkBoost: 1 },
             description: 'Célérité. Quand cette créature attaque le héros adverse, elle gagne +1 ATK jusqu\'à la fin de la phase de combat.'
         },
+        {
+            id: 'demon_explosif',
+            name: 'Démon explosif',
+            atk: 1,
+            hp: 1,
+            cost: 0,
+            abilities: [],
+            type: 'creature',
+            image: 'unknown/creature.png',
+            arenaStyle: true,
+            faction: 'red',
+            creatureType: 'demon',
+            combatType: 'melee',
+            edition: 3,
+            onDeath: { damageRow: 3 },
+            description: 'Quand cette créature meurt, elle inflige 3 dégâts à toutes les créatures mêlée et tireurs sur la ligne (alliées et adverses).'
+        },
+        {
+            id: 'lance_gobelin',
+            name: 'Lance gobelin',
+            atk: 1,
+            hp: 2,
+            cost: 0,
+            abilities: ['shooter'],
+            type: 'creature',
+            image: 'unknown/creature.png',
+            arenaStyle: true,
+            faction: 'red',
+            creatureType: 'goblin',
+            combatType: 'shooter',
+            edition: 2,
+            atkPerAllyType: 'goblin',
+            description: 'Son attaque augmente de +X, X étant le nombre de gobelins que vous contrôlez.'
+        },
         { id: 'storm_guard', name: 'Garde Tempête', atk: 3, hp: 1, cost: 0, abilities: ['fly'], type: 'creature', image: 'white/oiseau.png', combatType: 'fly', arenaStyle: true, faction: 'white', creatureType: 'beast', edition: 1 },
         { id: 'skeleton_archer', name: 'Archer Squelette', atk: 4, hp: 1, cost: 0, abilities: ['shooter'], type: 'creature', image: 'green/squelette-archer.jpg', combatType: 'shooter', arenaStyle: true, faction: 'green', onHeroHit: 'draw', creatureType: 'undead', edition: 1 },
         { id: 'forest_guardian', name: 'Gardien de Forêt', atk: 3, hp: 3, cost: 0, abilities: ['protection'], type: 'creature', image: 'green/dryade.png', combatType: 'melee', arenaStyle: true, faction: 'green', creatureType: 'spirit', edition: 2 },
@@ -147,7 +229,11 @@ const CardDB = {
     spells: [
         { id: 'plan_douteux', name: 'Plan douteux', cost: 0, type: 'spell', offensive: true, pattern: 'single', targetEmptySlot: true, image: 'black/plandouteux.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Détruit la créature sur cet emplacement. Ce sort ne peut cibler qu\'un emplacement vide.', effect: 'destroy' },
         { id: 'tir_compresse', name: 'Tir compressé', cost: 0, type: 'spell', offensive: true, pattern: 'single', damage: 3, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 3, rarity: 'rare', description: 'Inflige 3 blessures à la créature sur cet emplacement. Si Tir compressé tue la cible, vous piochez une carte.', onKill: { draw: 1 } },
-        { id: 'croix_de_feu', name: 'Croix de feu', cost: 0, type: 'spell', offensive: true, pattern: 'cross', damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 2, rarity: 'uncommon', description: 'Inflige 2 blessures à la créature sur cet emplacement et 2 blessures à toutes les créatures adjacentes.' }
+        { id: 'croix_de_feu', name: 'Croix de feu', cost: 0, type: 'spell', offensive: true, pattern: 'cross', damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 2, rarity: 'uncommon', description: 'Inflige 2 blessures à la créature sur cet emplacement et 2 blessures à toutes les créatures adjacentes.' },
+        { id: 'blast', name: 'Blast', cost: 0, type: 'spell', offensive: true, pattern: 'single', damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 2, returnOnMiss: true, description: 'Inflige 2 blessures à la créature ciblée. Si Blast ne touche pas de créature, il retourne dans votre main.' },
+        { id: 'coup_de_poing', name: 'Coup de poing', cost: 0, type: 'spell', offensive: true, pattern: 'hero', targetEnemy: true, damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Inflige 2 dégâts au héros adverse.' },
+        { id: 'tremblement_de_terre', name: 'Tremblement de terre', cost: 0, type: 'spell', offensive: true, pattern: 'all', damage: 3, image: 'unknown/spell.png', arenaStyle: true, faction: 'green', edition: 3, description: 'Inflige 3 dégâts à toutes les créatures.' },
+        { id: 'vitesse_superieure', name: 'Vitesse supérieure', cost: 0, type: 'spell', offensive: false, pattern: 'hero', effect: 'draw', amount: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Le joueur ciblé pioche deux cartes.' }
     ],
     traps: [
         { id: 'troubeant', name: 'Trou béant', damage: 5, cost: 0, type: 'trap', image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 5 dégâts à la première créature adverse qui attaque sur la ligne.' },
@@ -209,11 +295,6 @@ function addToGraveyard(player, card) {
     }
 }
 
-// Pool de créatures pour la main de départ (tests)
-function getCreaturesPool() {
-    return CardDB.creatures.filter(c => !c.isToken);
-}
-
 // Créer un deck de 40 cartes
 function createDeck() {
     const deck = [];
@@ -237,7 +318,7 @@ function createDeck() {
     }
 
     // Les 6 cartes suivantes (main de départ)
-    const creaturesPool = getCreaturesPool();
+    const creaturesPool = CardDB.creatures.filter(c => !c.isToken);
     for (let i = 1; i < 7; i++) {
         const template = creaturesPool[Math.floor(Math.random() * creaturesPool.length)];
         const card = {

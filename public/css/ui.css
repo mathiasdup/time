@@ -1,0 +1,748 @@
+/* ==================== UI / OVERLAYS ====================
+   Cimeti\u00e8re popup, game over, preview, mulligan, card picker */
+
+        /* Popup cimetière - style panneau bronze */
+        .graveyard-popup {
+            position: fixed;
+            bottom: 130px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 500;
+            display: none;
+            max-width: 90vw;
+        }
+        .graveyard-popup.active { display: block; }
+
+        .graveyard-border {
+            border-radius: 20px;
+            padding: 4px;
+            background: linear-gradient(135deg,
+                #8b7355 0%,
+                #d4c4a8 15%,
+                #a08060 30%,
+                #6b5344 50%,
+                #8b7355 70%,
+                #c4b896 85%,
+                #8b7355 100%
+            );
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.6),
+                0 4px 16px rgba(0, 0, 0, 0.4),
+                inset 0 1px 2px rgba(255, 255, 255, 0.2);
+        }
+
+        .graveyard-inner {
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(26, 26, 26, 0.95) 0%, rgba(10, 10, 10, 0.95) 50%, rgba(21, 21, 21, 0.95) 100%);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .graveyard-inner::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 10%;
+            right: 10%;
+            height: 30%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+            border-radius: 16px;
+            pointer-events: none;
+        }
+
+        .graveyard-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid rgba(196, 184, 150, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .graveyard-header .panel-close {
+            flex-shrink: 0;
+        }
+
+        .graveyard-header .icon {
+            width: 24px;
+            height: 24px;
+            fill: #c4b896;
+        }
+
+        .graveyard-title {
+            font-family: 'Cinzel', serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #c4b896;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            flex: 1;
+        }
+
+        .graveyard-cards {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 20px 25px;
+            min-height: 140px;
+        }
+        .graveyard-cards::-webkit-scrollbar { height: 6px; }
+        .graveyard-cards::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.3); border-radius: 3px; }
+        .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(196, 184, 150, 0.3); border-radius: 3px; }
+        .graveyard-cards::-webkit-scrollbar-thumb:hover { background: rgba(196, 184, 150, 0.5); }
+        .graveyard-cards .card { flex-shrink: 0; }
+        .graveyard-cards .card .arena-stats { display: flex; }
+        .graveyard-empty {
+            color: rgba(196, 184, 150, 0.4);
+            font-family: 'Cinzel', serif;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+            width: 300px;
+        }
+        
+        .game-over { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .game-over.hidden { display: none; }
+        .game-over-box { text-align: center; padding: 40px; background: rgba(30,30,50,0.98); border-radius: 15px; border: 4px solid #ffd700; }
+        .game-over-title { font-size: 2.5em; color: #ffd700; margin-bottom: 15px; }
+        .game-over-result { font-size: 1.3em; margin-bottom: 25px; }
+        .game-over-result.victory { color: #2ecc71; }
+        .game-over-result.defeat { color: #e74c3c; }
+        .game-over-result.draw { color: #f39c12; }
+        
+        /* Card hover preview flottante */
+        .card-preview {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            z-index: 10001;
+            pointer-events: none;
+            transform: scale(1.5);
+            transform-origin: top right;
+            filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .card-preview.visible {
+            opacity: 1;
+        }
+        
+        /* Preview dos de carte */
+        .card-back-preview {
+            width: 100px;
+            height: 135px;
+            border-radius: 8px;
+            background: url('../cardback/back_1.png') center/cover no-repeat;
+        }
+        
+        /* Preview héros - wrapper pour une carte arena */
+        .hero-preview {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            z-index: 10001;
+            pointer-events: none;
+            transform: scale(1.5);
+            transform-origin: top right;
+            filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .hero-preview.visible {
+            opacity: 1;
+        }
+        .hero-preview-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #ffd700;
+            margin-top: 10px;
+        }
+
+        /* Cercle HP bronze pour les héros (preview/zoom arena uniquement) */
+        .arena-hero-hp {
+            position: absolute;
+            top: 18px;
+            right: 2px;
+            z-index: 10;
+        }
+        .arena-hero-hp-border {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            padding: 1.6px;
+            background: linear-gradient(135deg,
+                #8b7355 0%,
+                #d4c4a8 15%,
+                #a08060 30%,
+                #6b5344 50%,
+                #8b7355 70%,
+                #c4b896 85%,
+                #8b7355 100%
+            );
+            box-shadow:
+                0 2px 8px rgba(0, 0, 0, 0.5),
+                inset 0 1px 2px rgba(255, 255, 255, 0.2);
+        }
+        .arena-hero-hp-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(180deg, rgba(26, 26, 26, 0.9) 0%, rgba(10, 10, 10, 0.9) 50%, rgba(21, 21, 21, 0.9) 100%);
+            box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .arena-hero-hp-inner::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 15%;
+            right: 15%;
+            height: 40%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 100%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        .arena-hero-hp-number {
+            font-family: 'Cinzel', serif;
+            font-size: 12px;
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow:
+                0 0 10px rgba(196, 184, 150, 0.4),
+                0 1px 3px rgba(0, 0, 0, 0.8);
+            z-index: 2;
+        }
+
+        /* Ancien modal héros supprimé - utilise maintenant card-zoom-overlay avec template arena */
+
+        /* Animation Zdejebel */
+        .zdejebel-effect {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transition: all 0.3s ease-out;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .zdejebel-effect.active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        .zdejebel-icon {
+            font-size: 2.5em;
+            animation: zdejebel-pulse 0.5s ease-in-out infinite;
+        }
+        .zdejebel-text {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #e74c3c;
+            text-shadow: 0 0 10px rgba(231, 76, 60, 0.8);
+        }
+        @keyframes zdejebel-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); filter: brightness(1.3); }
+        }
+
+        /* Preview container avec capacités */
+        .preview-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .preview-container .preview-card {
+            /* La carte garde sa taille normale, le scale est sur le container parent */
+        }
+        .preview-info-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .preview-abilities {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 150px;
+        }
+        .preview-ability {
+            background: rgba(0,0,0,0.85);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .ability-name {
+            font-size: 0.7em;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 4px;
+        }
+        .ability-name.type-ability {
+            color: #ffffff;
+        }
+        .ability-desc {
+            font-size: 0.55em;
+            color: #ccc;
+            line-height: 1.3;
+        }
+
+        /* Effets appliqués (sorts) */
+        .preview-effects {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 150px;
+        }
+        .preview-effect {
+            background: rgba(0,0,0,0.85);
+            border: 1px solid rgba(100,200,100,0.4);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .effect-name {
+            font-size: 0.7em;
+            font-weight: bold;
+            color: #7ed67e;
+            margin-bottom: 4px;
+        }
+        .effect-desc {
+            font-size: 0.55em;
+            color: #ccc;
+            line-height: 1.3;
+        }
+        
+        /* Anciens styles settings-popup supprimés - remplacés par les panneaux */
+        
+        /* Zone de drop pour sorts globaux */
+        .global-spell-zone {
+            position: absolute;
+            inset: -2px;
+            border: 2px solid transparent;
+            border-radius: 12px;
+            pointer-events: none;
+            transition: all 0.3s;
+            z-index: 5;
+        }
+        .global-spell-zone.active {
+            border-color: #62d7ff;
+            background: rgba(98, 215, 255, 0.1);
+            box-shadow: inset 0 0 30px rgba(98, 215, 255, 0.15);
+            pointer-events: auto;
+        }
+        .global-spell-zone.drag-over {
+            border-color: #f1c40f !important;
+            background: rgba(241, 196, 15, 0.35) !important;
+        }
+        
+        /* Highlight des sorts */
+
+        
+        
+        /* Bordure jaune sur les cartes pendant le drag-over */
+        .card-slot.drag-over .card {
+            border-color: #f1c40f !important;
+        }
+        
+        
+        /* Mulligan Overlay */
+        .mulligan-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .mulligan-overlay.hidden { display: none; }
+        .mulligan-title {
+            font-size: 2em;
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+        }
+        .mulligan-subtitle {
+            color: #aaa;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .mulligan-hand {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 90%;
+        }
+        .mulligan-hand .card {
+            transform: scale(1.1);
+            transition: transform 0.2s;
+        }
+        .mulligan-hand .card:hover {
+            transform: scale(1.25) translateY(-10px);
+        }
+        .mulligan-buttons {
+            display: flex;
+            gap: 30px;
+        }
+        .mulligan-btn {
+            padding: 18px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .mulligan-btn.keep {
+            background: linear-gradient(135deg, #27ae60, #1e8449);
+            color: white;
+        }
+        .mulligan-btn.keep:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(39,174,96,0.6);
+        }
+        .mulligan-btn.reroll {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+        .mulligan-btn.reroll:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(231,76,60,0.6);
+        }
+        .mulligan-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        .mulligan-waiting {
+            color: #ffd700;
+            font-size: 1.2em;
+            margin-top: 20px;
+            animation: pulse 1.5s infinite;
+        }
+        .mulligan-timer {
+            position: absolute;
+            top: 30px;
+            right: 50px;
+            font-size: 3em;
+            font-weight: bold;
+            color: #ffd700;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .mulligan-timer.visible {
+            opacity: 1;
+        }
+        .mulligan-timer.urgent {
+            color: #e74c3c;
+            animation: timerPulse 0.5s infinite;
+        }
+        @keyframes timerPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ==================== MODE SELECTOR ==================== */
+        .mode-selector-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .mode-selector-overlay.hidden { display: none; }
+        .mode-selector-title {
+            font-size: 2em;
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+            font-family: 'Cinzel', serif;
+        }
+        .mode-selector-subtitle {
+            color: #aaa;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        .mode-selector-buttons {
+            display: flex;
+            gap: 40px;
+        }
+        .mode-btn {
+            background: rgba(20,20,40,0.95);
+            border: 3px solid #8b7355;
+            border-radius: 15px;
+            padding: 40px 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            min-width: 220px;
+            color: #ccc;
+        }
+        .mode-btn:hover {
+            transform: scale(1.05);
+            border-color: #ffd700;
+            box-shadow: 0 0 30px rgba(255,215,0,0.3);
+        }
+        .mode-btn-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        .mode-btn-label {
+            font-size: 1.4em;
+            color: #ffd700;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+            margin-bottom: 8px;
+        }
+        .mode-btn-desc {
+            color: #aaa;
+            font-size: 0.95em;
+        }
+        .mode-normal .mode-btn-icon { color: #27ae60; }
+        .mode-test .mode-btn-icon { color: #e67e22; }
+
+        /* ==================== CARD PICKER ==================== */
+        .card-picker-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.97);
+            display: flex;
+            flex-direction: column;
+            z-index: 9999;
+            overflow: hidden;
+        }
+        .card-picker-overlay.hidden { display: none; }
+        .card-picker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px 10px;
+            flex-shrink: 0;
+        }
+        .card-picker-title {
+            font-size: 1.6em;
+            color: #ffd700;
+            font-family: 'Cinzel', serif;
+            text-shadow: 0 0 15px rgba(255,215,0,0.4);
+        }
+        .card-picker-counter {
+            font-size: 1.3em;
+            color: #e67e22;
+            font-weight: bold;
+        }
+        .card-picker-tabs {
+            display: flex;
+            gap: 10px;
+            padding: 10px 30px;
+            flex-shrink: 0;
+        }
+        .picker-tab {
+            padding: 10px 25px;
+            background: rgba(40,40,60,0.8);
+            border: 2px solid #555;
+            border-radius: 8px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .picker-tab.active {
+            background: rgba(60,60,100,0.9);
+            border-color: #ffd700;
+            color: #ffd700;
+        }
+        .picker-tab:hover:not(.active) {
+            border-color: #888;
+            color: #ddd;
+        }
+        .card-picker-grid {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 15px;
+            align-content: start;
+        }
+        .picker-card-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .picker-card-wrapper .card {
+            cursor: default !important;
+            transform: none !important;
+            margin: 0 !important;
+        }
+        .picker-card-wrapper .card:hover {
+            transform: scale(1.05) !important;
+        }
+        .picker-add-btn {
+            padding: 6px 20px;
+            background: linear-gradient(135deg, #27ae60, #1e8449);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .picker-add-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(39,174,96,0.5);
+        }
+        .picker-add-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .card-picker-selection {
+            flex-shrink: 0;
+            padding: 10px 30px;
+            border-top: 2px solid rgba(255,215,0,0.3);
+            background: rgba(10,10,20,0.9);
+        }
+        .card-picker-selection-label {
+            color: #aaa;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+        .card-picker-selection-row {
+            display: flex;
+            gap: 10px;
+            min-height: 120px;
+            align-items: center;
+            overflow-x: auto;
+        }
+        .picker-selection-thumb {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .picker-selection-thumb .card {
+            margin: 0 !important;
+        }
+        .picker-selection-thumb:hover {
+            transform: scale(1.05);
+        }
+        .picker-selection-thumb:hover .picker-remove-badge {
+            opacity: 1;
+        }
+        .picker-remove-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .card-picker-footer {
+            flex-shrink: 0;
+            padding: 15px 30px;
+            text-align: center;
+            background: rgba(10,10,20,0.9);
+        }
+        .picker-start-btn {
+            padding: 16px 60px;
+            font-size: 1.2em;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #e67e22, #d35400);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .picker-start-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(230,126,34,0.6);
+        }
+        .picker-start-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .picker-loading {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #aaa;
+            font-size: 1.3em;
+            padding: 60px 0;
+        }
+
+
+        /* Sorts engagés dans la main (joués pendant la planification) */
+        .committed-spell {
+            filter: grayscale(80%) brightness(0.7);
+            opacity: 0.75;
+            pointer-events: auto;
+            position: relative;
+            transition: filter 0.2s, opacity 0.2s;
+        }
+        .committed-spell:hover {
+            filter: grayscale(50%) brightness(0.85);
+            opacity: 0.9;
+        }
+        .committed-spell::before {
+            content: attr(data-order);
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #e67e22;
+            color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 13px;
+            z-index: 5;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        }
+
+        /* Highlight des cibles d'un sort engagé (hover) */
+        .committed-target-highlight {
+            box-shadow: 0 0 12px 4px rgba(230, 126, 34, 0.7) !important;
+            border-color: #e67e22 !important;
+        }
+
+        /* Animation de shake pour Petit Os */
+        @keyframes boneShake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-3px); }
+            75% { transform: translateX(3px); }

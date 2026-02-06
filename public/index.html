@@ -11,7 +11,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=Cinzel:wght@700;900&family=Merriweather+Sans:wght@400;700;800&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/layout.css">
+    <link rel="stylesheet" href="/css/cards.css">
+    <link rel="stylesheet" href="/css/ui.css">
 </head>
 <body>
     <!-- Curseur fantasy custom -->
@@ -158,7 +160,7 @@
         <div class="game-board-wrapper">
             <div class="game-board">
                 <div class="side-panel left">
-                    <div class="hero-card" id="hero-me">
+                    <div class="hero-card" id="hero-me" data-owner="me">
                         <div class="hero-card-inner" id="me-hero-inner">
                             <div class="hero-title" id="me-hero-title">Hyrule, prophète ultime</div>
                         </div>
@@ -202,7 +204,7 @@
                 </div>
                 
                 <div class="side-panel right">
-                    <div class="hero-card" id="hero-opp">
+                    <div class="hero-card" id="hero-opp" data-owner="opp">
                         <div class="hero-card-inner" id="opp-hero-inner">
                             <div class="hero-title" id="opp-hero-title">Zdejebel, fille de satan</div>
                         </div>
@@ -367,9 +369,14 @@
     <script src="/js/combat-vfx.js"></script>
     <script src="/js/combat-animation.js"></script>
     <script src="/js/card-renderer.js"></script>
-    <script src="/js/animations/effects.js"></script>
     <script src="/js/arrow-targeting.js"></script>
     <script src="/js/custom-drag.js"></script>
-    <script src="/js/game.js"></script>
+    <!-- Game modules (ordre de chargement important) -->
+    <script src="/js/game-globals.js"></script>
+    <script src="/js/game-animations.js"></script>
+    <script src="/js/game-ui.js"></script>
+    <script src="/js/game-board.js"></script>
+    <script src="/js/game-render.js"></script>
+    <script src="/js/game-core.js"></script>
 </body>
 </html>
