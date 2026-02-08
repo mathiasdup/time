@@ -7,7 +7,9 @@
       "Bash(findstr:*)",
       "Bash(git reset:*)",
       "Bash(git ls-tree:*)",
-      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\node.exe\" -e \"const cards = require\\(''./game/cards.js''\\); console.log\\(''CardDB creatures:'', cards.CardDB.creatures.length\\); console.log\\(''Heroes:'', Object.keys\\(cards.HEROES\\)\\); console.log\\(''Test createGameState...''\\); const gs = cards.createGameState\\(\\); console.log\\(''Phase:'', gs.phase\\); console.log\\(''Player 1 hand size:'', gs.players[1].hand.length\\); console.log\\(''SUCCESS''\\);\")"
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\node.exe\" -e \"const cards = require\\(''./game/cards.js''\\); console.log\\(''CardDB creatures:'', cards.CardDB.creatures.length\\); console.log\\(''Heroes:'', Object.keys\\(cards.HEROES\\)\\); console.log\\(''Test createGameState...''\\); const gs = cards.createGameState\\(\\); console.log\\(''Phase:'', gs.phase\\); console.log\\(''Player 1 hand size:'', gs.players[1].hand.length\\); console.log\\(''SUCCESS''\\);\")",
+      "Bash(ls:*)",
+      "Bash(echo:*)"
     ]
   }
 }

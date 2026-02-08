@@ -64,6 +64,8 @@ function resetPlayerForNewTurn(player) {
     player.confirmedField = deepClone(player.field);
     player.confirmedTraps = deepClone(player.traps);
     player.confirmedHandCount = player.hand.length;
+    // Figer l'état revealed de la main pour l'adversaire (ne change pas pendant le planning)
+    player.confirmedOppHand = player.hand.map(c => c.revealedToOpponent ? c : null);
 }
 
 function getPublicGameState(room, forPlayer) {
@@ -106,7 +108,8 @@ function getPublicGameState(room, forPlayer) {
             inDeployPhase: me.inDeployPhase,
             heroName: me.heroName,
             hero: me.hero,
-            spellsCastThisTurn: me.spellsCastThisTurn || 0
+            spellsCastThisTurn: me.spellsCastThisTurn || 0,
+            spellBoost: getSpellBoost(room, forPlayer)
         },
         opponent: {
             hp: opp.hp,
@@ -116,8 +119,8 @@ function getPublicGameState(room, forPlayer) {
                 ? opp.confirmedHandCount
                 : opp.hand.length + (opp.handCountBonus || 0),
             oppHand: isPlanning && opp.confirmedHandCount !== undefined
-                ? Array(opp.confirmedHandCount).fill(null)
-                : [...opp.hand.map(c => c.revealedToOpponent ? c : null), ...Array(opp.handCountBonus || 0).fill(null)],
+                ? (opp.confirmedOppHand || Array(opp.confirmedHandCount).fill(null))
+                : [...opp.hand.map(c => c.revealedToOpponent ? c : null), ...(opp.handBonusCards || Array(opp.handCountBonus || 0).fill(null))],
             deckCount: opp.deck.length,
             field: oppField,
             traps: oppTraps,
@@ -140,6 +143,33 @@ function emitStateToPlayer(room, playerNum) {
 function emitStateToBoth(room) {
     emitStateToPlayer(room, 1);
     emitStateToPlayer(room, 2);
+}
+
+// Retirer une carte de confirmedOppHand (par uid si revealed, sinon un null)
+function removeFromConfirmedHand(player, card) {
+    if (!player.confirmedOppHand) return;
+    if (card && card.uid) {
+        const idx = player.confirmedOppHand.findIndex(c => c && c.uid === card.uid);
+        if (idx !== -1) { player.confirmedOppHand.splice(idx, 1); return; }
+    }
+    // Carte cachée : retirer le premier null
+    const nullIdx = player.confirmedOppHand.indexOf(null);
+    if (nullIdx !== -1) player.confirmedOppHand.splice(nullIdx, 1);
+}
+
+function removeHandBonus(player, card) {
+    player.handCountBonus = Math.max(0, (player.handCountBonus || 0) - 1);
+    if (player.handBonusCards && player.handBonusCards.length > 0) {
+        // Si la carte est revealed, retirer l'entrée correspondante par uid
+        if (card && card.uid && card.revealedToOpponent) {
+            const idx = player.handBonusCards.findIndex(c => c && c.uid === card.uid);
+            if (idx !== -1) { player.handBonusCards.splice(idx, 1); return; }
+        }
+        // Sinon retirer le premier null (carte cachée)
+        const nullIdx = player.handBonusCards.indexOf(null);
+        if (nullIdx !== -1) player.handBonusCards.splice(nullIdx, 1);
+        else player.handBonusCards.pop(); // fallback
+    }
 }
 
 function emitAnimation(room, type, data) {
@@ -185,11 +215,12 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
                 currentHp: template.hp,
                 baseAtk: template.atk,
                 baseHp: template.hp,
-                canAttack: false,
+                canAttack: !!(template.abilities && template.abilities.includes('haste')),
                 turnsOnField: 0,
                 movedThisTurn: false,
             };
             if (newCard.abilities.includes('protection')) newCard.hasProtection = true;
+            if (newCard.abilities.includes('camouflage')) newCard.hasCamouflage = true;
             player.field[row][col] = newCard;
             log(`🔄 ${card.name} se transforme en ${newCard.name}!`, 'special');
             recalcDynamicAtk(room);
@@ -199,6 +230,20 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
 
     addToGraveyard(player, card);
     player.field[row][col] = null;
+
+    // Soif de sang : les créatures ennemies avec bloodthirst gagnent +X ATK permanent
+    const enemyPlayerNum = playerNum === 1 ? 2 : 1;
+    const enemyPlayer = room.gameState.players[enemyPlayerNum];
+    for (let r = 0; r < enemyPlayer.field.length; r++) {
+        for (let c = 0; c < enemyPlayer.field[r].length; c++) {
+            const ally = enemyPlayer.field[r][c];
+            if (ally && ally.currentHp > 0 && ally.abilities?.includes('bloodthirst')) {
+                const amount = ally.bloodthirstAmount || 1;
+                ally.bloodthirstStacks = (ally.bloodthirstStacks || 0) + amount;
+            }
+        }
+    }
+
     recalcDynamicAtk(room);
     return { transformed: false, newCard: null };
 }
@@ -227,16 +272,305 @@ function recalcDynamicAtk(room, excludeSlots) {
                 }
             }
         }
+        // Calculer les bonus d'Amélioration (enhance) par slot
+        const enhanceBonus = {};
+        for (let r = 0; r < player.field.length; r++) {
+            for (let c = 0; c < player.field[r].length; c++) {
+                if (excludeSlots && excludeSlots[p] && excludeSlots[p].has(`${r},${c}`)) continue;
+                const card = player.field[r][c];
+                if (card && card.currentHp > 0 && card.abilities?.includes('enhance')) {
+                    const amount = card.enhanceAmount || 1;
+                    // Buff les 3 voisins orthogonaux (haut, bas, même rangée autre colonne)
+                    const neighbors = [[r - 1, c], [r + 1, c], [r, c === 0 ? 1 : 0]];
+                    for (const [nr, nc] of neighbors) {
+                        if (nr >= 0 && nr < player.field.length) {
+                            const key = `${nr},${nc}`;
+                            enhanceBonus[key] = (enhanceBonus[key] || 0) + amount;
+                        }
+                    }
+                }
+            }
+        }
+
         // Mettre à jour l'ATK des créatures avec bonus dynamique
         for (let r = 0; r < player.field.length; r++) {
             for (let c = 0; c < player.field[r].length; c++) {
                 const card = player.field[r][c];
-                if (card && card.atkPerAllyType && card.currentHp > 0) {
-                    const count = typeCounts[card.atkPerAllyType] || 0;
-                    const oldAtk = card.atk;
-                    card.atk = card.baseAtk + count + (card.tempAtkBoost || 0);
-                    console.log(`[recalcDynamicAtk] P${p} ${card.name} @ ${r},${c}: baseAtk=${card.baseAtk} + count=${count} = atk ${oldAtk} → ${card.atk} | excluded=[${excluded}] typeCounts=${JSON.stringify(typeCounts)}`);
+                if (!card || card.currentHp <= 0) continue;
+                const enhance = enhanceBonus[`${r},${c}`] || 0;
+                const base = card.baseAtk ?? card.atk;
+                const bt = card.bloodthirstStacks || 0;
+
+                // Bonus atkPerAdjacent : +X par créature vivante adjacente
+                let adjBonus = 0;
+                if (card.atkPerAdjacent) {
+                    const neighbors = [[r - 1, c], [r + 1, c], [r, c === 0 ? 1 : 0]];
+                    for (const [nr, nc] of neighbors) {
+                        if (nr >= 0 && nr < player.field.length) {
+                            if (excludeSlots && excludeSlots[p] && excludeSlots[p].has(`${nr},${nc}`)) continue;
+                            const neighbor = player.field[nr][nc];
+                            if (neighbor && neighbor.currentHp > 0) adjBonus += card.atkPerAdjacent;
+                        }
+                    }
                 }
+
+                if (card.atkPerAllyType) {
+                    const count = typeCounts[card.atkPerAllyType] || 0;
+                    card.atk = base + count + (card.tempAtkBoost || 0) + enhance + bt + adjBonus;
+                } else if (adjBonus > 0 || enhance > 0 || bt > 0 || card.atk !== base + (card.tempAtkBoost || 0)) {
+                    card.atk = base + (card.tempAtkBoost || 0) + enhance + bt + adjBonus;
+                }
+            }
+        }
+    }
+}
+
+// Calcule le bonus de dégâts de sorts pour un joueur (Sort renforcé)
+function getSpellBoost(room, playerNum) {
+    const player = room.gameState.players[playerNum];
+    let boost = 0;
+    for (let r = 0; r < player.field.length; r++) {
+        for (let c = 0; c < player.field[r].length; c++) {
+            const card = player.field[r][c];
+            if (card && card.currentHp > 0 && card.abilities?.includes('spellBoost')) {
+                boost += (card.spellBoostAmount || 1);
+            }
+        }
+    }
+    return boost;
+}
+
+// Trouve la première créature ennemie "en face" d'une position (même rangée, colonne intérieure d'abord)
+// Ignore les créatures pétrifiées
+function getFacingCreature(room, playerNum, row) {
+    const enemyNum = playerNum === 1 ? 2 : 1;
+    const enemy = room.gameState.players[enemyNum];
+    // Colonne intérieure (proche du centre) en premier : col 1 pour les deux joueurs
+    // Board visuel : C1(col0) D1(col1) | centre | D2(col1) C2(col0)
+    const colOrder = [1, 0];
+    for (const col of colOrder) {
+        const card = enemy.field[row][col];
+        if (card && card.currentHp > 0 && !card.petrified) {
+            return { card, row, col, playerNum: enemyNum };
+        }
+    }
+    return null;
+}
+
+// Calcule les créatures bloquées par Mélodie et met à jour les gaze trackers
+function processMelodyEffects(room) {
+    // Reset melody locks et gaze markers
+    for (let p = 1; p <= 2; p++) {
+        const player = room.gameState.players[p];
+        for (let r = 0; r < player.field.length; r++) {
+            for (let c = 0; c < player.field[r].length; c++) {
+                const card = player.field[r][c];
+                if (card) {
+                    card.melodyLocked = false;
+                    card.medusaGazeMarker = 0;
+                }
+            }
+        }
+    }
+    // Apply melody from all creatures with melody ability
+    for (let p = 1; p <= 2; p++) {
+        const player = room.gameState.players[p];
+        for (let r = 0; r < player.field.length; r++) {
+            for (let c = 0; c < player.field[r].length; c++) {
+                const card = player.field[r][c];
+                if (card && card.currentHp > 0 && card.abilities?.includes('melody')) {
+                    const facing = getFacingCreature(room, p, r);
+                    if (facing) {
+                        facing.card.melodyLocked = true;
+                        // Marquer le gaze counter pour l'affichage client
+                        if (card.medusaGazeUid === facing.card.uid && card.medusaGazeTurns >= 1) {
+                            facing.card.medusaGazeMarker = card.medusaGazeTurns;
+                            console.log(`[MELODY-PLANNING] ${card.name} face ${facing.card.name}: pastille=${card.medusaGazeTurns}`);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Traite les effets Mélodie + Pétrification pour UNE ligne donnée (appelé juste avant le combat de cette ligne)
+async function processMelodyForRow(room, row, log, sleep) {
+    let hadEffect = false;
+    let hadPetrify = false;
+    let hadGazeAnim = false;
+
+    // Nettoyer les effets melody de la phase de planning pour cette row
+    // (le mouvement a pu changer qui fait face à qui)
+    let hadClear = false;
+    for (let p = 1; p <= 2; p++) {
+        const player = room.gameState.players[p];
+        for (let c = 0; c < 2; c++) {
+            const card = player.field[row][c];
+            if (card && (card.melodyLocked || card.medusaGazeMarker > 0)) {
+                card.melodyLocked = false;
+                card.medusaGazeMarker = 0;
+                hadClear = true;
+            }
+        }
+    }
+
+    for (let p = 1; p <= 2; p++) {
+        const player = room.gameState.players[p];
+        for (let c = 0; c < 2; c++) {
+            const card = player.field[row][c];
+            if (!card || card.currentHp <= 0 || !card.abilities?.includes('melody')) continue;
+
+            const facing = getFacingCreature(room, p, row);
+            if (!facing) {
+                card.medusaGazeUid = null;
+                card.medusaGazeTurns = 0;
+                console.log(`[MELODY] Row ${row}: ${card.name} (P${p} col=${c}) - pas de cible en face`);
+                continue;
+            }
+
+            console.log(`[MELODY] Row ${row}: ${card.name} (P${p}) fait face à ${facing.card.name} (P${facing.playerNum} row=${facing.row} col=${facing.col})`);
+
+            // Appliquer le visuel melody (terni + pastille) + bloquer l'attaque ce tour
+            facing.card.melodyLocked = true;
+            facing.card.canAttack = false;
+            hadEffect = true;
+
+            // Incrémenter le gaze tracker
+            if (card.medusaGazeUid && facing.card.uid === card.medusaGazeUid) {
+                card.medusaGazeTurns = (card.medusaGazeTurns || 0) + 1;
+                console.log(`[MELODY] Même cible uid=${facing.card.uid}, gazeTurns incrémenté à ${card.medusaGazeTurns}`);
+            } else {
+                console.log(`[MELODY] Nouvelle cible uid=${facing.card.uid} (ancien=${card.medusaGazeUid}), gazeTurns reset à 1`);
+                card.medusaGazeUid = facing.card.uid;
+                card.medusaGazeTurns = 1;
+            }
+
+            if (card.medusaGazeTurns >= 2) {
+                // Pétrification directe — pas de pastille "2", on passe direct à l'effet
+                facing.card.medusaGazeMarker = 0;
+                const target = facing.card;
+                const heroName = room.gameState.players[p].heroName || `Joueur ${p}`;
+                console.log(`[MELODY] PÉTRIFICATION de ${target.name} ! gazeTurns=${card.medusaGazeTurns}`);
+
+                target.petrified = true;
+                target.melodyLocked = false;
+                target.atk = 0;
+                target.baseAtk = 0;
+                target.currentHp = 10;
+                target.hp = 10;
+                target.baseHp = 10;
+                target.abilities = [];
+                target.hasProtection = false;
+                target.canAttack = false;
+                target.petrifiedDescription = 'Pétrifié — ne peut ni attaquer ni bloquer.';
+
+                emitStateToBoth(room);
+
+                emitAnimation(room, 'petrify', {
+                    player: facing.playerNum,
+                    row: facing.row,
+                    col: facing.col,
+                    cardName: target.name
+                });
+                log(`  🪨 ${heroName}: ${card.name} pétrifie ${target.name} !`, 'special');
+                await sleep(1500);
+
+                card.medusaGazeUid = null;
+                card.medusaGazeTurns = 0;
+                hadPetrify = true;
+            } else {
+                // Marquer le gaze counter pour l'affichage client (seulement si pas de pétrification)
+                facing.card.medusaGazeMarker = card.medusaGazeTurns;
+                console.log(`[MELODY] Pas encore de pétrification, gazeTurns=${card.medusaGazeTurns}`);
+
+                // Animation oeil de Medusa → rayon vers la cible
+                emitAnimation(room, 'melodyGaze', {
+                    srcPlayer: p,
+                    srcRow: row,
+                    srcCol: c,
+                    tgtPlayer: facing.playerNum,
+                    tgtRow: facing.row,
+                    tgtCol: facing.col,
+                    cardName: card.name,
+                    targetName: facing.card.name,
+                });
+                hadGazeAnim = true;
+            }
+        }
+    }
+
+    // Envoyer le state + attendre l'animation gaze si on a eu des effets melody sans pétrification
+    if (hadEffect && !hadPetrify) {
+        emitStateToBoth(room);
+        await sleep(hadGazeAnim ? 1500 : 400);
+    } else if (hadClear && !hadEffect) {
+        // Medusa a bougé : les effets melody ont été nettoyés, montrer le retour à la normale avant le combat
+        emitStateToBoth(room);
+        await sleep(500);
+    }
+}
+
+// Traite les capacités onSummon d'une créature qui vient d'entrer en jeu
+async function processOnSummonAbility(room, card, playerNum, row, col, log, sleep) {
+    if (!card.onSummon && !card.sacrifice) return;
+    const player = room.gameState.players[playerNum];
+    const heroName = room.gameState.players[playerNum].heroName || `Joueur ${playerNum}`;
+
+    // Sacrifice : sacrifier X créatures adjacentes pouvant attaquer (ordre horaire)
+    if (card.sacrifice) {
+        console.log(`[Sacrifice] ${card.name} player=${playerNum} at ${row},${col} — searching targets`);
+        const targets = getAdjacentSacrificeTargets(player.field, row, col);
+        console.log(`[Sacrifice] Found ${targets.length} targets:`, targets.map(t => `${t.card.name}@${t.row},${t.col}`));
+        const toSacrifice = targets.slice(0, card.sacrifice);
+
+        // Petit délai avant le sacrifice pour séparer visuellement de l'invocation
+        await sleep(600);
+
+        for (const target of toSacrifice) {
+            const sacrificed = player.field[target.row][target.col];
+            if (!sacrificed) continue;
+            console.log(`[Sacrifice] Sacrificing ${sacrificed.name} at ${target.row},${target.col}`);
+            log(`  💀 ${heroName}: ${card.name} sacrifie ${sacrificed.name}`, 'damage');
+            // Envoyer l'animation de sacrifice (blood slash + fly-to-graveyard)
+            emitAnimation(room, 'sacrifice', { player: playerNum, row: target.row, col: target.col, card: sacrificed });
+            await sleep(20); // Laisser le client recevoir l'animation et bloquer le slot
+            handleCreatureDeath(room, sacrificed, playerNum, target.row, target.col, log);
+            console.log(`[Sacrifice] After handleCreatureDeath: field[${target.row}][${target.col}] = ${player.field[target.row][target.col]?.name || 'null'}`);
+            console.log(`[Sacrifice] revealField exists: ${!!player.revealField}, revealField value: ${player.revealField?.[target.row]?.[target.col]?.name || 'null'}`);
+            // Mettre aussi à jour revealField si revealing est actif
+            if (player.revealField) {
+                player.revealField[target.row][target.col] = null;
+                console.log(`[Sacrifice] revealField[${target.row}][${target.col}] set to null`);
+            }
+            emitStateToBoth(room);
+            await sleep(1600); // 500ms VFX slash + 900ms fly-to-graveyard + marge
+        }
+        recalcDynamicAtk(room);
+        emitStateToBoth(room);
+    }
+
+    // searchSpell : chercher le premier sort dans le deck et l'ajouter à la main
+    if (card.onSummon && card.onSummon.searchSpell) {
+        const spellIndex = player.deck.findIndex(c => c.type === 'spell');
+        if (spellIndex !== -1) {
+            const [spellCard] = player.deck.splice(spellIndex, 1);
+            if (player.hand.length < 9) {
+                player.hand.push(spellCard);
+                const handIdx = player.hand.length - 1;
+                console.log(`[searchSpell] ${card.name} finds ${spellCard.name} → handIndex=${handIdx} handSize=${player.hand.length}`);
+                log(`  🔍 ${heroName}: ${card.name} trouve ${spellCard.name} dans le deck`, 'action');
+                emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: spellCard, handIndex: handIdx }] });
+                await sleep(20);
+                emitStateToBoth(room);
+                await sleep(1400);
+            } else {
+                addToGraveyard(player, spellCard);
+                log(`  🔍 ${heroName}: ${card.name} trouve ${spellCard.name}, mais main pleine → cimetière`, 'damage');
+                emitAnimation(room, 'burn', { player: playerNum, card: spellCard });
+                await sleep(20);
+                emitStateToBoth(room);
+                await sleep(1200);
             }
         }
     }
@@ -535,6 +869,23 @@ function getCrossTargets(targetPlayer, row, col) {
     return targets;
 }
 
+function isSacrificeTarget(card) {
+    if (!card || card.type !== 'creature') return false;
+    if (card.petrified) return false;
+    if (card.movedThisTurn) return false;
+    return !!card.canAttack;
+}
+
+function getAdjacentSacrificeTargets(field, row, col) {
+    const neighbors = [[row-1,col],[row,col+1],[row+1,col],[row,col-1]];
+    const targets = [];
+    for (const [r,c] of neighbors) {
+        if (r < 0 || r >= 4 || c < 0 || c >= 2) continue;
+        if (isSacrificeTarget(field[r][c])) targets.push({ row: r, col: c, card: field[r][c] });
+    }
+    return targets;
+}
+
 async function startResolution(room) {
     if (room.timer) clearInterval(room.timer);
     room.gameState.phase = 'resolution';
@@ -656,9 +1007,15 @@ async function startResolution(room) {
         // Bonus de cartes fantômes : l'adversaire voit la main pleine tant que
         // les actions ne sont pas révélées (décrementé au fur et à mesure)
         const actions = player.pendingActions || [];
-        player.handCountBonus = actions.filter(a =>
+        const bonusActions = actions.filter(a =>
             a.type === 'place' || a.type === 'spell' || a.type === 'trap'
-        ).length;
+        );
+        // handBonusCards : tableau de cartes fantômes (null pour cachées, card data pour revealed)
+        player.handBonusCards = bonusActions.map(a => {
+            const card = a.card || a.spell;
+            return (card && card.revealedToOpponent) ? card : null;
+        });
+        player.handCountBonus = bonusActions.length;
     }
 
     // Activer le mode révélation (getPublicGameState utilisera revealField pour l'adversaire)
@@ -703,6 +1060,7 @@ async function startResolution(room) {
                                 movedThisTurn: false,
                             };
                             if (newCard.abilities.includes('protection')) newCard.hasProtection = true;
+                            if (newCard.abilities.includes('camouflage')) newCard.hasCamouflage = true;
 
                             transformAnimations.push({
                                 player: p, row: r, col: c,
@@ -814,7 +1172,7 @@ async function startResolution(room) {
             // Envoyer les animations AVANT le state update (ATK pas encore recalculée pour cette paire)
             if (placesP1[i]) {
                 const a = placesP1[i];
-                console.log(`[Phase2] i=${i} Summoning P1 ${a.card.name} @ ${a.row},${a.col}`);
+                console.log(`[Phase2] i=${i} Summoning P1 ${a.card.name} @ ${a.row},${a.col} revealedToOpponent:`, a.card.revealedToOpponent);
                 // Synchroniser le card data de l'animation avec l'ATK actuelle du field
                 const fieldCard = room.gameState.players[a.playerNum].field[a.row][a.col];
                 if (fieldCard) a.card.atk = fieldCard.atk;
@@ -828,7 +1186,7 @@ async function startResolution(room) {
             }
             if (placesP2[i]) {
                 const a = placesP2[i];
-                console.log(`[Phase2] i=${i} Summoning P2 ${a.card.name} @ ${a.row},${a.col}`);
+                console.log(`[Phase2] i=${i} Summoning P2 ${a.card.name} @ ${a.row},${a.col} revealedToOpponent:`, a.card.revealedToOpponent);
                 const fieldCard = room.gameState.players[a.playerNum].field[a.row][a.col];
                 if (fieldCard) a.card.atk = fieldCard.atk;
                 log(`  🎴 ${a.heroName}: ${a.card.name} en ${slotNames[a.row][a.col]}`, 'action');
@@ -845,12 +1203,14 @@ async function startResolution(room) {
             if (placesP1[i]) {
                 const a = placesP1[i];
                 room.gameState.players[a.playerNum].revealField[a.row][a.col] = room.gameState.players[a.playerNum].field[a.row][a.col];
-                room.gameState.players[a.playerNum].handCountBonus = Math.max(0, (room.gameState.players[a.playerNum].handCountBonus || 0) - 1);
+                removeHandBonus(room.gameState.players[a.playerNum], a.card);
+                removeFromConfirmedHand(room.gameState.players[a.playerNum], a.card);
             }
             if (placesP2[i]) {
                 const a = placesP2[i];
                 room.gameState.players[a.playerNum].revealField[a.row][a.col] = room.gameState.players[a.playerNum].field[a.row][a.col];
-                room.gameState.players[a.playerNum].handCountBonus = Math.max(0, (room.gameState.players[a.playerNum].handCountBonus || 0) - 1);
+                removeHandBonus(room.gameState.players[a.playerNum], a.card);
+                removeFromConfirmedHand(room.gameState.players[a.playerNum], a.card);
             }
             emitStateToBoth(room);
             // Attendre la fin de l'animation
@@ -871,6 +1231,15 @@ async function startResolution(room) {
             recalcDynamicAtk(room, unrevealed);
             emitStateToBoth(room);
         }
+
+        // Traiter les capacités onSummon APRÈS toutes les révélations de créatures
+        const allPlaces = [...placesP1, ...placesP2];
+        for (const place of allPlaces) {
+            const fieldCard = room.gameState.players[place.playerNum].field[place.row][place.col];
+            if (fieldCard && (fieldCard.onSummon || fieldCard.sacrifice)) {
+                await processOnSummonAbility(room, fieldCard, place.playerNum, place.row, place.col, log, sleep);
+            }
+        }
     }
 
     // 3. PHASE DE RÉVÉLATION DES PIÈGES (séquentiels)
@@ -883,7 +1252,8 @@ async function startResolution(room) {
             log(`  🪤 ${action.heroName}: Piège en rangée ${action.row + 1}`, 'action');
             // Ajouter le piège au revealTraps AVANT l'animation pour que le client le voie
             room.gameState.players[action.playerNum].revealTraps[action.row] = room.gameState.players[action.playerNum].traps[action.row];
-            room.gameState.players[action.playerNum].handCountBonus = Math.max(0, (room.gameState.players[action.playerNum].handCountBonus || 0) - 1);
+            removeHandBonus(room.gameState.players[action.playerNum], null);
+            removeFromConfirmedHand(room.gameState.players[action.playerNum], null);
             emitStateToBoth(room);
             emitAnimation(room, 'trapPlace', { player: action.playerNum, row: action.row });
             await sleep(ANIM_TIMING.trapPlace + ANIM_TIMING.margin);
@@ -904,7 +1274,8 @@ async function startResolution(room) {
         await sleep(ANIM_TIMING.phaseIntro);
 
         for (const action of allActions.spellsDefensive) {
-            room.gameState.players[action.playerNum].handCountBonus = Math.max(0, (room.gameState.players[action.playerNum].handCountBonus || 0) - 1);
+            removeHandBonus(room.gameState.players[action.playerNum], action.spell);
+            removeFromConfirmedHand(room.gameState.players[action.playerNum], action.spell);
             emitStateToBoth(room);
             await applySpell(room, action, log, sleep);
         }
@@ -917,7 +1288,8 @@ async function startResolution(room) {
         await sleep(ANIM_TIMING.phaseIntro);
 
         for (const action of allActions.spellsOffensive) {
-            room.gameState.players[action.playerNum].handCountBonus = Math.max(0, (room.gameState.players[action.playerNum].handCountBonus || 0) - 1);
+            removeHandBonus(room.gameState.players[action.playerNum], action.spell);
+            removeFromConfirmedHand(room.gameState.players[action.playerNum], action.spell);
             emitStateToBoth(room);
             await applySpell(room, action, log, sleep);
             
@@ -940,12 +1312,14 @@ async function startResolution(room) {
     // Nettoyage du bonus de main fantôme (toutes les cartes jouées ont été révélées)
     for (let p = 1; p <= 2; p++) {
         delete room.gameState.players[p].handCountBonus;
+        delete room.gameState.players[p].handBonusCards;
+        delete room.gameState.players[p].confirmedOppHand;
     }
 
     emitStateToBoth(room);
     await sleep(300);
 
-    // 6. PHASE DE COMBAT - pièges puis attaques LIGNE PAR LIGNE
+    // 6. PHASE DE COMBAT - pièges puis attaques LIGNE PAR LIGNE (mélodie + pétrification intégrées par ligne)
     if (hasCreaturesOnField() || hasTraps()) {
         io.to(room.code).emit('phaseMessage', { text: 'Combat', type: 'combat' });
         log('⚔️ Combat', 'phase');
@@ -953,8 +1327,13 @@ async function startResolution(room) {
 
         const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
-        // Combat LIGNE PAR LIGNE : pour chaque colonne, pièges puis attaques
+        // Combat LIGNE PAR LIGNE : mélodie/pétrification puis pièges puis attaques
         for (let row = 0; row < 4; row++) {
+            // Mélodie + Pétrification pour cette ligne (avant les attaques de cette ligne)
+            console.log(`[COMBAT] === Début row ${row} - processMelodyForRow ===`);
+            await processMelodyForRow(room, row, log, sleep);
+            console.log(`[COMBAT] === Fin row ${row} - processMelodyForRow, début combat ===`);
+
             for (let col = 0; col < 2; col++) {
                 // Pièges déclenchés par les attaquants de cette colonne
                 await processTrapsForRow(room, row, col, log, sleep);
@@ -987,8 +1366,10 @@ async function startResolution(room) {
                 const card = room.gameState.players[p].field[r][c];
                 if (card) {
                     card.turnsOnField++;
-                    card.canAttack = true;
+                    card.canAttack = !card.petrified;
                     card.movedThisTurn = false;
+                    // Camouflage se dissipe au début du prochain tour
+                    if (card.hasCamouflage) card.hasCamouflage = false;
                 }
             }
         }
@@ -1240,6 +1621,55 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
         
         // Déclencher le piège sur le premier attaquant trouvé
         if (attackers.length > 0) {
+
+            // === PIÈGE SUMMON : condition spéciale — le slot adjacent (col 1) doit être vide ===
+            if (trap.effect === 'summon') {
+                const adjCol = 1; // colonne intérieure (B/D/F/H)
+                if (defenderState.field[row][adjCol]) {
+                    // Slot adjacent occupé → le piège ne se déclenche PAS, reste en place
+                    continue;
+                }
+
+                emitAnimation(room, 'trapTrigger', { player: defenderPlayer, row: row, trap: trap });
+                await sleep(2200);
+
+                const template = CardDB.creatures.find(c => c.id === trap.summonId);
+                if (template) {
+                    log(`🪤 Piège "${trap.name}" déclenché! Un ${template.name} apparaît!`, 'trap');
+
+                    const summoned = {
+                        ...template,
+                        abilities: [...(template.abilities || [])],
+                        uid: `${Date.now()}-trapsummon-${Math.random()}`,
+                        currentHp: template.hp,
+                        baseAtk: template.atk,
+                        baseHp: template.hp,
+                        canAttack: !!(template.abilities && template.abilities.includes('haste')),
+                        turnsOnField: 0,
+                        movedThisTurn: false
+                    };
+
+                    defenderState.field[row][adjCol] = summoned;
+                    recalcDynamicAtk(room);
+
+                    emitAnimation(room, 'trapSummon', {
+                        player: defenderPlayer,
+                        row: row,
+                        col: adjCol,
+                        card: summoned
+                    });
+                    await sleep(1600);
+                }
+
+                // Mettre le piège au cimetière
+                addToGraveyard(defenderState, trap);
+                defenderState.traps[row] = null;
+
+                emitStateToBoth(room);
+                await sleep(500);
+                continue;
+            }
+
             emitAnimation(room, 'trapTrigger', { player: defenderPlayer, row: row, trap: trap });
             await sleep(2200);
 
@@ -1306,10 +1736,14 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
 
                 log(`🪤 Piège "${trap.name}" déclenché sur ${firstAttacker.card.name}!`, 'trap');
 
+                // Déterminer la destination AVANT l'animation
+                const handFull = attackerState.hand.length >= 9;
+
                 // Animation de bounce AVANT de retirer du terrain
                 emitAnimation(room, 'bounce', {
                     player: attackerPlayer, row: row, col: firstAttacker.col,
-                    card: firstAttacker.card
+                    card: firstAttacker.card,
+                    toGraveyard: handFull
                 });
                 await sleep(800);
 
@@ -1330,7 +1764,7 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 recalcDynamicAtk(room);
 
                 // Remettre en main (si main pleine, va au cimetière)
-                if (attackerState.hand.length < 10) {
+                if (!handFull) {
                     bouncedCard.revealedToOpponent = true;
                     attackerState.hand.push(bouncedCard);
                     log(`  🌀 ${bouncedCard.name} renvoyé dans la main!`, 'action');
@@ -1434,7 +1868,9 @@ async function applySpell(room, action, log, sleep) {
     }
     // SORT QUI TOUCHE TOUTES LES CRÉATURES
     else if (spell.pattern === 'all') {
-        log(`  🌋 ${action.heroName}: ${spell.name} - ${spell.damage} dégâts à toutes les créatures!`, 'damage');
+        const spellBoost = getSpellBoost(room, playerNum);
+        const totalDamage = spell.damage + spellBoost;
+        log(`  🌋 ${action.heroName}: ${spell.name} - ${totalDamage} dégâts à toutes les créatures!${spellBoost > 0 ? ` (+${spellBoost} sort renforcé)` : ''}`, 'damage');
 
         // Phase 1: Collecter toutes les cibles et envoyer les animations de dégâts EN BATCH
         const deaths = [];
@@ -1445,7 +1881,7 @@ async function applySpell(room, action, log, sleep) {
                 for (let c = 0; c < 2; c++) {
                     const target = targetPlayer.field[r][c];
                     if (target) {
-                        spellAnimations.push({ type: 'spellDamage', player: p, row: r, col: c, amount: spell.damage });
+                        spellAnimations.push({ type: 'spellDamage', player: p, row: r, col: c, amount: totalDamage });
                     }
                 }
             }
@@ -1464,7 +1900,7 @@ async function applySpell(room, action, log, sleep) {
                 for (let c = 0; c < 2; c++) {
                     const target = targetPlayer.field[r][c];
                     if (target) {
-                        const actualDmg = applyCreatureDamage(target, spell.damage, room, log, p, r, c);
+                        const actualDmg = applyCreatureDamage(target, totalDamage, room, log, p, r, c);
 
                         if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
                             target.atk += (target.powerX || 1);
@@ -1520,10 +1956,12 @@ async function applySpell(room, action, log, sleep) {
         
         if (spell.damage) {
             // Dégâts au héros ciblé
-            targetHero.hp -= spell.damage;
-            log(`  👊 ${action.heroName}: ${spell.name} → ${targetName} (-${spell.damage})`, 'damage');
-            emitAnimation(room, 'heroHit', { defender: action.targetPlayer, damage: spell.damage });
-            io.to(room.code).emit('directDamage', { defender: action.targetPlayer, damage: spell.damage });
+            const spellBoost = getSpellBoost(room, playerNum);
+            const totalDamage = spell.damage + spellBoost;
+            targetHero.hp -= totalDamage;
+            log(`  👊 ${action.heroName}: ${spell.name} → ${targetName} (-${totalDamage})${spellBoost > 0 ? ` (+${spellBoost} sort renforcé)` : ''}`, 'damage');
+            emitAnimation(room, 'heroHit', { defender: action.targetPlayer, damage: totalDamage });
+            io.to(room.code).emit('directDamage', { defender: action.targetPlayer, damage: totalDamage });
         } else if (spell.effect === 'draw') {
             await drawCards(room, action.targetPlayer, spell.amount, log, sleep, `${action.heroName}: ${spell.name} → ${targetName}`);
         } else if (spell.effect === 'mana') {
@@ -1553,7 +1991,9 @@ async function applySpell(room, action, log, sleep) {
             ...adjacentTargets
         ];
 
-        log(`  ✝️ ${action.heroName}: ${spell.name} en croix sur ${slotNames[action.row][action.col]}!`, 'damage');
+        const spellBoost = getSpellBoost(room, playerNum);
+        const totalDamage = spell.damage + spellBoost;
+        log(`  ✝️ ${action.heroName}: ${spell.name} en croix sur ${slotNames[action.row][action.col]}!${spellBoost > 0 ? ` (+${spellBoost} sort renforcé)` : ''}`, 'damage');
 
         // Highlight les zones touchées
         io.to(room.code).emit('spellHighlight', { targets: allTargets, type: 'damage', pattern: 'cross' });
@@ -1564,7 +2004,7 @@ async function applySpell(room, action, log, sleep) {
             const targetField = t.player === playerNum ? player.field : opponent.field;
             const target = targetField[t.row][t.col];
             if (target) {
-                spellAnimations.push({ type: 'spellDamage', player: t.player, row: t.row, col: t.col, amount: spell.damage });
+                spellAnimations.push({ type: 'spellDamage', player: t.player, row: t.row, col: t.col, amount: totalDamage });
             }
         }
         if (spellAnimations.length > 0) {
@@ -1581,9 +2021,9 @@ async function applySpell(room, action, log, sleep) {
             const target = targetField[t.row][t.col];
 
             if (target) {
-                const actualDmg = applyCreatureDamage(target, spell.damage, room, log, t.player, t.row, t.col);
+                const actualDmg = applyCreatureDamage(target, totalDamage, room, log, t.player, t.row, t.col);
                 if (actualDmg > 0) {
-                    log(`    🔥 ${target.name} (-${spell.damage})`, 'damage');
+                    log(`    🔥 ${target.name} (-${totalDamage})`, 'damage');
                 }
 
                 if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
@@ -1631,6 +2071,63 @@ async function applySpell(room, action, log, sleep) {
         }
 
         emitStateToBoth(room);
+    }
+    // RÉANIMATION : placer une créature du cimetière sur le terrain
+    else if (spell.effect === 'reanimate') {
+        // Chercher la créature dans le cimetière (index + fallback uid)
+        let creatureIdx = -1;
+        if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
+            action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
+            const candidate = player.graveyard[action.graveyardIndex];
+            if (candidate && candidate.type === 'creature') {
+                if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
+                    creatureIdx = action.graveyardIndex;
+                }
+            }
+        }
+        if (creatureIdx === -1 && action.graveyardCreatureUid) {
+            creatureIdx = player.graveyard.findIndex(c =>
+                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+            );
+        }
+
+        if (creatureIdx === -1 || player.field[action.row][action.col]) {
+            log(`  💨 ${action.heroName}: ${spell.name} échoue (cible invalide)`, 'action');
+            emitAnimation(room, 'spellMiss', { targetPlayer: action.targetPlayer, row: action.row, col: action.col });
+        } else {
+            const creature = player.graveyard.splice(creatureIdx, 1)[0];
+            const baseCard = CardDB.creatures.find(c => c.id === creature.id);
+            const template = baseCard || creature;
+
+            const placed = {
+                ...template,
+                abilities: [...(template.abilities || [])],
+                uid: creature.uid || `${Date.now()}-reanimate-${Math.random()}`,
+                currentHp: template.hp,
+                baseAtk: template.atk,
+                baseHp: template.hp,
+                canAttack: (template.abilities && template.abilities.includes('haste')) ? true : false,
+                turnsOnField: 0,
+                movedThisTurn: false
+            };
+            if (placed.abilities.includes('protection')) placed.hasProtection = true;
+            if (placed.abilities.includes('camouflage')) placed.hasCamouflage = true;
+
+            player.field[action.row][action.col] = placed;
+
+            log(`  🪦 ${action.heroName}: ${spell.name} → ${placed.name} revient du cimetière!`, 'special');
+
+            emitAnimation(room, 'reanimate', {
+                player: playerNum,
+                row: action.row,
+                col: action.col,
+                card: placed
+            });
+            await sleep(1200);
+
+            recalcDynamicAtk(room);
+            emitStateToBoth(room);
+        }
     }
     // SORT CIBLÉ SIMPLE
     else {
@@ -1683,13 +2180,15 @@ async function applySpell(room, action, log, sleep) {
                 }
                 // Dégâts
                 else if (spell.offensive && spell.damage) {
+                    const spellBoost = getSpellBoost(room, playerNum);
+                    const totalDamage = spell.damage + spellBoost;
                     // Animation de flammes pour les dégâts de sort
-                    emitAnimation(room, 'spellDamage', { player: action.targetPlayer, row: action.row, col: action.col, amount: spell.damage });
+                    emitAnimation(room, 'spellDamage', { player: action.targetPlayer, row: action.row, col: action.col, amount: totalDamage });
                     await sleep(800);
 
-                    const actualDmg = applyCreatureDamage(target, spell.damage, room, log, action.targetPlayer, action.row, action.col);
+                    const actualDmg = applyCreatureDamage(target, totalDamage, room, log, action.targetPlayer, action.row, action.col);
                     if (actualDmg > 0) {
-                        log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${spell.damage})`, 'damage');
+                        log(`  🔥 ${action.heroName}: ${spell.name} → ${target.name} (-${totalDamage})${spellBoost > 0 ? ` (+${spellBoost} sort renforcé)` : ''}`, 'damage');
                     }
 
                     if (actualDmg > 0 && target.currentHp > 0 && target.abilities.includes('power')) {
@@ -1751,6 +2250,18 @@ async function applySpell(room, action, log, sleep) {
                     });
                     log(`  💪 ${action.heroName}: ${spell.name} → ${target.name} (+${spell.buff.atk}/+${spell.buff.hp})`, 'action');
                     emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.buff.atk, hp: spell.buff.hp });
+                }
+                // Buff ATK seul (ex: Altération musculaire)
+                if (!spell.offensive && spell.effect === 'atkBuff' && spell.atkBuff) {
+                    target.atk += spell.atkBuff;
+                    if (!target.appliedEffects) target.appliedEffects = [];
+                    target.appliedEffects.push({
+                        name: spell.name,
+                        description: `+${spell.atkBuff} ⚔️`
+                    });
+                    log(`  💪 ${action.heroName}: ${spell.name} → ${target.name} (+${spell.atkBuff} ATK)`, 'action');
+                    emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.atkBuff, hp: 0 });
+                    emitStateToBoth(room);
                 }
             } else {
                 if (spell.returnOnMiss) {
@@ -2734,7 +3245,7 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 const actualSeqDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
                 if (actualSeqDmg > 0) {
                     log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${actualSeqDmg})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualSeqDmg });
+                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualSeqDmg, skipScratch: atk.isShooter });
                 }
 
                 // Power pour la cible
@@ -3030,7 +3541,7 @@ async function processCombatRow(room, row, log, sleep, checkVictory) {
                 const actualUniDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
                 if (actualUniDmg > 0) {
                     log(`⚔️ ${attackerCard.name} → ${targetCard.name} (-${actualUniDmg})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualUniDmg });
+                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualUniDmg, skipScratch: atk.isShooter });
                 }
 
                 if (actualUniDmg > 0 && targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
@@ -3190,11 +3701,15 @@ function findTarget(attacker, enemyFront, enemyBack, enemyPlayer, row, attackerC
         return { card: null, col: -1, row: row, player: enemyPlayer, isHero: true };
     }
 
-    // Ignorer les créatures intangibles lors de la recherche de cibles
+    // Ignorer les créatures intangibles, pétrifiées et camouflées lors de la recherche de cibles
     const frontIsIntangible = enemyFront && enemyFront.abilities.includes('intangible');
     const backIsIntangible = enemyBack && enemyBack.abilities.includes('intangible');
-    const effectiveFront = frontIsIntangible ? null : enemyFront;
-    const effectiveBack = backIsIntangible ? null : enemyBack;
+    const frontIsPetrified = enemyFront && enemyFront.petrified;
+    const backIsPetrified = enemyBack && enemyBack.petrified;
+    const frontIsCamouflaged = enemyFront && enemyFront.hasCamouflage;
+    const backIsCamouflaged = enemyBack && enemyBack.hasCamouflage;
+    const effectiveFront = (frontIsIntangible || frontIsPetrified || frontIsCamouflaged) ? null : enemyFront;
+    const effectiveBack = (backIsIntangible || backIsPetrified || backIsCamouflaged) ? null : enemyBack;
 
     const frontIsFlying = effectiveFront && effectiveFront.abilities.includes('fly');
     const backIsFlying = effectiveBack && effectiveBack.abilities.includes('fly');
@@ -3283,12 +3798,20 @@ function startNewTurn(room) {
         resetPlayerForNewTurn(player);
     }
     
+    // Calculer les effets de Mélodie pour le planning (bloque les créatures en face)
+    processMelodyEffects(room);
+
+    // Re-snapshot confirmedField pour inclure melodyLocked et medusaGazeMarker
+    for (let p = 1; p <= 2; p++) {
+        room.gameState.players[p].confirmedField = deepClone(room.gameState.players[p].field);
+    }
+
     // Envoyer l'état AVANT newTurn pour que le client ait les données à jour
     emitStateToBoth(room);
-    
-    io.to(room.code).emit('newTurn', { 
-        turn: room.gameState.turn, 
-        maxEnergy: room.gameState.players[1].maxEnergy 
+
+    io.to(room.code).emit('newTurn', {
+        turn: room.gameState.turn,
+        maxEnergy: room.gameState.players[1].maxEnergy
     });
     
     startTurnTimer(room);
@@ -3455,6 +3978,9 @@ io.on('connection', (socket) => {
                 if (card.abilities && card.abilities.includes('protection')) {
                     card.hasProtection = true;
                 }
+                if (card.abilities && card.abilities.includes('camouflage')) {
+                    card.hasCamouflage = true;
+                }
             }
             return card;
         });
@@ -3489,7 +4015,11 @@ io.on('connection', (socket) => {
             const graveyardCreatures = (player.graveyard || []).filter(c => c.type === 'creature').length;
             if (graveyardCreatures < card.requiresGraveyardCreatures) return;
         }
-        
+        if (card.sacrifice) {
+            const targets = getAdjacentSacrificeTargets(player.field, row, col);
+            if (targets.length < card.sacrifice) return;
+        }
+
         player.energy -= card.cost;
         const placed = { 
             ...card, 
@@ -3505,7 +4035,9 @@ io.on('connection', (socket) => {
         // Recalculer les ATK dynamiques (ex: Lance gobelin compte les gobelins)
         recalcDynamicAtk(room);
 
-        player.pendingActions.push({ type: 'place', card: deepClone(placed), row, col });
+        const clonedCard = deepClone(placed);
+        console.log('[placeCard] card:', card.name, 'revealedToOpponent:', card.revealedToOpponent, 'cloned:', clonedCard.revealedToOpponent);
+        player.pendingActions.push({ type: 'place', card: clonedCard, row, col });
 
         emitStateToPlayer(room, info.playerNum);
     });
@@ -3523,8 +4055,9 @@ io.on('connection', (socket) => {
         const card = player.field[fromRow][fromCol];
         if (!card || card.movedThisTurn) return;
         if (card.abilities?.includes('immovable')) return;
+        if (card.melodyLocked || card.petrified) return;
         if (player.field[toRow][toCol]) return;
-        
+
         const isFlying = card.abilities?.includes('fly');
         const isVerticalMove = (fromCol === toCol && Math.abs(toRow - fromRow) === 1);
         const isHorizontalMove = (fromRow === toRow && fromCol !== toCol);
@@ -3589,6 +4122,13 @@ io.on('connection', (socket) => {
             // Sort ciblé normal sur une créature
             if (row < 0 || row > 3 || col < 0 || col > 1) return;
 
+            // Validation camouflage : les sorts offensifs ciblés ne peuvent pas cibler une créature camouflée
+            if (spell.offensive && targetPlayer !== info.playerNum) {
+                const targetField = room.gameState.players[targetPlayer].field;
+                const target = targetField[row][col];
+                if (target && target.hasCamouflage) return;
+            }
+
             // Validation pour les sorts qui ciblent un slot vide ennemi (ex: Plan douteux)
             // Utiliser confirmedField (snapshot du début de tour) car le joueur voit le snapshot
             if (spell.targetEmptySlot) {
@@ -3597,13 +4137,36 @@ io.on('connection', (socket) => {
                 const checkField = targetPlayerState.confirmedField || targetPlayerState.field;
                 if (checkField[row][col]) return; // Le slot doit être vide dans le snapshot
             }
+
+            // Validation buff allié : slot allié avec créature
+            if (spell.targetSelfCreature) {
+                if (targetPlayer !== info.playerNum) return;
+                if (!player.field[row][col]) return;
+            }
+
+            // Validation Réanimation : slot vide allié + créature au cimetière
+            if (spell.targetSelfEmptySlot) {
+                if (targetPlayer !== info.playerNum) return;
+                if (player.field[row][col]) return;
+                const { graveyardCreatureUid, graveyardIndex } = data;
+                if (graveyardCreatureUid === undefined && graveyardIndex === undefined) return;
+                let found = false;
+                if (graveyardIndex !== undefined && graveyardIndex >= 0 && graveyardIndex < player.graveyard.length) {
+                    const c = player.graveyard[graveyardIndex];
+                    if (c && c.type === 'creature') found = true;
+                }
+                if (!found && graveyardCreatureUid) {
+                    found = player.graveyard.some(c => c.type === 'creature' && (c.uid === graveyardCreatureUid || c.id === graveyardCreatureUid));
+                }
+                if (!found) return;
+            }
         }
 
         player.energy -= effectiveCost;
         player.spellsCastThisTurn++;
         player.hand.splice(handIndex, 1);
         player.inDeployPhase = true;
-        
+
         player.pendingActions.push({
             type: 'spell',
             spell: deepClone(spell),
@@ -3612,6 +4175,8 @@ io.on('connection', (socket) => {
             col,
             heroName: player.heroName,
             playerNum: info.playerNum,
+            graveyardCreatureUid: data.graveyardCreatureUid || null,
+            graveyardIndex: data.graveyardIndex !== undefined ? data.graveyardIndex : null,
             timestamp: Date.now()
         });
         

@@ -1,6 +1,27 @@
 // ==================== SYSTÈME D'ANIMATIONS DU JEU ====================
 // File d'attente, handlers combat/mort/sort/piège, effets visuels
 
+// Cache des positions des cartes revealed dans la main adverse (sauvegardé avant re-render de révélation)
+const savedRevealedCardRects = new Map();
+
+function saveRevealedCardPositions() {
+    savedRevealedCardRects.clear();
+    const handPanel = document.getElementById('opp-hand');
+    if (!handPanel) return;
+    const allCards = handPanel.querySelectorAll('.opp-card-back');
+    const revealedCards = handPanel.querySelectorAll('.opp-revealed[data-uid]');
+    console.log('[saveRevealedCardPositions] CALLED. Total cards:', allCards.length, 'Revealed:', revealedCards.length);
+    revealedCards.forEach(el => {
+        const uid = el.dataset.uid;
+        const rect = el.getBoundingClientRect();
+        savedRevealedCardRects.set(uid, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+        console.log('[saveRevealedCardPositions] saved uid:', uid, 'left:', rect.left, 'top:', rect.top);
+    });
+    if (revealedCards.length === 0) {
+        console.log('[saveRevealedCardPositions] NO revealed cards! Hand HTML:', handPanel.innerHTML.substring(0, 500));
+    }
+}
+
 // Initialiser le système d'animation
 async function initCombatAnimations() {
     await CombatAnimations.init();
@@ -16,17 +37,18 @@ function queueAnimation(type, data) {
         data._displayHpBefore = currentDisplayedHp;
     }
 
-    // Pour burn, death, spell, trapTrigger, bloquer le render du cimetière IMMÉDIATEMENT
-    if (type === 'burn' || type === 'death' || type === 'spell' || type === 'trapTrigger') {
+    // Pour burn, death, sacrifice, spell, trapTrigger, bloquer le render du cimetière IMMÉDIATEMENT
+    if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger') {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
     }
 
-    // Pour death, bloquer aussi le slot du terrain pour que render() ne retire pas
-    // la carte avant que l'animation de mort ne la prenne en charge
-    if (type === 'death' && data.row !== undefined && data.col !== undefined) {
+    // Pour death/sacrifice, bloquer aussi le slot du terrain pour que render() ne retire pas
+    // la carte avant que l'animation ne la prenne en charge
+    if ((type === 'death' || type === 'sacrifice') && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
+        console.log(`[DEATH ANIM] Blocking slot ${slotKey} for ${type} animation of ${data.card?.name}`);
         animatingSlots.add(slotKey);
     }
 
@@ -98,7 +120,7 @@ function queueAnimation(type, data) {
     if (!isAnimating) {
         // Pour les types batchables (burn, death), différer le démarrage
         // pour laisser les events du même batch serveur arriver
-        if (type === 'burn' || type === 'death' || type === 'deathTransform') {
+        if (type === 'burn' || type === 'death' || type === 'deathTransform' || type === 'sacrifice') {
             if (!queueAnimation._batchTimeout) {
                 queueAnimation._batchTimeout = setTimeout(() => {
                     queueAnimation._batchTimeout = null;
@@ -170,14 +192,15 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // Regrouper les animations de burn consécutives (jouées en parallèle)
+        // Jouer les animations de burn consécutives une par une (séquentiellement)
         if (animationQueue[0].type === 'burn') {
             const burnBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'burn') {
                 burnBatch.push(animationQueue.shift().data);
             }
-            const burnPromises = burnBatch.map(data => animateBurn(data));
-            await Promise.all(burnPromises);
+            for (const data of burnBatch) {
+                await animateBurn(data);
+            }
             processAnimationQueue(processorId);
             return;
         }
@@ -323,6 +346,9 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'death':
             await animateDeathToGraveyard(data);
+            break;
+        case 'sacrifice':
+            await animateSacrifice(data);
             break;
         case 'deathTransform':
             await animateDeathTransform(data);
@@ -799,13 +825,12 @@ async function animateDeathTransform(data) {
     `;
     if (frontBg) frontFace.style.backgroundImage = frontBg;
 
-    // Face arrière (Pile d'Os) — pré-retournée de 180°
+    // Face arrière — pré-retournée de 180°
     const backFace = makeCard(data.toCard, false);
     const backBg = backFace.style.backgroundImage;
     backFace.style.cssText = `
         position: absolute; top: -2px; left: -2px; width: 105px; height: 140px; margin: 0;
         backface-visibility: hidden;
-        border-color: rgba(255,255,255,0.4) !important;
         transform: rotateY(180deg);
     `;
     if (backBg) backFace.style.backgroundImage = backBg;
@@ -1064,16 +1089,23 @@ async function animateBurn(data) {
         graveSnapshot = graveTopEl.innerHTML;
     }
 
-    // Position et taille visuelle du cimetière (inclut perspective + rotateX du game-board)
+    // Position et taille visuelle du cimetière — utiliser grave-top pour les dimensions EXACTES
     let graveX = startX;
     let graveY = startY + 200;
-    let graveScale = 1.0;
-    if (graveEl) {
+    let graveScaleX = 1.0, graveScaleY = 1.0;
+    const graveTopEl2 = graveTopEl || document.getElementById(`${ownerKey}-grave-top`);
+    if (graveTopEl2) {
+        const tRect = graveTopEl2.getBoundingClientRect();
+        graveX = tRect.left + tRect.width / 2 - cardWidth / 2;
+        graveY = tRect.top + tRect.height / 2 - cardHeight / 2;
+        graveScaleX = tRect.width / cardWidth;
+        graveScaleY = tRect.height / cardHeight;
+    } else if (graveEl) {
         const gRect = graveEl.getBoundingClientRect();
         graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
         graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
-        // Scale pour matcher la taille visuelle du cimetière (réduite par la perspective)
-        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+        graveScaleX = gRect.width / cardWidth;
+        graveScaleY = gRect.height / cardHeight;
     }
 
     // Position de reveal : à côté du deck (pas au centre)
@@ -1111,10 +1143,11 @@ async function animateBurn(data) {
         border-radius: 6px;
     `;
 
-    // Face avant
+    // Face avant (template board = false, comme les cartes sur le terrain)
     const frontFace = (typeof makeCard === 'function')
-        ? makeCard(card, true)
+        ? makeCard(card, false)
         : createCardElementForAnimation(card);
+    frontFace.classList.remove('just-played', 'can-attack');
     const bgImage = frontFace.style.backgroundImage;
     frontFace.style.position = 'absolute';
     frontFace.style.top = '0';
@@ -1157,11 +1190,39 @@ async function animateBurn(data) {
         document.body.appendChild(wrapper);
     }
 
-    // Durées
-    const liftDuration = 200;
-    const flipDuration = 350;
-    const holdDuration = 600;
-    const flyDuration = 400;
+    // Calibrer graveScaleX/Y : 3 passes itératives, correction indépendante W et H
+    if (graveTopEl2) {
+        const savedLeft = wrapper.style.left;
+        const savedTop = wrapper.style.top;
+        const savedTransform = wrapper.style.transform;
+        const target = graveTopEl2.getBoundingClientRect();
+        for (let pass = 0; pass < 3; pass++) {
+            wrapper.style.left = graveX + 'px';
+            wrapper.style.top = graveY + 'px';
+            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
+            const m = wrapper.getBoundingClientRect();
+            if (m.width > 0 && m.height > 0) {
+                graveScaleX *= target.width / m.width;
+                graveScaleY *= target.height / m.height;
+                graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
+                graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
+            }
+
+        }
+        wrapper.style.left = savedLeft;
+        wrapper.style.top = savedTop;
+        wrapper.style.transform = savedTransform;
+    }
+
+    // Auto-fit du nom (les noms longs débordent pendant l'animation)
+    const burnNameFit = frontFace.querySelector('.arena-name');
+    if (burnNameFit) fitArenaName(burnNameFit);
+
+    // Durées (réduites pour enchaîner rapidement quand plusieurs burns)
+    const liftDuration = 120;
+    const flipDuration = 250;
+    const holdDuration = 250;
+    const flyDuration = 300;
     const totalDuration = liftDuration + flipDuration + holdDuration + flyDuration;
 
     await new Promise(resolve => {
@@ -1182,7 +1243,7 @@ async function animateBurn(data) {
             const t2 = (liftDuration + flipDuration) / totalDuration;
             const t3 = (liftDuration + flipDuration + holdDuration) / totalDuration;
 
-            let x, y, scale, opacity, flipDeg, redTint, tiltDeg;
+            let x, y, scaleX, scaleY, opacity, flipDeg, redTint, tiltDeg;
 
             if (progress <= t1) {
                 // === PHASE 1: LIFT ===
@@ -1190,7 +1251,7 @@ async function animateBurn(data) {
                 const ep = easeOutCubic(p);
                 x = startX;
                 y = startY - ep * 30;
-                scale = 1 + ep * 0.05;
+                scaleX = scaleY = 1 + ep * 0.05;
                 opacity = 0.3 + ep * 0.7;
                 flipDeg = 0;
                 redTint = 0;
@@ -1202,7 +1263,7 @@ async function animateBurn(data) {
                 const ep = easeInOutCubic(p);
                 x = startX + (revealX - startX) * ep;
                 y = (startY - 30) + (revealY - (startY - 30)) * ep;
-                scale = 1.05 + (1.2 - 1.05) * ep;
+                scaleX = scaleY = 1.05 + (1.2 - 1.05) * ep;
                 opacity = 1;
                 flipDeg = easeInOutCubic(p) * 180;
                 redTint = 0;
@@ -1213,7 +1274,7 @@ async function animateBurn(data) {
                 const p = (progress - t2) / (t3 - t2);
                 x = revealX;
                 y = revealY;
-                scale = 1.2;
+                scaleX = scaleY = 1.2;
                 opacity = 1;
                 flipDeg = 180;
                 redTint = easeOutCubic(p) * 0.6;
@@ -1225,18 +1286,18 @@ async function animateBurn(data) {
                 const ep = easeInOutCubic(p);
                 x = revealX + (graveX - revealX) * ep;
                 y = revealY + (graveY - revealY) * ep;
-                scale = 1.2 + (graveScale - 1.2) * ep;
-                opacity = 1 - 0.3 * ep;
+                scaleX = 1.2 + (graveScaleX - 1.2) * ep;
+                scaleY = 1.2 + (graveScaleY - 1.2) * ep;
+                opacity = 1;
                 flipDeg = 180;
                 redTint = 0.6;
-                // Inclinaison progressive pour matcher le game-board
                 tiltDeg = ep * graveTiltDeg;
             }
 
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
-            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
+            wrapper.style.transform = `scale(${scaleX}, ${scaleY}) rotateX(${tiltDeg}deg)`;
             flipper.style.transform = `rotateY(${flipDeg}deg)`;
 
             // Teinte rouge via overlay
@@ -1251,13 +1312,30 @@ async function animateBurn(data) {
             } else {
                 clearTimeout(safetyTimeout);
 
+                // Cacher le wrapper AVANT de placer la carte (même frame synchrone = pas de pop)
+                wrapper.style.visibility = 'hidden';
+
                 // Débloquer et mettre à jour le cimetière
+                // Afficher la carte de CE burn comme top card (pas la dernière du state,
+                // car le state peut déjà contenir les burns suivants)
                 graveRenderBlocked.delete(ownerKey);
+                const topContainer = document.getElementById(`${ownerKey}-grave-top`);
+                if (topContainer) {
+                    const burnCardId = card.uid || card.id;
+                    topContainer.dataset.topCardUid = burnCardId;
+                    topContainer.classList.remove('empty');
+                    topContainer.innerHTML = '';
+                    const burnCardEl = makeCard(card, false);
+                    burnCardEl.classList.remove('just-played', 'can-attack');
+                    burnCardEl.classList.add('grave-card', 'in-graveyard');
+                    topContainer.appendChild(burnCardEl);
+                    const burnNameEl = burnCardEl.querySelector('.arena-name');
+                    if (burnNameEl) fitArenaName(burnNameEl);
+                }
                 if (state) {
                     const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
                     if (graveyard) {
                         updateGraveDisplay(ownerKey, graveyard);
-                        updateGraveTopCard(ownerKey, graveyard);
                     }
                 }
 
@@ -1305,16 +1383,24 @@ async function animateDeathToGraveyard(data) {
     const startX = slotRect.left + slotRect.width / 2 - cardWidth / 2;
     const startY = slotRect.top + slotRect.height / 2 - cardHeight / 2;
 
-    // 3. Position cible : cimetière du propriétaire
+    // 3. Position cible : cimetière du propriétaire — utiliser grave-top pour dimensions EXACTES
     const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
+    const deathGraveTop = document.getElementById(`${ownerKey}-grave-top`);
     let graveX = startX;
     let graveY = startY + 200;
-    let graveScale = 1.0;
-    if (graveEl) {
+    let graveScaleX = 1.0, graveScaleY = 1.0;
+    if (deathGraveTop) {
+        const tRect = deathGraveTop.getBoundingClientRect();
+        graveX = tRect.left + tRect.width / 2 - cardWidth / 2;
+        graveY = tRect.top + tRect.height / 2 - cardHeight / 2;
+        graveScaleX = tRect.width / cardWidth;
+        graveScaleY = tRect.height / cardHeight;
+    } else if (graveEl) {
         const gRect = graveEl.getBoundingClientRect();
         graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
         graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
-        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+        graveScaleX = gRect.width / cardWidth;
+        graveScaleY = gRect.height / cardHeight;
     }
 
     // 4. Créer le wrapper avec la carte
@@ -1356,6 +1442,8 @@ async function animateDeathToGraveyard(data) {
     slot.classList.remove('has-flying');
 
     // Débloquer le slot — la carte est maintenant dans le wrapper volant, render() peut toucher le slot
+    console.log(`[DEATH ANIM] Unblocking slot ${deathSlotKey} — card removed from DOM, wrapper flying. state field value:`,
+        (deathSlotKey.startsWith('me') ? state?.me?.field : state?.opponent?.field)?.[data.row]?.[data.col]?.name || 'null');
     animatingSlots.delete(deathSlotKey);
 
     // 6. Perspective container (même technique que animateBurn)
@@ -1385,6 +1473,34 @@ async function animateDeathToGraveyard(data) {
         document.body.appendChild(wrapper);
     }
 
+    // Calibrer graveScaleX/Y : 3 passes itératives, correction indépendante W et H
+    if (deathGraveTop) {
+        const savedLeft = wrapper.style.left;
+        const savedTop = wrapper.style.top;
+        const savedTransform = wrapper.style.transform;
+        const target = deathGraveTop.getBoundingClientRect();
+        for (let pass = 0; pass < 3; pass++) {
+            wrapper.style.left = graveX + 'px';
+            wrapper.style.top = graveY + 'px';
+            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
+            const m = wrapper.getBoundingClientRect();
+            if (m.width > 0 && m.height > 0) {
+                graveScaleX *= target.width / m.width;
+                graveScaleY *= target.height / m.height;
+                graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
+                graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
+            }
+
+        }
+        wrapper.style.left = savedLeft;
+        wrapper.style.top = savedTop;
+        wrapper.style.transform = savedTransform;
+    }
+
+    // Auto-fit du nom (les noms longs débordent pendant l'animation)
+    const deathNameFit = cardFace.querySelector('.arena-name');
+    if (deathNameFit) fitArenaName(deathNameFit);
+
     // 7. Animation
     const deathMarkDuration = 400;
     const flyDuration = 500;
@@ -1406,7 +1522,7 @@ async function animateDeathToGraveyard(data) {
 
             const t1 = deathMarkDuration / totalDuration;
 
-            let x, y, scale, opacity, greyAmount, tiltDeg;
+            let x, y, scaleX, scaleY, opacity, greyAmount, tiltDeg;
 
             if (progress <= t1) {
                 // === PHASE 1: DEATH MARK ===
@@ -1414,7 +1530,7 @@ async function animateDeathToGraveyard(data) {
                 const ep = easeOutCubic(p);
                 x = startX;
                 y = startY;
-                scale = 1.0 - ep * 0.05;
+                scaleX = scaleY = 1.0 - ep * 0.05;
                 opacity = 1.0;
                 greyAmount = ep;
                 tiltDeg = graveTiltDeg;
@@ -1424,8 +1540,9 @@ async function animateDeathToGraveyard(data) {
                 const ep = easeInOutCubic(p);
                 x = startX + (graveX - startX) * ep;
                 y = startY + (graveY - startY) * ep;
-                scale = 0.95 + (graveScale - 0.95) * ep;
-                opacity = 1.0 - 0.3 * ep;
+                scaleX = 0.95 + (graveScaleX - 0.95) * ep;
+                scaleY = 0.95 + (graveScaleY - 0.95) * ep;
+                opacity = 1;
                 greyAmount = 1.0;
                 tiltDeg = graveTiltDeg;
             }
@@ -1433,7 +1550,7 @@ async function animateDeathToGraveyard(data) {
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
-            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
+            wrapper.style.transform = `scale(${scaleX}, ${scaleY}) rotateX(${tiltDeg}deg)`;
 
             // Effet visuel de mort : greyscale + darkening
             if (greyAmount > 0) {
@@ -1447,6 +1564,9 @@ async function animateDeathToGraveyard(data) {
             } else {
                 clearTimeout(safetyTimeout);
 
+                // Cacher le wrapper AVANT de placer la carte (même frame synchrone = pas de pop)
+                wrapper.style.visibility = 'hidden';
+
                 // Placer la carte directement dans le cimetière via data.card
                 // Le state n'est pas encore à jour (graveyard.length=0), donc on
                 // utilise la carte de l'animation pour pré-remplir le cimetière
@@ -1459,8 +1579,14 @@ async function animateDeathToGraveyard(data) {
                         container.classList.remove('empty');
                         container.innerHTML = '';
                         const cardEl = makeCard(data.card, false);
+                        cardEl.classList.remove('just-played', 'can-attack', 'melody-locked', 'petrified');
+                        // Nettoyer les effets Medusa (la carte au cimetière est reset)
+                        const gazeMarkerEl = cardEl.querySelector('.gaze-marker');
+                        if (gazeMarkerEl) gazeMarkerEl.remove();
                         cardEl.classList.add('grave-card', 'in-graveyard');
                         container.appendChild(cardEl);
+                        const nameEl = cardEl.querySelector('.arena-name');
+                        if (nameEl) fitArenaName(nameEl);
                     }
                     // Aussi mettre à jour le stack
                     const graveyard = owner === 'me' ? state?.me?.graveyard : state?.opponent?.graveyard;
@@ -1478,6 +1604,33 @@ async function animateDeathToGraveyard(data) {
 
         requestAnimationFrame(animate);
     });
+}
+
+/**
+ * Animation de sacrifice : blood slash VFX + fly to graveyard
+ */
+async function animateSacrifice(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+
+    // Trouver le slot pour lancer le VFX dessus
+    const slot = document.querySelector(
+        `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
+    );
+
+    if (slot) {
+        const rect = slot.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        // Lancer le VFX blood slash
+        CombatVFX.createSacrificeSlashEffect(cx, cy, rect.width, rect.height);
+    }
+
+    // Attendre que le VFX blood slash soit bien visible avant de lancer le fly-to-graveyard
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Enchaîner avec l'animation fly-to-graveyard standard
+    await animateDeathToGraveyard(data);
 }
 
 /**
@@ -1560,17 +1713,21 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const cardWidth = 105;
     const cardHeight = 140;
 
+    // Bloquer le render du cimetière pendant l'animation (comme burn)
+    graveRenderBlocked.add(side);
+
     // 1. Créer l'élément carte (version on-field : juste le nom, comme au cimetière)
     const cardEl = (typeof makeCard === 'function')
         ? makeCard(card, false)
         : createCardElementForAnimation(card);
+    cardEl.classList.remove('just-played', 'can-attack');
     const bgImage = cardEl.style.backgroundImage;
-    cardEl.style.width = cardWidth + 'px';
-    cardEl.style.height = cardHeight + 'px';
-    cardEl.style.margin = '0';
     cardEl.style.position = 'absolute';
     cardEl.style.top = '0';
     cardEl.style.left = '0';
+    cardEl.style.width = '100%';
+    cardEl.style.height = '100%';
+    cardEl.style.margin = '0';
     if (bgImage) cardEl.style.backgroundImage = bgImage;
 
     // 2. Calculer la position showcase (gauche ou droite du game-board)
@@ -1583,16 +1740,24 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         : gbRect.left + gbRect.width * 0.80 - (cardWidth * showcaseScale) / 2;
     const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardHeight * showcaseScale) / 2;
 
-    // 3. Calculer la position du cimetière du caster
+    // 3. Calculer la position du cimetière du caster — utiliser grave-top pour dimensions EXACTES
     const graveEl = document.getElementById(side + '-grave-box');
+    const spellGraveTop = document.getElementById(side + '-grave-top');
     let graveX = showcaseX;
     let graveY = showcaseY + 200;
-    let graveScale = 1.0;
-    if (graveEl) {
+    let graveScaleX = 1.0, graveScaleY = 1.0;
+    if (spellGraveTop) {
+        const tRect = spellGraveTop.getBoundingClientRect();
+        graveX = tRect.left + tRect.width / 2 - cardWidth / 2;
+        graveY = tRect.top + tRect.height / 2 - cardHeight / 2;
+        graveScaleX = tRect.width / cardWidth;
+        graveScaleY = tRect.height / cardHeight;
+    } else if (graveEl) {
         const gRect = graveEl.getBoundingClientRect();
         graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
         graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
-        graveScale = Math.min(gRect.width / cardWidth, gRect.height / cardHeight);
+        graveScaleX = gRect.width / cardWidth;
+        graveScaleY = gRect.height / cardHeight;
     }
 
     // 4. Position de départ : depuis la main (startRect) ou materialisation classique
@@ -1609,6 +1774,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         width: ${cardWidth}px; height: ${cardHeight}px;
         transform-origin: center center;
         transform: scale(${initScale}); opacity: ${initOpacity};
+        perspective: 800px;
     `;
     wrapper.appendChild(cardEl);
 
@@ -1639,18 +1805,48 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         document.body.appendChild(wrapper);
     }
 
-    // 6. Durées des phases
+    // Calibrer graveScaleX/Y : 3 passes itératives, correction indépendante W et H
+    if (spellGraveTop) {
+        const savedLeft = wrapper.style.left;
+        const savedTop = wrapper.style.top;
+        const savedTransform = wrapper.style.transform;
+        const savedOpacity = wrapper.style.opacity;
+        wrapper.style.opacity = '0';
+        const target = spellGraveTop.getBoundingClientRect();
+        for (let pass = 0; pass < 3; pass++) {
+            wrapper.style.left = graveX + 'px';
+            wrapper.style.top = graveY + 'px';
+            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
+            const m = wrapper.getBoundingClientRect();
+            if (m.width > 0 && m.height > 0) {
+                graveScaleX *= target.width / m.width;
+                graveScaleY *= target.height / m.height;
+                graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
+                graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
+            }
+        }
+        wrapper.style.left = savedLeft;
+        wrapper.style.top = savedTop;
+        wrapper.style.transform = savedTransform;
+        wrapper.style.opacity = savedOpacity;
+    }
+
+    // Auto-fit du nom (les noms longs débordent pendant l'animation)
+    const spellNameFit = cardEl.querySelector('.arena-name');
+    if (spellNameFit) fitArenaName(spellNameFit);
+
+    // 6. Durées des phases (pas de phase impact — le fly est la dernière, comme burn)
     const materializeDuration = 300;
     const holdDuration = 1000;
     const shrinkDuration = 300;
     const flyDuration = 400;
-    const impactDuration = 100;
-    const totalDuration = materializeDuration + holdDuration + shrinkDuration + flyDuration + impactDuration;
+    const totalDuration = materializeDuration + holdDuration + shrinkDuration + flyDuration;
 
     await new Promise(resolve => {
         const startTime = performance.now();
 
         const safetyTimeout = setTimeout(() => {
+            graveRenderBlocked.delete(side);
             wrapper.remove();
             if (perspContainer) perspContainer.remove();
             resolve();
@@ -1663,9 +1859,8 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
             const t1 = materializeDuration / totalDuration;
             const t2 = (materializeDuration + holdDuration) / totalDuration;
             const t3 = (materializeDuration + holdDuration + shrinkDuration) / totalDuration;
-            const t4 = (materializeDuration + holdDuration + shrinkDuration + flyDuration) / totalDuration;
 
-            let x, y, scale, opacity, tiltDeg, glowIntensity;
+            let x, y, scaleX, scaleY, opacity, tiltDeg;
 
             if (progress <= t1) {
                 // === PHASE 1: MATERIALIZE (ou fly-from-hand si startRect) ===
@@ -1673,21 +1868,18 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 const ep = hasStartRect ? easeInOutCubic(p) : easeOutBack(p);
                 x = initX + (showcaseX - initX) * ep;
                 y = initY + (showcaseY - initY) * ep;
-                scale = initScale + (showcaseScale - initScale) * ep;
+                scaleX = scaleY = initScale + (showcaseScale - initScale) * ep;
                 opacity = initOpacity + (1 - initOpacity) * easeOutCubic(p);
                 tiltDeg = 0;
-                glowIntensity = easeOutCubic(p);
 
             } else if (progress <= t2) {
                 // === PHASE 2: HOLD / SHOWCASE ===
                 const p = (progress - t1) / (t2 - t1);
                 x = showcaseX;
                 y = showcaseY;
-                scale = showcaseScale;
+                scaleX = scaleY = showcaseScale;
                 opacity = 1;
                 tiltDeg = 0;
-                // Léger pulse du glow
-                glowIntensity = 0.8 + 0.2 * Math.sin(p * Math.PI * 2);
 
             } else if (progress <= t3) {
                 // === PHASE 3: SHRINK ===
@@ -1695,63 +1887,39 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 const ep = easeInOutCubic(p);
                 x = showcaseX;
                 y = showcaseY;
-                scale = showcaseScale + (1.0 - showcaseScale) * ep;
+                scaleX = scaleY = showcaseScale + (1.0 - showcaseScale) * ep;
                 opacity = 1;
                 tiltDeg = 0;
-                glowIntensity = 1.0 - ep;
 
-            } else if (progress <= t4) {
-                // === PHASE 4: FLY TO GRAVEYARD ===
-                const p = (progress - t3) / (t4 - t3);
+            } else {
+                // === PHASE 4: FLY TO GRAVEYARD (dernière phase, comme burn) ===
+                const p = (progress - t3) / (1 - t3);
                 const ep = easeInOutCubic(p);
                 x = showcaseX + (graveX - showcaseX) * ep;
                 y = showcaseY + (graveY - showcaseY) * ep;
-                scale = 1.0 + (graveScale - 1.0) * ep;
-                opacity = 1 - 0.3 * ep;
+                scaleX = 1.0 + (graveScaleX - 1.0) * ep;
+                scaleY = 1.0 + (graveScaleY - 1.0) * ep;
+                opacity = 1;
                 tiltDeg = ep * graveTiltDeg;
-                glowIntensity = 0;
-
-            } else {
-                // === PHASE 5: IMPACT — pas de fade, transition nette ===
-                x = graveX;
-                y = graveY;
-                scale = graveScale;
-                opacity = 0.7;
-                tiltDeg = graveTiltDeg;
-                glowIntensity = 0;
             }
 
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
-            wrapper.style.transform = `scale(${scale}) rotateX(${tiltDeg}deg)`;
-
-            // Glow doré
-            if (glowIntensity > 0) {
-                const glowSize1 = 30 * glowIntensity;
-                const glowSize2 = 60 * glowIntensity;
-                const glowAlpha1 = 0.8 * glowIntensity;
-                const glowAlpha2 = 0.4 * glowIntensity;
-                wrapper.style.boxShadow = `0 0 ${glowSize1}px rgba(255, 215, 0, ${glowAlpha1}), 0 0 ${glowSize2}px rgba(255, 215, 0, ${glowAlpha2})`;
-                wrapper.style.borderRadius = '8px';
-            } else {
-                wrapper.style.boxShadow = 'none';
-            }
+            wrapper.style.transform = `scale(${scaleX}, ${scaleY}) rotateX(${tiltDeg}deg)`;
 
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 clearTimeout(safetyTimeout);
 
-                // Cacher le wrapper
-                wrapper.style.display = 'none';
+                // Cacher le wrapper AVANT de placer la carte (même frame synchrone = pas de pop)
+                wrapper.style.visibility = 'hidden';
 
                 // Vérifier si ce sort doit retourner en main (returnOnMiss)
                 const spellId = card.uid || card.id;
                 if (pendingSpellReturns.has(spellId)) {
                     pendingSpellReturns.delete(spellId);
-                    // Ne PAS placer la carte dans le cimetière — elle retourne en main
-                    // Débloquer le render du cimetière et mettre à jour depuis le state
                     graveRenderBlocked.delete(side);
                     if (state) {
                         const graveyard = side === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
@@ -1761,20 +1929,35 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         }
                     }
                 } else {
-                    // Placer la carte manuellement dans le cimetière
-                    // Le state n'a pas encore le sort — on garde graveRenderBlocked
-                    // pour empêcher les state updates (graveyard vide) de l'effacer
+                    // Placer la carte visuellement dans le cimetière
                     const graveTopContainer = document.getElementById(side + '-grave-top');
-                    if (graveTopContainer && typeof makeCard === 'function') {
+                    if (graveTopContainer) {
+                        const spellCardId = card.uid || card.id;
+                        graveTopContainer.dataset.topCardUid = spellCardId;
                         graveTopContainer.classList.remove('empty');
                         graveTopContainer.innerHTML = '';
                         const graveCardEl = makeCard(card, false);
+                        graveCardEl.classList.remove('just-played', 'can-attack');
                         graveCardEl.classList.add('grave-card', 'in-graveyard');
                         graveTopContainer.appendChild(graveCardEl);
-                        graveTopContainer.dataset.topCardUid = card.uid || card.id;
+                        const spellNameEl = graveCardEl.querySelector('.arena-name');
+                        if (spellNameEl) fitArenaName(spellNameEl);
                     }
-                    // graveRenderBlocked reste actif (posé par queueAnimation)
-                    // updateGraveTopCard le retirera quand le state aura rattrapé
+                    // GARDER graveRenderBlocked actif !
+                    // Le state du serveur n'a pas encore le sort dans le cimetière.
+                    // Si on débloque maintenant, render() voit un cimetière vide et efface notre carte.
+                    // On débloque après un délai pour laisser le state se mettre à jour.
+                    const capturedSide = side;
+                    setTimeout(() => {
+                        graveRenderBlocked.delete(capturedSide);
+                        if (state) {
+                            const graveyard = capturedSide === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+                            if (graveyard) {
+                                updateGraveDisplay(capturedSide, graveyard);
+                                updateGraveTopCard(capturedSide, graveyard);
+                            }
+                        }
+                    }, 2000);
                 }
 
                 wrapper.remove();
@@ -1906,25 +2089,39 @@ function animateTrapPlace(data) {
 
 async function animateTrap(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
+    const trapKey = `${owner}-${data.row}`;
     const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
+
+    console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] START trapKey=${trapKey}, slot classes=[${trapSlot?.className}], innerHTML=${trapSlot?.innerHTML?.substring(0,50)}`);
+
+    // Protéger le slot (déjà fait dans handleAnimation, mais au cas où)
+    animatingTrapSlots.add(trapKey);
 
     // 1. Afficher la carte du piège avec animation de révélation
     if (data.trap) {
+        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] Avant animateSpellReveal`);
         await animateSpellReveal(data.trap, data.player);
+        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] Après animateSpellReveal, slot classes=[${trapSlot?.className}], innerHTML=${trapSlot?.innerHTML?.substring(0,50)}`);
     }
 
     // 2. Explosion du slot du piège
     if (trapSlot) {
         trapSlot.classList.add('triggered');
+        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] triggered ajouté, classes=[${trapSlot.className}]`);
         const rect = trapSlot.getBoundingClientRect();
         CombatVFX.createSpellImpactEffect(
             rect.left + rect.width / 2,
             rect.top + rect.height / 2
         );
         setTimeout(() => {
-            trapSlot.classList.remove('triggered');
+            console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] triggered RETIRÉ (600ms timeout), classes avant=[${trapSlot.className}]`);
+            trapSlot.classList.remove('triggered', 'has-trap', 'mine');
+            trapSlot.innerHTML = '';
+            console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] slot vidé proprement après animation, classes=[${trapSlot.className}]`);
         }, 600);
     }
+
+    console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] END trapKey=${trapKey}, animatingTrapSlots=[${[...animatingTrapSlots]}]`);
 }
 
 // === Système de bounce (Voyage inattendu) ===
@@ -2010,6 +2207,10 @@ async function animateBounceToHand(data) {
     wrapper.appendChild(cardFace);
     document.body.appendChild(wrapper);
 
+    // Auto-fit du nom (les noms longs débordent pendant l'animation)
+    const bounceNameFit = cardFace.querySelector('.arena-name');
+    if (bounceNameFit) fitArenaName(bounceNameFit);
+
     // === PHASE 1 : LIFT (200ms) — carte se soulève du slot ===
     const liftHeight = 40;
     const liftScale = 1.08;
@@ -2029,7 +2230,6 @@ async function animateBounceToHand(data) {
         requestAnimationFrame(animate);
     });
 
-    // === PHASE 2 : WAIT — flottement magique en attendant la cible exacte ===
     // Convertir de scale vers coordonnées visuelles réelles (pas de changement visuel)
     const liftEndCssY = startY - liftHeight;
     const floatX = startX + cardWidth * (1 - liftScale) / 2;
@@ -2042,6 +2242,142 @@ async function animateBounceToHand(data) {
     wrapper.style.width = floatW + 'px';
     wrapper.style.height = floatH + 'px';
     wrapper.style.transform = 'none';
+
+    // === Main pleine → voler vers le cimetière avec teinte rouge ===
+    if (data.toGraveyard) {
+        const ownerKey = owner;
+        const graveTopEl = document.getElementById(`${ownerKey}-grave-top`);
+        const graveBox = document.getElementById(`${ownerKey}-grave-box`);
+        const graveEl = graveTopEl || graveBox;
+
+        // Bloquer le render du cimetière pendant l'animation
+        graveRenderBlocked.add(ownerKey);
+
+        // Perspective container pour matcher l'inclinaison du board (même technique que animateBurn)
+        const gameBoardWrapper = document.querySelector('.game-board-wrapper');
+        let perspContainer = null;
+        let graveTiltDeg = 0;
+        if (gameBoardWrapper) {
+            const gameBoard = document.querySelector('.game-board');
+            if (gameBoard) {
+                const computedTransform = getComputedStyle(gameBoard).transform;
+                if (computedTransform && computedTransform !== 'none') {
+                    const mat = new DOMMatrix(computedTransform);
+                    graveTiltDeg = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
+                }
+            }
+            const gbwRect = gameBoardWrapper.getBoundingClientRect();
+            perspContainer = document.createElement('div');
+            perspContainer.style.cssText = `
+                position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+                z-index: 10000; pointer-events: none;
+                perspective: 1500px;
+                perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height / 2}px;
+            `;
+            // Transférer le wrapper dans le perspContainer
+            wrapper.remove();
+            perspContainer.appendChild(wrapper);
+            document.body.appendChild(perspContainer);
+        }
+
+        let graveX = floatX, graveY = floatY + 200;
+        let graveScaleX = 1, graveScaleY = 1;
+        if (graveEl) {
+            const gRect = graveEl.getBoundingClientRect();
+            graveX = gRect.left + gRect.width / 2 - floatW / 2;
+            graveY = gRect.top + gRect.height / 2 - floatH / 2;
+            graveScaleX = gRect.width / floatW;
+            graveScaleY = gRect.height / floatH;
+        }
+
+        // Calibration itérative (3 passes) pour position/scale exactes avec perspective
+        if (graveEl) {
+            const savedLeft = wrapper.style.left;
+            const savedTop = wrapper.style.top;
+            const savedTransform = wrapper.style.transform;
+            const target = graveEl.getBoundingClientRect();
+            for (let pass = 0; pass < 3; pass++) {
+                wrapper.style.left = graveX + 'px';
+                wrapper.style.top = graveY + 'px';
+                wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
+                const m = wrapper.getBoundingClientRect();
+                if (m.width > 0 && m.height > 0) {
+                    graveScaleX *= target.width / m.width;
+                    graveScaleY *= target.height / m.height;
+                    graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
+                    graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
+                }
+            }
+            wrapper.style.left = savedLeft;
+            wrapper.style.top = savedTop;
+            wrapper.style.transform = savedTransform;
+        }
+
+        // Glow rouge pour indiquer "main pleine → cimetière"
+        cardFace.style.boxShadow = '0 0 25px rgba(255, 80, 80, 0.8), 0 4px 12px rgba(0,0,0,0.4)';
+
+        const ctrlX = (floatX + graveX) / 2;
+        const ctrlY = Math.min(floatY, graveY) - 100;
+        const flyDuration = 500;
+
+        await new Promise(resolve => {
+            const t0 = performance.now();
+            function animate() {
+                const p = Math.min((performance.now() - t0) / flyDuration, 1);
+                const t = easeInOutCubic(p);
+
+                const x = (1-t)*(1-t)*floatX + 2*(1-t)*t*ctrlX + t*t*graveX;
+                const y = (1-t)*(1-t)*floatY + 2*(1-t)*t*ctrlY + t*t*graveY;
+                const sx = 1 + (graveScaleX - 1) * t;
+                const sy = 1 + (graveScaleY - 1) * t;
+                const tiltDeg = t * graveTiltDeg;
+
+                wrapper.style.left = x + 'px';
+                wrapper.style.top = y + 'px';
+                wrapper.style.transform = `scale(${sx}, ${sy}) rotateX(${tiltDeg}deg)`;
+
+                // Teinte rouge progressive (même filtre que animateBurn)
+                const redTint = easeOutCubic(p) * 0.6;
+                wrapper.style.filter = `sepia(${redTint * 0.5}) saturate(${1 + redTint * 2}) hue-rotate(-10deg) brightness(${1 - redTint * 0.2})`;
+
+                if (p < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Cacher le wrapper avant de placer la carte dans le cimetière
+                    wrapper.style.visibility = 'hidden';
+
+                    // Placer la carte dans le cimetière (même logique que animateBurn)
+                    graveRenderBlocked.delete(ownerKey);
+                    if (graveTopEl) {
+                        const cardUid = data.card.uid || data.card.id;
+                        graveTopEl.dataset.topCardUid = cardUid;
+                        graveTopEl.classList.remove('empty');
+                        graveTopEl.innerHTML = '';
+                        const graveCardEl = makeCard(data.card, false);
+                        graveCardEl.classList.remove('just-played', 'can-attack');
+                        graveCardEl.classList.add('grave-card', 'in-graveyard');
+                        graveTopEl.appendChild(graveCardEl);
+                        const nameEl = graveCardEl.querySelector('.arena-name');
+                        if (nameEl) fitArenaName(nameEl);
+                    }
+                    if (state) {
+                        const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+                        if (graveyard) updateGraveDisplay(ownerKey, graveyard);
+                    }
+
+                    wrapper.remove();
+                    if (perspContainer) perspContainer.remove();
+                    resolve();
+                }
+            }
+            requestAnimationFrame(animate);
+        });
+
+        animatingSlots.delete(slotKey);
+        return;
+    }
+
+    // === Main pas pleine → voler vers la main (flow normal) ===
 
     // Enregistrer le pending bounce — render() fournira la position exacte
     const targetPromise = new Promise(resolve => {
@@ -2068,19 +2404,16 @@ async function animateBounceToHand(data) {
 
     if (target) {
         // === PHASE 3 : FLY vers la cible exacte (450ms) ===
-        // Position de départ = position flottante actuelle
         const flyX0 = floatX;
-        const flyY0 = parseFloat(wrapper.style.top); // inclut le bob
+        const flyY0 = parseFloat(wrapper.style.top);
         const flyW0 = floatW;
         const flyH0 = floatH;
 
-        // Position d'arrivée = exactement la carte dans la main
         const endX = target.x;
         const endY = target.y;
         const endW = target.w;
         const endH = target.h;
 
-        // Point de contrôle Bézier : au-dessus pour un bel arc
         const ctrlX = (flyX0 + endX) / 2;
         const ctrlY = Math.min(flyY0, endY) - 80;
 
@@ -2092,13 +2425,10 @@ async function animateBounceToHand(data) {
                 const p = Math.min((performance.now() - t0) / flyDuration, 1);
                 const t = easeInOutCubic(p);
 
-                // Arc Bézier quadratique pour la position
                 const x = (1-t)*(1-t)*flyX0 + 2*(1-t)*t*ctrlX + t*t*endX;
                 const y = (1-t)*(1-t)*flyY0 + 2*(1-t)*t*ctrlY + t*t*endY;
-                // Interpolation linéaire de la taille
                 const w = flyW0 + (endW - flyW0) * t;
                 const h = flyH0 + (endH - flyH0) * t;
-                // Glow décroissant
                 const glow = 20 * (1 - t);
 
                 wrapper.style.left = x + 'px';
@@ -2120,7 +2450,6 @@ async function animateBounceToHand(data) {
             requestAnimationFrame(animate);
         });
     } else {
-        // Timeout : pas de render reçu, fade out proprement
         wrapper.style.transition = 'opacity 0.2s';
         wrapper.style.opacity = '0';
         setTimeout(() => wrapper.remove(), 200);
@@ -2131,6 +2460,8 @@ async function animateBounceToHand(data) {
 
 // Slots en cours d'animation - render() ne doit pas les toucher
 let animatingSlots = new Set();
+// Trap slots en cours d'animation — renderTraps() ne doit pas y toucher
+let animatingTrapSlots = new Set();
 // Slots avec deathTransform EN COURS D'EXÉCUTION (protégés contre resetAnimationStates)
 let activeDeathTransformSlots = new Set();
 
@@ -2169,6 +2500,20 @@ function resetAnimationStates() {
         } else if (!slotsStillNeeded.has(key)) {
             animatingSlots.delete(key);
         } else {
+        }
+    }
+
+    // Nettoyer les trap slots qui n'ont plus d'animation en attente
+    const trapSlotsStillNeeded = new Set();
+    for (const item of animationQueue) {
+        if (item.type === 'trapTrigger' && item.data) {
+            const owner = item.data.player === myNum ? 'me' : 'opp';
+            trapSlotsStillNeeded.add(`${owner}-${item.data.row}`);
+        }
+    }
+    for (const key of [...animatingTrapSlots]) {
+        if (!trapSlotsStillNeeded.has(key)) {
+            animatingTrapSlots.delete(key);
         }
     }
 
@@ -2229,15 +2574,35 @@ function startFlyingAnimation(cardEl) {
  * @param {number} duration - Durée en ms (défaut 300)
  * @returns {Promise<void>}
  */
-function flyFromOppHand(targetRect, duration = 300, spell = null) {
+function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRect = null) {
     return new Promise(resolve => {
-        const handPanel = document.getElementById('opp-hand');
-        const handCards = handPanel ? handPanel.querySelectorAll('.opp-card-back') : [];
-        const lastCard = handCards[handCards.length - 1];
+        let handRect = savedSourceRect;
+        console.log('[flyFromOppHand] savedSourceRect:', savedSourceRect, 'spell:', spell?.name, 'spell.uid:', spell?.uid);
 
-        if (!lastCard) { resolve(); return; }
+        if (!handRect) {
+            const handPanel = document.getElementById('opp-hand');
+            const handCards = handPanel ? handPanel.querySelectorAll('.opp-card-back') : [];
 
-        const handRect = lastCard.getBoundingClientRect();
+            // Pour une carte revealed, trouver sa position exacte dans la main via son uid
+            let sourceCard = handCards[handCards.length - 1];
+            if (spell && spell.uid) {
+                const match = handPanel?.querySelector(`.opp-revealed[data-uid="${spell.uid}"]`);
+                if (match) sourceCard = match;
+            }
+
+            if (!sourceCard) { resolve(); return; }
+            handRect = sourceCard.getBoundingClientRect();
+        }
+
+        // Cacher la carte revealed dans la main (elle va être remplacée par le clone volant)
+        if (spell && spell.uid) {
+            const handPanel = document.getElementById('opp-hand');
+            const match = handPanel?.querySelector(`.opp-revealed[data-uid="${spell.uid}"]`);
+            if (match) {
+                match.style.visibility = 'hidden';
+                console.log('[flyFromOppHand] Hiding source card in hand');
+            }
+        }
 
         // Créer la carte volante directement à la taille cible (comme un drag)
         const fw = targetRect.width, fh = targetRect.height;
@@ -2252,12 +2617,13 @@ function flyFromOppHand(targetRect, duration = 300, spell = null) {
         `;
         if (spell && spell.revealedToOpponent && typeof makeCard === 'function') {
             const cardFace = makeCard(spell, false);
-            cardFace.style.cssText = 'width: 100%; height: 100%; margin: 0; position: relative; border-radius: 6px;';
-            if (spell.image) {
-                cardFace.style.backgroundImage = `url('/cards/${spell.image}')`;
-                cardFace.style.backgroundSize = 'cover';
-                cardFace.style.backgroundPosition = 'center';
-            }
+            const bgImage = cardFace.style.backgroundImage;
+            console.log('[flyFromOppHand] makeCard bgImage:', bgImage, 'spell.image:', spell.image);
+            cardFace.style.width = '100%';
+            cardFace.style.height = '100%';
+            cardFace.style.margin = '0';
+            cardFace.style.position = 'relative';
+            cardFace.style.borderRadius = '6px';
             flyCard.appendChild(cardFace);
         } else {
             const flyImg = document.createElement('img');
@@ -2340,95 +2706,404 @@ function animateSummon(data) {
     const rect = slot.getBoundingClientRect();
     const cw = rect.width, ch = rect.height;
 
-    // Phase 1 : carte-dos vole de la main adverse vers le slot (300ms)
-    flyFromOppHand(rect, 300).then(() => {
-        // Construire le conteneur 3D avec deux faces (dos + face)
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = `
-            position: fixed; z-index: 2000; pointer-events: none;
-            left: ${rect.left}px; top: ${rect.top}px;
-            width: ${cw}px; height: ${ch}px;
-            perspective: 800px;
-        `;
+    const isRevealed = data.card && data.card.revealedToOpponent;
 
-        const flipInner = document.createElement('div');
-        flipInner.style.cssText = `
-            width: 100%; height: 100%;
-            position: relative; transform-style: preserve-3d;
-        `;
+    console.log('[animateSummon] card:', data.card?.name, 'uid:', data.card?.uid, 'isRevealed:', isRevealed);
 
-        // Dos de la carte
-        const backFace = document.createElement('div');
-        backFace.style.cssText = `
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%; margin: 0;
-            border-radius: 6px; overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            backface-visibility: hidden;
-        `;
-        const backImg = document.createElement('img');
-        backImg.src = 'cardback/back_1.png';
-        backImg.style.cssText = 'width: 100%; height: 100%; display: block;';
-        backFace.appendChild(backImg);
+    // Utiliser la position sauvegardée au début de la révélation (avant re-render)
+    let savedSourceRect = null;
+    if (isRevealed && data.card.uid) {
+        savedSourceRect = savedRevealedCardRects.get(data.card.uid) || null;
+        // NE PAS supprimer du cache ici — la carte reste cachée dans le DOM
+        // tant que l'animation n'est pas terminée (state updates peuvent re-render)
+        console.log('[animateSummon] savedSourceRect from cache:', savedSourceRect);
+    }
 
-        // Face avant (la vraie carte)
-        const cardEl = makeCard(data.card, false);
-        const bgImage = cardEl.style.backgroundImage;
-        cardEl.style.position = 'absolute';
-        cardEl.style.top = '0';
-        cardEl.style.left = '0';
-        cardEl.style.width = '100%';
-        cardEl.style.height = '100%';
-        cardEl.style.margin = '0';
-        cardEl.style.backfaceVisibility = 'hidden';
-        cardEl.style.transform = 'rotateY(180deg)';
-        if (bgImage) cardEl.style.backgroundImage = bgImage;
+    // Phase 1 : carte vole de la main adverse vers le slot (300ms)
+    // Si révélée, la carte vole face visible depuis sa position sauvegardée
+    flyFromOppHand(rect, 300, isRevealed ? data.card : null, savedSourceRect).then(() => {
 
-        flipInner.appendChild(backFace);
-        flipInner.appendChild(cardEl);
-        wrapper.appendChild(flipInner);
-        document.body.appendChild(wrapper);
+        if (isRevealed) {
+            // Carte déjà révélée → pas de flip, juste lever + poser face visible
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = `
+                position: fixed; z-index: 2000; pointer-events: none;
+                left: ${rect.left}px; top: ${rect.top}px;
+                width: ${cw}px; height: ${ch}px;
+            `;
 
-        // Animation : Lever → Flip → Poser
-        const liftDur = 180;    // montée
-        const flipDur = 380;    // retournement
-        const settleDur = 180;  // descente
-        const liftPx = 25;     // hauteur de levée
-        const startY = rect.top;
-        const t0 = performance.now();
+            const cardEl = makeCard(data.card, false);
+            const bgImage = cardEl.style.backgroundImage;
+            cardEl.style.position = 'absolute';
+            cardEl.style.top = '0';
+            cardEl.style.left = '0';
+            cardEl.style.width = '100%';
+            cardEl.style.height = '100%';
+            cardEl.style.margin = '0';
+            if (bgImage) cardEl.style.backgroundImage = bgImage;
 
-        function easeInOutQuad(t) { return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
-        function easeInCubic(t) { return t * t * t; }
+            wrapper.appendChild(cardEl);
+            document.body.appendChild(wrapper);
 
-        function animate() {
-            const elapsed = performance.now() - t0;
+            const liftDur = 180;
+            const settleDur = 180;
+            const liftPx = 25;
+            const startY = rect.top;
+            const t0 = performance.now();
+            function easeInCubic(t) { return t * t * t; }
 
-            if (elapsed < liftDur) {
-                // Phase 2 : Lever (on voit le dos)
-                const p = easeOutCubic(elapsed / liftDur);
-                wrapper.style.top = (startY - liftPx * p) + 'px';
-            } else if (elapsed < liftDur + flipDur) {
-                // Phase 3 : Flip 3D
-                wrapper.style.top = (startY - liftPx) + 'px';
-                const p = easeInOutQuad((elapsed - liftDur) / flipDur);
-                flipInner.style.transform = `rotateY(${180 * p}deg)`;
-            } else if (elapsed < liftDur + flipDur + settleDur) {
-                // Phase 4 : Reposer au bon endroit
-                flipInner.style.transform = 'rotateY(180deg)';
-                const p = easeInCubic((elapsed - liftDur - flipDur) / settleDur);
-                wrapper.style.top = (startY - liftPx + liftPx * p) + 'px';
-            } else {
-                // Terminé
-                wrapper.remove();
-                animatingSlots.delete(slotKey);
-                render();
-                return;
+            function animate() {
+                const elapsed = performance.now() - t0;
+                if (elapsed < liftDur) {
+                    const p = easeOutCubic(elapsed / liftDur);
+                    wrapper.style.top = (startY - liftPx * p) + 'px';
+                } else if (elapsed < liftDur + settleDur) {
+                    const p = easeInCubic((elapsed - liftDur) / settleDur);
+                    wrapper.style.top = (startY - liftPx + liftPx * p) + 'px';
+                } else {
+                    wrapper.remove();
+                    animatingSlots.delete(slotKey);
+                    // Nettoyer le cache maintenant que l'animation est finie
+                    if (data.card && data.card.uid) savedRevealedCardRects.delete(data.card.uid);
+                    render();
+                    return;
+                }
+                requestAnimationFrame(animate);
             }
+            requestAnimationFrame(animate);
 
+        } else {
+            // Carte cachée → flip classique dos → face
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = `
+                position: fixed; z-index: 2000; pointer-events: none;
+                left: ${rect.left}px; top: ${rect.top}px;
+                width: ${cw}px; height: ${ch}px;
+                perspective: 800px;
+            `;
+
+            const flipInner = document.createElement('div');
+            flipInner.style.cssText = `
+                width: 100%; height: 100%;
+                position: relative; transform-style: preserve-3d;
+            `;
+
+            const backFace = document.createElement('div');
+            backFace.style.cssText = `
+                position: absolute; top: 0; left: 0;
+                width: 100%; height: 100%; margin: 0;
+                border-radius: 6px; overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                backface-visibility: hidden;
+            `;
+            const backImg = document.createElement('img');
+            backImg.src = 'cardback/back_1.png';
+            backImg.style.cssText = 'width: 100%; height: 100%; display: block;';
+            backFace.appendChild(backImg);
+
+            const cardEl = makeCard(data.card, false);
+            const bgImage = cardEl.style.backgroundImage;
+            cardEl.style.position = 'absolute';
+            cardEl.style.top = '0';
+            cardEl.style.left = '0';
+            cardEl.style.width = '100%';
+            cardEl.style.height = '100%';
+            cardEl.style.margin = '0';
+            cardEl.style.backfaceVisibility = 'hidden';
+            cardEl.style.transform = 'rotateY(180deg)';
+            if (bgImage) cardEl.style.backgroundImage = bgImage;
+
+            flipInner.appendChild(backFace);
+            flipInner.appendChild(cardEl);
+            wrapper.appendChild(flipInner);
+            document.body.appendChild(wrapper);
+
+            const liftDur = 180;
+            const flipDur = 380;
+            const settleDur = 180;
+            const liftPx = 25;
+            const startY = rect.top;
+            const t0 = performance.now();
+
+            function easeInOutQuad(t) { return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+            function easeInCubic(t) { return t * t * t; }
+
+            function animate() {
+                const elapsed = performance.now() - t0;
+                if (elapsed < liftDur) {
+                    const p = easeOutCubic(elapsed / liftDur);
+                    wrapper.style.top = (startY - liftPx * p) + 'px';
+                } else if (elapsed < liftDur + flipDur) {
+                    wrapper.style.top = (startY - liftPx) + 'px';
+                    const p = easeInOutQuad((elapsed - liftDur) / flipDur);
+                    flipInner.style.transform = `rotateY(${180 * p}deg)`;
+                } else if (elapsed < liftDur + flipDur + settleDur) {
+                    flipInner.style.transform = 'rotateY(180deg)';
+                    const p = easeInCubic((elapsed - liftDur - flipDur) / settleDur);
+                    wrapper.style.top = (startY - liftPx + liftPx * p) + 'px';
+                } else {
+                    wrapper.remove();
+                    animatingSlots.delete(slotKey);
+                    render();
+                    return;
+                }
+                requestAnimationFrame(animate);
+            }
             requestAnimationFrame(animate);
         }
+    });
+}
 
+/**
+ * Anime une carte face visible volant du cimetière vers une position cible.
+ * Même pattern que flyFromOppHand mais partant du cimetière, carte visible.
+ */
+function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500) {
+    return new Promise(resolve => {
+        const graveEl = document.getElementById(owner + '-grave-box');
+        if (!graveEl) { resolve(); return; }
+
+        const graveRect = graveEl.getBoundingClientRect();
+
+        const fw = targetRect.width, fh = targetRect.height;
+        const flyCard = document.createElement('div');
+        flyCard.style.cssText = `
+            position: fixed; z-index: 10001; pointer-events: none; overflow: hidden;
+            left: ${graveRect.left + graveRect.width / 2 - fw / 2}px;
+            top: ${graveRect.top + graveRect.height / 2 - fh / 2}px;
+            width: ${fw}px; height: ${fh}px;
+            border-radius: 6px;
+        `;
+
+        // Carte face visible
+        const cardEl = makeCard(card, false);
+        cardEl.style.cssText = 'width: 100%; height: 100%; margin: 0; position: relative; border-radius: 6px;';
+        if (card.image) {
+            cardEl.style.backgroundImage = `url('/cards/${card.image}')`;
+            cardEl.style.backgroundSize = 'cover';
+            cardEl.style.backgroundPosition = 'center';
+        }
+        flyCard.appendChild(cardEl);
+        document.body.appendChild(flyCard);
+
+        // Trajectoire Bézier : cimetière → slot
+        const scx = graveRect.left + graveRect.width / 2;
+        const scy = graveRect.top + graveRect.height / 2;
+        const ecx = targetRect.left + fw / 2;
+        const ecy = targetRect.top + fh / 2;
+        const ccx = (scx + ecx) / 2;
+        const ccy = Math.min(scy, ecy) - 80;
+
+        const t0 = performance.now();
+        function animate() {
+            const p = Math.min((performance.now() - t0) / duration, 1);
+            const t = easeInOutCubic(p);
+
+            const cx = (1-t)*(1-t)*scx + 2*(1-t)*t*ccx + t*t*ecx;
+            const cy = (1-t)*(1-t)*scy + 2*(1-t)*t*ccy + t*t*ecy;
+
+            flyCard.style.left = (cx - fw / 2) + 'px';
+            flyCard.style.top = (cy - fh / 2) + 'px';
+
+            if (p < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                flyCard.remove();
+                resolve();
+            }
+        }
         requestAnimationFrame(animate);
+    });
+}
+
+// Animation d'invocation par piège — apparition magique directement dans le slot (hérite de la perspective 3D)
+// Synchronisée avec createTrapSummonEffect (PixiJS VFX) :
+//   Phase 0: 0-400ms      Energy gathering (VFX only, card invisible)
+//   Phase 1: 400-800ms    Portal opens (VFX only, card invisible)
+//   Phase 2: 800-1000ms   Flash & card materializes (card scale 0→1, brightness 3→1)
+//   Phase 3: 1000-1500ms  Card settles with easeOutBack (card stable, glow fades)
+//   Phase 4: 1500-2800ms  Idle shimmer (card done, VFX trails off)
+function animateTrapSummon(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+    animatingSlots.add(slotKey);
+
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    if (!slot) { animatingSlots.delete(slotKey); return; }
+
+    // Vider le slot
+    const label = slot.querySelector('.slot-label');
+    slot.innerHTML = '';
+    if (label) slot.appendChild(label.cloneNode(true));
+    slot.classList.remove('has-card');
+
+    const rect = slot.getBoundingClientRect();
+
+    // VFX PixiJS (portail rotatif, particules convergentes, energy lines, flash, shimmer)
+    CombatVFX.createTrapSummonEffect(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+        rect.width,
+        rect.height
+    );
+
+    // Créer la carte directement DANS le slot (hérite de la perspective du board : rotateX 18deg)
+    const cardEl = makeCard(data.card, false);
+    cardEl.style.transformOrigin = 'center center';
+    cardEl.style.transform = 'scale(0)';
+    cardEl.style.opacity = '0';
+    cardEl.style.filter = 'brightness(3) saturate(0)';
+    cardEl.style.pointerEvents = 'none';
+    slot.appendChild(cardEl);
+    slot.classList.add('has-card');
+
+    // Auto-fit du nom
+    const summonNameFit = cardEl.querySelector('.arena-name');
+    if (summonNameFit) fitArenaName(summonNameFit);
+
+    // Glow magique derrière la carte (dans le slot — violet/doré)
+    const glow = document.createElement('div');
+    glow.style.cssText = `
+        position: absolute; inset: -20px; z-index: -1; border-radius: 12px;
+        background: radial-gradient(ellipse at center, rgba(122,90,240,0.8) 0%, rgba(180,140,255,0.4) 40%, transparent 70%);
+        opacity: 0; pointer-events: none; transform: scale(0.3);
+    `;
+    slot.appendChild(glow);
+
+    const totalDur = 1500; // La carte est prête à 1500ms, le VFX PixiJS continue en arrière-plan
+    const t0 = performance.now();
+
+    function animate() {
+        const elapsed = performance.now() - t0;
+        const tMs = Math.min(elapsed, totalDur);
+
+        // Phase 0-1: 0-800ms — VFX only, glow monte doucement, carte invisible
+        if (tMs < 800) {
+            const p = tMs / 800;
+            glow.style.opacity = `${easeOutCubic(p) * 0.7}`;
+            glow.style.transform = `scale(${0.3 + 0.9 * easeOutCubic(p)})`;
+            cardEl.style.transform = 'scale(0)';
+            cardEl.style.opacity = '0';
+        }
+
+        // Phase 2: 800-1000ms — Flash & card materializes
+        else if (tMs < 1000) {
+            const p = (tMs - 800) / 200;
+            const ep = easeOutCubic(p);
+
+            // Carte émerge d'un halo lumineux
+            cardEl.style.transform = `scale(${easeOutBack(p)})`;
+            cardEl.style.opacity = `${Math.min(ep * 3, 1)}`;
+            const brightness = 3 - 2 * ep;
+            const saturate = ep;
+            cardEl.style.filter = `brightness(${brightness}) saturate(${saturate})`;
+
+            // Glow intense
+            glow.style.opacity = `${0.7 + 0.3 * (1 - p)}`;
+            glow.style.transform = `scale(${1.2})`;
+        }
+
+        // Phase 3: 1000-1500ms — Card settles, glow fades
+        else {
+            const p = (tMs - 1000) / 500;
+            const ep = easeOutCubic(p);
+
+            cardEl.style.transform = 'scale(1)';
+            cardEl.style.opacity = '1';
+            cardEl.style.filter = 'none';
+
+            // Glow se dissipe élégamment
+            glow.style.opacity = `${0.7 * (1 - ep)}`;
+            glow.style.transform = `scale(${1.2 + 0.4 * ep})`;
+        }
+
+        if (elapsed < totalDur) {
+            requestAnimationFrame(animate);
+        } else {
+            // Nettoyage
+            glow.remove();
+            cardEl.style.pointerEvents = '';
+            cardEl.style.transformOrigin = '';
+            cardEl.style.transform = '';
+            cardEl.style.filter = '';
+
+            // Attendre le state pour débloquer le slot
+            function waitForState() {
+                const field = owner === 'me' ? state?.me?.field : state?.opponent?.field;
+                if (field?.[data.row]?.[data.col]) {
+                    animatingSlots.delete(slotKey);
+                    render();
+                } else {
+                    requestAnimationFrame(waitForState);
+                }
+            }
+            waitForState();
+        }
+    }
+    requestAnimationFrame(animate);
+}
+
+// Animation de réanimation — vol cimetière → slot pour les deux joueurs
+// Le state arrive ~1200ms après l'animation (server await sleep), le vol fait 500ms
+// → on place la carte manuellement dans le slot après le vol, puis on attend le state
+function animateReanimate(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+
+    // Bloquer le slot pour que render() n'y touche pas pendant l'animation
+    animatingSlots.add(slotKey);
+
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    if (!slot) { animatingSlots.delete(slotKey); return; }
+
+    // Vider le slot
+    const label = slot.querySelector('.slot-label');
+    slot.innerHTML = '';
+    if (label) slot.appendChild(label.cloneNode(true));
+    slot.classList.remove('has-card');
+
+    const rect = slot.getBoundingClientRect();
+
+    // Carte face visible vole du cimetière vers le slot
+    flyFromGraveyardFaceUp(owner, rect, data.card, 500).then(() => {
+        // Vol terminé — placer la carte dans le slot exactement comme renderField() le fait
+        // (le state n'est pas encore arrivé, le slot reste bloqué par animatingSlots)
+        const tempCard = makeCard(data.card, false);
+        const isFlying = data.card.type === 'creature' && data.card.abilities?.includes('fly');
+        if (isFlying) {
+            tempCard.classList.add('flying-creature');
+            slot.classList.add('has-flying');
+            // Appliquer le transform immédiatement AVANT le premier frame d'animation
+            const now = performance.now();
+            const offset = Math.sin(now * flyingAnimationSpeed) * flyingAnimationAmplitude;
+            tempCard.style.transform = `translateY(${offset.toFixed(2)}px)`;
+            startFlyingAnimation(tempCard);
+        }
+        slot.appendChild(tempCard);
+        slot.classList.add('has-card');
+
+        // Attendre que le state ait la carte, puis débloquer proprement
+        function waitForState() {
+            const field = owner === 'me' ? state?.me?.field : state?.opponent?.field;
+            if (field?.[data.row]?.[data.col]) {
+                animatingSlots.delete(slotKey);
+                render();
+                // Fix flying: render() crée une nouvelle carte sans transform initial
+                // → 1 frame à translateY(0) avant que startFlyingAnimation ne prenne le relais
+                // On applique le bon offset immédiatement (même block synchrone = avant le paint)
+                if (isFlying) {
+                    const newCardEl = slot.querySelector('.card.flying-creature');
+                    if (newCardEl) {
+                        const now = performance.now();
+                        const offset = Math.sin(now * flyingAnimationSpeed) * flyingAnimationAmplitude;
+                        newCardEl.style.transform = `translateY(${offset}px)`;
+                    }
+                }
+            } else {
+                requestAnimationFrame(waitForState);
+            }
+        }
+        waitForState();
     });
 }
 
@@ -2517,13 +3192,4 @@ function animateMove(data) {
     }, 600);
 }
 
-// Afficher une carte à l'écran (pour sorts et pièges)
-function showCardShowcase(card) {
-    const cardEl = makeCard(card, false);
-    cardEl.classList.add('card-showcase');
-    document.body.appendChild(cardEl);
-    
-    setTimeout(() => {
-        cardEl.remove();
-    }, 1500);
-}
+

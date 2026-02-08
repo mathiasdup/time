@@ -34,10 +34,9 @@
         }
         .drag-ghost-card,
         .drag-ghost-card.card.arena-style[class*="faction-"] {
-            border: 2px solid transparent !important;
-            --gb1: #f39c12;
-            --gb2: #e74c3c;
+            border: 2px solid #252525 !important;
             border-radius: 4px !important;
+            overflow: visible !important;
             box-shadow: 0 20px 40px rgba(0,0,0,0.5);
             width: 100px !important;
             height: 135px !important;
@@ -62,7 +61,7 @@
         .my-hand .card.arena-style.arrow-dragging[class*="faction-"] {
             transform: translateY(-50px) scale(1.3) !important;
             z-index: 1000 !important;
-            border: 2px solid transparent !important;
+            border: 2px solid #252525 !important;
             pointer-events: none;
             overflow: visible;
         }
@@ -84,7 +83,7 @@
         .stat-hp { background: linear-gradient(135deg, #2980b9, #1a5276); }
         .stat-hp.reduced { background: linear-gradient(135deg, #e67e22, #d35400); }
         .stat-atk.reduced { background: linear-gradient(135deg, #e74c3c, #c0392b); }
-        .stat-atk.boosted, .stat-hp.boosted { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.8); }
+        .stat-atk.boosted, .stat-hp.boosted { color: #2ecc71; font-weight: 900; text-shadow: 0 0 5px rgba(46, 204, 113, 0.8); }
         .card.creature { border: 2px solid #3498db; }
         .card.spell { border: 2px solid #9b59b6; }
         .card.trap-card { border: 2px solid #e74c3c; }
@@ -190,10 +189,11 @@
         .card.has-image .img-atk.boosted,
         .card.has-image .img-hp.boosted {
             color: #2ecc71;
+            font-weight: 900;
             text-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
         }
         .card.has-image.just-played { border: 2px solid rgba(255,255,255,0.6) !important; }
-        .card.has-image.can-attack { border: 2px solid transparent !important; }
+        .card.has-image.can-attack { border: 2px solid #252525 !important; }
 
         /* === CARTES FULL ART === */
         .card.full-art {
@@ -324,6 +324,7 @@
         }
         .card.full-art .fa-atk.boosted {
             color: #aaffaa;
+            font-weight: 900;
         }
         .card.full-art .fa-atk.reduced {
             color: #ff6b6b;
@@ -357,6 +358,7 @@
         }
         .card.full-art .fa-hp.boosted {
             color: #aaffaa;
+            font-weight: 900;
         }
         @keyframes pulse-damage {
             0%, 100% { transform: scale(1); }
@@ -368,7 +370,7 @@
             border: 2px solid rgba(255,255,255,0.6) !important;
         }
         .card.full-art.can-attack {
-            border-color: transparent !important;
+            border-color: #1e1e1e !important;
         }
 
         /* ========== STYLE ARENA (Magic Arena) ========== */
@@ -391,14 +393,14 @@
         }
         .card.arena-style .arena-name {
             font-family: 'Bree Serif', serif;
-            font-size: 0.44em;
+            font-size: 0.6em;
             color: #e5e5e5;
-            -webkit-text-stroke: 1px #2c241b;
+            -webkit-text-stroke: 2px #353535;
             paint-order: stroke fill;
             letter-spacing: 0.2px;
+            line-height: 10px;
             white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         /* Zone de texte au milieu */
@@ -572,7 +574,7 @@
             left: 2px;
             width: 18px;
             height: 18px;
-            background: #83adef6b;
+            background: #83adef94;
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -609,20 +611,22 @@
             position: absolute;
             bottom: -8px;
             right: -6px;
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 0px 6px;
             font-family: 'Cinzel', serif;
             font-size: 0.8em;
             font-weight: 900;
             color: #e5e5e5;
             z-index: 10;
-            -webkit-text-stroke: 1px #000;
+            -webkit-text-stroke: 1.8px #353535;
             paint-order: stroke fill;
         }
         /* Stats individuelles colorées */
         .card.arena-style .arena-atk.boosted,
-        .card.arena-style .arena-hp.boosted {
+        .card.arena-style .arena-hp.boosted,
+        .card.arena-style .arena-special .boosted {
             color: #7fff7f;
+            font-weight: 900;
         }
         .card.arena-style .arena-atk.reduced,
         .card.arena-style .arena-hp.reduced {
@@ -633,6 +637,16 @@
         .card.arena-style.on-field .arena-mana {
             display: none;
         }
+        .card.arena-style.on-field .arena-stats {
+            font-size: 1em;
+            -webkit-text-stroke: 2px #353535;
+            min-width: 40px;
+            height: 22px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
         /* États arena-style — bordures et glow gérés plus bas avec spécificité élevée */
 
@@ -640,7 +654,7 @@
         /* Définition des dégradés par faction */
         .card.arena-style.faction-green { --faction-grad: linear-gradient(135deg, #2d5039 0%, #6b9b7a 15%, #427253 30%, #2a4536 50%, #427253 70%, #7aab8a 85%, #2d5039 100%); }
         .card.arena-style.faction-red { --faction-grad: linear-gradient(135deg, #8a2d32 0%, #d86a6f 15%, #ba3d43 30%, #7a2428 50%, #ba3d43 70%, #e87a7f 85%, #8a2d32 100%); }
-        .card.arena-style.faction-black { --faction-grad: linear-gradient(135deg, #2a2a2a 0%, #6a6a6a 15%, #4a4a4a 30%, #1a1a1a 50%, #4a4a4a 70%, #7a7a7a 85%, #2a2a2a 100%); }
+        .card.arena-style.faction-black { --faction-grad: linear-gradient(135deg, #2a2a2a 0%, #6a6a6a 15%, #4a4a4a 30%, #1a1a1a4d 50%, #4a4a4a 70%, #7a7a7a 85%, #2a2a2a 100%); }
         .card.arena-style.faction-blue { --faction-grad: linear-gradient(135deg, #4673c9 0%, #8ab3ff 15%, #6493e9 30%, #3663b9 50%, #6493e9 70%, #9ac3ff 85%, #4673c9 100%); }
         .card.arena-style.faction-white { --faction-grad: linear-gradient(135deg, #c9c5b8 0%, #f5f3eb 15%, #e7e3d5 30%, #b8b4a7 50%, #e7e3d5 70%, #faf8f2 85%, #c9c5b8 100%); }
         .card.arena-style.faction-neutral { --faction-grad: linear-gradient(135deg, #4a3728 0%, #8b6b4a 15%, #6b4423 30%, #3d2a1a 50%, #6b4423 70%, #9b7b5a 85%, #4a3728 100%); }
@@ -648,14 +662,14 @@
         /* Bordure de carte - noir sombre 2px */
         .card.arena-style[class*="faction-"] {
             position: relative;
-            border: 2px solid #1e1e1e !important;
+            border: 2px solid #353535 !important;
             border-radius: 4px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
         }
 
         /* Titre - pilule avec bordure dégradée transparente */
         .card.arena-style[class*="faction-"] .arena-title {
-            background: #29573c6b;
+            background: #323e82c4;
             border-radius: 4px;
         }
         .card.arena-style[class*="faction-"] .arena-title::before {
@@ -671,22 +685,25 @@
             transform: translateZ(0);
         }
         .card.arena-style[class*="faction-"] .arena-name {
-            padding: 2px 6px;
+            padding: 1.8px 6px 2px 6px;
             position: relative;
             z-index: 1;
         }
         .card.arena-style.faction-red .arena-title {
-            background: #e156477d;
+            background: rgb(189 66 66 / 50%);
         }
         .card.arena-style.faction-blue .arena-title {
-            background: #323e826b;
+            background: #323e828a;
         }
         .card.arena-style.faction-white .arena-title {
-            background: #ffffff6b;
+            background: #ffffff91;
+        }
+        .card.arena-style.faction-green .arena-title {
+            background: #29573c94;
         }
 
         .card.arena-style.faction-black .arena-title {
-            background: #0707076b;
+            background: #353535ab;
             border-radius: 4px;
         }
 
@@ -697,7 +714,7 @@
 
         /* Zone de texte - pilule avec bordure dégradée transparente */
         .card.arena-style[class*="faction-"] .arena-text-zone {
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(0, 0, 0, 0.65);
         }
         .card.arena-style[class*="faction-"] .arena-text-zone::before {
             content: '';
@@ -721,7 +738,7 @@
             background: rgba(0, 0, 0, 0.5) !important;
         }
         .card.arena-style.faction-green .arena-stats {
-            background: #29573c6b !important;
+            background: #29573cbd !important;
             border: none !important;
         }
         .card.arena-style[class*="faction-"] .arena-stats::before {
@@ -729,7 +746,7 @@
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
             background: var(--faction-grad);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 1.2px;
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
@@ -742,10 +759,10 @@
             z-index: 1;
         }
         .card.arena-style.faction-red .arena-stats {
-            background: rgb(189 66 66 / 50%) !important;
+            background: rgb(189 66 66 / 60%) !important;
         }
         .card.arena-style.faction-blue .arena-stats {
-            background: #323e826b !important;
+            background: #323e82b3 !important;
         }
 
         /* Faction white - texte clair */
@@ -754,11 +771,11 @@
         }
 
         .card.arena-style.faction-white .arena-stats {
-            background: #ffffff6b !important;
+            background: #ffffff9e !important;
         }
 
         .card.arena-style.faction-black .arena-stats {
-            background: #0707076b !important;
+            background: #353535b8 !important;
         }
 
 
@@ -767,16 +784,16 @@
             border: 2px solid rgba(255,255,255,0.4) !important;
         }
         .card.card.can-attack, .card.arena-style.can-attack[class*="faction-"] {
-            border: 2px solid transparent !important;
             overflow: visible;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
         }
         .card.card.field-selected, .card.arena-style.field-selected[class*="faction-"] {
             border-color: #3498db !important;
         }
 
-        /* Cartes jouables en main (assez de mana) — bordure bleu électrique */
+        /* Cartes jouables en main — bordure normale, le glow Canvas est derrière */
         .card.card.playable, .card.arena-style.playable[class*="faction-"] {
-            border-color: transparent !important;
+            border-color: #353535 !important;
             overflow: visible;
         }
 
@@ -797,73 +814,33 @@
             to { --border-angle: 360deg; }
         }
 
-        /* Couleurs du gradient par état */
-        /* Bleu = cible valide */
-        .card.card.playable, .card.arena-style.playable[class*="faction-"],
-        .card-slot.valid-target,
-        .hero-card.hero-targetable {
-            --gb1: #62d7ff;
-            --gb2: #3a7fff;
+        /* Slots — bordures mono-couleur (comme les trap-slots) */
+        .card-slot.valid-target {
+            border-color: #62d7ff !important;
+            background: rgba(98,215,255,0.15) !important;
         }
-        /* Vert = peut attaquer */
-        .card.card.can-attack, .card.arena-style.can-attack[class*="faction-"],
-        .card.has-image.can-attack {
-            --gb1: #2ecc71;
-            --gb2: #15a085;
-        }
-        /* Orange = survol actif (écrase bleu quand les deux classes sont présentes) */
         .card-slot.cross-target,
-        .card-slot.drag-over,
-        .hero-card.hero-drag-over,
-        .card.card.spell-hover-target, .card.arena-style.spell-hover-target[class*="faction-"],
-        .card.card.arrow-dragging, .card.arena-style.arrow-dragging[class*="faction-"] {
-            --gb1: #f39c12;
-            --gb2: #e74c3c;
+        .card-slot.drag-over {
+            border-color: #f1c40f !important;
+            background: rgba(241,196,15,0.2) !important;
         }
 
-        /* ::after partagé — gradient rotatif masqué pour ne montrer que la bordure */
-        .card.card.playable::after, .card.arena-style.playable[class*="faction-"]::after,
-        .card.card.can-attack::after, .card.arena-style.can-attack[class*="faction-"]::after,
-        .card.has-image.can-attack::after,
-        .card-slot.valid-target::after,
-        .card-slot.cross-target::after,
-        .hero-card.hero-targetable::after,
-        .hero-card.hero-drag-over::after,
-        .card-slot.drag-over::after,
-        .card.card.spell-hover-target::after, .card.arena-style.spell-hover-target[class*="faction-"]::after,
-        .card.card.arrow-dragging::after, .card.arena-style.arrow-dragging[class*="faction-"]::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: inherit;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), var(--gb1), var(--gb2), var(--gb1), var(--gb2), var(--gb1));
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            z-index: 1;
-            animation: rotateBorder 6s linear infinite;
-            animation-delay: calc(-1 * var(--anim-offset, 0s));
+        /* Héros — bordures mono-couleur */
+        .hero-card.hero-targetable {
+            border-color: #62d7ff !important;
+            background: rgba(98,215,255,0.15) !important;
         }
-        .drag-ghost-card::after,
-        .drag-ghost-card.card.arena-style[class*="faction-"]::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: inherit;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), var(--gb1), var(--gb2), var(--gb1), var(--gb2), var(--gb1));
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            z-index: 1;
-            animation: rotateBorder 6s linear infinite;
-            animation-delay: calc(-1 * var(--anim-offset, 0s));
+        .hero-card.hero-drag-over {
+            border-color: #f1c40f !important;
+            background: rgba(241,196,15,0.2) !important;
         }
+
+        /* Orange mono-couleur = spell hover sur créature */
+        .card.card.spell-hover-target, .card.arena-style.spell-hover-target[class*="faction-"] {
+            border-color: #f39c12 !important;
+            box-shadow: 0 0 8px rgba(243, 156, 18, 0.5);
+        }
+        /* Ghost card : pas de ::after gradient, le glow orange remplace */
 
         /* ANIMATIONS */
         .card.attacking { animation: attackAnim 0.4s ease-out; }
@@ -994,7 +971,7 @@
             animation: none !important;
         }
         .my-hand .card.playable:hover:not(.dragging) {
-            border-color: transparent !important;
+            border-color: #353535 !important;
         }
         .my-hand .card.selected {
             transform: translateY(-55px) scale(1.35);
@@ -1050,5 +1027,81 @@
             bottom: 10px;
             font-size: 0.7em;
         }
-        
-        
+
+        /* ========== MELODY LOCK & PETRIFICATION ========== */
+
+        /* Créature bloquée par Mélodie — terni par-dessus tout sauf stats */
+        .card.melody-locked {
+            position: relative;
+            isolation: isolate;
+        }
+        .card.melody-locked::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            background: #909090;
+            mix-blend-mode: saturation;
+            opacity: 0.6;
+            z-index: 14;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        .card.melody-locked .arena-stats {
+            z-index: 15 !important;
+        }
+
+        /* Créature pétrifiée — N&B complet sauf stats */
+        .card.petrified {
+            position: relative;
+            isolation: isolate;
+        }
+        /* Couche de désaturation via mix-blend-mode */
+        .card.petrified::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            background: #707070;
+            mix-blend-mode: saturation;
+            opacity: 1;
+            z-index: 14;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        /* Stats restent colorées au-dessus du N&B */
+        .card.petrified .arena-stats {
+            z-index: 15 !important;
+        }
+
+        /* Jeton compteur de gaze (Medusa) — bordure gradient violet rotatif */
+        .gaze-marker {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 22px;
+            height: 22px;
+            background: radial-gradient(circle, #2a0030, #120018);
+            border-radius: 50%;
+            color: #e088ff;
+            font-size: 0.65em;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            box-shadow: 0 0 8px rgba(140, 50, 180, 0.7);
+        }
+        .gaze-marker::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 50%;
+            padding: 2px;
+            background: conic-gradient(from var(--border-angle), #a855f7, #7c3aed, #c084fc, #7c3aed, #a855f7);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            pointer-events: none;
+            animation: rotateBorder 3s linear infinite;
+        }
+

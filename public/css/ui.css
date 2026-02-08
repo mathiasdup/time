@@ -37,6 +37,8 @@
             box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
             position: relative;
             overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .graveyard-inner::before {
@@ -91,7 +93,7 @@
         .graveyard-cards::-webkit-scrollbar-thumb { background: rgba(196, 184, 150, 0.3); border-radius: 3px; }
         .graveyard-cards::-webkit-scrollbar-thumb:hover { background: rgba(196, 184, 150, 0.5); }
         .graveyard-cards .card { flex-shrink: 0; }
-        .graveyard-cards .card .arena-stats { display: flex; }
+        .graveyard-cards .card .arena-stats { display: none; }
         .graveyard-empty {
             color: rgba(196, 184, 150, 0.4);
             font-family: 'Cinzel', serif;
@@ -100,7 +102,53 @@
             padding: 40px;
             width: 300px;
         }
-        
+
+        /* Réanimation : backdrop sombre pour sélection au cimetière */
+        .reanimate-backdrop {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 499;
+        }
+        .reanimate-backdrop.active { display: block; }
+
+        /* Créatures sélectionnables : bordure gradient orange rotatif */
+        .graveyard-popup.selection-mode .graveyard-selectable {
+            cursor: pointer;
+            border-color: transparent !important;
+            --gb1: #f39c12;
+            --gb2: #e74c3c;
+            transition: transform 0.15s ease;
+        }
+        .graveyard-popup.selection-mode .graveyard-selectable::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: inherit;
+            padding: 2px;
+            background: conic-gradient(from var(--border-angle, 0deg), var(--gb1), var(--gb2), var(--gb1), var(--gb2), var(--gb1));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            pointer-events: none;
+            z-index: 1;
+            animation: rotateBorder 6s linear infinite;
+        }
+        .graveyard-popup.selection-mode .graveyard-selectable:hover {
+            transform: translateY(-6px) scale(1.05);
+        }
+
+        /* Cartes non-créatures : grisées et non-cliquables */
+        .graveyard-popup.selection-mode .graveyard-unselectable {
+            opacity: 0.4;
+            filter: grayscale(60%);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
         .game-over { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .game-over.hidden { display: none; }
         .game-over-box { text-align: center; padding: 40px; background: rgba(30,30,50,0.98); border-radius: 15px; border: 4px solid #ffd700; }
@@ -187,8 +235,8 @@
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            background: linear-gradient(180deg, rgba(26, 26, 26, 0.9) 0%, rgba(10, 10, 10, 0.9) 50%, rgba(21, 21, 21, 0.9) 100%);
-            box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(180deg, #c91d1d 0%, #aa1616cc 40%, #c11c1cde 70%, #ac0000e3 100%);
+            box-shadow: inset 0 2px 8px rgb(1 1 1 / 72%), inset 0 0 12px rgb(189 89 89 / 30%), 0 0 6px rgba(180, 30, 30, 0.2);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -303,14 +351,14 @@
         }
         .preview-effect {
             background: rgba(0,0,0,0.85);
-            border: 1px solid rgba(100,200,100,0.4);
+            border: 1px solid rgba(200,200,200,0.4);
             border-radius: 6px;
             padding: 8px 10px;
         }
         .effect-name {
             font-size: 0.7em;
             font-weight: bold;
-            color: #7ed67e;
+            color: #ffffff;
             margin-bottom: 4px;
         }
         .effect-desc {
@@ -739,6 +787,174 @@
         .committed-target-highlight {
             box-shadow: 0 0 12px 4px rgba(230, 126, 34, 0.7) !important;
             border-color: #e67e22 !important;
+        }
+
+        /* ==================== ROUND BANNER ==================== */
+        .round-banner-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 8000;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+        }
+        .round-banner-overlay.active {
+            animation: roundBannerFade 3s ease forwards;
+        }
+        @keyframes roundBannerFade {
+            0%   { opacity: 0; }
+            15%  { opacity: 1; }
+            70%  { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* Rayons de lumière bronze rotatifs derrière le banner */
+        .round-banner-rays {
+            position: absolute;
+            width: 700px;
+            height: 700px;
+            background: conic-gradient(
+                from 0deg,
+                transparent 0deg,
+                rgba(196, 184, 150, 0.07) 8deg,
+                transparent 16deg,
+                transparent 30deg,
+                rgba(196, 184, 150, 0.05) 38deg,
+                transparent 46deg,
+                transparent 60deg,
+                rgba(196, 184, 150, 0.07) 68deg,
+                transparent 76deg,
+                transparent 90deg,
+                rgba(196, 184, 150, 0.05) 98deg,
+                transparent 106deg,
+                transparent 120deg,
+                rgba(196, 184, 150, 0.07) 128deg,
+                transparent 136deg,
+                transparent 150deg,
+                rgba(196, 184, 150, 0.05) 158deg,
+                transparent 166deg,
+                transparent 180deg,
+                rgba(196, 184, 150, 0.07) 188deg,
+                transparent 196deg,
+                transparent 210deg,
+                rgba(196, 184, 150, 0.05) 218deg,
+                transparent 226deg,
+                transparent 240deg,
+                rgba(196, 184, 150, 0.07) 248deg,
+                transparent 256deg,
+                transparent 270deg,
+                rgba(196, 184, 150, 0.05) 278deg,
+                transparent 286deg,
+                transparent 300deg,
+                rgba(196, 184, 150, 0.07) 308deg,
+                transparent 316deg,
+                transparent 330deg,
+                rgba(196, 184, 150, 0.05) 338deg,
+                transparent 346deg,
+                transparent 360deg
+            );
+            border-radius: 50%;
+            mask-image: radial-gradient(circle, white 20%, transparent 70%);
+            -webkit-mask-image: radial-gradient(circle, white 20%, transparent 70%);
+        }
+        .round-banner-overlay.active .round-banner-rays {
+            animation: raysRotate 8s linear infinite, raysPulse 3s ease forwards;
+        }
+        @keyframes raysRotate {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        @keyframes raysPulse {
+            0%   { opacity: 0; transform: rotate(0deg) scale(0.6); }
+            20%  { opacity: 1; transform: rotate(10deg) scale(1); }
+            70%  { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* Halo central — warm bronze glow matching frame palette */
+        .round-banner-glow {
+            position: absolute;
+            width: 500px;
+            height: 240px;
+            background: radial-gradient(ellipse, rgba(139, 115, 85, 0.25) 0%, rgba(139, 115, 85, 0.08) 40%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        /* Ribbon SVG container — above swords */
+        .round-banner-ribbon {
+            position: relative;
+            z-index: 2;
+            width: 520px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.6));
+        }
+        .round-banner-overlay.active .round-banner-ribbon {
+            animation: ribbonEnter 3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+        }
+        @keyframes ribbonEnter {
+            0%   { transform: scaleX(0.4) scaleY(0.7); opacity: 0; }
+            10%  { opacity: 0.5; }
+            20%  { transform: scaleX(1.02) scaleY(1.01); opacity: 1; }
+            26%  { transform: scaleX(1) scaleY(1); }
+            70%  { transform: scaleX(1) scaleY(1); opacity: 1; }
+            100% { transform: scaleX(0.9) scaleY(0.95); opacity: 0; }
+        }
+
+        .round-banner-ribbon svg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Text content positioned over the ribbon and swords */
+        .round-banner-content {
+            position: relative;
+            z-index: 4;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        .round-banner-label {
+            font-family: 'Cinzel', serif;
+            font-size: 15px;
+            font-weight: 900;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            color: #d9d0b4;
+            text-shadow:
+                0 0 15px rgba(196, 184, 150, 0.4),
+                0 2px 4px rgba(0, 0, 0, 0.8);
+            margin-bottom: -2px;
+        }
+
+        .round-banner-number {
+            font-family: 'Cinzel Decorative', serif;
+            font-size: 56px;
+            font-weight: 900;
+            color: #d9d0b4;
+            text-shadow:
+                0 0 20px rgba(196, 184, 150, 0.5),
+                0 0 40px rgba(196, 184, 150, 0.2),
+                0 2px 4px rgba(0, 0, 0, 0.8);
+            line-height: 1;
+        }
+
+        /* Particules bronze flottantes */
+        .round-banner-particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: radial-gradient(circle, #d9d0b4 0%, rgba(196, 184, 150, 0) 70%);
+            border-radius: 50%;
+            pointer-events: none;
         }
 
         /* Animation de shake pour Petit Os */

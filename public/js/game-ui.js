@@ -139,6 +139,8 @@ function startGame() {
     buildBattlefield();
     setupCustomDrag();
     render();
+    // Initialiser le glow PixiJS derrière les cartes jouables
+    if (typeof CardGlow !== 'undefined') CardGlow.init();
     log('🎮 Tour 1 - Partie lancée !', 'phase');
     // Pas de popup "Phase de repositionnement" au tour 1 car pas de créatures
 }
@@ -486,7 +488,7 @@ const MYTHIC_GEM = {
 };
 
 const TIER_LABELS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
-const TIER_Y_SHIFT = { 1: 16, 2: 0, 3: 6, 4: 0 };
+const TIER_Y_SHIFT = { 1: 7, 2: 0, 3: 0, 4: 0 };
 
 function svgEl(tag, attrs) {
     const el = document.createElementNS(SVG_NS, tag);
@@ -777,22 +779,11 @@ function createRankBadge(rank, tier) {
     const box = document.createElement('div');
     box.className = 'rank-gem';
 
-    // Outer glow
-    const glow = document.createElement('div');
-    Object.assign(glow.style, {
-        position: 'absolute', top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '55px', height: '55px',
-        background: 'radial-gradient(circle, ' + c.glow + ' 0%, transparent 70%)',
-        filter: 'blur(12px)', opacity: '0.9',
-    });
-    box.appendChild(glow);
     box.appendChild(buildGemSVG(c, uid, gem, n, [0, TIER_Y_SHIFT[tier]]));
     wrapper.appendChild(box);
 
     const label = document.createElement('div');
     label.className = 'rank-tier-label';
-    label.style.color = c.body;
     label.textContent = TIER_LABELS[tier];
     wrapper.appendChild(label);
 
@@ -816,15 +807,6 @@ function createMythicBadge(mythicPosition) {
     const box = document.createElement('div');
     box.className = 'rank-gem';
 
-    const glow = document.createElement('div');
-    Object.assign(glow.style, {
-        position: 'absolute', top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '55px', height: '55px',
-        background: 'radial-gradient(circle, ' + c.glow + ' 0%, transparent 70%)',
-        filter: 'blur(12px)', opacity: '0.9',
-    });
-    box.appendChild(glow);
     box.appendChild(buildGemSVG(c, uid, gem, n, [0, 0]));
     wrapper.appendChild(box);
 
@@ -836,6 +818,174 @@ function createMythicBadge(mythicPosition) {
     return wrapper;
 }
 
+// ── Couleurs du cadre — palette neutre calquée sur le bouton FIN DE TOUR ──
+const FRAME_COLORS = {
+    // Bordure : dégradé brun/beige identique au bouton
+    b1: '#8b7355', b2: '#d4c4a8', b3: '#a08060', b4: '#c4b896', b5: '#6b5344',
+    // Fond intérieur sombre
+    fill1: '#1a1a1a', fill2: '#0a0a0a', fill3: '#151515',
+    // Texte & sous-titre
+    text: '#d9d0b4', subtitle: '#9a9080',
+    // Glow & lignes décoratives
+    glow: 'rgba(139,115,85,0.12)', line: 'rgba(180,160,120,0.10)', orn: 'rgba(180,160,120,0.18)',
+};
+
+// ── Couleurs du cercle de gemme par rang (seul élément coloré par rang) ──
+const GEM_CIRCLE_COLORS = {
+    bronze:  { s1: '#D4A87C', s2: '#8B5E3C', s3: '#D4A87C', fill: '#1a1008' },
+    silver:  { s1: '#D0D0D0', s2: '#808080', s3: '#D0D0D0', fill: '#161618' },
+    gold:    { s1: '#f0d888', s2: '#c49030', s3: '#f0d888', fill: '#1a1408' },
+    emerald: { s1: '#60d090', s2: '#2a7a4a', s3: '#60d090', fill: '#0a1610' },
+    diamond: { s1: '#e0d8f0', s2: '#8880a0', s3: '#e0d8f0', fill: '#121018' },
+    mythic:  { s1: '#ff9050', s2: '#c04020', s3: '#ff9050', fill: '#1a0c08' },
+};
+
+function buildFrameSVG(svgEl) {
+    const fc = FRAME_COLORS;
+    const uid = 'frame-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    svgEl.innerHTML = '';
+
+    // Defs
+    const defs = document.createElementNS(SVG_NS, 'defs');
+
+    // Gradient bordure dorée
+    const gBorder = document.createElementNS(SVG_NS, 'linearGradient');
+    gBorder.id = uid + '-border';
+    gBorder.setAttribute('x1', '0'); gBorder.setAttribute('y1', '0');
+    gBorder.setAttribute('x2', '300'); gBorder.setAttribute('y2', '100');
+    gBorder.setAttribute('gradientUnits', 'userSpaceOnUse');
+    [[0, fc.b1], [25, fc.b2], [50, fc.b3], [75, fc.b4], [100, fc.b5]].forEach(([o, c]) => {
+        const s = document.createElementNS(SVG_NS, 'stop');
+        s.setAttribute('offset', o + '%'); s.setAttribute('stop-color', c);
+        gBorder.appendChild(s);
+    });
+    defs.appendChild(gBorder);
+
+    // Gradient fond sombre
+    const gFill = document.createElementNS(SVG_NS, 'linearGradient');
+    gFill.id = uid + '-fill';
+    gFill.setAttribute('x1', '0'); gFill.setAttribute('y1', '0');
+    gFill.setAttribute('x2', '0'); gFill.setAttribute('y2', '100');
+    gFill.setAttribute('gradientUnits', 'userSpaceOnUse');
+    [[0, fc.fill1], [50, fc.fill2], [100, fc.fill3]].forEach(([o, c]) => {
+        const s = document.createElementNS(SVG_NS, 'stop');
+        s.setAttribute('offset', o + '%'); s.setAttribute('stop-color', c);
+        gFill.appendChild(s);
+    });
+    defs.appendChild(gFill);
+
+    // Radial inner glow
+    const gInner = document.createElementNS(SVG_NS, 'radialGradient');
+    gInner.id = uid + '-iglow';
+    gInner.setAttribute('cx', '50%'); gInner.setAttribute('cy', '50%');
+    const s1 = document.createElementNS(SVG_NS, 'stop');
+    s1.setAttribute('offset', '0%'); s1.setAttribute('stop-color', fc.glow);
+    const s2 = document.createElementNS(SVG_NS, 'stop');
+    s2.setAttribute('offset', '100%'); s2.setAttribute('stop-color', 'transparent');
+    gInner.appendChild(s1); gInner.appendChild(s2);
+    defs.appendChild(gInner);
+
+    // Ornate pattern
+    const pat = document.createElementNS(SVG_NS, 'pattern');
+    pat.id = uid + '-pat';
+    pat.setAttribute('x', '0'); pat.setAttribute('y', '0');
+    pat.setAttribute('width', '40'); pat.setAttribute('height', '40');
+    pat.setAttribute('patternUnits', 'userSpaceOnUse');
+    const p1 = document.createElementNS(SVG_NS, 'path');
+    p1.setAttribute('d', 'M20 0 L22 8 L20 6 L18 8 Z');
+    p1.setAttribute('fill', fc.line.replace('0.12', '0.05'));
+    pat.appendChild(p1);
+    const p2 = document.createElementNS(SVG_NS, 'path');
+    p2.setAttribute('d', 'M0 20 L8 22 L6 20 L8 18 Z');
+    p2.setAttribute('fill', fc.line.replace('0.12', '0.04'));
+    pat.appendChild(p2);
+    const circ = document.createElementNS(SVG_NS, 'circle');
+    circ.setAttribute('cx', '20'); circ.setAttribute('cy', '20'); circ.setAttribute('r', '1');
+    circ.setAttribute('fill', fc.line.replace('0.12', '0.06'));
+    pat.appendChild(circ);
+    defs.appendChild(pat);
+
+    svgEl.appendChild(defs);
+
+    // Outer border rect
+    const r1 = document.createElementNS(SVG_NS, 'rect');
+    Object.entries({ x: 2, y: 2, width: 296, height: 96, rx: 10, ry: 10, fill: `url(#${uid}-border)`, opacity: '0.9' }).forEach(([k, v]) => r1.setAttribute(k, v));
+    svgEl.appendChild(r1);
+
+    // Inner dark fill
+    const r2 = document.createElementNS(SVG_NS, 'rect');
+    Object.entries({ x: 6, y: 6, width: 288, height: 88, rx: 8, ry: 8, fill: `url(#${uid}-fill)` }).forEach(([k, v]) => r2.setAttribute(k, v));
+    svgEl.appendChild(r2);
+
+    // Pattern overlay
+    const r3 = document.createElementNS(SVG_NS, 'rect');
+    Object.entries({ x: 6, y: 6, width: 288, height: 88, rx: 8, ry: 8, fill: `url(#${uid}-pat)` }).forEach(([k, v]) => r3.setAttribute(k, v));
+    svgEl.appendChild(r3);
+
+    // Inner glow
+    const r4 = document.createElementNS(SVG_NS, 'rect');
+    Object.entries({ x: 6, y: 6, width: 288, height: 88, rx: 8, ry: 8, fill: `url(#${uid}-iglow)` }).forEach(([k, v]) => r4.setAttribute(k, v));
+    svgEl.appendChild(r4);
+
+    // Inner border line
+    const r5 = document.createElementNS(SVG_NS, 'rect');
+    Object.entries({ x: 10, y: 10, width: 280, height: 80, rx: 6, ry: 6, fill: 'none', stroke: `url(#${uid}-border)`, 'stroke-width': '0.8', opacity: '0.4' }).forEach(([k, v]) => r5.setAttribute(k, v));
+    svgEl.appendChild(r5);
+
+    // Decorative lines
+    [[20, 24, 280, 24], [20, 76, 280, 76]].forEach(([x1, y1, x2, y2]) => {
+        const l = document.createElementNS(SVG_NS, 'line');
+        Object.entries({ x1, y1, x2, y2, stroke: fc.line, 'stroke-width': '0.5' }).forEach(([k, v]) => l.setAttribute(k, v));
+        svgEl.appendChild(l);
+    });
+
+    // Top ornament curves
+    const ornPaths = [
+        ['M110 22 Q150 18 190 22', '0.8'],
+        ['M120 20 L130 16 L135 20 L140 16 L150 20', '0.5'],
+        ['M110 78 Q150 82 190 78', '0.8'],
+        ['M120 80 L130 84 L135 80 L140 84 L150 80', '0.5'],
+    ];
+    ornPaths.forEach(([d, sw]) => {
+        const p = document.createElementNS(SVG_NS, 'path');
+        Object.entries({ d, fill: 'none', stroke: fc.orn, 'stroke-width': sw }).forEach(([k, v]) => p.setAttribute(k, v));
+        svgEl.appendChild(p);
+    });
+
+    return fc;
+}
+
+// Cercle de fond derrière la gemme de rang — bordure de la couleur du rang
+function createGemCircle(rank) {
+    const gc = GEM_CIRCLE_COLORS[rank] || GEM_CIRCLE_COLORS.gold;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 56 56');
+    svg.setAttribute('xmlns', SVG_NS);
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+
+    const uid = 'gc-' + rank + '-' + Date.now();
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const grad = document.createElementNS(SVG_NS, 'linearGradient');
+    grad.id = uid;
+    grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '56'); grad.setAttribute('y2', '56');
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    [[0, gc.s1], [50, gc.s2], [100, gc.s3]].forEach(([o, c]) => {
+        const s = document.createElementNS(SVG_NS, 'stop');
+        s.setAttribute('offset', o + '%'); s.setAttribute('stop-color', c);
+        grad.appendChild(s);
+    });
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    // Cercle : fond sombre + bordure colorée par rang
+    const c1 = document.createElementNS(SVG_NS, 'circle');
+    Object.entries({ cx: 28, cy: 28, r: 26, fill: gc.fill, stroke: `url(#${uid})`, 'stroke-width': '2' }).forEach(([k, v]) => c1.setAttribute(k, v));
+    svg.appendChild(c1);
+
+    return svg;
+}
+
 function setRandomRanks() {
     const ranks = ['bronze', 'silver', 'gold', 'emerald', 'diamond'];
     const tiers = [1, 2, 3, 4];
@@ -844,27 +994,123 @@ function setRandomRanks() {
 
     const meContainer = document.getElementById('me-rank-badge');
     const oppContainer = document.getElementById('opp-rank-badge');
+    const meFrameSvg = document.getElementById('me-frame-svg');
+    const oppFrameSvg = document.getElementById('opp-frame-svg');
+    const meFrame = document.getElementById('me-player-frame');
+    const oppFrame = document.getElementById('opp-player-frame');
 
+    // ── Joueur local ──
+    let meRank, meTier;
+    if (useMythic) {
+        meRank = 'mythic';
+        meTier = 0;
+    } else {
+        meRank = ranks[Math.floor(Math.random() * ranks.length)];
+        meTier = tiers[Math.floor(Math.random() * tiers.length)];
+    }
+
+    // Build frame SVG (palette neutre identique pour tous les rangs)
+    if (meFrameSvg) {
+        buildFrameSVG(meFrameSvg);
+        if (meFrame) {
+            meFrame.style.setProperty('--frame-text', FRAME_COLORS.text);
+            meFrame.style.setProperty('--frame-subtitle', FRAME_COLORS.subtitle);
+            meFrame.style.setProperty('--frame-glow', FRAME_COLORS.glow);
+        }
+    }
     if (meContainer) {
         meContainer.innerHTML = '';
-        let meBadge, meTier;
-        if (useMythic) {
-            meBadge = createMythicBadge(Math.floor(Math.random() * 200) + 1);
-            meTier = 0;
-        } else {
-            const r = ranks[Math.floor(Math.random() * ranks.length)];
-            meTier = tiers[Math.floor(Math.random() * tiers.length)];
-            meBadge = createRankBadge(r, meTier);
-        }
-        meContainer.style.marginTop = meTier === 1 ? '13px' : '';
+        meContainer.appendChild(createGemCircle(meRank));
+        const meBadge = meRank === 'mythic'
+            ? createMythicBadge(Math.floor(Math.random() * 200) + 1)
+            : createRankBadge(meRank, meTier);
         meContainer.appendChild(meBadge);
+    }
+
+    // ── Adversaire ──
+    const oppRank = ranks[Math.floor(Math.random() * ranks.length)];
+    const oppTier = tiers[Math.floor(Math.random() * tiers.length)];
+
+    if (oppFrameSvg) {
+        buildFrameSVG(oppFrameSvg);
+        if (oppFrame) {
+            oppFrame.style.setProperty('--frame-text', FRAME_COLORS.text);
+            oppFrame.style.setProperty('--frame-subtitle', FRAME_COLORS.subtitle);
+            oppFrame.style.setProperty('--frame-glow', FRAME_COLORS.glow);
+        }
     }
     if (oppContainer) {
         oppContainer.innerHTML = '';
-        const r = ranks[Math.floor(Math.random() * ranks.length)];
-        const t = tiers[Math.floor(Math.random() * tiers.length)];
-        const oppBadge = createRankBadge(r, t);
-        oppContainer.style.marginTop = t === 1 ? '13px' : '';
+        oppContainer.appendChild(createGemCircle(oppRank));
+        const oppBadge = createRankBadge(oppRank, oppTier);
         oppContainer.appendChild(oppBadge);
     }
+}
+
+// ==================== ROUND BANNER ====================
+let roundBannerTimeout = null;
+
+function showRoundBanner(turnNumber) {
+    const overlay = document.getElementById('round-banner-overlay');
+    if (!overlay) return;
+
+    // Clear previous animation
+    if (roundBannerTimeout) {
+        clearTimeout(roundBannerTimeout);
+        roundBannerTimeout = null;
+    }
+    overlay.classList.remove('active');
+
+    // Update round number
+    const numberEl = document.getElementById('round-banner-number');
+    if (numberEl) numberEl.textContent = turnNumber;
+
+    // Remove old particles
+    overlay.querySelectorAll('.round-banner-particle').forEach(p => p.remove());
+
+    // Create floating golden particles
+    const ribbonEl = overlay.querySelector('.round-banner-ribbon');
+    for (let i = 0; i < 20; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'round-banner-particle';
+        const x = (Math.random() - 0.5) * 500;
+        const y = (Math.random() - 0.5) * 160;
+        const size = 2 + Math.random() * 4;
+        const delay = Math.random() * 0.8;
+        const duration = 1.5 + Math.random() * 1.5;
+        particle.style.cssText = `
+            left: calc(50% + ${x}px);
+            top: calc(50% + ${y}px);
+            width: ${size}px;
+            height: ${size}px;
+            animation: particleFloat ${duration}s ${delay}s ease-out forwards;
+            opacity: 0;
+        `;
+        overlay.appendChild(particle);
+    }
+
+    // Inject particle animation if not already present
+    if (!document.getElementById('round-banner-particle-style')) {
+        const style = document.createElement('style');
+        style.id = 'round-banner-particle-style';
+        style.textContent = `
+            @keyframes particleFloat {
+                0%   { opacity: 0; transform: translateY(0) scale(0.5); }
+                20%  { opacity: 0.8; transform: translateY(-10px) scale(1); }
+                80%  { opacity: 0.6; transform: translateY(-40px) scale(0.8); }
+                100% { opacity: 0; transform: translateY(-60px) scale(0.3); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Force reflow then activate
+    void overlay.offsetWidth;
+    overlay.classList.add('active');
+
+    // Clean up after animation completes
+    roundBannerTimeout = setTimeout(() => {
+        overlay.classList.remove('active');
+        overlay.querySelectorAll('.round-banner-particle').forEach(p => p.remove());
+    }, 3200);
 }

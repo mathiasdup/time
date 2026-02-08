@@ -15,6 +15,12 @@ let handCardRemovedIndex = -1;
 let committedSpells = [];
 let commitIdCounter = 0;
 
+// Réanimation : sort en attente de sélection d'une créature au cimetière
+let pendingReanimation = null;
+// { card, handIndex, effectiveCost, targetPlayer, row, col }
+let committedGraveyardUids = []; // UIDs des créatures du cimetière déjà engagées par Réanimation
+let committedReanimationSlots = []; // Slots réservés par Réanimation {row, col}
+
 // ==================== SYSTÈME DE FILE D'ATTENTE D'ANIMATIONS ====================
 const animationQueue = [];
 let isAnimating = false;
@@ -29,7 +35,7 @@ const ANIMATION_DELAYS = {
     death: 200,        // Délai après une mort (le gros est dans animateDeathToGraveyard)
     heroHit: 200,      // Délai après dégâts au héros (réduit)
     discard: 800,      // Délai après défausse
-    burn: 1000,        // Délai après burn (pioche vers cimetière)
+    burn: 400,         // Délai après burn (pioche vers cimetière)
     spell: 200,        // Délai après animation de sort (le gros est dans animateSpellReveal)
     trapTrigger: 500,  // Délai après animation de piège (séparation entre pièges consécutifs)
     default: 300       // Délai par défaut

@@ -179,12 +179,26 @@ function getValidSlots(card) {
             const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
             if (graveyardCreatures < card.requiresGraveyardCreatures) return valid;
         }
+        if (card.sacrifice) {
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 2; col++) {
+                    if (!state.me.field[row][col] && canPlaceAt(card, col)
+                        && !committedReanimationSlots.some(s => s.row === row && s.col === col)) {
+                        if (countAdjacentSacrificeTargets('me', row, col) >= card.sacrifice) {
+                            valid.push({ row, col });
+                        }
+                    }
+                }
+            }
+        } else {
         for (let row = 0; row < 4; row++) {
             for (let col = 0; col < 2; col++) {
-                if (canPlaceAt(card, col) && !state.me.field[row][col]) {
+                if (canPlaceAt(card, col) && !state.me.field[row][col]
+                    && !committedReanimationSlots.some(s => s.row === row && s.col === col)) {
                     valid.push({ row, col });
                 }
             }
+        }
         }
     } else if (card.type === 'trap') {
         for (let row = 0; row < 4; row++) {
@@ -219,12 +233,41 @@ function getValidSlots(card) {
                 }
             }
         }
+        // Sort ciblant un slot vide allié (ex: Réanimation)
+        // Ne proposer que les slots où au moins 1 créature du cimetière peut être placée
+        else if (card.targetSelfEmptySlot) {
+            const availableCreatures = (state.me.graveyard || []).filter(c =>
+                c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+            );
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 2; col++) {
+                    if (!state.me.field[row][col]
+                        && !committedReanimationSlots.some(s => s.row === row && s.col === col)) {
+                        if (availableCreatures.some(c => canPlaceAt(c, col))) {
+                            valid.push({ owner: 'me', row, col });
+                        }
+                    }
+                }
+            }
+        }
+        // Sort ciblant une créature alliée (ex: Altération musculaire)
+        else if (card.targetSelfCreature) {
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 2; col++) {
+                    if (state.me.field[row][col]) {
+                        valid.push({ owner: 'me', row, col });
+                    }
+                }
+            }
+        }
         // Sorts ciblés normaux
         else {
-            // Sorts offensifs → uniquement les slots ennemis
+            // Sorts offensifs → uniquement les slots ennemis (exclure camouflés)
             if (card.offensive) {
                 for (let row = 0; row < 4; row++) {
                     for (let col = 0; col < 2; col++) {
+                        const target = state.opponent.field[row][col];
+                        if (target && target.hasCamouflage) continue;
                         valid.push({ owner: 'opp', row, col });
                     }
                 }
@@ -318,9 +361,28 @@ function getCrossTargetsClient(targetPlayer, row, col) {
     return targets;
 }
 
+function isSacrificeTargetClient(card) {
+    if (!card || card.type !== 'creature') return false;
+    if (card.petrified) return false;
+    if (card.movedThisTurn) return false;
+    return !!card.canAttack;
+}
+
+function countAdjacentSacrificeTargets(owner, row, col) {
+    const field = (owner === 'me') ? state.me.field : state.opponent.field;
+    const neighbors = [[row-1,col],[row,col+1],[row+1,col],[row,col-1]];
+    let count = 0;
+    for (const [r,c] of neighbors) {
+        if (r < 0 || r >= 4 || c < 0 || c >= 2) continue;
+        if (isSacrificeTargetClient(field[r][c])) count++;
+    }
+    return count;
+}
+
 function highlightMoveTargets(fromRow, fromCol, card) {
     clearHighlights();
     if (card.abilities?.includes('immovable')) return;
+    if (card.melodyLocked || card.petrified) return;
     const isFlying = card.abilities?.includes('fly');
 
     // Déplacements verticaux (toutes les créatures)

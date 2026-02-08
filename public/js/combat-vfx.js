@@ -7,6 +7,7 @@
 class GameVFXSystem {
     constructor() {
         this.app = null;
+        this.shieldApp = null;       // App PixiJS séparée pour les boucliers (z-index bas)
         this.container = null;       // Effets ponctuels (explosions, impacts)
         this.shieldLayer = null;     // Couche persistante pour les boucliers
         this.initialized = false;
@@ -18,6 +19,7 @@ class GameVFXSystem {
         if (this.initialized) return;
 
         try {
+            // Canvas principal pour les VFX de combat (z-index élevé)
             this.app = new PIXI.Application();
             await this.app.init({
                 width: window.innerWidth,
@@ -35,11 +37,29 @@ class GameVFXSystem {
             this.app.canvas.style.zIndex = '10000';
             document.body.appendChild(this.app.canvas);
 
-            this.shieldLayer = new PIXI.Container();
-            this.app.stage.addChild(this.shieldLayer);
-
             this.container = new PIXI.Container();
             this.app.stage.addChild(this.container);
+
+            // Canvas séparé pour les boucliers (z-index bas, juste au-dessus du board)
+            this.shieldApp = new PIXI.Application();
+            await this.shieldApp.init({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                backgroundAlpha: 0,
+                antialias: true,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+            });
+
+            this.shieldApp.canvas.style.position = 'fixed';
+            this.shieldApp.canvas.style.top = '0';
+            this.shieldApp.canvas.style.left = '0';
+            this.shieldApp.canvas.style.pointerEvents = 'none';
+            this.shieldApp.canvas.style.zIndex = '100';
+            document.body.appendChild(this.shieldApp.canvas);
+
+            this.shieldLayer = new PIXI.Container();
+            this.shieldApp.stage.addChild(this.shieldLayer);
 
             window.addEventListener('resize', () => this.handleResize());
             this.app.ticker.add(() => this.update());
@@ -54,6 +74,9 @@ class GameVFXSystem {
     handleResize() {
         if (this.app) {
             this.app.renderer.resize(window.innerWidth, window.innerHeight);
+        }
+        if (this.shieldApp) {
+            this.shieldApp.renderer.resize(window.innerWidth, window.innerHeight);
         }
     }
 
@@ -2967,6 +2990,225 @@ class GameVFXSystem {
         return effect;
     }
 
+    // ==================== SACRIFICE BLOOD SLASH ====================
+
+    createSacrificeSlashEffect(x, y, w, h) {
+        if (!this.initialized) return;
+
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 900,
+        };
+
+        const bloodRed = 0xCC0000;
+        const darkRed = 0x880000;
+        const crimson = 0xFF1A1A;
+        const shadowPurple = 0x3D0022;
+        const cardW = w * 0.5;
+        const cardH = h * 0.5;
+
+        // Fond sombre — assombrit la zone de la carte
+        const darkOverlay = new PIXI.Graphics();
+        darkOverlay.rect(-cardW, -cardH, cardW * 2, cardH * 2);
+        darkOverlay.fill({ color: 0x000000, alpha: 0.0 });
+        effectContainer.addChild(darkOverlay);
+
+        // Grand X slash — deux traits croisés
+        const slash1 = new PIXI.Graphics();
+        const slash2 = new PIXI.Graphics();
+        effectContainer.addChild(slash1);
+        effectContainer.addChild(slash2);
+
+        // Éclats de sang (particules)
+        const bloodParticles = [];
+        for (let i = 0; i < 24; i++) {
+            const p = new PIXI.Graphics();
+            const size = 1.5 + Math.random() * 4;
+            p.circle(0, 0, size);
+            const colors = [bloodRed, darkRed, crimson, 0xAA0000];
+            p.fill({ color: colors[i % colors.length] });
+            p.alpha = 0;
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 60 + Math.random() * 140;
+            p.bloodData = {
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                gravity: 180 + Math.random() * 100,
+                delay: 0.15 + Math.random() * 0.15,
+                size: size,
+            };
+            effectContainer.addChild(p);
+            bloodParticles.push(p);
+        }
+
+        // Gouttelettes qui tombent (post-slash)
+        const drips = [];
+        for (let i = 0; i < 8; i++) {
+            const drip = new PIXI.Graphics();
+            drip.rect(-1.5, 0, 3, 6 + Math.random() * 10);
+            drip.fill({ color: bloodRed, alpha: 0.8 });
+            drip.alpha = 0;
+            drip.dripData = {
+                startX: (Math.random() - 0.5) * cardW * 1.4,
+                startY: (Math.random() - 0.3) * cardH * 0.8,
+                speed: 40 + Math.random() * 80,
+                delay: 0.3 + Math.random() * 0.2,
+            };
+            effectContainer.addChild(drip);
+            drips.push(drip);
+        }
+
+        // Aura démoniaque sombre (derrière tout)
+        const demonAura = new PIXI.Graphics();
+        effectContainer.addChildAt(demonAura, 0);
+
+        // Flash d'impact central
+        const impactFlash = new PIXI.Graphics();
+        impactFlash.alpha = 0;
+        effectContainer.addChild(impactFlash);
+
+        const animate = () => {
+            const elapsed = performance.now() - effect.startTime;
+            const progress = Math.min(elapsed / effect.duration, 1);
+
+            // === Phase 1 : Aura sombre (0→0.3) ===
+            demonAura.clear();
+            if (progress < 0.5) {
+                const ap = Math.min(progress / 0.2, 1);
+                const auraR = cardW * 1.2 + ap * 20;
+                const auraAlpha = ap * 0.35 * (progress < 0.35 ? 1 : (1 - (progress - 0.35) / 0.15));
+                demonAura.circle(0, 0, auraR);
+                demonAura.fill({ color: shadowPurple, alpha: Math.max(0, auraAlpha) });
+            }
+
+            // === Fond sombre (flash) ===
+            darkOverlay.clear();
+            if (progress > 0.1 && progress < 0.5) {
+                const dp = (progress - 0.1) / 0.15;
+                const darkAlpha = dp < 1 ? dp * 0.4 : 0.4 * (1 - (progress - 0.25) / 0.25);
+                darkOverlay.rect(-cardW, -cardH, cardW * 2, cardH * 2);
+                darkOverlay.fill({ color: 0x000000, alpha: Math.max(0, darkAlpha) });
+            }
+
+            // === Phase 2 : Les deux slashs en X (0.12→0.5) ===
+            // Slash 1 : haut-gauche → bas-droite
+            slash1.clear();
+            const s1Start = 0.12;
+            const s1End = 0.35;
+            if (progress > s1Start) {
+                const sp = Math.min((progress - s1Start) / (s1End - s1Start), 1);
+                const drawLen = sp;
+                const fadeAlpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.3);
+
+                // Trait principal (large, doux)
+                const x1 = -cardW * 0.7, y1 = -cardH * 0.7;
+                const x2 = cardW * 0.7, y2 = cardH * 0.7;
+                const mx = x1 + (x2 - x1) * drawLen;
+                const my = y1 + (y2 - y1) * drawLen;
+
+                slash1.moveTo(x1, y1);
+                slash1.lineTo(mx, my);
+                slash1.stroke({ color: crimson, width: 10, alpha: fadeAlpha * 0.4 });
+
+                slash1.moveTo(x1, y1);
+                slash1.lineTo(mx, my);
+                slash1.stroke({ color: 0xFF3333, width: 5, alpha: fadeAlpha * 0.8 });
+
+                slash1.moveTo(x1, y1);
+                slash1.lineTo(mx, my);
+                slash1.stroke({ color: 0xFFAAAA, width: 2, alpha: fadeAlpha });
+            }
+
+            // Slash 2 : haut-droite → bas-gauche (léger décalage)
+            slash2.clear();
+            const s2Start = 0.18;
+            const s2End = 0.40;
+            if (progress > s2Start) {
+                const sp = Math.min((progress - s2Start) / (s2End - s2Start), 1);
+                const drawLen = sp;
+                const fadeAlpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.3);
+
+                const x1 = cardW * 0.7, y1 = -cardH * 0.7;
+                const x2 = -cardW * 0.7, y2 = cardH * 0.7;
+                const mx = x1 + (x2 - x1) * drawLen;
+                const my = y1 + (y2 - y1) * drawLen;
+
+                slash2.moveTo(x1, y1);
+                slash2.lineTo(mx, my);
+                slash2.stroke({ color: crimson, width: 10, alpha: fadeAlpha * 0.4 });
+
+                slash2.moveTo(x1, y1);
+                slash2.lineTo(mx, my);
+                slash2.stroke({ color: 0xFF3333, width: 5, alpha: fadeAlpha * 0.8 });
+
+                slash2.moveTo(x1, y1);
+                slash2.lineTo(mx, my);
+                slash2.stroke({ color: 0xFFAAAA, width: 2, alpha: fadeAlpha });
+            }
+
+            // === Flash d'impact au croisement des slashs (0.25→0.45) ===
+            impactFlash.clear();
+            if (progress > 0.22 && progress < 0.50) {
+                const fp = (progress - 0.22) / 0.28;
+                const flashAlpha = fp < 0.3 ? fp / 0.3 : (1 - (fp - 0.3) / 0.7);
+                const flashR = 15 + fp * 25;
+                impactFlash.circle(0, 0, flashR);
+                impactFlash.fill({ color: 0xFFCCCC, alpha: Math.max(0, flashAlpha * 0.7) });
+                impactFlash.circle(0, 0, flashR * 0.5);
+                impactFlash.fill({ color: 0xFFFFFF, alpha: Math.max(0, flashAlpha * 0.5) });
+            }
+
+            // === Particules de sang (0.15→fin) ===
+            bloodParticles.forEach(p => {
+                const d = p.bloodData;
+                const pp = Math.max(0, (progress - d.delay) / (1 - d.delay));
+                if (pp > 0 && pp < 1) {
+                    const t = pp;
+                    p.x = d.vx * t;
+                    p.y = d.vy * t + 0.5 * d.gravity * t * t;
+                    p.alpha = (1 - pp) * 0.85;
+                    p.scale.set(1 - pp * 0.6);
+                } else {
+                    p.alpha = 0;
+                }
+            });
+
+            // === Gouttelettes tombantes (0.3→fin) ===
+            drips.forEach(drip => {
+                const d = drip.dripData;
+                const dp = Math.max(0, (progress - d.delay) / (1 - d.delay));
+                if (dp > 0 && dp < 1) {
+                    drip.x = d.startX;
+                    drip.y = d.startY + d.speed * dp;
+                    drip.alpha = (1 - dp) * 0.7;
+                    drip.scale.y = 1 + dp * 0.5;
+                } else {
+                    drip.alpha = 0;
+                }
+            });
+
+            if (progress >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        this.activeEffects.push(effect);
+
+        // Screen shake
+        this.screenShake(6, 180);
+
+        return effect;
+    }
+
     // ==================== SCREEN SHAKE ====================
 
     screenShake(intensity = 5, duration = 100) {
@@ -3463,6 +3705,650 @@ class GameVFXSystem {
             runeText.alpha = runeAlpha;
             runeText.position.set(0, 0);
         }
+    }
+    // Effet de pétrification — vague de gris + fissures + flash pierre
+    createPetrifyEffect(x, y, w, h) {
+        if (!this.initialized) return;
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 1100,
+        };
+
+        const maxR = Math.max(w, h) * 0.7;
+
+        // Flash central gris-blanc
+        const flash = new PIXI.Graphics();
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        // Anneau de pierre qui se contracte
+        const ring = new PIXI.Graphics();
+        ring.alpha = 0;
+        effectContainer.addChild(ring);
+
+        // Particules de pierre (fragments convergents)
+        const particles = [];
+        for (let i = 0; i < 12; i++) {
+            const gfx = new PIXI.Graphics();
+            const size = 2 + Math.random() * 3;
+            gfx.rect(-size / 2, -size / 2, size, size);
+            gfx.fill({ color: 0x808080, alpha: 0.9 });
+            gfx.alpha = 0;
+            const angle = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+            const dist = maxR * (0.9 + Math.random() * 0.5);
+            particles.push({
+                gfx, angle, dist,
+                startX: Math.cos(angle) * dist,
+                startY: Math.sin(angle) * dist,
+                rotSpeed: (Math.random() - 0.5) * 4,
+            });
+            effectContainer.addChild(gfx);
+        }
+
+        // Fissures radiales
+        const cracks = new PIXI.Graphics();
+        cracks.alpha = 0;
+        effectContainer.addChild(cracks);
+
+        // Pré-calculer les chemins de fissures
+        const crackPaths = [];
+        for (let i = 0; i < 6; i++) {
+            const baseAngle = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+            const segments = [];
+            let cx = 0, cy = 0;
+            const segCount = 3 + Math.floor(Math.random() * 3);
+            for (let s = 0; s < segCount; s++) {
+                const segAngle = baseAngle + (Math.random() - 0.5) * 0.8;
+                const segLen = (maxR / segCount) * (0.6 + Math.random() * 0.8);
+                const nx = cx + Math.cos(segAngle) * segLen;
+                const ny = cy + Math.sin(segAngle) * segLen;
+                segments.push({ x: nx, y: ny });
+                cx = nx; cy = ny;
+            }
+            crackPaths.push(segments);
+        }
+
+        const animate = () => {
+            if (effect.finished) return;
+            const progress = (performance.now() - effect.startTime) / effect.duration;
+            if (progress >= 1) { effect.finished = true; return; }
+
+            // Phase 1: Flash blanc-gris (0 → 0.3)
+            if (progress < 0.3) {
+                const fp = progress / 0.3;
+                const flashAlpha = Math.sin(fp * Math.PI) * 0.8;
+                const flashScale = 5 + fp * maxR * 0.8;
+                flash.clear();
+                flash.circle(0, 0, flashScale);
+                flash.fill({ color: 0xB0B0B0, alpha: flashAlpha * 0.6 });
+                flash.alpha = 1;
+            } else {
+                flash.alpha = Math.max(0, flash.alpha - 0.05);
+            }
+
+            // Phase 2: Anneau convergent (0.1 → 0.6)
+            if (progress > 0.1 && progress < 0.6) {
+                const rp = (progress - 0.1) / 0.5;
+                const ringRadius = maxR * (1 - rp * 0.7);
+                const ringAlpha = rp < 0.2 ? rp / 0.2 : rp > 0.8 ? (1 - rp) / 0.2 : 1;
+                ring.clear();
+                ring.circle(0, 0, ringRadius);
+                ring.stroke({ color: 0x9E9E9E, width: 3, alpha: ringAlpha * 0.7 });
+                ring.circle(0, 0, ringRadius * 0.85);
+                ring.stroke({ color: 0x757575, width: 1.5, alpha: ringAlpha * 0.4 });
+                ring.alpha = 1;
+            } else if (progress >= 0.6) {
+                ring.alpha = Math.max(0, ring.alpha - 0.08);
+            }
+
+            // Phase 3: Particules convergentes (0.05 → 0.7)
+            for (const p of particles) {
+                if (progress < 0.05) { p.gfx.alpha = 0; continue; }
+                if (progress > 0.7) { p.gfx.alpha = Math.max(0, p.gfx.alpha - 0.06); continue; }
+                const pp = (progress - 0.05) / 0.65;
+                const ease = 1 - Math.pow(1 - pp, 3);
+                p.gfx.position.set(p.startX * (1 - ease), p.startY * (1 - ease));
+                p.gfx.rotation += p.rotSpeed * 0.016;
+                p.gfx.alpha = pp < 0.15 ? pp / 0.15 : pp > 0.85 ? (1 - pp) / 0.15 : 0.9;
+            }
+
+            // Phase 4: Fissures (0.3 → 0.9)
+            if (progress > 0.3 && progress < 0.9) {
+                const cp = (progress - 0.3) / 0.6;
+                cracks.clear();
+                const crackAlpha = cp < 0.2 ? cp / 0.2 : cp > 0.7 ? (1 - cp) / 0.3 : 1;
+                cracks.alpha = crackAlpha;
+                for (const path of crackPaths) {
+                    const visibleSegments = Math.ceil(path.length * cp);
+                    if (visibleSegments > 0) {
+                        cracks.moveTo(0, 0);
+                        for (let s = 0; s < visibleSegments; s++) {
+                            cracks.lineTo(path[s].x, path[s].y);
+                        }
+                        cracks.stroke({ color: 0x606060, width: 1.5, alpha: 0.8 });
+                    }
+                }
+            } else if (progress >= 0.9) {
+                cracks.alpha = Math.max(0, cracks.alpha - 0.1);
+            }
+
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }
+
+    /**
+     * Medusa Gaze — oeil mystique qui s'ouvre au-dessus de Medusa,
+     * émet un rayon vers la cible, puis se referme.
+     * Style Magic Arena / Hearthstone.
+     * @param {number} srcX - centre X de Medusa
+     * @param {number} srcY - centre Y de Medusa
+     * @param {number} tgtX - centre X de la cible
+     * @param {number} tgtY - centre Y de la cible
+     */
+    createMedusaGazeEffect(srcX, srcY, tgtX, tgtY) {
+        if (!this.initialized) return;
+        const effectContainer = new PIXI.Container();
+        this.container.addChild(effectContainer);
+
+        const duration = 1800;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+        this.activeEffects.push(effect);
+
+        // --- Géométrie ---
+        const eyeX = srcX;
+        const eyeY = srcY - 65;
+        const eyeW = 54;
+        const eyeH = 24;
+        const irisR = 13;
+
+        const dx = tgtX - eyeX;
+        const dy = tgtY - eyeY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const perpX = -dy / dist;
+        const perpY = dx / dist;
+
+        // --- Easing ---
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+        const easeInQuart = t => t * t * t * t;
+
+        // --- Couleurs violet ---
+        const C = {
+            irisOuter: 0x4a1a6a, irisMid: 0x7030a0, irisInner: 0xb060e0, irisHot: 0xd0a0ff,
+            vein: 0xc060ff,      outline: 0x9040d0, outlineGlow: 0xd0a0ff,
+            pupil: 0x08001a,     pupilEdge: 0x8040c0,
+            highlight: 0xe8d0ff, beamCore: 0xb060e0, beamMid: 0x8040c0, beamWide: 0x6030a0,
+            particle: [0xc060ff, 0xa050d0, 0xd080ff, 0x8040c0, 0xe0a0ff],
+        };
+
+        // ============ GRAPHIQUES ============
+        const beamGfx = new PIXI.Graphics();
+        effectContainer.addChild(beamGfx);
+        const eyeGfx = new PIXI.Graphics();
+        effectContainer.addChild(eyeGfx);
+
+        // ============ PARTICULES ============
+        const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+        // Particules le long du rayon
+        const beamParticles = [];
+        for (let i = 0; i < 20; i++) {
+            const gfx = new PIXI.Graphics();
+            gfx.circle(0, 0, 1 + Math.random() * 2.5);
+            gfx.fill({ color: pick(C.particle), alpha: 0.7 });
+            gfx.alpha = 0;
+            effectContainer.addChild(gfx);
+            beamParticles.push({
+                gfx, offset: Math.random(), speed: 0.5 + Math.random() * 1.5,
+                lateral: (Math.random() - 0.5) * 14, phase: Math.random() * Math.PI * 2,
+            });
+        }
+
+        // Helper : dessiner la forme amande
+        const drawAlmond = (g, x, y, w, h) => {
+            g.moveTo(x - w, y);
+            g.bezierCurveTo(x - w * 0.5, y - h, x + w * 0.5, y - h, x + w, y);
+            g.bezierCurveTo(x + w * 0.5, y + h, x - w * 0.5, y + h, x - w, y);
+        };
+
+        // ============ BOUCLE D'ANIMATION ============
+        const animate = () => {
+            if (effect.finished) return;
+            const now = performance.now();
+            const progress = (now - effect.startTime) / duration;
+            if (progress >= 1) { effect.finished = true; return; }
+
+            // --- Ouverture / fermeture ---
+            let finalOpenness = Math.min(progress / 0.22, 1);
+            finalOpenness = easeOutCubic(finalOpenness);
+            if (progress > 0.7) {
+                finalOpenness *= 1 - easeInQuart((progress - 0.7) / 0.3);
+            }
+
+            const pulse = 1 + Math.sin(now * 0.006) * 0.06;
+            const currentH = eyeH * finalOpenness;
+
+            // ====== L'OEIL ======
+            eyeGfx.clear();
+
+            if (currentH > 0.5) {
+                // --- Fond sombre de l'oeil ---
+                drawAlmond(eyeGfx, eyeX, eyeY, eyeW, currentH);
+                eyeGfx.fill({ color: 0x0a0012, alpha: 0.95 });
+
+                // --- Iris (3 couches concentriques) ---
+                const irisPulse = 1 + Math.sin(now * 0.007) * 0.1;
+                const iScale = Math.min(finalOpenness * 1.4, 1) * irisPulse;
+                const ir = irisR * iScale;
+
+                eyeGfx.circle(eyeX, eyeY, ir);
+                eyeGfx.fill({ color: C.irisOuter, alpha: 0.95 });
+                eyeGfx.circle(eyeX, eyeY, ir * 0.72);
+                eyeGfx.fill({ color: C.irisMid, alpha: 0.9 });
+                eyeGfx.circle(eyeX, eyeY, ir * 0.48);
+                eyeGfx.fill({ color: C.irisInner, alpha: 0.55 });
+
+                // --- Veines de l'iris (lignes rotatives) ---
+                const nVeins = 10;
+                const rot = now * 0.0008;
+                for (let v = 0; v < nVeins; v++) {
+                    const va = rot + (v / nVeins) * Math.PI * 2;
+                    const vLen = ir * (0.6 + Math.sin(now * 0.003 + v * 1.7) * 0.25);
+                    const hRatio = currentH / eyeH;
+                    eyeGfx.moveTo(eyeX, eyeY);
+                    eyeGfx.lineTo(
+                        eyeX + Math.cos(va) * vLen,
+                        eyeY + Math.sin(va) * vLen * hRatio
+                    );
+                    eyeGfx.stroke({ color: C.vein, width: 1, alpha: 0.35 });
+                }
+
+                // --- Glow autour de l'iris ---
+                eyeGfx.circle(eyeX, eyeY, ir * 1.1);
+                eyeGfx.stroke({ color: C.irisHot, width: 1.5, alpha: finalOpenness * 0.3 });
+
+                // --- Pupille fendue (serpent) ---
+                const pScale = Math.min(finalOpenness * 1.6, 1);
+                const pW = 2.8 * pScale;
+                const pH = ir * 0.88 * pScale;
+                eyeGfx.ellipse(eyeX, eyeY, pW, pH);
+                eyeGfx.fill({ color: C.pupil, alpha: 0.96 });
+                eyeGfx.ellipse(eyeX, eyeY, pW + 1.2, pH + 0.6);
+                eyeGfx.stroke({ color: C.pupilEdge, width: 0.8, alpha: 0.45 });
+
+                // --- Reflets spéculaires ---
+                eyeGfx.circle(eyeX - ir * 0.28, eyeY - ir * 0.22, 2.2 * pScale);
+                eyeGfx.fill({ color: C.highlight, alpha: 0.55 * finalOpenness });
+                eyeGfx.circle(eyeX + ir * 0.18, eyeY + ir * 0.18, 1.2 * pScale);
+                eyeGfx.fill({ color: 0xffffff, alpha: 0.3 * finalOpenness });
+
+                // --- Double contour lumineux ---
+                drawAlmond(eyeGfx, eyeX, eyeY, eyeW, currentH);
+                eyeGfx.stroke({ color: C.outline, width: 2.5, alpha: 0.85 });
+                drawAlmond(eyeGfx, eyeX, eyeY, eyeW + 2, currentH + 1);
+                eyeGfx.stroke({ color: C.outlineGlow, width: 1.2, alpha: 0.35 });
+            }
+
+            // ====== TENTACULES D'ÉNERGIE (0.16 → 0.82) ======
+            beamGfx.clear();
+            if (progress > 0.16 && progress < 0.82) {
+                const bp = (progress - 0.16) / 0.66;
+                const beamLen = Math.min(bp * 2.2, 1);
+                let bAlpha = 1;
+                if (bp < 0.1) bAlpha = bp / 0.1;
+                else if (bp > 0.78) bAlpha = (1 - bp) / 0.22;
+
+                // 3 tentacules sinusoïdaux
+                const tendrils = [
+                    { freq: 2.5, amp: 6,  w: 3.5, a: 0.55, color: C.beamCore, phOff: 0 },
+                    { freq: 4,   amp: 10, w: 2.2, a: 0.3,  color: C.beamMid,  phOff: Math.PI * 0.7 },
+                    { freq: 5.5, amp: 14, w: 1.5, a: 0.18, color: C.beamWide, phOff: Math.PI * 1.4 },
+                ];
+                const segs = 40;
+
+                for (const td of tendrils) {
+                    const phaseAnim = td.phOff + now * 0.003;
+                    let started = false;
+                    for (let s = 0; s < segs; s++) {
+                        const t0 = s / segs;
+                        const t1 = (s + 1) / segs;
+                        if (t0 > beamLen) break;
+                        const tEnd = Math.min(t1, beamLen);
+                        const wave0 = Math.sin(t0 * td.freq * Math.PI + phaseAnim) * td.amp * t0;
+                        const wave1 = Math.sin(tEnd * td.freq * Math.PI + phaseAnim) * td.amp * tEnd;
+                        const x0 = eyeX + dx * t0 + perpX * wave0;
+                        const y0 = eyeY + dy * t0 + perpY * wave0;
+                        const x1 = eyeX + dx * tEnd + perpX * wave1;
+                        const y1 = eyeY + dy * tEnd + perpY * wave1;
+                        if (!started) { beamGfx.moveTo(x0, y0); started = true; }
+                        beamGfx.lineTo(x1, y1);
+                    }
+                    if (started) {
+                        beamGfx.stroke({ color: td.color, width: td.w * pulse, alpha: td.a * bAlpha });
+                    }
+                }
+
+                // Coeur lumineux droit
+                const cEndX = eyeX + dx * beamLen;
+                const cEndY = eyeY + dy * beamLen;
+                beamGfx.moveTo(eyeX, eyeY);
+                beamGfx.lineTo(cEndX, cEndY);
+                beamGfx.stroke({ color: C.irisHot, width: 1.2, alpha: 0.25 * bAlpha });
+
+                // Particules du rayon
+                for (const p of beamParticles) {
+                    const t = (p.offset + now * 0.0008 * p.speed) % 1;
+                    if (t > beamLen) { p.gfx.alpha = 0; continue; }
+                    const wave = Math.sin(t * 4 * Math.PI + now * 0.003 + p.phase) * p.lateral * t;
+                    p.gfx.position.set(
+                        eyeX + dx * t + perpX * wave,
+                        eyeY + dy * t + perpY * wave
+                    );
+                    p.gfx.alpha = bAlpha * (0.25 + Math.sin(now * 0.007 + p.phase) * 0.25);
+                    p.gfx.scale.set(0.6 + Math.sin(now * 0.005 + p.phase) * 0.4);
+                }
+            } else {
+                for (const p of beamParticles) p.gfx.alpha = 0;
+            }
+
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }
+
+    // ==================== TRAP SUMMON (Piège à gobelin — invocation magique) ====================
+
+    createTrapSummonEffect(x, y, w, h) {
+        if (!this.initialized) return;
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const duration = 2800;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+
+        const maxR = Math.max(w, h) * 0.7;
+
+        // --- Glow de fond (halo doux) ---
+        const glowBg = new PIXI.Graphics();
+        glowBg.circle(0, 0, maxR * 1.5);
+        glowBg.fill({ color: 0x7a5af0, alpha: 0.15 });
+        glowBg.alpha = 0;
+        effectContainer.addChild(glowBg);
+
+        // --- Portail rotatif (3 anneaux concentriques) ---
+        const portalRings = [];
+        for (let i = 0; i < 3; i++) {
+            const ring = new PIXI.Graphics();
+            ring.alpha = 0;
+            effectContainer.addChild(ring);
+            portalRings.push({ gfx: ring, offset: i * (Math.PI * 2 / 3), baseR: maxR * (0.7 + i * 0.2) });
+        }
+
+        // --- Energy lines (6 lignes convergentes) ---
+        const energyGfx = new PIXI.Graphics();
+        effectContainer.addChild(energyGfx);
+
+        // --- 12 particules convergentes (violet/bleu) ---
+        const particles = [];
+        for (let i = 0; i < 12; i++) {
+            const gfx = new PIXI.Graphics();
+            const size = 1.5 + Math.random() * 2.5;
+            gfx.circle(0, 0, size);
+            const colors = [0xb090ff, 0x60a0ff, 0x9a7aff, 0xc0a0ff];
+            gfx.fill({ color: colors[i % colors.length], alpha: 0.9 });
+            gfx.alpha = 0;
+            const angle = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+            const dist = maxR * (1.2 + Math.random() * 0.6);
+            particles.push({
+                gfx, angle, dist,
+                startX: Math.cos(angle) * dist,
+                startY: Math.sin(angle) * dist,
+                speed: 0.8 + Math.random() * 0.4,
+                drag: 0.94 + Math.random() * 0.03,
+            });
+            effectContainer.addChild(gfx);
+        }
+
+        // --- Flash central ---
+        const flash = new PIXI.Graphics();
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        // --- Sparks d'apparition (burst au moment du flash) ---
+        const sparks = [];
+        let sparksCreated = false;
+
+        // --- Shimmer doré (particules finales) ---
+        const shimmerContainer = new PIXI.Container();
+        effectContainer.addChild(shimmerContainer);
+
+        const portalRotation = { angle: 0 };
+
+        const animate = () => {
+            if (effect.finished) return;
+            const now = performance.now();
+            const elapsed = now - effect.startTime;
+            const t = elapsed / duration; // 0 → 1 sur 2800ms
+            if (t >= 1) { effect.finished = true; return; }
+
+            const tMs = elapsed; // temps en ms
+
+            // === Phase 0: 0-400ms — Energy gathering ===
+            if (tMs < 400) {
+                const p = tMs / 400;
+                glowBg.alpha = p * 0.4;
+
+                // Particules convergent lentement
+                for (const part of particles) {
+                    const conv = p * 0.15 * part.speed;
+                    const ease = 1 - Math.pow(1 - conv, 3);
+                    part.gfx.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
+                    part.gfx.alpha = Math.min(p * 2, 0.6);
+                    part.gfx.scale.set(0.3 + p * 0.4);
+                }
+
+                // Portail commence à apparaître
+                portalRotation.angle += 0.02;
+                for (let i = 0; i < portalRings.length; i++) {
+                    const r = portalRings[i];
+                    const radius = r.baseR * (0.3 + p * 0.3);
+                    const arcLen = Math.PI * 2 * p * 0.3;
+                    r.gfx.clear();
+                    r.gfx.arc(0, 0, radius, r.offset + portalRotation.angle, r.offset + portalRotation.angle + arcLen);
+                    r.gfx.stroke({ color: 0x7a5af0, width: 2, alpha: p * 0.5 });
+                    r.gfx.alpha = 1;
+                }
+            }
+
+            // === Phase 1: 400-800ms — Portal opens ===
+            else if (tMs < 800) {
+                const p = (tMs - 400) / 400;
+                glowBg.alpha = 0.4 + p * 0.4;
+
+                // Particules convergent plus fort
+                for (const part of particles) {
+                    const conv = (0.15 + p * 0.55) * part.speed;
+                    const ease = 1 - Math.pow(1 - Math.min(conv, 1), 3);
+                    part.gfx.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
+                    part.gfx.alpha = 0.6 + p * 0.3;
+                    part.gfx.scale.set(0.7 + p * 0.3);
+                }
+
+                // Portail grandit et tourne
+                portalRotation.angle += 0.04;
+                for (let i = 0; i < portalRings.length; i++) {
+                    const r = portalRings[i];
+                    const radius = r.baseR * (0.6 + p * 0.4);
+                    const arcLen = Math.PI * 2 * (0.3 + p * 0.7);
+                    r.gfx.clear();
+                    r.gfx.arc(0, 0, radius, r.offset + portalRotation.angle * (1 + i * 0.3), r.offset + portalRotation.angle * (1 + i * 0.3) + arcLen);
+                    r.gfx.stroke({ color: i === 0 ? 0x7a5af0 : (i === 1 ? 0xb090ff : 0xffffff), width: 3 - i, alpha: (0.5 + p * 0.4) * (1 - i * 0.15) });
+                    r.gfx.alpha = 1;
+                }
+
+                // Energy lines convergentes
+                energyGfx.clear();
+                for (let i = 0; i < 6; i++) {
+                    const a = portalRotation.angle * 3 + i * Math.PI / 3;
+                    const len = maxR * 2.5 * (1 - p * 0.3);
+                    energyGfx.moveTo(Math.cos(a) * len, Math.sin(a) * len);
+                    energyGfx.lineTo(Math.cos(a) * 15, Math.sin(a) * 15);
+                    energyGfx.stroke({ color: 0x9a7aff, width: 1 + p, alpha: 0.3 * p });
+                }
+            }
+
+            // === Phase 2: 800-1000ms — Flash & card materializes ===
+            else if (tMs < 1000) {
+                const p = (tMs - 800) / 200;
+
+                // Flash blanc éclatant
+                if (!sparksCreated) {
+                    sparksCreated = true;
+                    for (let i = 0; i < 30; i++) {
+                        const gfx = new PIXI.Graphics();
+                        const size = 1 + Math.random() * 3;
+                        const colors = [0xffffff, 0xffd700, 0xc0a0ff];
+                        gfx.star(0, 0, 4, size, size * 0.4);
+                        gfx.fill({ color: colors[Math.floor(Math.random() * 3)], alpha: 1 });
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = 2 + Math.random() * 5;
+                        sparks.push({
+                            gfx, angle, speed,
+                            x: 0, y: 0,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            life: 0.5 + Math.random() * 0.5,
+                            maxLife: 0.5 + Math.random() * 0.5,
+                            gravity: 0.3 + Math.random() * 0.3,
+                            rotSpeed: (Math.random() - 0.5) * 5,
+                        });
+                        effectContainer.addChild(gfx);
+                    }
+                }
+
+                const flashAlpha = 0.7 * (1 - p);
+                const flashScale = 30 + p * 20;
+                flash.clear();
+                flash.circle(0, 0, flashScale);
+                flash.fill({ color: 0xFFFFFF, alpha: flashAlpha * 0.5 });
+                flash.circle(0, 0, flashScale * 0.6);
+                flash.fill({ color: 0x7a5af0, alpha: flashAlpha * 0.3 });
+                flash.alpha = 1;
+
+                glowBg.alpha = 0.8 - p * 0.3;
+
+                // Portail se réduit
+                for (let i = 0; i < portalRings.length; i++) {
+                    const r = portalRings[i];
+                    r.gfx.alpha = 1 - p * 0.5;
+                }
+                energyGfx.alpha = 1 - p;
+
+                // Particules disparaissent
+                for (const part of particles) {
+                    part.gfx.alpha = Math.max(0, 0.9 - p * 2);
+                }
+            }
+
+            // === Phase 3: 1000-1500ms — Card settles, sparks fly ===
+            else if (tMs < 1500) {
+                const p = (tMs - 1000) / 500;
+
+                flash.alpha = 0;
+                glowBg.alpha = 0.5 * (1 - p);
+                energyGfx.alpha = 0;
+
+                // Portail disparaît
+                for (const r of portalRings) {
+                    r.gfx.alpha = Math.max(0, 0.5 * (1 - p * 2));
+                }
+
+                // Particules convergentes disparues
+                for (const part of particles) {
+                    part.gfx.alpha = 0;
+                }
+            }
+
+            // === Phase 4: 1500-2800ms — Idle shimmer ===
+            else {
+                const p = (tMs - 1500) / 1300;
+
+                glowBg.alpha = (0.1 + Math.sin(tMs * 0.004) * 0.05) * (1 - p);
+                for (const r of portalRings) r.gfx.alpha = 0;
+                energyGfx.alpha = 0;
+                flash.alpha = 0;
+                for (const part of particles) part.gfx.alpha = 0;
+
+                // Shimmer doré sur les bords (rare)
+                if (Math.random() < 0.15 * (1 - p)) {
+                    const edge = Math.floor(Math.random() * 4);
+                    let px, py;
+                    const hw = w / 2, hh = h / 2;
+                    if (edge === 0) { px = -hw + Math.random() * w; py = -hh; }
+                    else if (edge === 1) { px = hw; py = -hh + Math.random() * h; }
+                    else if (edge === 2) { px = -hw + Math.random() * w; py = hh; }
+                    else { px = -hw; py = -hh + Math.random() * h; }
+                    const sg = new PIXI.Graphics();
+                    sg.circle(0, 0, 1 + Math.random() * 1.5);
+                    sg.fill({ color: 0xffd700, alpha: 0.5 });
+                    sg.position.set(px, py);
+                    shimmerContainer.addChild(sg);
+                    const startTime = now;
+                    const shimmerLife = 600 + Math.random() * 400;
+                    const vy = -(0.3 + Math.random() * 0.3);
+                    const shimmerTick = () => {
+                        const age = performance.now() - startTime;
+                        if (age > shimmerLife || effect.finished) { sg.destroy(); return; }
+                        sg.y += vy;
+                        sg.alpha = 0.5 * (1 - age / shimmerLife);
+                        requestAnimationFrame(shimmerTick);
+                    };
+                    requestAnimationFrame(shimmerTick);
+                }
+            }
+
+            // === Update sparks (all phases after creation) ===
+            for (let i = sparks.length - 1; i >= 0; i--) {
+                const s = sparks[i];
+                const dt = 1 / 60;
+                s.life -= dt;
+                if (s.life <= 0) {
+                    s.gfx.destroy();
+                    sparks.splice(i, 1);
+                    continue;
+                }
+                s.vx *= 0.95;
+                s.vy *= 0.95;
+                s.vy += s.gravity * dt;
+                s.x += s.vx;
+                s.y += s.vy;
+                s.gfx.position.set(s.x, s.y);
+                s.gfx.rotation += s.rotSpeed * dt;
+                s.gfx.alpha = Math.max(0, s.life / s.maxLife);
+            }
+
+            requestAnimationFrame(animate);
+        };
+
+        this.activeEffects.push(effect);
+        requestAnimationFrame(animate);
     }
 }
 

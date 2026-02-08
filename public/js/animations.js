@@ -23,12 +23,16 @@ function prepareDrawAnimation(data) {
     // Déterminer myNum depuis la variable globale
     const myPlayerNum = typeof myNum !== 'undefined' ? myNum : 1;
 
+    console.log(`[DRAW ANIM] prepareDrawAnimation called. cards:`, data.cards.map(c => `player=${c.player} handIdx=${c.handIndex} card=${c.card?.name} burned=${c.burned}`));
+
     for (const drawData of data.cards) {
         if (drawData.burned) continue;
 
         const owner = drawData.player === myPlayerNum ? 'me' : 'opp';
         const handIndex = drawData.handIndex;
         const card = drawData.card;
+
+        console.log(`[DRAW ANIM] Preparing ${owner} handIndex=${handIndex} card=${card?.name}`);
 
         // Le vrai event draw remplace l'auto-hide
         autoHiddenCards[owner].delete(handIndex);
@@ -105,6 +109,9 @@ function remapOppDrawIndices(newStartIdx) {
  * Lance les animations après le render
  */
 function startPendingDrawAnimations() {
+    if (pendingDrawAnimations.me.size > 0 || pendingDrawAnimations.opp.size > 0) {
+        console.log(`[DRAW ANIM] startPendingDrawAnimations — me: [${[...pendingDrawAnimations.me.keys()]}] opp: [${[...pendingDrawAnimations.opp.keys()]}] started.me: [${[...startedDrawAnimations.me]}] started.opp: [${[...startedDrawAnimations.opp]}]`);
+    }
     // Attendre le prochain frame pour s'assurer que le DOM est rendu
     requestAnimationFrame(() => {
         // Animer les cartes du joueur (seulement si pas déjà lancé)
@@ -158,12 +165,15 @@ function createCardElement(card) {
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
             trample: 'Piétinement', power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
             if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
             if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
+            if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
+            if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
             return abilityNames[a] || a;
         }).join(', ');
 
@@ -257,12 +267,20 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
     const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
 
-    if (!handEl) { if (onComplete) onComplete(); return; }
+    console.log(`[DRAW ANIM] animateCardDraw owner=${owner} handIndex=${handIndex} card=${card?.name}`);
+
+    if (!handEl) { console.log(`[DRAW ANIM] ABORT: handEl not found (${handSelector})`); if (onComplete) onComplete(); return; }
 
     const handCards = handEl.querySelectorAll(cardSelector);
     const targetCard = handCards[handIndex];
 
-    if (!targetCard) { if (onComplete) onComplete(); return; }
+    console.log(`[DRAW ANIM] handCards count=${handCards.length}, targetCard found=${!!targetCard}, visibility=${targetCard?.style.visibility}`);
+
+    if (!targetCard) {
+        console.log(`[DRAW ANIM] DEFER: targetCard not found at index ${handIndex} (total ${handCards.length}) — will retry on next render`);
+        startedDrawAnimations[owner].delete(handIndex);
+        return;
+    }
 
     const targetRect = targetCard.getBoundingClientRect();
     const endX = targetRect.left;
@@ -318,6 +336,10 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             wrapper.appendChild(frontFace);
             document.body.appendChild(wrapper);
 
+            // Auto-fit du nom (les noms longs débordent pendant l'animation)
+            const nameElGrave = frontFace.querySelector('.arena-name');
+            if (nameElGrave && typeof fitArenaName === 'function') fitArenaName(nameElGrave);
+
             animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
         } else {
             // Pioche normale : flipper 3D, dos visible au départ, face cachée
@@ -359,6 +381,10 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             wrapper.appendChild(flipper);
             document.body.appendChild(wrapper);
 
+            // Auto-fit du nom (les noms longs débordent pendant l'animation)
+            const nameElDraw = frontFace.querySelector('.arena-name');
+            if (nameElDraw && typeof fitArenaName === 'function') fitArenaName(nameElDraw);
+
             animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
         }
     } else {
@@ -379,6 +405,10 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             if (bgImage) frontFace.style.backgroundImage = bgImage;
             wrapper.appendChild(frontFace);
             document.body.appendChild(wrapper);
+
+            // Auto-fit du nom (les noms longs débordent pendant l'animation)
+            const nameElOppGrave = frontFace.querySelector('.arena-name');
+            if (nameElOppGrave && typeof fitArenaName === 'function') fitArenaName(nameElOppGrave);
 
             animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
         } else {

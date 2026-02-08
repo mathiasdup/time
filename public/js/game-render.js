@@ -4,8 +4,8 @@ function render() {
     if (!state) return;
     const me = state.me, opp = state.opponent;
 
-    // Ne pas mettre Ã  jour les HP si une animation zdejebel/trample est en cours ou en attente
-    // Ces animations gÃ¨rent elles-mÃªmes l'affichage des HP
+    // Ne pas mettre à jour les HP si une animation zdejebel/trample est en cours ou en attente
+    // Ces animations gèrent elles-mêmes l'affichage des HP
     const hasHpAnimPending = animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
     if (!hasHpAnimPending) {
         const meHpNum = document.querySelector('#me-hp .hero-hp-number');
@@ -29,12 +29,12 @@ function render() {
         oppManaNum.textContent = `${opp.energy}/${opp.maxEnergy}`;
         oppManaNum.style.fontSize = (opp.energy >= 10 || opp.maxEnergy >= 10) ? '1em' : '';
     }
-    // Mettre Ã  jour les tooltips du deck
+    // Mettre à jour les tooltips du deck
     const meDeckTooltip = document.getElementById('me-deck-tooltip');
     const oppDeckTooltip = document.getElementById('opp-deck-tooltip');
     if (meDeckTooltip) meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
     if (oppDeckTooltip) oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
-    // Mettre Ã  jour les tooltips du cimetiÃ¨re
+    // Mettre à jour les tooltips du cimetière
     const meGraveCount = me.graveyardCount || 0;
     const oppGraveCount = opp.graveyardCount || 0;
     const meGraveTooltip = document.getElementById('me-grave-tooltip');
@@ -46,11 +46,11 @@ function render() {
     updateDeckDisplay('me', me.deckCount);
     updateDeckDisplay('opp', opp.deckCount);
     
-    // Afficher la derniÃ¨re carte du cimetiÃ¨re
+    // Afficher la dernière carte du cimetière
     updateGraveTopCard('me', me.graveyard);
     updateGraveTopCard('opp', opp.graveyard);
     
-    // Mettre Ã  jour l'affichage de la pile du cimetiÃ¨re
+    // Mettre à jour l'affichage de la pile du cimetière
     updateGraveDisplay('me', me.graveyard);
     updateGraveDisplay('opp', opp.graveyard);
     
@@ -63,7 +63,7 @@ function render() {
 
     renderOppHand(opp.handCount, opp.oppHand);
 
-    // Lancer les animations de pioche aprÃ¨s les renders
+    // Lancer les animations de pioche après les renders
     if (typeof GameAnimations !== 'undefined') {
         GameAnimations.startPendingDrawAnimations();
     }
@@ -77,7 +77,7 @@ function updateDeckDisplay(owner, deckCount) {
     const stack = document.getElementById(`${owner}-deck-stack`);
     if (!stack) return;
     
-    // GÃ©rer l'Ã©tat vide
+    // Gérer l'état vide
     if (deckCount <= 0) {
         stack.classList.add('empty');
     } else {
@@ -85,13 +85,16 @@ function updateDeckDisplay(owner, deckCount) {
     }
     
     // Ajuster le nombre de couches visibles selon le nombre de cartes
-    // CSS inversÃ© : nth-child(1) = fond (dÃ©calÃ©), nth-child(5) = dessus (pas de dÃ©calage)
-    // Quand le deck diminue, on masque les couches du DESSUS (index Ã©levÃ©s dans le DOM)
+    // CSS inversé : nth-child(1) = fond (décalé), nth-child(5) = dessus (pas de décalage)
+    // Quand le deck diminue, on masque les couches du DESSUS (index élevés dans le DOM)
     const layers = stack.querySelectorAll('.deck-card-layer');
     const totalLayers = layers.length;
     const visibleLayers = Math.min(totalLayers, Math.ceil(deckCount / 8)); // 1 couche par 8 cartes
 
-    // Garder les premiÃ¨res couches (fond), masquer les derniÃ¨res (dessus)
+    // Variable CSS pour l'ombre proportionnelle au nombre de couches
+    stack.style.setProperty('--stack-layers', visibleLayers);
+
+    // Garder les premières couches (fond), masquer les dernières (dessus)
     layers.forEach((layer, i) => {
         if (i < visibleLayers) {
             layer.style.display = 'block';
@@ -101,9 +104,15 @@ function updateDeckDisplay(owner, deckCount) {
     });
 }
 
-// Bloquer le render du cimetiÃ¨re pendant les animations de burn
-const graveRenderBlocked = new Set(); // 'me' ou 'opp'
-const pendingSpellReturns = new Set(); // UIDs de sorts qui retournent en main (pas au cimetiÃ¨re)
+// Bloquer le render du cimetière pendant les animations (compteur pour supporter plusieurs animations simultanées)
+const _graveBlockCount = { me: 0, opp: 0 };
+const graveRenderBlocked = {
+    add(owner) { _graveBlockCount[owner] = (_graveBlockCount[owner] || 0) + 1; },
+    delete(owner) { _graveBlockCount[owner] = Math.max(0, (_graveBlockCount[owner] || 0) - 1); },
+    has(owner) { return (_graveBlockCount[owner] || 0) > 0; },
+    clear() { _graveBlockCount.me = 0; _graveBlockCount.opp = 0; }
+};
+const pendingSpellReturns = new Set(); // UIDs de sorts qui retournent en main (pas au cimetière)
 
 function updateGraveDisplay(owner, graveyard) {
     if (graveRenderBlocked.has(owner)) return;
@@ -112,19 +121,22 @@ function updateGraveDisplay(owner, graveyard) {
 
     const count = graveyard ? graveyard.length : 0;
 
-    // RÃ©initialiser les classes
-    stack.classList.remove('has-cards', 'cards-1', 'cards-2', 'cards-3');
+    stack.classList.toggle('has-cards', count > 0);
 
-    if (count > 0) {
-        stack.classList.add('has-cards');
-        if (count === 1) stack.classList.add('cards-1');
-        else if (count === 2) stack.classList.add('cards-2');
-        else if (count === 3) stack.classList.add('cards-3');
-    }
-
-    // Remplir les layers avec de vraies cartes
+    // Nombre de couches visibles proportionnel au nombre de cartes (comme le deck)
+    // 1 carte = 0 couches (juste la top card), puis 1 couche par ~6 cartes, max 3
     const layers = stack.querySelectorAll('.grave-card-layer');
+    const visibleLayers = count <= 1 ? 0 : Math.min(layers.length, Math.ceil(count / 6));
+
+    // Variable CSS pour l'ombre proportionnelle au nombre de couches
+    stack.style.setProperty('--stack-layers', visibleLayers);
+
+    // Remplir les layers avec de vraies cartes, afficher/masquer selon le count
+    // Les dernières couches (proches du dessus) sont affichées en premier
     layers.forEach((layer, i) => {
+        const show = i >= layers.length - visibleLayers;
+        layer.style.display = show ? 'block' : 'none';
+
         // Layer 0 (nth-child(1), bottom, most offset): graveyard[count-4]
         // Layer 1 (nth-child(2), middle):              graveyard[count-3]
         // Layer 2 (nth-child(3), top layer):           graveyard[count-2]
@@ -132,7 +144,7 @@ function updateGraveDisplay(owner, graveyard) {
         const card = (cardIndex >= 0 && graveyard) ? graveyard[cardIndex] : null;
         const cardId = card ? (card.uid || card.id) : '';
 
-        // Cache: ne re-render que si la carte a changÃ©
+        // Cache: ne re-render que si la carte a changé
         if (layer.dataset.cardUid === cardId) return;
         layer.dataset.cardUid = cardId;
         layer.innerHTML = '';
@@ -147,8 +159,6 @@ function updateGraveDisplay(owner, graveyard) {
 
 function updateGraveTopCard(owner, graveyard) {
     if (graveRenderBlocked.has(owner)) {
-        // Rester bloquÃ© â€” l'animation (burn, death, spell, trap) dÃ©bloquera elle-mÃªme
-        // quand elle sera terminÃ©e et appellera updateGraveTopCard Ã  ce moment-lÃ 
         return;
     }
     const container = document.getElementById(`${owner}-grave-top`);
@@ -162,8 +172,11 @@ function updateGraveTopCard(owner, graveyard) {
         container.classList.remove('empty');
         container.innerHTML = '';
         const cardEl = makeCard(topCard, false);
+        cardEl.classList.remove('just-played', 'can-attack');
         cardEl.classList.add('grave-card', 'in-graveyard');
         container.appendChild(cardEl);
+        const nameEl = cardEl.querySelector('.arena-name');
+        if (nameEl) fitArenaName(nameEl);
     } else {
         if (container.classList.contains('empty') && container.children.length === 0) return;
         delete container.dataset.topCardUid;
@@ -181,6 +194,11 @@ function renderField(owner, field, activeShieldKeys) {
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
             if (animatingSlots.has(slotKey)) {
+                // DEBUG: log si ce slot bloqué contient une carte pétrifiée dans le state
+                const blockedCard = (owner === 'me' ? state?.me?.field : state?.opponent?.field)?.[r]?.[c];
+                if (blockedCard && (blockedCard.petrified || blockedCard.melodyLocked)) {
+                    console.log(`[RENDER BLOQUÉ] Slot ${slotKey} bloqué par animatingSlots ! Card: ${blockedCard.name}, petrified=${blockedCard.petrified}, melodyLocked=${blockedCard.melodyLocked}`);
+                }
                 continue;
             }
 
@@ -193,25 +211,29 @@ function renderField(owner, field, activeShieldKeys) {
             slot.classList.remove('has-flying');
             const card = field[r][c];
 
-            // Log quand une carte disparait du slot (aide au debug des animations de mort)
+            // DEBUG sacrifice : log quand une carte apparaît/disparaît d'un slot
+            if (!hadCard && card) {
+                console.log(`[RENDER] Carte APPARAÎT dans slot ${slotKey}: ${card.name} (animatingSlots: [${[...animatingSlots]}])`);
+            }
             if (hadCard && !card) {
+                console.log(`[RENDER] Carte DISPARAÎT du slot ${slotKey} (animatingSlots: [${[...animatingSlots]}])`);
             }
 
             if (card) {
                 slot.classList.add('has-card');
                 const cardEl = makeCard(card, false);
 
-                // Ajouter l'effet de lÃ©vitation pour les crÃ©atures volantes
+                // Ajouter l'effet de lévitation pour les créatures volantes
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     cardEl.classList.add('flying-creature');
                     slot.classList.add('has-flying');
-                    // DÃ©marrer l'animation de lÃ©vitation continue
+                    // Démarrer l'animation de lévitation continue
                     startFlyingAnimation(cardEl);
                 } else {
                     slot.classList.remove('has-flying');
                 }
 
-                // Indicateur de bouclier (Protection) â€” PixiJS honeycomb
+                // Indicateur de bouclier (Protection) — PixiJS honeycomb
                 if (card.hasProtection) {
                     CombatVFX.registerShield(slotKey, cardEl);
                     if (activeShieldKeys) activeShieldKeys.add(slotKey);
@@ -222,8 +244,8 @@ function renderField(owner, field, activeShieldKeys) {
                 cardEl.onmouseleave = hideCardPreview;
                 cardEl.onmousemove = (e) => moveCardPreview(e);
 
-                // Custom drag pour redÃ©ploiement (seulement mes cartes)
-                if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn) {
+                // Custom drag pour redéploiement (seulement mes cartes)
+                if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     CustomDrag.makeDraggable(cardEl, {
                         source: 'field',
                         card: card,
@@ -239,55 +261,113 @@ function renderField(owner, field, activeShieldKeys) {
                     showCardZoom(card);
                 };
                 slot.appendChild(cardEl);
+
+                // Auto-fit du nom : réduire le font-size si le texte déborde
+                const nameEl = cardEl.querySelector('.arena-name');
+                if (nameEl) fitArenaName(nameEl);
             }
         }
     }
 }
 
+// Auto-fit : réduit le font-size d'un .arena-name jusqu'à ce que le texte tienne
+function fitArenaName(el) {
+    const parent = el.parentElement; // .arena-title
+    if (!parent) return;
+    const maxW = parent.clientWidth;
+    if (maxW === 0) {
+        // Parent pas encore layouté (ex: display:none) → réessayer au prochain frame
+        requestAnimationFrame(() => fitArenaName(el));
+        return;
+    }
+    // Reset
+    el.style.fontSize = '';
+    // Forcer overflow visible + largeur naturelle pour mesurer le vrai texte
+    el.style.overflow = 'visible';
+    el.style.width = 'max-content';
+    const textW = el.offsetWidth;
+    if (textW <= maxW) {
+        el.style.overflow = '';
+        el.style.width = '';
+        return;
+    }
+    // Calculer le ratio puis ajuster en une passe + vérification
+    const originalSize = parseFloat(getComputedStyle(el).fontSize);
+    const ratio = maxW / textW;
+    let size = Math.floor(originalSize * ratio * 10) / 10; // Arrondi vers le bas au 0.1px
+    const minSize = originalSize * 0.35;
+    if (size < minSize) size = minSize;
+    el.style.fontSize = size + 'px';
+    // Vérification : si ça déborde encore, réduire pas à pas
+    while (el.offsetWidth > maxW && size > minSize) {
+        size -= 0.3;
+        el.style.fontSize = size + 'px';
+    }
+    // Restaurer le CSS normal
+    el.style.overflow = '';
+    el.style.width = '';
+}
+
+// Auto-fit : planifie un fitArenaName sur le nom d'un élément carte
+// Utilise requestAnimationFrame pour que ça marche même si l'élément n'est pas encore dans le DOM
+function autoFitCardName(el) {
+    requestAnimationFrame(() => {
+        const nameEl = el.querySelector('.arena-name') || el.querySelector('.fa-name') || el.querySelector('.img-name') || el.querySelector('.card-name');
+        if (nameEl) fitArenaName(nameEl);
+    });
+}
+
 // Preview flottante d'une carte
 let previewEl = null;
-// Descriptions des capacitÃ©s
+// Descriptions des capacités
 const ABILITY_DESCRIPTIONS = {
-    fly: { name: 'Vol', desc: 'Cette crÃ©ature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
-    shooter: { name: 'Tireur', desc: 'Cette crÃ©ature peut attaquer Ã  distance sans recevoir de riposte.' },
-    haste: { name: 'CÃ©lÃ©ritÃ©', desc: 'Cette crÃ©ature peut attaquer dÃ¨s le tour oÃ¹ elle est invoquÃ©e.' },
-    intangible: { name: 'Intangible', desc: 'Cette crÃ©ature ne peut pas Ãªtre ciblÃ©e par les sorts ou les piÃ¨ges.' },
-    trample: { name: 'PiÃ©tinement', desc: 'Les dÃ©gÃ¢ts excÃ©dentaires sont infligÃ©s au hÃ©ros adverse.' },
+    fly: { name: 'Vol', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
+    shooter: { name: 'Tireur', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
+    haste: { name: 'Célérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
+    intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
+    trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
 
-    power: { name: 'Puissance', desc: 'Quand cette crÃ©ature subit des dÃ©gÃ¢ts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
-    cleave: { name: 'Clivant', desc: 'Quand cette crÃ©ature attaque, elle inflige X dÃ©gÃ¢ts aux crÃ©atures sur les lignes adjacentes. Ces crÃ©atures ne ripostent pas.' },
-    immovable: { name: 'Immobile', desc: 'Cette crÃ©ature ne peut pas se dÃ©placer.' },
-    regeneration: { name: 'RÃ©gÃ©nÃ©ration', desc: 'En fin de tour, cette crÃ©ature rÃ©cupÃ¨re X PV (sans dÃ©passer ses PV max).' },
-    protection: { name: 'Protection', desc: 'Cette crÃ©ature est protÃ©gÃ©e contre la prochaine source de dÃ©gÃ¢ts qu\'elle subirait. Le bouclier est consommÃ© aprÃ¨s avoir bloquÃ© une source.' }
+    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
+    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' },
+    immovable: { name: 'Immobile', desc: 'Cette créature ne peut pas se déplacer.' },
+    regeneration: { name: 'Régénération', desc: 'En fin de tour, cette créature récupère X PV (sans dépasser ses PV max).' },
+    protection: { name: 'Protection', desc: 'Cette créature est protégée contre la prochaine source de dégâts qu\'elle subirait. Le bouclier est consommé après avoir bloqué une source.' },
+    spellBoost: { name: 'Sort renforcé', desc: 'Tant que cette créature est en jeu, vos sorts infligent +X dégâts supplémentaires.' },
+    enhance: { name: 'Amélioration', desc: 'Les créatures adjacentes (haut, bas, côté) gagnent +X en attaque tant que cette créature est en jeu.' },
+    bloodthirst: { name: 'Soif de sang', desc: 'Chaque fois qu\'une créature ennemie meurt, cette créature gagne +X ATK de façon permanente.' },
+    melody: { name: 'Mélodie', desc: 'La première créature ennemie en face ne peut ni attaquer ni se déplacer. Après 2 tours, elle se transforme en pierre.' },
+    sacrifice: { name: 'Sacrifice', desc: 'À l\'invocation, sacrifie une créature adjacente pouvant attaquer.' },
+    camouflage: { name: 'Camouflage', desc: 'Cette créature ne peut pas être ciblée par les attaques ni les sorts. Les attaquants l\'ignorent et frappent derrière. Se dissipe au début du prochain tour.' }
 };
 
 function showCardPreview(card, e) {
     hideCardPreview();
     
-    // CrÃ©er le container
+    // Créer le container
     previewEl = document.createElement('div');
     previewEl.className = 'preview-container card-preview';
     
-    // Ajouter la carte (version complÃ¨te avec tous les dÃ©tails)
+    // Ajouter la carte (version complète avec tous les détails)
     const cardEl = makeCard(card, true);
     cardEl.classList.add('preview-card');
     previewEl.appendChild(cardEl);
-    
-    // Container pour capacitÃ©s + effets
+
+    // Container pour capacités + effets
     const infoContainer = document.createElement('div');
     infoContainer.className = 'preview-info-container';
     
-    // Ajouter les capacitÃ©s si c'est une crÃ©ature avec des abilities
-    if (card.type === 'creature' && card.abilities && card.abilities.length > 0) {
+    // Ajouter les capacités si c'est une créature avec des abilities ou sacrifice
+    const hasAbilities = card.type === 'creature' && ((card.abilities && card.abilities.length > 0) || card.sacrifice);
+    if (hasAbilities) {
         const abilitiesContainer = document.createElement('div');
         abilitiesContainer.className = 'preview-abilities';
 
-        card.abilities.forEach(ability => {
+        (card.abilities || []).forEach(ability => {
             const abilityInfo = ABILITY_DESCRIPTIONS[ability];
             if (abilityInfo) {
                 const abilityEl = document.createElement('div');
                 abilityEl.className = 'preview-ability';
-                // Type de combat (shooter/fly) en blanc, capacitÃ©s communes en jaune
+                // Type de combat (shooter/fly) en blanc, capacités communes en jaune
                 const isTypeAbility = ability === 'shooter' || ability === 'fly';
                 abilityEl.innerHTML = `
                     <div class="ability-name ${isTypeAbility ? 'type-ability' : ''}">${abilityInfo.name}</div>
@@ -297,10 +377,21 @@ function showCardPreview(card, e) {
             }
         });
 
+        if (card.sacrifice) {
+            const abilityInfo = ABILITY_DESCRIPTIONS.sacrifice;
+            const abilityEl = document.createElement('div');
+            abilityEl.className = 'preview-ability';
+            abilityEl.innerHTML = `
+                <div class="ability-name">${abilityInfo.name} ${card.sacrifice}</div>
+                <div class="ability-desc">${abilityInfo.desc}</div>
+            `;
+            abilitiesContainer.appendChild(abilityEl);
+        }
+
         infoContainer.appendChild(abilitiesContainer);
     }
     
-    // Ajouter les effets appliquÃ©s (sorts) si prÃ©sents
+    // Ajouter les effets appliqués (sorts) si présents
     if (card.appliedEffects && card.appliedEffects.length > 0) {
         const effectsContainer = document.createElement('div');
         effectsContainer.className = 'preview-effects';
@@ -323,7 +414,12 @@ function showCardPreview(card, e) {
     }
 
     document.body.appendChild(previewEl);
-    const el = previewEl; // Garder une rÃ©fÃ©rence locale
+
+    // Auto-fit du nom (après insertion dans le DOM pour mesurer)
+    const previewNameEl = cardEl.querySelector('.arena-name');
+    if (previewNameEl) fitArenaName(previewNameEl);
+
+    const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
         if (el && el.parentNode) el.classList.add('visible');
     });
@@ -334,7 +430,7 @@ function showCardBackPreview() {
     previewEl = document.createElement('div');
     previewEl.className = 'card-back-preview card-preview';
     document.body.appendChild(previewEl);
-    const el = previewEl; // Garder une rÃ©fÃ©rence locale
+    const el = previewEl; // Garder une référence locale
     requestAnimationFrame(() => {
         if (el && el.parentNode) el.classList.add('visible');
     });
@@ -361,11 +457,12 @@ function makeHeroCard(hero, hp) {
             </div>
         </div>
         <div class="arena-text-zone">
-            <div class="arena-type">HÃ©ros</div>
+            <div class="arena-type">Héros</div>
             <div class="arena-special">${hero.ability}</div>
         </div>
         ${rarityDiamond}`;
 
+    autoFitCardName(el);
     return el;
 }
 
@@ -385,7 +482,7 @@ function showHeroPreview(hero, hp) {
         const cardEl = makeHeroCard(hero, hp);
         previewEl.appendChild(cardEl);
     } else {
-        previewEl.innerHTML = `<div class="hero-preview-name">${hero ? hero.name : 'HÃ©ros'}</div>`;
+        previewEl.innerHTML = `<div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>`;
     }
     document.body.appendChild(previewEl);
     const el = previewEl;
@@ -427,16 +524,30 @@ function hideCardPreview() {
 }
 
 function renderTraps() {
+    const t = performance.now();
     state.me.traps.forEach((trap, i) => {
         const slot = document.querySelector(`.trap-slot[data-owner="me"][data-row="${i}"]`);
         if (slot) {
-            const hadTrap = slot.classList.contains('has-trap');
-            slot.classList.remove('has-trap', 'mine');
+            const trapKey = `me-${i}`;
+            const isProtected = animatingTrapSlots.has(trapKey);
+            const hasTrapClass = slot.classList.contains('has-trap');
+            const hasTriggered = slot.classList.contains('triggered');
+            if (isProtected || trap || hasTrapClass) {
+                console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey}: protected=${isProtected}, stateTrap=${!!trap}, hasTrapClass=${hasTrapClass}, triggered=${hasTriggered}, innerHTML=${slot.innerHTML.substring(0,50)}`);
+            }
+            if (isProtected) {
+                if (!trap) {
+                    console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey} LIBÉRÉ (state trap=null)`);
+                    animatingTrapSlots.delete(trapKey);
+                    // fall through pour nettoyer le slot
+                } else {
+                    return; // piège encore actif côté serveur, on ne touche pas
+                }
+            }
+            slot.classList.remove('has-trap', 'mine', 'triggered');
             if (trap) {
                 slot.classList.add('has-trap', 'mine');
                 slot.innerHTML = '<img class="trap-icon-img mine" src="/battlefield_elements/beartraparmed.png" alt="trap">';
-
-                // Hover preview pour voir le piÃ¨ge posÃ©
                 const trapCard = state.me.trapCards ? state.me.trapCards[i] : null;
                 if (trapCard) {
                     slot.onmouseenter = (e) => showCardPreview(trapCard, e);
@@ -444,8 +555,6 @@ function renderTraps() {
                     slot.onmousemove = (e) => moveCardPreview(e);
                 }
             } else {
-                if (hadTrap) {
-                }
                 slot.innerHTML = '';
                 slot.onmouseenter = null;
                 slot.onmouseleave = null;
@@ -457,14 +566,27 @@ function renderTraps() {
     state.opponent.traps.forEach((trap, i) => {
         const slot = document.querySelector(`.trap-slot[data-owner="opp"][data-row="${i}"]`);
         if (slot) {
-            const hadTrap = slot.classList.contains('has-trap');
-            slot.classList.remove('has-trap', 'mine');
+            const trapKey = `opp-${i}`;
+            const isProtected = animatingTrapSlots.has(trapKey);
+            const hasTrapClass = slot.classList.contains('has-trap');
+            const hasTriggered = slot.classList.contains('triggered');
+            if (isProtected || trap || hasTrapClass) {
+                console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey}: protected=${isProtected}, stateTrap=${!!trap}, hasTrapClass=${hasTrapClass}, triggered=${hasTriggered}, innerHTML=${slot.innerHTML.substring(0,50)}`);
+            }
+            if (isProtected) {
+                if (!trap) {
+                    console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey} LIBÉRÉ (state trap=null)`);
+                    animatingTrapSlots.delete(trapKey);
+                    // fall through pour nettoyer le slot
+                } else {
+                    return;
+                }
+            }
+            slot.classList.remove('has-trap', 'mine', 'triggered');
             if (trap) {
                 slot.classList.add('has-trap');
                 slot.innerHTML = '<img class="trap-icon-img enemy" src="/battlefield_elements/beartraparmed.png" alt="trap">';
             } else {
-                if (hadTrap) {
-                }
                 slot.innerHTML = '';
             }
         }
@@ -490,7 +612,7 @@ function renderHand(hand, energy) {
                 oldPositions[newIdx] = card.getBoundingClientRect().left;
             }
         });
-        // Sorts engagÃ©s (par commitId)
+        // Sorts engagés (par commitId)
         const oldCommitted = panel.querySelectorAll('.committed-spell');
         oldCommitted.forEach(card => {
             const commitId = card.dataset.commitId;
@@ -501,13 +623,13 @@ function renderHand(hand, energy) {
 
     panel.innerHTML = '';
 
-    // VÃ©rifier si Hyrule peut rÃ©duire le coÃ»t du 2Ã¨me sort
+    // Vérifier si Hyrule peut réduire le coût du 2ème sort
     const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
     const spellsCast = state.me.spellsCastThisTurn || 0;
     const hasHyruleDiscount = isHyrule && spellsCast === 1;
 
     hand.forEach((card, i) => {
-        // Calculer le coÃ»t effectif pour les sorts avec Hyrule
+        // Calculer le coût effectif pour les sorts avec Hyrule
         let effectiveCost = card.cost;
         let hasDiscount = false;
         if (hasHyruleDiscount && card.type === 'spell') {
@@ -519,17 +641,17 @@ function renderHand(hand, energy) {
         el.dataset.idx = i;
         el.dataset.cost = effectiveCost;
 
-        // Marquer comme jouable si : assez de mana + phase planning + pas encore validÃ© le tour
+        // Marquer comme jouable si : assez de mana + phase planning + pas encore validé le tour
         if (effectiveCost <= energy && canPlay()) {
             el.classList.add('playable');
         }
 
-        // Retirer playable si aucun slot libre sur le board (crÃ©atures et piÃ¨ges)
+        // Retirer playable si aucun slot libre sur le board (créatures et pièges)
         if ((card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) {
             el.classList.remove('playable');
         }
 
-        // Z-index incrÃ©mental pour Ã©viter les saccades au hover
+        // Z-index incrémental pour éviter les saccades au hover
         el.style.zIndex = i + 1;
 
         // Cacher si animation de pioche en attente
@@ -537,11 +659,37 @@ function renderHand(hand, energy) {
             el.style.visibility = 'hidden';
         }
 
-        // VÃ©rifier les conditions d'invocation spÃ©ciales (ex: Kraken Colossal)
+        // Vérifier les conditions d'invocation spéciales (ex: Kraken Colossal)
         let cantSummon = false;
         if (card.requiresGraveyardCreatures) {
             const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
             if (graveyardCreatures < card.requiresGraveyardCreatures) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Réanimation : nécessite au moins 1 créature non-engagée au cimetière
+        if (card.requiresGraveyardCreature) {
+            const availableCreatures = (state.me.graveyard || []).filter(c =>
+                c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+            );
+            if (availableCreatures.length === 0) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Sacrifice : nécessite au moins 1 slot vide adjacent à une créature sacrifiable
+        if (card.sacrifice) {
+            const validSlots = getValidSlots(card);
+            if (validSlots.length === 0) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Sort ciblant une créature alliée : nécessite au moins 1 créature sur le terrain
+        if (card.targetSelfCreature) {
+            const hasCreature = state.me.field.some(row => row.some(c => c !== null));
+            if (!hasCreature) {
                 cantSummon = true;
                 el.classList.remove('playable');
             }
@@ -568,9 +716,13 @@ function renderHand(hand, energy) {
         };
 
         panel.appendChild(el);
+
+        // Auto-fit du nom après insertion DOM
+        const nameEl = el.querySelector('.arena-name');
+        if (nameEl) fitArenaName(nameEl);
     });
 
-    // Sorts engagÃ©s : afficher les sorts jouÃ©s (grisÃ©s avec numÃ©ro d'ordre)
+    // Sorts engagés : afficher les sorts joués (grisés avec numéro d'ordre)
     committedSpells.forEach((cs, csIdx) => {
         const el = makeCard(cs.card, false);
         el.classList.add('committed-spell');
@@ -594,7 +746,7 @@ function renderHand(hand, energy) {
         panel.appendChild(el);
     });
 
-    // Bounce : cacher la derniÃ¨re carte si un bounce est en attente
+    // Bounce : cacher la dernière carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'me') {
         const allCards = panel.querySelectorAll('.card');
         checkPendingBounce('me', allCards);
@@ -619,7 +771,7 @@ function renderHand(hand, energy) {
                 }
             }
         });
-        // Sorts engagÃ©s (par commitId)
+        // Sorts engagés (par commitId)
         if (oldCommittedPositions) {
             newCommitted.forEach(card => {
                 const commitId = card.dataset.commitId;
@@ -697,15 +849,16 @@ function clearCommittedSpellHighlights() {
 
 function createOppHandCard(revealedCard) {
     if (revealedCard) {
-        // Carte rÃ©vÃ©lÃ©e : utiliser makeCard pour le design complet
+        // Carte révélée : utiliser makeCard pour le design complet
         const el = makeCard(revealedCard, true);
         el.classList.add('opp-card-back', 'opp-revealed');
+        if (revealedCard.uid) el.dataset.uid = revealedCard.uid;
         el.onmouseenter = (e) => showCardPreview(revealedCard, e);
         el.onmouseleave = hideCardPreview;
         el.onclick = (e) => { e.stopPropagation(); showCardZoom(revealedCard); };
         return el;
     } else {
-        // Carte cachÃ©e : dos de carte standard
+        // Carte cachée : dos de carte standard
         const el = document.createElement('div');
         el.className = 'opp-card-back';
         el.onmouseenter = () => showCardBackPreview();
@@ -720,17 +873,22 @@ function renderOppHand(count, oppHand) {
     const oldCount = oldCards.length;
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
 
-    // --- Mode incrÃ©mental : ne PAS dÃ©truire le DOM pendant une animation de pioche ---
+    const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
+    console.log(`[RENDER OPP HAND] count=${count} oldCount=${oldCount} drawActive=${drawActive} cacheSize=${cacheSize} pending=[${[...pendingDrawAnimations.opp.keys()]}] started=[${[...startedDrawAnimations.opp]}]`);
+
+    // --- Mode freeze : ne PAS toucher au DOM pendant la transition de révélation ---
+    // Tant que des cartes revealed sont en attente d'animation et que le count n'a pas changé,
+    // on garde la main telle quelle (la carte revealed reste à sa place visuelle)
+    if (cacheSize > 0 && count === oldCount) {
+        console.log('[RENDER OPP HAND] FREEZE mode - keeping DOM as-is (revealed card waiting for animation)');
+        return;
+    }
+
+    // --- Mode incrémental : ne PAS détruire le DOM pendant une animation de pioche ---
     if (drawActive && count >= oldCount) {
-        // Remappe les indices de pioche opp vers les nouvelles cartes en fin de main
-        // Le serveur renvoie un handIndex interne, mais cÃ´tÃ© DOM toutes les cartes adverses
-        // sont des dos identiques â€” on anime toujours la nouvelle carte Ã  la fin
         if (count > oldCount) {
             GameAnimations.remapOppDrawIndices(oldCount);
         }
-        // Cartes existantes :
-        // - Si la main grandit (count > oldCount) : garder visibles (la nouvelle carte Ã  la fin sera cachÃ©e)
-        // - Si mÃªme taille (count == oldCount) : cacher la carte ciblÃ©e par l'animation pending
         for (let i = 0; i < oldCount; i++) {
             if (count === oldCount) {
                 const shouldHide = GameAnimations.shouldHideCard('opp', i);
@@ -739,7 +897,6 @@ function renderOppHand(count, oppHand) {
                 oldCards[i].style.visibility = '';
             }
         }
-        // Ajouter les nouvelles cartes (si le count a augmentÃ©)
         for (let i = oldCount; i < Math.min(count, 12); i++) {
             const revealedCard = oppHand && oppHand[i];
             const el = createOppHandCard(revealedCard);
@@ -750,7 +907,6 @@ function renderOppHand(count, oppHand) {
             }
             panel.appendChild(el);
         }
-        // Bounce check
         if (pendingBounce && pendingBounce.owner === 'opp') {
             const allCards = panel.querySelectorAll('.opp-card-back');
             checkPendingBounce('opp', allCards);
@@ -769,7 +925,6 @@ function renderOppHand(count, oppHand) {
         const el = createOppHandCard(revealedCard);
         el.style.zIndex = i + 1;
 
-        // Cacher si animation de pioche en attente
         const shouldHide = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('opp', i);
         if (shouldHide) {
             el.style.visibility = 'hidden';
@@ -778,7 +933,7 @@ function renderOppHand(count, oppHand) {
         panel.appendChild(el);
     }
 
-    // Animation glissante si la main a rÃ©trÃ©ci
+    // Animation glissante si la main a rétréci
     if (count < oldCount && oldCount > 0) {
         const newCards = panel.querySelectorAll('.opp-card-back');
         newCards.forEach((card, i) => {
@@ -798,7 +953,7 @@ function renderOppHand(count, oppHand) {
         });
     }
 
-    // Bounce : cacher la derniÃ¨re carte si un bounce est en attente
+    // Bounce : cacher la dernière carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'opp') {
         const allCards = panel.querySelectorAll('.opp-card-back');
         checkPendingBounce('opp', allCards);
@@ -808,27 +963,35 @@ function renderOppHand(count, oppHand) {
 function makeCard(card, inHand, discountedCost = null) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
-    // Synchroniser l'animation de bordure rotative (Ã©vite le redÃ©marrage au re-render)
+    // Synchroniser l'animation de bordure rotative (évite le redémarrage au re-render)
     el.style.setProperty('--anim-offset', `${(performance.now() / 1000) % 6}s`);
 
     if (!inHand && card.type === 'creature') {
         if (card.turnsOnField === 0 && !card.abilities?.includes('haste')) el.classList.add('just-played');
         if (card.canAttack) el.classList.add('can-attack');
+        if (card.melodyLocked) {
+            console.log(`[RENDER makeCard] ${card.name} → melody-locked`);
+            el.classList.add('melody-locked');
+        }
+        if (card.petrified) {
+            console.log(`[RENDER makeCard] ${card.name} → petrified`);
+            el.classList.add('petrified');
+        }
     }
 
     const hp = card.currentHp ?? card.hp;
 
-    // CoÃ»t affichÃ© (rÃ©duit si Hyrule actif)
+    // Coût affiché (réduit si Hyrule actif)
     const displayCost = discountedCost !== null ? discountedCost : card.cost;
     const costClass = discountedCost !== null ? 'discounted' : '';
 
     // Classes pour les stats (comparaison avec les stats de BASE)
-    // boosted = supÃ©rieur Ã  la base (vert), reduced = infÃ©rieur Ã  la base (rouge)
+    // boosted = supérieur à la base (vert), reduced = inférieur à la base (rouge)
     let hpClass = '';
     let atkClass = '';
     if (card.type === 'creature') {
-        const baseHp = card.baseHp ?? card.hp; // Si pas de baseHp, utiliser hp comme rÃ©fÃ©rence
-        const baseAtk = card.baseAtk ?? card.atk; // Si pas de baseAtk, utiliser atk comme rÃ©fÃ©rence
+        const baseHp = card.baseHp ?? card.hp; // Si pas de baseHp, utiliser hp comme référence
+        const baseAtk = card.baseAtk ?? card.atk; // Si pas de baseAtk, utiliser atk comme référence
 
         // HP: comparer currentHp avec baseHp
         if (hp > baseHp) {
@@ -845,7 +1008,7 @@ function makeCard(card, inHand, discountedCost = null) {
         }
     }
 
-    // Carte style Arena (Magic Arena) : pilule stats en bas Ã  droite, mana en rond bleu
+    // Carte style Arena (Magic Arena) : pilule stats en bas à droite, mana en rond bleu
     if (card.arenaStyle && card.image) {
         el.classList.add('arena-style');
         if (card.faction) {
@@ -853,150 +1016,183 @@ function makeCard(card, inHand, discountedCost = null) {
         }
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // CapacitÃ©s communes (sans shooter/fly car dÃ©jÃ  dans le type)
+        // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
-            haste: 'CÃ©lÃ©ritÃ©', intangible: 'Intangible',
-            trample: 'PiÃ©tinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'RÃ©gÃ©nÃ©ration',
-            protection: 'Protection'
+            haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
         };
-        // Filtrer shooter et fly des capacitÃ©s affichÃ©es
+        // Filtrer shooter et fly des capacités affichées
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
                 if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-                if (a === 'regeneration') return `RÃ©gÃ©nÃ©ration ${card.regenerationX || ''}`.trim();
+                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+                if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
+                if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
+                if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
                 return commonAbilityNames[a] || a;
             });
+        if (card.sacrifice) {
+            commonAbilities.push(`Sacrifice ${card.sacrifice}`);
+        }
         const abilitiesText = commonAbilities.join(', ');
 
-        let combatTypeText = 'MÃªlÃ©e';
+        let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
-        // Type de crÃ©ature (mort-vivant, humain, dragon...)
+        // Type de créature (mort-vivant, humain, dragon...)
         const creatureTypeNames = {
             undead: 'Mort-vivant',
             human: 'Humain',
             goblin: 'Gobelin',
-            demon: 'DÃ©mon',
-            elemental: 'Ã‰lÃ©mentaire',
-            beast: 'BÃªte',
+            demon: 'Démon',
+            elemental: 'Élémentaire',
+            beast: 'Bête',
             spirit: 'Esprit',
             dragon: 'Dragon',
             serpent: 'Serpent',
-            monstrosity: 'MonstruositÃ©',
+            monstrosity: 'Monstruosité',
             ogre: 'Ogre'
         };
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 
-        // CapacitÃ© spÃ©ciale/unique si prÃ©sente
+        // Capacité spéciale/unique si présente
         let specialAbility = '';
         if (card.description) {
             specialAbility = card.description;
         } else {
             if (card.onHeroHit === 'draw') {
-                specialAbility = 'Quand cette crÃ©ature attaque le hÃ©ros adverse, piochez une carte.';
+                specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
             }
             if (card.onDeath?.damageHero) {
-                specialAbility = `Ã€ la mort de cette crÃ©ature, le hÃ©ros adverse subit ${card.onDeath.damageHero} blessures.`;
+                specialAbility = `À la mort de cette créature, le héros adverse subit ${card.onDeath.damageHero} blessures.`;
             }
         }
 
-        // Diamant de raretÃ© basÃ© sur l'Ã©dition
+        // Diamant de rareté basé sur l'édition
         const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
         const rarityClass = rarityMap[card.edition] || 'common';
         const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
 
-        // Ligne de type complÃ¨te
-        let typeLineText = `CrÃ©ature - ${combatTypeText}`;
+        // Ligne de type complète
+        let typeLineText = `Créature - ${combatTypeText}`;
         if (creatureTypeName) {
             typeLineText += ` - ${creatureTypeName}`;
         }
 
-        // Style du titre (couleur personnalisÃ©e si dÃ©finie)
+        // Style du titre (couleur personnalisée si définie)
         const titleStyle = card.titleColor ? `style="background: ${card.titleColor}"` : '';
 
-        // Les sorts et piÃ¨ges n'ont pas de stats
+        // Les sorts et pièges n'ont pas de stats
         const isSpell = card.type === 'spell';
         const isTrap = card.type === 'trap';
         const noStats = isSpell || isTrap;
 
-        // Version allÃ©gÃ©e sur le terrain
+        // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
+            // Jeton compteur de gaze (Medusa)
+            const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker">${card.medusaGazeMarker}</div>` : '';
+            const melodyIcon = '';
             if (noStats) {
                 el.innerHTML = `
                     <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
-                    <div class="arena-mana">${card.cost}</div>`;
+                    <div class="arena-mana">${card.cost}</div>
+                    ${gazeMarker}${melodyIcon}`;
             } else {
                 el.innerHTML = `
                     <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
-                    <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
+                    <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>
+                    ${gazeMarker}${melodyIcon}`;
             }
+            autoFitCardName(el);
             return el;
         }
 
-        // Version complÃ¨te (main, hover, cimetiÃ¨re)
+        // Version complète (main, hover, cimetière)
         if (noStats) {
-            const typeName = isTrap ? 'PiÃ¨ge' : 'Sort';
+            const typeName = isTrap ? 'Piège' : 'Sort';
+            // Boost des dégâts de sorts si spellBoost actif
+            let spellDescription = card.description || '';
+            const spellBoost = (isSpell && card.offensive && card.damage && state?.me?.spellBoost) ? state.me.spellBoost : 0;
+            if (spellBoost > 0 && card.damage) {
+                const boostedDmg = card.damage + spellBoost;
+                spellDescription = spellDescription.replace(
+                    new RegExp(`${card.damage}(\\s*(?:blessures?|dégâts?))`, 'g'),
+                    `<span class="boosted">${boostedDmg}</span>$1`
+                );
+            }
             el.innerHTML = `
                 <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeName}</div>
-                    ${card.description ? `<div class="arena-special">${card.description}</div>` : ''}
+                    ${spellDescription ? `<div class="arena-special">${spellDescription}</div>` : ''}
                 </div>
                 ${rarityDiamond}
                 <div class="arena-mana ${costClass}">${displayCost}</div>`;
         } else {
+            // Si pétrifié, remplacer capacités et description
+            const displayAbilities = card.petrified ? '' : abilitiesText;
+            const displaySpecial = card.petrified ? (card.petrifiedDescription || 'Pétrifié — ne peut ni attaquer ni bloquer.') : specialAbility;
             el.innerHTML = `
                 <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeLineText}</div>
-                    ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
-                    ${specialAbility ? `<div class="arena-special">${specialAbility}</div>` : ''}
+                    ${displayAbilities ? `<div class="arena-abilities">${displayAbilities}</div>` : ''}
+                    ${displaySpecial ? `<div class="arena-special">${displaySpecial}</div>` : ''}
                 </div>
                 ${rarityDiamond}
                 <div class="arena-mana ${costClass}">${displayCost}</div>
                 <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
         }
+        autoFitCardName(el);
         return el;
     }
 
-    // Carte fullArt : image plein fond + ronds colorÃ©s style hÃ©ros
+    // Carte fullArt : image plein fond + ronds colorés style héros
     if (card.fullArt && card.image) {
         el.classList.add('full-art');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // Version allÃ©gÃ©e sur le terrain (sans zone de texte type/capacitÃ©s, sans mana)
+        // Version allégée sur le terrain (sans zone de texte type/capacités, sans mana)
         if (!inHand) {
             el.classList.add('on-field');
             el.innerHTML = `
                 <div class="fa-title"><div class="fa-name">${card.name}</div></div>
                 <div class="fa-atk ${atkClass}">${card.atk}</div>
                 <div class="fa-hp ${hpClass}">${hp}</div>`;
+            autoFitCardName(el);
             return el;
         }
 
-        // Version complÃ¨te (main, hover, cimetiÃ¨re)
-        // CapacitÃ©s communes (sans shooter/fly car dÃ©jÃ  dans le type)
+        // Version complète (main, hover, cimetière)
+        // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
-            haste: 'CÃ©lÃ©ritÃ©', intangible: 'Intangible',
-            trample: 'PiÃ©tinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'RÃ©gÃ©nÃ©ration',
-            protection: 'Protection'
+            haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
         };
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
                 if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-                if (a === 'regeneration') return `RÃ©gÃ©nÃ©ration ${card.regenerationX || ''}`.trim();
+                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+                if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
+                if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
+                if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
                 return commonAbilityNames[a] || a;
             });
+        if (card.sacrifice) {
+            commonAbilities.push(`Sacrifice ${card.sacrifice}`);
+        }
         const abilitiesText = commonAbilities.join(', ');
 
-        let combatTypeText = 'MÃªlÃ©e';
+        let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
@@ -1004,32 +1200,36 @@ function makeCard(card, inHand, discountedCost = null) {
             <div class="fa-mana">${card.cost}</div>
             <div class="fa-title"><div class="fa-name">${card.name}</div></div>
             <div class="fa-text-zone">
-                <div class="fa-type">CrÃ©ature - ${combatTypeText}</div>
+                <div class="fa-type">Créature - ${combatTypeText}</div>
                 ${abilitiesText ? `<div class="fa-abilities">${abilitiesText}</div>` : ''}
             </div>
             <div class="fa-atk ${atkClass}">${card.atk}</div>
             <div class="fa-hp ${hpClass}">${hp}</div>`;
+        autoFitCardName(el);
         return el;
     }
 
-    // Si la carte a une image (systÃ¨me template avec texte positionnÃ©)
+    // Si la carte a une image (système template avec texte positionné)
     if (card.image) {
         el.classList.add('has-image');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
         const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'CÃ©lÃ©ritÃ©', intangible: 'Intangible',
-            trample: 'PiÃ©tinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'RÃ©gÃ©nÃ©ration',
-            protection: 'Protection'
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
             if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-            if (a === 'regeneration') return `RÃ©gÃ©nÃ©ration ${card.regenerationX || ''}`.trim();
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
+            if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
+            if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
             return abilityNames[a] || a;
         }).join(', ');
 
-        let combatTypeText = 'MÃªlÃ©e';
+        let combatTypeText = 'Mêlée';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
@@ -1037,14 +1237,15 @@ function makeCard(card, inHand, discountedCost = null) {
             <div class="img-cost ${costClass}">${displayCost}</div>
             <div class="img-subtype">${card.subtype || ''}</div>
             <div class="img-name">${card.name}</div>
-            <div class="img-type-line">CrÃ©ature - ${combatTypeText}</div>
+            <div class="img-type-line">Créature - ${combatTypeText}</div>
             <div class="img-abilities">${abilitiesText}</div>
             <div class="img-atk ${atkClass}">${card.atk}</div>
             <div class="img-hp ${hpClass}">${hp}</div>`;
+        autoFitCardName(el);
         return el;
     }
 
-    // SystÃ¨me classique avec emojis
+    // Système classique avec emojis
     const icons = {
         fly: 'ðŸ¦…',
         shooter: 'ðŸŽ¯',
@@ -1074,7 +1275,7 @@ function makeCard(card, inHand, discountedCost = null) {
     } else if (card.pattern === 'global' || card.pattern === 'all') {
         patternInfo = '<div style="font-size:0.5em;color:#3498db;">ðŸŒ Global</div>';
     } else if (card.pattern === 'hero') {
-        patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">ðŸŽ¯ HÃ©ros</div>';
+        patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">ðŸŽ¯ Héros</div>';
     }
 
     el.innerHTML = `
@@ -1086,10 +1287,11 @@ function makeCard(card, inHand, discountedCost = null) {
             <div class="card-abilities">${abilities || (card.type === 'spell' ? (card.offensive ? 'âš”ï¸' : 'ðŸ’š') : '')}${patternInfo}</div>
             <div class="card-stats">
                 ${card.atk !== undefined ? `<span class="stat stat-atk ${atkClass}">${card.atk}</span>` : ''}
-                ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
+                ${card.damage ? (() => { const sb = (card.type === 'spell' && card.offensive && state?.me?.spellBoost) ? state.me.spellBoost : 0; return `<span class="stat stat-atk ${sb > 0 ? 'boosted' : ''}">${card.damage + sb}</span>`; })() : ''}
                 ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
                 ${card.type === 'creature' ? `<span class="stat stat-hp ${hpClass}">${hp}</span>` : ''}
             </div>
         </div>`;
+    autoFitCardName(el);
     return el;
 }

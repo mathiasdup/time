@@ -164,7 +164,7 @@ const CardDB = {
             combatType: 'melee',
             edition: 2,
             onHeroAttack: { atkBoost: 1 },
-            description: 'Célérité. Quand cette créature attaque le héros adverse, elle gagne +1 ATK jusqu\'à la fin de la phase de combat.'
+            description: 'Quand cette créature attaque le héros adverse, elle gagne +1 ATK jusqu\'à la fin de la phase de combat.'
         },
         {
             id: 'demon_explosif',
@@ -204,6 +204,11 @@ const CardDB = {
         { id: 'skeleton_archer', name: 'Archer Squelette', atk: 4, hp: 1, cost: 0, abilities: ['shooter'], type: 'creature', image: 'green/squelette-archer.jpg', combatType: 'shooter', arenaStyle: true, faction: 'green', onHeroHit: 'draw', creatureType: 'undead', edition: 1 },
         { id: 'forest_guardian', name: 'Gardien de Forêt', atk: 3, hp: 3, cost: 0, abilities: ['protection'], type: 'creature', image: 'green/dryade.png', combatType: 'melee', arenaStyle: true, faction: 'green', creatureType: 'spirit', edition: 2 },
         { id: 'crackling_dragon', name: 'Dragon Crépitant', atk: 6, hp: 3, cost: 0, abilities: ['fly', 'cleave', 'trample'], cleaveX: 3, type: 'creature', image: 'red/dragon-crepitant.jpg', combatType: 'fly', arenaStyle: true, faction: 'red', creatureType: 'dragon', edition: 4, onDeath: { damageHero: 3 } },
+        { id: 'drake_morose', name: 'Drake morose', atk: 4, hp: 4, cost: 0, abilities: ['fly', 'spellBoost'], spellBoostAmount: 1, type: 'creature', image: 'unknown/creature.png', combatType: 'fly', arenaStyle: true, faction: 'red', creatureType: 'dragon', edition: 4, onSummon: { searchSpell: true }, description: 'Quand Drake morose entre en jeu, cherchez un sort dans votre deck.' },
+        { id: 'deformed_lancer', name: 'Lancier difforme', atk: 2, hp: 3, cost: 0, abilities: ['bloodthirst'], bloodthirstAmount: 1, type: 'creature', image: 'unknown/creature.png', combatType: 'melee', arenaStyle: true, faction: 'red', creatureType: 'human', edition: 2 },
+        { id: 'warchief', name: 'Chef de guerre', atk: 2, hp: 4, cost: 0, abilities: ['enhance'], enhanceAmount: 2, type: 'creature', image: 'unknown/creature.png', combatType: 'melee', arenaStyle: true, faction: 'red', creatureType: 'goblin', edition: 3, description: 'Les créatures adjacentes gagnent +2 ATK.' },
+        { id: 'wolf_master', name: 'Maître loup', atk: 1, hp: 4, cost: 0, abilities: [], type: 'creature', image: 'unknown/creature.png', combatType: 'melee', arenaStyle: true, faction: 'white', creatureType: 'human', edition: 4, atkPerAdjacent: 1, description: 'Gagne +1 ATK pour chaque créature adjacente (jusqu\'à +3).' },
+        { id: 'medusa_queen', name: 'Medusa à trois têtes', atk: 3, hp: 2, cost: 0, abilities: ['shooter', 'melody'], type: 'creature', image: 'unknown/creature.png', combatType: 'shooter', arenaStyle: true, faction: 'blue', creatureType: 'monstrosity', edition: 4, description: 'Si une créature reste 2 tours en face de Medusa, elle se transforme en pierre.' },
         { id: 'radiant_dragon', name: 'Dragon d\'Éclat', atk: 6, hp: 6, cost: 0, abilities: ['fly'], type: 'creature', image: 'blue/dragon-glace.png', combatType: 'fly', arenaStyle: true, faction: 'blue', creatureType: 'dragon', edition: 3, onDamagedThisTurn: 'draw', description: 'À la fin du tour, si le Dragon d\'Éclat a subi des blessures ce tour-ci, piochez une carte.' },
         { id: 'sea_serpent', name: 'Serpent de mer', atk: 1, hp: 5, cost: 0, abilities: ['intangible', 'power'], powerX: 2, type: 'creature', image: 'blue/serpentdemer.png', combatType: 'melee', arenaStyle: true, faction: 'blue', creatureType: 'serpent', edition: 3 },
         { id: 'radjawak', name: 'Radjawak', atk: 4, hp: 6, cost: 0, abilities: ['power', 'trample'], powerX: 2, type: 'creature', image: 'green/radjawak.png', combatType: 'melee', arenaStyle: true, faction: 'green', creatureType: 'beast', edition: 3 },
@@ -224,7 +229,13 @@ const CardDB = {
             edition: 4,
             requiresGraveyardCreatures: 5,
             description: 'Vous ne pouvez invoquer le Kraken colossal que si vous avez au moins 5 créatures dans votre cimetière.'
-        }
+        },
+        {
+            id: 'demon_superieur', name: 'Démon supérieur', atk: 5, hp: 5, cost: 0, type: 'creature',
+            combatType: 'melee', creatureType: 'demon', faction: 'black', edition: 2,
+            image: 'unknown/creature.png', arenaStyle: true, sacrifice: 1
+        },
+        { id: 'escamoteur_ruelles', name: 'Escamoteur des ruelles', atk: 3, hp: 2, cost: 0, type: 'creature', abilities: ['camouflage'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 2, image: 'unknown/creature.png', arenaStyle: true }
     ],
     spells: [
         { id: 'plan_douteux', name: 'Plan douteux', cost: 0, type: 'spell', offensive: true, pattern: 'single', targetEmptySlot: true, image: 'black/plandouteux.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Détruit la créature sur cet emplacement. Ce sort ne peut cibler qu\'un emplacement vide.', effect: 'destroy' },
@@ -233,12 +244,15 @@ const CardDB = {
         { id: 'blast', name: 'Blast', cost: 0, type: 'spell', offensive: true, pattern: 'single', damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 2, returnOnMiss: true, description: 'Inflige 2 blessures à la créature ciblée. Si Blast ne touche pas de créature, il retourne dans votre main.' },
         { id: 'coup_de_poing', name: 'Coup de poing', cost: 0, type: 'spell', offensive: true, pattern: 'hero', targetEnemy: true, damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Inflige 2 dégâts au héros adverse.' },
         { id: 'tremblement_de_terre', name: 'Tremblement de terre', cost: 0, type: 'spell', offensive: true, pattern: 'all', damage: 3, image: 'unknown/spell.png', arenaStyle: true, faction: 'green', edition: 3, description: 'Inflige 3 dégâts à toutes les créatures.' },
-        { id: 'vitesse_superieure', name: 'Vitesse supérieure', cost: 0, type: 'spell', offensive: false, pattern: 'hero', effect: 'draw', amount: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Le joueur ciblé pioche deux cartes.' }
+        { id: 'vitesse_superieure', name: 'Vitesse supérieure', cost: 0, type: 'spell', offensive: false, pattern: 'hero', effect: 'draw', amount: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Le joueur ciblé pioche deux cartes.' },
+        { id: 'reanimation', name: 'Réanimation', cost: 0, type: 'spell', offensive: false, pattern: 'self', effect: 'reanimate', image: 'unknown/spell.png', arenaStyle: true, faction: 'black', edition: 2, targetSelfEmptySlot: true, requiresGraveyardCreature: true, description: 'Placez une créature de votre cimetière sur cet emplacement vide.' },
+        { id: 'alteration_musculaire', name: 'Altération musculaire', cost: 0, type: 'spell', offensive: false, pattern: 'single', targetSelfCreature: true, effect: 'atkBuff', atkBuff: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'La créature alliée ciblée gagne +2 ATK.' }
     ],
     traps: [
         { id: 'troubeant', name: 'Trou béant', damage: 5, cost: 0, type: 'trap', image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 5 dégâts à la première créature adverse qui attaque sur la ligne.' },
         { id: 'trappe_secrete', name: 'Trappe secrète', damage: 3, cost: 0, type: 'trap', pattern: 'line', image: 'unknown/trap.png', arenaStyle: true, faction: 'neutral', edition: 2, description: 'Inflige 3 blessures à toutes les créatures adverses sur cette ligne.' },
-        { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 0, type: 'trap', effect: 'bounce', image: 'unknown/trap.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' }
+        { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 0, type: 'trap', effect: 'bounce', image: 'unknown/trap.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
+        { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 0, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'unknown/trap.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' }
     ]
 };
 
@@ -283,6 +297,10 @@ function resetCardForGraveyard(card) {
     if (reset.abilities && reset.abilities.includes('protection')) {
         reset.hasProtection = true;
     }
+    if (reset.abilities && reset.abilities.includes('camouflage')) {
+        reset.hasCamouflage = true;
+    }
+    if (card.uid) reset.uid = card.uid;
     return reset;
 }
 
@@ -299,51 +317,13 @@ function addToGraveyard(player, card) {
 function createDeck() {
     const deck = [];
 
-    // Première carte = Pyromane novice (pour les tests)
-    const testCard = CardDB.creatures.find(c => c.id === 'pyromane_novice');
-    if (testCard) {
-        const card = {
-            ...testCard,
-            abilities: [...(testCard.abilities || [])],
-            uid: `${Date.now()}-${Math.random()}-0`
-        };
-        card.currentHp = card.hp;
-        card.baseAtk = card.atk;
-        card.baseHp = card.hp;
-        card.canAttack = false;
-        card.turnsOnField = 0;
-        card.movedThisTurn = false;
-        if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
-        deck.push(card);
-    }
-
-    // Les 6 cartes suivantes (main de départ)
-    const creaturesPool = CardDB.creatures.filter(c => !c.isToken);
-    for (let i = 1; i < 7; i++) {
-        const template = creaturesPool[Math.floor(Math.random() * creaturesPool.length)];
-        const card = {
-            ...template,
-            abilities: [...(template.abilities || [])],
-            uid: `${Date.now()}-${Math.random()}-${i}`
-        };
-        card.currentHp = card.hp;
-        card.baseAtk = card.atk;
-        card.baseHp = card.hp;
-        card.canAttack = false;
-        card.turnsOnField = 0;
-        card.movedThisTurn = false;
-        if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
-        deck.push(card);
-    }
-
-    // Le reste du deck (33 cartes) = normal
-    for (let i = 7; i < 40; i++) {
+    for (let i = 0; i < 40; i++) {
         const r = Math.random();
         let pool = r < 0.65 ? CardDB.creatures : r < 0.88 ? CardDB.spells : CardDB.traps;
         const template = pool[Math.floor(Math.random() * pool.length)];
         const card = {
             ...template,
-            abilities: [...(template.abilities || [])], // Copie profonde des abilities
+            abilities: [...(template.abilities || [])],
             uid: `${Date.now()}-${Math.random()}-${i}`
         };
         if (card.type === 'creature') {
@@ -354,72 +334,22 @@ function createDeck() {
             card.turnsOnField = 0;
             card.movedThisTurn = false;
             if (card.abilities && card.abilities.includes('protection')) card.hasProtection = true;
+            if (card.abilities && card.abilities.includes('camouflage')) card.hasCamouflage = true;
         }
         deck.push(card);
     }
 
-    // Mélanger seulement les cartes après la main (index 7+)
-    const hand = deck.slice(0, 7);
-    const rest = deck.slice(7).sort(() => Math.random() - 0.5);
-    return [...hand, ...rest];
+    // Mélanger tout le deck (Fisher-Yates)
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
 }
 
 // Créer l'état initial d'un joueur
 function createPlayerState() {
     const deck = createDeck();
-
-    // DEBUG: Forcer le Kraken Colossal en première position (test cimetière)
-    const krakenTemplate = CardDB.creatures.find(c => c.id === 'colossal_kraken');
-    if (krakenTemplate) {
-        const krakenIndex = deck.findIndex(c => c.id === 'colossal_kraken');
-        if (krakenIndex >= 0) {
-            deck.splice(krakenIndex, 1);
-        }
-
-        const kraken = {
-            ...krakenTemplate,
-            abilities: [...(krakenTemplate.abilities || [])],
-            uid: `${Date.now()}-kraken-${Math.random()}`,
-            currentHp: krakenTemplate.hp,
-            maxHp: krakenTemplate.hp,
-            baseAtk: krakenTemplate.atk,
-            baseHp: krakenTemplate.hp,
-            canAttack: false,
-            turnsOnField: 0,
-            movedThisTurn: false,
-            hasProtection: (krakenTemplate.abilities || []).includes('protection')
-        };
-        console.log(`[createPlayerState] Created Kraken Colossal with abilities: ${JSON.stringify(kraken.abilities)}, requiresGraveyardCreatures: ${kraken.requiresGraveyardCreatures}`);
-        deck.unshift(kraken);
-    }
-
-    // DEBUG: Forcer la Dryade (Protection) en deuxième position de la main
-    // TOUJOURS créer une nouvelle copie depuis le template pour avoir les abilities
-    const dryadeTemplate = CardDB.creatures.find(c => c.id === 'forest_guardian');
-    if (dryadeTemplate) {
-        // Supprimer l'éventuelle dryade existante du deck
-        const dryadeIndex = deck.findIndex(c => c.id === 'forest_guardian');
-        if (dryadeIndex >= 0) {
-            deck.splice(dryadeIndex, 1);
-        }
-
-        // Créer une nouvelle dryade depuis le template avec copie profonde des abilities
-        const dryade = {
-            ...dryadeTemplate,
-            abilities: [...(dryadeTemplate.abilities || [])], // Copie profonde des abilities
-            uid: `${Date.now()}-dryade-${Math.random()}`,
-            currentHp: dryadeTemplate.hp,
-            baseAtk: dryadeTemplate.atk,
-            baseHp: dryadeTemplate.hp,
-            canAttack: false,
-            turnsOnField: 0,
-            movedThisTurn: false,
-            hasProtection: (dryadeTemplate.abilities || []).includes('protection')
-        };
-        console.log(`[createPlayerState] Created dryade with abilities: ${JSON.stringify(dryade.abilities)}`);
-        deck.unshift(dryade);
-    }
-
     const hand = deck.splice(0, 7);
     const hero = getRandomHero();
     return {

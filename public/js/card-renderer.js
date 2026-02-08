@@ -150,14 +150,21 @@ const CardRenderer = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité',
             intangible: 'Intangible', trample: 'Piétinement',
             power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
         };
-        const abilities = (card.abilities || []).map(a => {
+        const abilitiesList = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
             if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
             if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
+            if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
+            if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
             return abilityNames[a] || a;
-        }).join(', ');
+        });
+        if (card.sacrifice) {
+            abilitiesList.push(`Sacrifice ${card.sacrifice}`);
+        }
+        const abilities = abilitiesList.join(', ');
 
         if (abilities) {
             const abStyle = new PIXI.TextStyle({
