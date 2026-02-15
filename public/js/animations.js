@@ -23,16 +23,12 @@ function prepareDrawAnimation(data) {
     // Déterminer myNum depuis la variable globale
     const myPlayerNum = typeof myNum !== 'undefined' ? myNum : 1;
 
-    console.log(`[DRAW ANIM] prepareDrawAnimation called. cards:`, data.cards.map(c => `player=${c.player} handIdx=${c.handIndex} card=${c.card?.name} burned=${c.burned}`));
-
     for (const drawData of data.cards) {
         if (drawData.burned) continue;
 
         const owner = drawData.player === myPlayerNum ? 'me' : 'opp';
         const handIndex = drawData.handIndex;
         const card = drawData.card;
-
-        console.log(`[DRAW ANIM] Preparing ${owner} handIndex=${handIndex} card=${card?.name}`);
 
         // Le vrai event draw remplace l'auto-hide
         autoHiddenCards[owner].delete(handIndex);
@@ -109,9 +105,6 @@ function remapOppDrawIndices(newStartIdx) {
  * Lance les animations après le render
  */
 function startPendingDrawAnimations() {
-    if (pendingDrawAnimations.me.size > 0 || pendingDrawAnimations.opp.size > 0) {
-        console.log(`[DRAW ANIM] startPendingDrawAnimations — me: [${[...pendingDrawAnimations.me.keys()]}] opp: [${[...pendingDrawAnimations.opp.keys()]}] started.me: [${[...startedDrawAnimations.me]}] started.opp: [${[...startedDrawAnimations.opp]}]`);
-    }
     // Attendre le prochain frame pour s'assurer que le DOM est rendu
     requestAnimationFrame(() => {
         // Animer les cartes du joueur (seulement si pas déjà lancé)
@@ -163,9 +156,9 @@ function createCardElement(card) {
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
         const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie'
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', untargetable: 'Inciblable'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
@@ -192,37 +185,6 @@ function createCardElement(card) {
         return el;
     }
 
-    const icons = {
-        fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', power: '💪', cleave: '⛏️', immovable: '🪨', regeneration: '💚',
-        protection: '🛡️'
-    };
-    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
-
-    let typeIcon = '';
-    if (card.type === 'spell') typeIcon = `<div class="card-type-icon spell-icon">✨</div>`;
-    else if (card.type === 'trap') typeIcon = `<div class="card-type-icon trap-icon">🪤</div>`;
-
-    let patternInfo = '';
-    if (card.pattern === 'cross') patternInfo = '<div style="font-size:0.5em;color:#ff9800;">✝️ Zone</div>';
-    else if (card.pattern === 'global' || card.pattern === 'all') patternInfo = '<div style="font-size:0.5em;color:#3498db;">🌍 Global</div>';
-    else if (card.pattern === 'hero') patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">🎯 Héros</div>';
-
-    el.innerHTML = `
-        <div class="card-cost">${card.cost}</div>
-        ${typeIcon}
-        <div class="card-art">${card.icon || '❓'}</div>
-        <div class="card-body">
-            <div class="card-name">${card.name}</div>
-            <div class="card-abilities">${abilities || (card.type === 'spell' ? (card.offensive ? '⚔️' : '💚') : '')}${patternInfo}</div>
-            <div class="card-stats">
-                ${card.atk !== undefined ? `<span class="stat stat-atk">${card.atk}</span>` : ''}
-                ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
-                ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
-                ${card.type === 'creature' ? `<span class="stat stat-hp">${hp}</span>` : ''}
-            </div>
-        </div>`;
-
     return el;
 }
 
@@ -243,6 +205,9 @@ function easeOutCubic(t) {
 }
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+function easeInQuad(t) {
+    return t * t;
 }
 function easeOutBack(t) {
     const c1 = 1.70158;
@@ -267,17 +232,12 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
     const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
 
-    console.log(`[DRAW ANIM] animateCardDraw owner=${owner} handIndex=${handIndex} card=${card?.name}`);
-
-    if (!handEl) { console.log(`[DRAW ANIM] ABORT: handEl not found (${handSelector})`); if (onComplete) onComplete(); return; }
+    if (!handEl) { if (onComplete) onComplete(); return; }
 
     const handCards = handEl.querySelectorAll(cardSelector);
     const targetCard = handCards[handIndex];
 
-    console.log(`[DRAW ANIM] handCards count=${handCards.length}, targetCard found=${!!targetCard}, visibility=${targetCard?.style.visibility}`);
-
     if (!targetCard) {
-        console.log(`[DRAW ANIM] DEFER: targetCard not found at index ${handIndex} (total ${handCards.length}) — will retry on next render`);
         startedDrawAnimations[owner].delete(handIndex);
         return;
     }

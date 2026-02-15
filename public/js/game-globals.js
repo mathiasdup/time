@@ -29,6 +29,7 @@ let currentProcessorId = 0; // Pour traquer le processeur actif
 // Système de HP différés pour zdejebel (pour que les HP changent APRÈS l'animation)
 let pendingHpUpdate = null; // { target: 'me'|'opp', oldHp: number, newHp: number }
 let zdejebelAnimationInProgress = false; // Bloque render() pour les HP pendant zdejebel
+let lifestealHeroHealInProgress = false; // Bloque render() pour les HP héros pendant lifelink
 const ANIMATION_DELAYS = {
     attack: 600,       // Délai après une attaque
     damage: 500,       // Délai après affichage des dégâts
@@ -38,5 +39,6 @@ const ANIMATION_DELAYS = {
     burn: 400,         // Délai après burn (pioche vers cimetière)
     spell: 200,        // Délai après animation de sort (le gros est dans animateSpellReveal)
     trapTrigger: 500,  // Délai après animation de piège (séparation entre pièges consécutifs)
+    lifesteal: 200,    // Délai après animation lifesteal (le gros de l'anim est dans handleLifestealAnim)
     default: 300       // Délai par défaut
 };

@@ -325,6 +325,7 @@ const CustomDrag = (function() {
             dragState.sourceEl.classList.remove('custom-dragging', 'arrow-dragging');
             dragState.sourceEl.style.visibility = '';
         }
+        if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
 
         // Retirer les classes de survol
         document.querySelectorAll('.drag-hover, .drag-over').forEach(el => {
@@ -426,6 +427,7 @@ const CustomDrag = (function() {
 
                 // La carte se lève mais reste en place
                 dragState.sourceEl.classList.add('arrow-dragging');
+                if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
 
                 // Activer la flèche WebGL depuis le haut de la carte
                 if (typeof ArrowTargeting !== 'undefined') {
@@ -592,7 +594,8 @@ const CustomDrag = (function() {
          * Active le drag sur un élément
          */
         makeDraggable(el, data) {
-            el.addEventListener('mousedown', (e) => handleMouseDown(e, el, data));
+            el._dragData = data; // Référence mutable pour mise à jour par le fast-path
+            el.addEventListener('mousedown', (e) => handleMouseDown(e, el, el._dragData));
 
             // Empêcher le drag natif
             el.draggable = false;

@@ -1,6 +1,73 @@
 // ==================== SYSTÈME D'ANIMATIONS DU JEU ====================
 // File d'attente, handlers combat/mort/sort/piège, effets visuels
 
+// === Mise à jour dynamique de la popup cimetière ===
+function addCardToGraveyardPopup(owner, card) {
+    const popup = document.getElementById('graveyard-popup');
+    if (!popup || !popup.classList.contains('active')) return;
+    if (popup.dataset.owner !== owner) return;
+    // Ne pas ajouter pendant la sélection de réanimation
+    if (popup.classList.contains('selection-mode')) return;
+
+    const container = document.getElementById('graveyard-cards');
+    if (!container) return;
+
+    // Retirer le message "vide" si présent
+    const emptyMsg = container.querySelector('.graveyard-empty');
+    if (emptyMsg) emptyMsg.remove();
+
+    const cardEl = makeCard(card, true);
+    cardEl.dataset.uid = card.uid || card.id || '';
+    cardEl.classList.add('in-graveyard');
+    cardEl.onmouseenter = (e) => showCardPreview(card, e);
+    cardEl.onmouseleave = hideCardPreview;
+    cardEl.onclick = (e) => {
+        e.stopPropagation();
+        showCardZoom(card);
+    };
+
+    // Animation d'entrée
+    cardEl.style.opacity = '0';
+    cardEl.style.transform = 'translateY(12px) scale(0.92)';
+    cardEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    container.appendChild(cardEl);
+
+    const nameEl = cardEl.querySelector('.arena-name');
+    if (nameEl) fitArenaName(nameEl);
+
+    // Déclencher l'animation au frame suivant
+    requestAnimationFrame(() => {
+        cardEl.style.opacity = '1';
+        cardEl.style.transform = 'translateY(0) scale(1)';
+    });
+
+    // Auto-scroll vers la nouvelle carte
+    setTimeout(() => {
+        container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
+    }, 50);
+}
+
+function removeCardFromGraveyardPopup(owner, card) {
+    const popup = document.getElementById('graveyard-popup');
+    if (!popup || !popup.classList.contains('active')) return;
+    if (popup.dataset.owner !== owner) return;
+
+    const container = document.getElementById('graveyard-cards');
+    if (!container) return;
+
+    const cardUid = card.uid || card.id;
+    const cards = container.querySelectorAll('.card');
+    for (const el of cards) {
+        if (el.dataset.uid === cardUid) {
+            el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(-12px) scale(0.92)';
+            setTimeout(() => el.remove(), 300);
+            return;
+        }
+    }
+}
+
 // Cache des positions des cartes revealed dans la main adverse (sauvegardé avant re-render de révélation)
 const savedRevealedCardRects = new Map();
 
@@ -10,15 +77,12 @@ function saveRevealedCardPositions() {
     if (!handPanel) return;
     const allCards = handPanel.querySelectorAll('.opp-card-back');
     const revealedCards = handPanel.querySelectorAll('.opp-revealed[data-uid]');
-    console.log('[saveRevealedCardPositions] CALLED. Total cards:', allCards.length, 'Revealed:', revealedCards.length);
     revealedCards.forEach(el => {
         const uid = el.dataset.uid;
         const rect = el.getBoundingClientRect();
         savedRevealedCardRects.set(uid, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
-        console.log('[saveRevealedCardPositions] saved uid:', uid, 'left:', rect.left, 'top:', rect.top);
     });
     if (revealedCards.length === 0) {
-        console.log('[saveRevealedCardPositions] NO revealed cards! Hand HTML:', handPanel.innerHTML.substring(0, 500));
     }
 }
 
@@ -48,7 +112,6 @@ function queueAnimation(type, data) {
     if ((type === 'death' || type === 'sacrifice') && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
-        console.log(`[DEATH ANIM] Blocking slot ${slotKey} for ${type} animation of ${data.card?.name}`);
         animatingSlots.add(slotKey);
     }
 
@@ -74,9 +137,66 @@ function queueAnimation(type, data) {
         animatingSlots.add(slotKey);
     }
 
+    // Pour lifesteal, capturer les HP ACTUELS (avant le heal) ET bloquer le slot immédiatement
+    // pour que render() ne puisse pas mettre à jour les HP avec le state soigné avant l'animation
+    if (type === 'lifesteal' && data.row !== undefined && data.col !== undefined) {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        const slotKey = `${owner}-${data.row}-${data.col}`;
+        animatingSlots.add(slotKey);
+        const side = owner === 'me' ? 'me' : 'opponent';
+        const card = state?.[side]?.field?.[data.row]?.[data.col];
+        if (card) {
+            data._preHealHp = card.currentHp;
+            data._preHealMax = card.hp;
+            data._preHealAtk = card.atk;
+        }
+        // Pour heroHeal (lifelink), capturer les HP du héros et bloquer render()
+        if (data.heroHeal) {
+            const hpEl = document.querySelector(`#${owner === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`);
+            data._preHeroHp = hpEl ? parseInt(hpEl.textContent) : undefined;
+            lifestealHeroHealInProgress = true;
+        }
+    }
+
+    // Pour regen, capturer les HP ACTUELS (avant le heal) — même technique que lifesteal
+    if (type === 'regen' && data.row !== undefined && data.col !== undefined) {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        const side = owner === 'me' ? 'me' : 'opponent';
+        const card = state?.[side]?.field?.[data.row]?.[data.col];
+        if (card) {
+            data._preHealHp = card.currentHp;
+            data._preHealMax = card.hp;
+            data._preHealAtk = card.atk;
+        }
+    }
+
+    // Pour graveyardReturn, pré-enregistrer pendingBounce au moment du queue
+    // pour que render() cache la carte AVANT que l'animation ne commence à jouer
+    // (sinon la carte flash visible entre l'arrivée du state et le début de l'animation)
+    if (type === 'graveyardReturn' && data.player !== undefined) {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        if (!pendingBounce) {
+            data._bounceTargetPromise = new Promise(resolve => {
+                pendingBounce = { owner, card: data.card, resolveTarget: resolve };
+            });
+        }
+    }
+
+    // Pour healOnDeath, capturer les HP ACTUELS (avant le heal) — même technique que lifesteal
+    if (type === 'healOnDeath' && data.row !== undefined && data.col !== undefined) {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        const side = owner === 'me' ? 'me' : 'opponent';
+        const card = state?.[side]?.field?.[data.row]?.[data.col];
+        if (card) {
+            data._preHealHp = card.currentHp;
+            data._preHealMax = card.hp;
+            data._preHealAtk = card.atk;
+        }
+    }
+
     // Pour damage/spellDamage, bloquer le slot pour que render() ne mette pas à jour
     // les stats (HP, ATK via Puissance) avant que l'animation de dégâts ne joue
-    if ((type === 'damage' || type === 'spellDamage') && data.row !== undefined && data.col !== undefined) {
+    if ((type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
@@ -117,10 +237,20 @@ function queueAnimation(type, data) {
     }
 
     animationQueue.push({ type, data });
+    // Soupape de sécurité : si la queue dépasse 100, vider les animations non-critiques
+    if (animationQueue.length > 100) {
+        const critical = new Set(['death', 'deathTransform', 'heroHit', 'zdejebel', 'trampleHeroHit']);
+        const before = animationQueue.length;
+        for (let i = animationQueue.length - 1; i >= 0; i--) {
+            if (!critical.has(animationQueue[i].type)) {
+                animationQueue.splice(i, 1);
+            }
+        }
+    }
     if (!isAnimating) {
         // Pour les types batchables (burn, death), différer le démarrage
         // pour laisser les events du même batch serveur arriver
-        if (type === 'burn' || type === 'death' || type === 'deathTransform' || type === 'sacrifice') {
+        if (type === 'burn' || type === 'death' || type === 'deathTransform' || type === 'sacrifice' || type === 'poisonDamage') {
             if (!queueAnimation._batchTimeout) {
                 queueAnimation._batchTimeout = setTimeout(() => {
                     queueAnimation._batchTimeout = null;
@@ -156,27 +286,24 @@ async function processAnimationQueue(processorId = null) {
 
         isAnimating = true;
 
-        // Regrouper les animations de mort consécutives (jouées en parallèle)
-        if (animationQueue[0].type === 'death') {
+        // Regrouper les animations de mort et transformation consécutives (jouées en parallèle)
+        if (animationQueue[0].type === 'death' || animationQueue[0].type === 'deathTransform') {
             const deathBatch = [];
-            while (animationQueue.length > 0 && animationQueue[0].type === 'death') {
-                deathBatch.push(animationQueue.shift().data);
+            const transformBatch = [];
+            while (animationQueue.length > 0 && (animationQueue[0].type === 'death' || animationQueue[0].type === 'deathTransform')) {
+                const item = animationQueue.shift();
+                if (item.type === 'death') {
+                    deathBatch.push(item.data);
+                } else {
+                    transformBatch.push(item.data);
+                }
             }
-            const deathPromises = deathBatch.map(data => animateDeathToGraveyard(data));
-            await Promise.all(deathPromises);
+            const allPromises = [
+                ...deathBatch.map(data => animateDeathToGraveyard(data)),
+                ...transformBatch.map(data => animateDeathTransform(data))
+            ];
+            await Promise.all(allPromises);
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.death));
-            processAnimationQueue(processorId);
-            return;
-        }
-
-        // Regrouper les animations de deathTransform consécutives (jouées en parallèle)
-        if (animationQueue[0].type === 'deathTransform') {
-            const batch = [];
-            while (animationQueue.length > 0 && animationQueue[0].type === 'deathTransform') {
-                batch.push(animationQueue.shift().data);
-            }
-            await Promise.all(batch.map(data => animateDeathTransform(data)));
-            await new Promise(resolve => setTimeout(resolve, 200));
             processAnimationQueue(processorId);
             return;
         }
@@ -241,6 +368,17 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
+        // Regrouper les animations poisonDamage consécutives (jouées en parallèle)
+        if (animationQueue[0].type === 'poisonDamage') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'poisonDamage') {
+                batch.push(animationQueue.shift().data);
+            }
+            await Promise.all(batch.map(data => handlePoisonDamage(data)));
+            processAnimationQueue(processorId);
+            return;
+        }
+
         // Regrouper les animations onDeathDamage consécutives (jouées en parallèle)
         if (animationQueue[0].type === 'onDeathDamage') {
             const batch = [];
@@ -287,6 +425,7 @@ async function processAnimationQueue(processorId = null) {
                 } else {
                 }
             }
+            render(); // Mettre à jour les stats visuellement après l'attaque (dégâts mutuels simultanés)
         }
 
         // Débloquer les slots de dégâts après l'animation
@@ -294,16 +433,41 @@ async function processAnimationQueue(processorId = null) {
         if (type === 'damage' || type === 'spellDamage') {
             const dmgOwner = data.player === myNum ? 'me' : 'opp';
             const dmgSlotKey = `${dmgOwner}-${data.row}-${data.col}`;
-            const hasPendingDeath = animationQueue.some(item =>
+            // Garder le slot bloqué si death en attente (lifesteal n'a plus besoin de bloquer)
+            const hasPendingBlock = animationQueue.some(item =>
                 item.type === 'death' && item.data &&
                 (item.data.player === myNum ? 'me' : 'opp') === dmgOwner &&
                 item.data.row === data.row && item.data.col === data.col
             );
-            if (!hasPendingDeath) {
+            if (!hasPendingBlock) {
                 animatingSlots.delete(dmgSlotKey);
                 render(); // Mettre à jour les stats visuellement après déblocage du slot
             } else {
             }
+        }
+
+        // Débloquer le slot après l'animation lifesteal et mettre à jour le rendu
+        if (type === 'lifesteal') {
+            const lsOwner = data.player === myNum ? 'me' : 'opp';
+            const lsSlotKey = `${lsOwner}-${data.row}-${data.col}`;
+            animatingSlots.delete(lsSlotKey);
+            render();
+        }
+
+        // Débloquer le slot après l'animation healOnDeath et mettre à jour le rendu
+        if (type === 'healOnDeath') {
+            const hodOwner = data.player === myNum ? 'me' : 'opp';
+            const hodSlotKey = `${hodOwner}-${data.row}-${data.col}`;
+            animatingSlots.delete(hodSlotKey);
+            render();
+        }
+
+        // Débloquer le slot après l'animation regen et mettre à jour le rendu
+        if (type === 'regen') {
+            const regenOwner = data.player === myNum ? 'me' : 'opp';
+            const regenSlotKey = `${regenOwner}-${data.row}-${data.col}`;
+            animatingSlots.delete(regenSlotKey);
+            render();
         }
 
         // Vérifier encore si on est toujours le processeur actif
@@ -344,6 +508,12 @@ async function executeAnimationAsync(type, data) {
         case 'zdejebel':
             await animateZdejebelDamage(data);
             break;
+        case 'poisonDamage':
+            await handlePoisonDamage(data);
+            break;
+        case 'poisonApply':
+            // Simple state update — le rendu du compteur se fait via render()
+            break;
         case 'death':
             await animateDeathToGraveyard(data);
             break;
@@ -373,6 +543,18 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'bounce':
             await animateBounceToHand(data);
+            break;
+        case 'graveyardReturn':
+            await animateGraveyardReturn(data);
+            break;
+        case 'lifesteal':
+            await handleLifestealAnim(data);
+            break;
+        case 'healOnDeath':
+            await handleHealOnDeathAnim(data);
+            break;
+        case 'regen':
+            await handleRegenAnim(data);
             break;
     }
 }
@@ -487,6 +669,27 @@ async function handlePixiDamage(data) {
         col: data.col,
         amount: data.amount
     });
+}
+
+async function handlePoisonDamage(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    if (!slot) return;
+
+    const rect = slot.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+
+    // Animation de cloaques toxiques
+    CombatVFX.createPoisonDripEffect(x, y, data.amount, rect.width, rect.height);
+
+    // Attendre que l'animation principale soit visible avant de continuer
+    await new Promise(r => setTimeout(r, 1400));
+
+    // Débloquer le slot et rafraîchir le rendu (sinon les HP restent visuellement inchangés)
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+    animatingSlots.delete(slotKey);
+    render();
 }
 
 async function handlePixiHeroHit(data) {
@@ -1064,8 +1267,7 @@ async function animateBurn(data) {
     const ownerKey = owner === 'me' ? 'me' : 'opp';
     const card = data.card;
 
-    // Bloquer le render du cimetière pendant l'animation
-    graveRenderBlocked.add(ownerKey);
+    // graveRenderBlocked déjà incrémenté par queueAnimation — pas de double add
 
     const deckEl = document.getElementById(owner === 'me' ? 'me-deck-stack' : 'opp-deck-stack');
     if (!deckEl) {
@@ -1339,6 +1541,9 @@ async function animateBurn(data) {
                     }
                 }
 
+                // Mise à jour dynamique de la popup cimetière
+                addCardToGraveyardPopup(ownerKey, card);
+
                 wrapper.remove();
                 if (perspContainer) perspContainer.remove();
                 resolve();
@@ -1359,8 +1564,7 @@ async function animateDeathToGraveyard(data) {
     const ownerKey = owner;
     const deathSlotKey = `${owner}-${data.row}-${data.col}`;
 
-    // Bloquer le render du cimetière pendant l'animation
-    graveRenderBlocked.add(ownerKey);
+    // graveRenderBlocked déjà incrémenté par queueAnimation — pas de double add
 
     // 1. Trouver le slot et la carte
     const slot = document.querySelector(
@@ -1442,8 +1646,6 @@ async function animateDeathToGraveyard(data) {
     slot.classList.remove('has-flying');
 
     // Débloquer le slot — la carte est maintenant dans le wrapper volant, render() peut toucher le slot
-    console.log(`[DEATH ANIM] Unblocking slot ${deathSlotKey} — card removed from DOM, wrapper flying. state field value:`,
-        (deathSlotKey.startsWith('me') ? state?.me?.field : state?.opponent?.field)?.[data.row]?.[data.col]?.name || 'null');
     animatingSlots.delete(deathSlotKey);
 
     // 6. Perspective container (même technique que animateBurn)
@@ -1501,6 +1703,19 @@ async function animateDeathToGraveyard(data) {
     const deathNameFit = cardFace.querySelector('.arena-name');
     if (deathNameFit) fitArenaName(deathNameFit);
 
+    // Pré-charger l'image de la carte pour l'effet de dissipation
+    let dissipCardImage = null;
+    let dissipationStarted = false;
+    const isDissipation = data.card?.abilities?.includes('dissipation');
+    if (isDissipation) {
+        const bgUrl = (cardFace.style.backgroundImage || '')
+            .replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
+        if (bgUrl) {
+            dissipCardImage = new Image();
+            dissipCardImage.src = bgUrl;
+        }
+    }
+
     // 7. Animation
     const deathMarkDuration = 400;
     const flyDuration = 500;
@@ -1530,10 +1745,73 @@ async function animateDeathToGraveyard(data) {
                 const ep = easeOutCubic(p);
                 x = startX;
                 y = startY;
-                scaleX = scaleY = 1.0 - ep * 0.05;
+                scaleX = scaleY = isDissipation ? 1.0 : 1.0 - ep * 0.05;
                 opacity = 1.0;
                 greyAmount = ep;
                 tiltDeg = graveTiltDeg;
+            } else if (isDissipation && !dissipationStarted) {
+                // === PHASE 2 (DISSIPATION): DÉSINTÉGRATION EN FRAGMENTS CANVAS ===
+                dissipationStarted = true;
+                clearTimeout(safetyTimeout);
+
+                // Créer le canvas source : image cover + bordure arrondie
+                const srcRes = 2;
+                const sourceCanvas = document.createElement('canvas');
+                sourceCanvas.width = cardWidth * srcRes;
+                sourceCanvas.height = cardHeight * srcRes;
+                const sctx = sourceCanvas.getContext('2d');
+                const sw = sourceCanvas.width, sh = sourceCanvas.height;
+                const borderR = 4 * srcRes;
+                const brdW = 2 * srcRes;
+
+                // Fond de bordure
+                sctx.fillStyle = '#353535';
+                sctx.beginPath();
+                sctx.roundRect(0, 0, sw, sh, borderR);
+                sctx.fill();
+
+                // Clipper l'intérieur et dessiner l'image avec cover positioning
+                sctx.save();
+                sctx.beginPath();
+                sctx.roundRect(brdW, brdW, sw - brdW * 2, sh - brdW * 2, borderR - brdW);
+                sctx.clip();
+                sctx.filter = 'grayscale(1) brightness(0.7)';
+                if (dissipCardImage && dissipCardImage.complete && dissipCardImage.naturalWidth) {
+                    const imgW = dissipCardImage.naturalWidth;
+                    const imgH = dissipCardImage.naturalHeight;
+                    const areaW = sw - brdW * 2;
+                    const areaH = sh - brdW * 2;
+                    const scale = Math.max(areaW / imgW, areaH / imgH);
+                    const drawW = imgW * scale;
+                    const drawH = imgH * scale;
+                    const drawX = brdW + (areaW - drawW) / 2;
+                    const drawY = brdW + (areaH - drawH) / 2;
+                    sctx.drawImage(dissipCardImage, drawX, drawY, drawW, drawH);
+                }
+                sctx.restore();
+
+                // Rendre transparent hors bordure arrondie
+                sctx.globalCompositeOperation = 'destination-in';
+                sctx.beginPath();
+                sctx.roundRect(0, 0, sw, sh, borderR);
+                sctx.fill();
+                sctx.globalCompositeOperation = 'source-over';
+
+                // Position visuelle du wrapper (décalée par tilt + perspective)
+                const wrapperRect = wrapper.getBoundingClientRect();
+                wrapper.style.visibility = 'hidden';
+
+                // Passer cardWidth/cardHeight originaux — pas wrapperRect (compressé par le tilt = double déformation)
+                animateDissipationVanish(sourceCanvas, wrapperRect.left, wrapperRect.top, cardWidth, cardHeight, graveTiltDeg, perspContainer).then(() => {
+                    wrapper.remove();
+                    if (perspContainer) perspContainer.remove();
+                    graveRenderBlocked.delete(ownerKey);
+                    resolve();
+                });
+                return;
+            } else if (isDissipation) {
+                // Dissipation déjà lancée — ne rien faire
+                return;
             } else {
                 // === PHASE 2: FLY TO GRAVEYARD ===
                 const p = (progress - t1) / (1 - t1);
@@ -1570,8 +1848,10 @@ async function animateDeathToGraveyard(data) {
                 // Placer la carte directement dans le cimetière via data.card
                 // Le state n'est pas encore à jour (graveyard.length=0), donc on
                 // utilise la carte de l'animation pour pré-remplir le cimetière
+                // Dissipation : pas de placement au cimetière
                 graveRenderBlocked.delete(ownerKey);
-                if (data.card) {
+                const isDissip = data.card?.abilities?.includes('dissipation');
+                if (data.card && !isDissip) {
                     const container = document.getElementById(`${ownerKey}-grave-top`);
                     if (container) {
                         const topId = data.card.uid || data.card.id;
@@ -1591,6 +1871,9 @@ async function animateDeathToGraveyard(data) {
                     // Aussi mettre à jour le stack
                     const graveyard = owner === 'me' ? state?.me?.graveyard : state?.opponent?.graveyard;
                     updateGraveDisplay(ownerKey, graveyard || [data.card]);
+
+                    // Mise à jour dynamique de la popup cimetière
+                    addCardToGraveyardPopup(ownerKey, data.card);
                 }
 
                 // Retirer le wrapper au prochain frame
@@ -1599,6 +1882,196 @@ async function animateDeathToGraveyard(data) {
                     if (perspContainer) perspContainer.remove();
                 });
                 resolve();
+            }
+        }
+
+        requestAnimationFrame(animate);
+    });
+}
+
+/**
+ * Animation de dissipation : la carte se désintègre en fragments qui s'envolent
+ * Effet style Magic Arena — chaque fragment contient un sous-ensemble aléatoire de pixels
+ */
+async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth, cardHeight, tiltDeg = 0, perspContainer = null) {
+    const NUM_FRAGMENTS = 24;
+    const FRAGMENT_DURATION = 900;
+    const MAX_STAGGER = 500;
+    const NUM_PARTICLES = 35;
+    const REPS = 2;
+
+    const ctx = sourceCanvas.getContext('2d');
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+    const original = ctx.getImageData(0, 0, w, h);
+
+    // Distribuer les pixels dans les fragments — biaisé par x (gauche se dissout en premier)
+    const fragmentDatas = Array.from({ length: NUM_FRAGMENTS }, () => ctx.createImageData(w, h));
+    for (let x = 0; x < w; x++) {
+        for (let y = 0; y < h; y++) {
+            for (let r = 0; r < REPS; r++) {
+                const idx = Math.min(
+                    Math.floor(NUM_FRAGMENTS * (Math.random() + 2 * x / w) / 3),
+                    NUM_FRAGMENTS - 1
+                );
+                const pi = (y * w + x) * 4;
+                for (let o = 0; o < 4; o++) {
+                    fragmentDatas[idx].data[pi + o] = original.data[pi + o];
+                }
+            }
+        }
+    }
+
+    // Wrapper unique pour tous les fragments
+    const fragWrapper = document.createElement('div');
+    fragWrapper.style.cssText = `
+        position: fixed;
+        left: ${startX}px; top: ${startY}px;
+        width: ${cardWidth}px; height: ${cardHeight}px;
+        pointer-events: none;
+        transform: rotateX(${tiltDeg}deg);
+        z-index: 10001;
+    `;
+
+    // Conteneur séparé pour les particules (pas de tilt)
+    const container = document.createElement('div');
+    container.style.cssText = `
+        position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+        z-index: 10001; pointer-events: none;
+    `;
+
+    // Créer les éléments canvas pour chaque fragment
+    const fragments = fragmentDatas.map((imgData, i) => {
+        const cvs = document.createElement('canvas');
+        cvs.width = w;
+        cvs.height = h;
+        cvs.getContext('2d').putImageData(imgData, 0, 0);
+        cvs.style.cssText = `
+            position: absolute;
+            left: 0; top: 0;
+            width: ${cardWidth}px; height: ${cardHeight}px;
+            pointer-events: none;
+            will-change: transform, opacity;
+        `;
+
+        const angle = Math.PI * 2 * (Math.random() - 0.5);
+        const delay = MAX_STAGGER * (1.35 * i / NUM_FRAGMENTS);
+        fragWrapper.appendChild(cvs);
+
+        return {
+            el: cvs,
+            delay,
+            elapsed: 0,
+            duration: FRAGMENT_DURATION,
+            tx: 60 * Math.cos(angle),
+            ty: 30 * Math.sin(angle),
+            rotation: (12 * (Math.random() - 0.5)) * Math.PI / 180,
+        };
+    });
+
+    // Créer les particules violettes
+    const particles = Array.from({ length: NUM_PARTICLES }, () => {
+        const size = 3 + Math.random() * 3;
+        const px = startX + Math.random() * cardWidth;
+        const py = startY + Math.random() * cardHeight;
+        const el = document.createElement('div');
+        el.style.cssText = `
+            position: fixed;
+            left: ${px}px; top: ${py}px;
+            width: ${size}px; height: ${size}px;
+            border-radius: 50%;
+            background: #c084fc;
+            opacity: 0;
+            pointer-events: none;
+            will-change: transform, opacity;
+        `;
+        container.appendChild(el);
+
+        return {
+            el,
+            delay: Math.random() * 400,
+            vx: (Math.random() - 0.3) * 60,
+            vy: (Math.random() - 0.5) * 40 - 15,
+            life: 0,
+            maxLife: 500 + Math.random() * 400,
+            x: px,
+            y: py,
+        };
+    });
+
+    // Ajouter le wrapper dans le perspContainer (même perspective 3D que le plateau)
+    if (perspContainer) {
+        perspContainer.appendChild(fragWrapper);
+    } else {
+        document.body.appendChild(fragWrapper);
+    }
+    document.body.appendChild(container);
+
+    // Compenser le décalage du wrapper causé par le rotateX dans le perspContainer
+    if (tiltDeg !== 0 && perspContainer) {
+        const before = fragWrapper.getBoundingClientRect();
+        const corrX = startX - before.left;
+        const corrY = startY - before.top;
+        fragWrapper.style.left = (startX + corrX) + 'px';
+        fragWrapper.style.top = (startY + corrY) + 'px';
+    }
+
+    return new Promise(resolve => {
+        const safetyTimeout = setTimeout(() => {
+            fragWrapper.remove();
+            container.remove();
+            resolve();
+        }, MAX_STAGGER + FRAGMENT_DURATION + 500);
+
+        let lastTime = performance.now();
+
+        function animate(now) {
+            const delta = now - lastTime;
+            lastTime = now;
+            let allDone = true;
+
+            for (const frag of fragments) {
+                frag.elapsed += delta;
+                if (frag.elapsed < frag.delay) { allDone = false; continue; }
+                const t = Math.min((frag.elapsed - frag.delay) / frag.duration, 1);
+                if (t < 1) allDone = false;
+
+                const ease = easeOutCubic(t);
+                const fadeEase = easeInQuad(t);
+                frag.el.style.transform = `translate(${frag.tx * ease}px, ${frag.ty * ease}px) rotate(${frag.rotation * ease}rad)`;
+                frag.el.style.opacity = 1 - fadeEase;
+            }
+
+            const deltaSec = delta / 1000;
+            for (const p of particles) {
+                if (p.delay > 0) {
+                    p.delay -= delta;
+                    allDone = false;
+                    continue;
+                }
+                p.life += delta;
+                if (p.life > p.maxLife) {
+                    p.el.style.opacity = '0';
+                    continue;
+                }
+                allDone = false;
+                const lt = p.life / p.maxLife;
+                p.x += p.vx * deltaSec;
+                p.y += p.vy * deltaSec;
+                p.el.style.left = p.x + 'px';
+                p.el.style.top = p.y + 'px';
+                const alpha = lt < 0.3 ? (lt / 0.3) * 0.7 : 0.7 * (1 - (lt - 0.3) / 0.7);
+                p.el.style.opacity = Math.max(0, alpha);
+                p.el.style.transform = `scale(${1 - lt * 0.5})`;
+            }
+
+            if (allDone) {
+                clearTimeout(safetyTimeout);
+                fragWrapper.remove();
+                container.remove();
+                resolve();
+            } else {
+                requestAnimationFrame(animate);
             }
         }
 
@@ -1626,11 +2099,17 @@ async function animateSacrifice(data) {
         CombatVFX.createSacrificeSlashEffect(cx, cy, rect.width, rect.height);
     }
 
-    // Attendre que le VFX blood slash soit bien visible avant de lancer le fly-to-graveyard
+    // Attendre que le VFX blood slash soit bien visible
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Enchaîner avec l'animation fly-to-graveyard standard
-    await animateDeathToGraveyard(data);
+    if (data.noFlyToGrave) {
+        // Créature avec transformInto : pas de fly-to-graveyard, le deathTransform suivant gère le flip
+        // Débloquer seulement graveRenderBlocked — le slot reste bloqué pour le deathTransform
+        graveRenderBlocked.delete(owner);
+    } else {
+        // Mort normale : enchaîner avec l'animation fly-to-graveyard standard
+        await animateDeathToGraveyard(data);
+    }
 }
 
 /**
@@ -1647,9 +2126,9 @@ function createCardElementForAnimation(card) {
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
         const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection'
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
+            protection: 'Protection', untargetable: 'Inciblable'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
@@ -1673,32 +2152,6 @@ function createCardElementForAnimation(card) {
         return el;
     }
 
-    const icons = {
-        fly: '🦅', shooter: '🎯', haste: '⚡', intangible: '👻',
-        trample: '🦏', power: '💪', cleave: '⛏️', immovable: '🪨', regeneration: '💚',
-        protection: '🛡️'
-    };
-    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
-
-    let typeIcon = '';
-    if (card.type === 'spell') typeIcon = `<div class="card-type-icon spell-icon">✨</div>`;
-    else if (card.type === 'trap') typeIcon = `<div class="card-type-icon trap-icon">🪤</div>`;
-
-    el.innerHTML = `
-        <div class="card-cost">${card.cost}</div>
-        ${typeIcon}
-        <div class="card-art">${card.icon || '❓'}</div>
-        <div class="card-body">
-            <div class="card-name">${card.name}</div>
-            <div class="card-abilities">${abilities || (card.type === 'spell' ? (card.offensive ? '⚔️' : '💚') : '')}</div>
-            <div class="card-stats">
-                ${card.atk !== undefined ? `<span class="stat stat-atk">${card.atk}</span>` : ''}
-                ${card.damage ? `<span class="stat stat-atk">${card.damage}</span>` : ''}
-                ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
-                ${card.type === 'creature' ? `<span class="stat stat-hp">${hp}</span>` : ''}
-            </div>
-        </div>`;
-
     return el;
 }
 
@@ -1713,8 +2166,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const cardWidth = 105;
     const cardHeight = 140;
 
-    // Bloquer le render du cimetière pendant l'animation (comme burn)
-    graveRenderBlocked.add(side);
+    // graveRenderBlocked déjà incrémenté par queueAnimation — pas de double add
 
     // 1. Créer l'élément carte (version on-field : juste le nom, comme au cimetière)
     const cardEl = (typeof makeCard === 'function')
@@ -1943,18 +2395,28 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         const spellNameEl = graveCardEl.querySelector('.arena-name');
                         if (spellNameEl) fitArenaName(spellNameEl);
                     }
+                    // Mise à jour dynamique de la popup cimetière
+                    addCardToGraveyardPopup(side, card);
+
                     // GARDER graveRenderBlocked actif !
                     // Le state du serveur n'a pas encore le sort dans le cimetière.
                     // Si on débloque maintenant, render() voit un cimetière vide et efface notre carte.
                     // On débloque après un délai pour laisser le state se mettre à jour.
                     const capturedSide = side;
+                    const spellUid = card.uid || card.id;
                     setTimeout(() => {
                         graveRenderBlocked.delete(capturedSide);
                         if (state) {
                             const graveyard = capturedSide === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
                             if (graveyard) {
-                                updateGraveDisplay(capturedSide, graveyard);
-                                updateGraveTopCard(capturedSide, graveyard);
+                                // Vérifier que le state contient bien le sort avant de mettre à jour.
+                                // Pour les sorts lents (destroy etc.), le state peut ne pas encore être arrivé.
+                                // Dans ce cas, garder le placement manuel — render() mettra à jour quand le state arrivera.
+                                const hasSpell = graveyard.some(c => (c.uid || c.id) === spellUid);
+                                if (hasSpell) {
+                                    updateGraveDisplay(capturedSide, graveyard);
+                                    updateGraveTopCard(capturedSide, graveyard);
+                                }
                             }
                         }
                     }, 2000);
@@ -1993,8 +2455,44 @@ async function animateSpell(data) {
             for (const el of committedEls) {
                 if (parseInt(el.dataset.commitId) === commitId) {
                     startRect = el.getBoundingClientRect();
-                    el.style.visibility = 'hidden';
-                    setTimeout(() => el.remove(), 50);
+
+                    // FLIP : capturer les positions des cartes voisines AVANT de retirer le sort
+                    const siblings = handPanel.querySelectorAll('.card');
+                    const oldPositions = new Map();
+                    for (const sibling of siblings) {
+                        if (sibling === el) continue;
+                        oldPositions.set(sibling, sibling.getBoundingClientRect().left);
+                    }
+
+                    // Retirer immédiatement le sort engagé du DOM
+                    el.remove();
+
+                    // FLIP : animer les cartes restantes vers leurs nouvelles positions
+                    const toAnimate = [];
+                    for (const [card, oldLeft] of oldPositions) {
+                        if (!card.isConnected) continue;
+                        const dx = oldLeft - card.getBoundingClientRect().left;
+                        if (Math.abs(dx) > 1) {
+                            card.style.transition = 'none';
+                            card.style.transform = `translateX(${dx}px)`;
+                            toAnimate.push(card);
+                        }
+                    }
+                    if (toAnimate.length > 0) {
+                        handPanel.getBoundingClientRect(); // force reflow
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                toAnimate.forEach(card => {
+                                    card.style.transition = 'transform 0.3s ease-out';
+                                    card.style.transform = '';
+                                });
+                                setTimeout(() => {
+                                    toAnimate.forEach(card => { card.style.transition = ''; });
+                                }, 350);
+                            });
+                        });
+                    }
+
                     break;
                 }
             }
@@ -2062,6 +2560,217 @@ function animateHeal(data) {
     }
 }
 
+async function handleRegenAnim(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+
+    // Bloquer le slot pour que render() ne touche pas à la carte
+    animatingSlots.add(slotKey);
+
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const cardEl = slot?.querySelector('.card');
+
+    // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts (avant regen)
+    if (cardEl && data._preHealHp !== undefined) {
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            hpEl.textContent = data._preHealHp;
+            if (data._preHealHp < data._preHealMax) {
+                hpEl.classList.add('reduced');
+                hpEl.classList.remove('boosted');
+            }
+        }
+    }
+
+    // ÉTAPE 2 : Laisser le joueur voir les HP réduits pendant 500ms
+    await new Promise(r => setTimeout(r, 500));
+
+    // ÉTAPE 3 : Jouer l'animation de regen (nombre rouge style lifesteal)
+    if (slot) {
+        slot.classList.add('lifesteal-aura');
+        setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
+
+        const rect = slot.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        CombatVFX.showLifestealNumber(x, y, data.amount);
+    }
+
+    // ÉTAPE 4 : Attendre que l'effet soit visible
+    await new Promise(r => setTimeout(r, 600));
+
+    // ÉTAPE 5 : Mettre à jour les HP finaux dans le DOM
+    if (cardEl) {
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            const side = owner === 'me' ? 'me' : 'opponent';
+            const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
+            if (finalCard) {
+                hpEl.textContent = finalCard.currentHp;
+                if (finalCard.currentHp < finalCard.hp) {
+                    hpEl.classList.add('reduced');
+                    hpEl.classList.remove('boosted');
+                } else {
+                    hpEl.classList.remove('reduced');
+                }
+            }
+        }
+    }
+}
+
+async function handleLifestealAnim(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+
+    // Le slot est déjà bloqué depuis le queue (dans queueAnimation)
+    animatingSlots.add(slotKey);
+
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const cardEl = slot?.querySelector('.card');
+
+    // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts directement dans le DOM
+    // (le state global peut déjà avoir les HP soignés, on utilise les HP capturés à la réception)
+    if (cardEl && data._preHealHp !== undefined) {
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            hpEl.textContent = data._preHealHp;
+            // Colorer en rouge si endommagé (classe "reduced" pour arena-style)
+            if (data._preHealHp < data._preHealMax) {
+                hpEl.classList.add('reduced');
+                hpEl.classList.remove('boosted');
+            }
+        }
+    }
+
+    // ÉTAPE 1b : Pour heroHeal, forcer les HP pré-soin du héros dans le DOM
+    if (data.heroHeal && data._preHeroHp !== undefined) {
+        const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+        const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
+        if (hpElement) {
+            hpElement.textContent = data._preHeroHp;
+        }
+    }
+
+    // ÉTAPE 2 : Laisser le joueur voir les HP réduits pendant 500ms
+    await new Promise(r => setTimeout(r, 500));
+
+    // ÉTAPE 3 : Jouer l'animation de lifesteal
+    if (data.heroHeal) {
+        // Lifelink : animation sur le portrait du héros
+        const heroEl = document.getElementById(`hero-${owner === 'me' ? 'me' : 'opp'}`);
+        if (heroEl) {
+            heroEl.classList.add('lifesteal-aura');
+            setTimeout(() => heroEl.classList.remove('lifesteal-aura'), 700);
+
+            const rect = heroEl.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            CombatVFX.showLifestealNumber(x, y, data.amount);
+            CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
+        }
+    } else if (slot) {
+        // Lifedrain : animation sur la créature
+        slot.classList.add('lifesteal-aura');
+        setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
+
+        const rect = slot.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        CombatVFX.showLifestealNumber(x, y, data.amount);
+        CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
+    }
+
+    // ÉTAPE 4 : Attendre que l'effet soit visible
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // ÉTAPE 5 : Mettre à jour les HP finaux dans le DOM
+    if (data.heroHeal) {
+        // Lifelink : mettre à jour les HP du héros
+        const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+        const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
+        if (hpElement) {
+            const finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
+            if (finalHp !== undefined) hpElement.textContent = finalHp;
+        }
+        lifestealHeroHealInProgress = false;
+    } else if (cardEl) {
+        // Lifedrain : mettre à jour les HP de la créature
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            const side = owner === 'me' ? 'me' : 'opponent';
+            const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
+            if (finalCard) {
+                hpEl.textContent = finalCard.currentHp;
+                if (finalCard.currentHp < finalCard.hp) {
+                    hpEl.classList.add('reduced');
+                    hpEl.classList.remove('boosted');
+                } else {
+                    hpEl.classList.remove('reduced');
+                }
+            }
+        }
+    }
+}
+
+async function handleHealOnDeathAnim(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slotKey = `${owner}-${data.row}-${data.col}`;
+
+    // Bloquer le slot pour que render() ne touche pas à la carte
+    animatingSlots.add(slotKey);
+
+    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const cardEl = slot?.querySelector('.card');
+
+    // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts (avant heal)
+    if (cardEl && data._preHealHp !== undefined) {
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            hpEl.textContent = data._preHealHp;
+            if (data._preHealHp < data._preHealMax) {
+                hpEl.classList.add('reduced');
+                hpEl.classList.remove('boosted');
+            }
+        }
+    }
+
+    // ÉTAPE 2 : Laisser le joueur voir les HP réduits
+    await new Promise(r => setTimeout(r, 500));
+
+    // ÉTAPE 3 : Jouer l'animation de soin (même VFX que lifesteal avec couleur verte)
+    if (slot) {
+        slot.classList.add('lifesteal-aura');
+        setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
+
+        const rect = slot.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        CombatVFX.showLifestealNumber(x, y, data.amount);
+        CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
+    }
+
+    // ÉTAPE 4 : Attendre que l'effet soit visible
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // ÉTAPE 5 : Mettre à jour les HP finaux dans le DOM
+    if (cardEl) {
+        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        if (hpEl) {
+            const side = owner === 'me' ? 'me' : 'opponent';
+            const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
+            if (finalCard) {
+                hpEl.textContent = finalCard.currentHp;
+                if (finalCard.currentHp < finalCard.hp) {
+                    hpEl.classList.add('reduced');
+                    hpEl.classList.remove('boosted');
+                } else {
+                    hpEl.classList.remove('reduced');
+                }
+            }
+        }
+    }
+}
+
 function animateTrapPlace(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
@@ -2092,36 +2801,28 @@ async function animateTrap(data) {
     const trapKey = `${owner}-${data.row}`;
     const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
 
-    console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] START trapKey=${trapKey}, slot classes=[${trapSlot?.className}], innerHTML=${trapSlot?.innerHTML?.substring(0,50)}`);
-
     // Protéger le slot (déjà fait dans handleAnimation, mais au cas où)
     animatingTrapSlots.add(trapKey);
 
     // 1. Afficher la carte du piège avec animation de révélation
     if (data.trap) {
-        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] Avant animateSpellReveal`);
         await animateSpellReveal(data.trap, data.player);
-        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] Après animateSpellReveal, slot classes=[${trapSlot?.className}], innerHTML=${trapSlot?.innerHTML?.substring(0,50)}`);
     }
 
     // 2. Explosion du slot du piège
     if (trapSlot) {
         trapSlot.classList.add('triggered');
-        console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] triggered ajouté, classes=[${trapSlot.className}]`);
         const rect = trapSlot.getBoundingClientRect();
         CombatVFX.createSpellImpactEffect(
             rect.left + rect.width / 2,
             rect.top + rect.height / 2
         );
         setTimeout(() => {
-            console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] triggered RETIRÉ (600ms timeout), classes avant=[${trapSlot.className}]`);
             trapSlot.classList.remove('triggered', 'has-trap', 'mine');
             trapSlot.innerHTML = '';
-            console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] slot vidé proprement après animation, classes=[${trapSlot.className}]`);
         }, 600);
     }
 
-    console.log(`[ANIM TRAP ${performance.now().toFixed(0)}] END trapKey=${trapKey}, animatingTrapSlots=[${[...animatingTrapSlots]}]`);
 }
 
 // === Système de bounce (Voyage inattendu) ===
@@ -2138,15 +2839,20 @@ function checkPendingBounce(owner, cardElements) {
     const target = cardElements[cardElements.length - 1];
     if (!target) return;
     target.style.visibility = 'hidden';
-    const rect = target.getBoundingClientRect();
-    pendingBounce.resolveTarget({
-        el: target,
-        x: rect.left,
-        y: rect.top,
-        w: rect.width,
-        h: rect.height
-    });
-    pendingBounce = null;
+    // Résoudre la cible une seule fois (première render après le state update)
+    if (!pendingBounce.resolved) {
+        const rect = target.getBoundingClientRect();
+        pendingBounce.resolveTarget({
+            el: target,
+            x: rect.left,
+            y: rect.top,
+            w: rect.width,
+            h: rect.height
+        });
+        pendingBounce.resolved = true;
+    }
+    // NE PAS null pendingBounce ici — l'animation le fera quand le fly est terminé
+    // Sinon un re-render pendant le fly montre la carte prématurément
 }
 
 /**
@@ -2250,8 +2956,7 @@ async function animateBounceToHand(data) {
         const graveBox = document.getElementById(`${ownerKey}-grave-box`);
         const graveEl = graveTopEl || graveBox;
 
-        // Bloquer le render du cimetière pendant l'animation
-        graveRenderBlocked.add(ownerKey);
+        // graveRenderBlocked déjà incrémenté par queueAnimation — pas de double add
 
         // Perspective container pour matcher l'inclinaison du board (même technique que animateBurn)
         const gameBoardWrapper = document.querySelector('.game-board-wrapper');
@@ -2365,6 +3070,9 @@ async function animateBounceToHand(data) {
                         if (graveyard) updateGraveDisplay(ownerKey, graveyard);
                     }
 
+                    // Mise à jour dynamique de la popup cimetière
+                    addCardToGraveyardPopup(ownerKey, data.card);
+
                     wrapper.remove();
                     if (perspContainer) perspContainer.remove();
                     resolve();
@@ -2442,7 +3150,21 @@ async function animateBounceToHand(data) {
                 if (p < 1) {
                     requestAnimationFrame(animate);
                 } else {
-                    target.el.style.visibility = 'visible';
+                    // Restaurer la visibilité de la carte cible
+                    if (target.el.isConnected) {
+                        target.el.style.visibility = 'visible';
+                    } else {
+                        // L'élément a été remplacé par un re-render — retrouver le nouveau
+                        let currentTarget = null;
+                        if (owner === 'me') {
+                            const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
+                            currentTarget = handCards[handCards.length - 1];
+                        } else {
+                            const oppCards = document.querySelectorAll('#opp-hand .opp-card-back');
+                            currentTarget = oppCards[oppCards.length - 1];
+                        }
+                        if (currentTarget) currentTarget.style.visibility = 'visible';
+                    }
                     wrapper.remove();
                     resolve();
                 }
@@ -2455,7 +3177,223 @@ async function animateBounceToHand(data) {
         setTimeout(() => wrapper.remove(), 200);
     }
 
+    pendingBounce = null;
     animatingSlots.delete(slotKey);
+}
+
+// === Animation Graveyard Return (Goule tenace) ===
+// Copie exacte de animateBounceToHand, mais part du cimetière au lieu du terrain.
+// Utilise pendingBounce AVANT le lift (contrairement à bounce qui le fait après) car
+// emitAnimation et emitStateToBoth arrivent quasi-simultanément du serveur.
+async function animateGraveyardReturn(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+
+    // PAS de graveRenderBlocked : le wrapper animé overlay le cimetière,
+    // donc le cimetière peut se re-rendre librement en dessous
+
+    // Retirer la carte de la popup cimetière si ouverte
+    removeCardFromGraveyardPopup(owner, data.card);
+
+    // Source : le cimetière du propriétaire
+    const graveTopEl = document.getElementById(`${owner}-grave-top`);
+    const graveBox = document.getElementById(`${owner}-grave-box`);
+    const sourceEl = graveTopEl || graveBox;
+    if (!sourceEl) {
+        return;
+    }
+
+    const sourceRect = sourceEl.getBoundingClientRect();
+
+    // Dimensions de la carte (même taille que bounce)
+    const cardWidth = 105;
+    const cardHeight = 140;
+    const startX = sourceRect.left + sourceRect.width / 2 - cardWidth / 2;
+    const startY = sourceRect.top + sourceRect.height / 2 - cardHeight / 2;
+
+    // Créer le wrapper animé (identique à bounce)
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed;
+        z-index: 10000;
+        pointer-events: none;
+        left: ${startX}px;
+        top: ${startY}px;
+        width: ${cardWidth}px;
+        height: ${cardHeight}px;
+        transform-origin: center center;
+    `;
+
+    // Carte face visible — préserver le backgroundImage (identique à bounce)
+    const cardFace = makeCard(data.card, false);
+    const bgImage = cardFace.style.backgroundImage;
+    cardFace.style.position = 'absolute';
+    cardFace.style.top = '0';
+    cardFace.style.left = '0';
+    cardFace.style.width = '100%';
+    cardFace.style.height = '100%';
+    cardFace.style.margin = '0';
+    cardFace.style.boxShadow = '0 0 20px rgba(100, 180, 255, 0.6)';
+    if (bgImage) cardFace.style.backgroundImage = bgImage;
+
+    wrapper.appendChild(cardFace);
+    document.body.appendChild(wrapper);
+
+    // Auto-fit du nom (identique à bounce)
+    const bounceNameFit = cardFace.querySelector('.arena-name');
+    if (bounceNameFit) fitArenaName(bounceNameFit);
+
+    // Utiliser le pendingBounce pré-enregistré au queue time, ou en créer un nouveau
+    let targetPromise;
+    if (data._bounceTargetPromise) {
+        targetPromise = data._bounceTargetPromise;
+        if (pendingBounce) pendingBounce.wrapper = wrapper;
+    } else {
+        targetPromise = new Promise(resolve => {
+            pendingBounce = { owner, card: data.card, wrapper, resolveTarget: resolve };
+        });
+    }
+
+    // === PHASE 1 : LIFT (200ms) — carte se soulève du cimetière (identique à bounce) ===
+    const liftHeight = 40;
+    const liftScale = 1.08;
+
+    await new Promise(resolve => {
+        const dur = 200;
+        const t0 = performance.now();
+        function animate() {
+            const p = Math.min((performance.now() - t0) / dur, 1);
+            const ep = easeOutCubic(p);
+            wrapper.style.top = (startY - ep * liftHeight) + 'px';
+            wrapper.style.transform = `scale(${1 + ep * (liftScale - 1)})`;
+            const glow = ep * 25;
+            cardFace.style.boxShadow = `0 0 ${glow}px rgba(100, 180, 255, ${ep * 0.8}), 0 4px 12px rgba(0,0,0,0.4)`;
+            if (p < 1) requestAnimationFrame(animate); else resolve();
+        }
+        requestAnimationFrame(animate);
+    });
+
+    // Convertir de scale vers coordonnées visuelles réelles (identique à bounce)
+    const liftEndCssY = startY - liftHeight;
+    const floatX = startX + cardWidth * (1 - liftScale) / 2;
+    const floatY = liftEndCssY + cardHeight * (1 - liftScale) / 2;
+    const floatW = cardWidth * liftScale;
+    const floatH = cardHeight * liftScale;
+
+    wrapper.style.left = floatX + 'px';
+    wrapper.style.top = floatY + 'px';
+    wrapper.style.width = floatW + 'px';
+    wrapper.style.height = floatH + 'px';
+    wrapper.style.transform = 'none';
+
+    // Après le lift, si le state est déjà arrivé et que le target n'est pas encore résolu,
+    // forcer la résolution depuis le DOM actuel (évite l'attente en l'air)
+    if (pendingBounce && pendingBounce.owner === owner && !pendingBounce.resolved) {
+        const existingCards = owner === 'me'
+            ? document.querySelectorAll('#my-hand .card:not(.committed-spell)')
+            : document.querySelectorAll('#opp-hand .opp-card-back');
+        if (existingCards.length > 0) {
+            checkPendingBounce(owner, existingCards);
+        }
+    }
+
+    // === PHASE 2 : FLOAT en attendant la position exacte de render() (identique à bounce) ===
+    let floating = true;
+    const floatT0 = performance.now();
+    function floatLoop() {
+        if (!floating) return;
+        const elapsed = performance.now() - floatT0;
+        const bob = Math.sin(elapsed / 300) * 3;
+        const glowPulse = 20 + Math.sin(elapsed / 400) * 5;
+        wrapper.style.top = (floatY + bob) + 'px';
+        cardFace.style.boxShadow = `0 0 ${glowPulse}px rgba(100, 180, 255, 0.7), 0 4px 12px rgba(0,0,0,0.4)`;
+        requestAnimationFrame(floatLoop);
+    }
+    requestAnimationFrame(floatLoop);
+
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2000));
+    const target = await Promise.race([targetPromise, timeoutPromise]);
+    floating = false;
+
+    if (target) {
+        // === PHASE 3 : FLY vers la cible exacte (450ms) — identique à bounce ===
+        const flyX0 = floatX;
+        const flyY0 = parseFloat(wrapper.style.top);
+        const flyW0 = floatW;
+        const flyH0 = floatH;
+
+        const endX = target.x;
+        const endY = target.y;
+        const endW = target.w;
+        const endH = target.h;
+
+        const ctrlX = (flyX0 + endX) / 2;
+        const ctrlY = Math.min(flyY0, endY) - 80;
+
+        const flyDuration = 450;
+
+        await new Promise(resolve => {
+            const t0 = performance.now();
+            function animate() {
+                const p = Math.min((performance.now() - t0) / flyDuration, 1);
+                const t = easeInOutCubic(p);
+
+                const x = (1-t)*(1-t)*flyX0 + 2*(1-t)*t*ctrlX + t*t*endX;
+                const y = (1-t)*(1-t)*flyY0 + 2*(1-t)*t*ctrlY + t*t*endY;
+                const w = flyW0 + (endW - flyW0) * t;
+                const h = flyH0 + (endH - flyH0) * t;
+                const glow = 20 * (1 - t);
+
+                wrapper.style.left = x + 'px';
+                wrapper.style.top = y + 'px';
+                wrapper.style.width = w + 'px';
+                wrapper.style.height = h + 'px';
+                cardFace.style.boxShadow = glow > 0
+                    ? `0 0 ${glow}px rgba(100, 180, 255, ${glow/25}), 0 4px 12px rgba(0,0,0,0.4)`
+                    : 'none';
+
+                if (p < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Restaurer la visibilité de la carte cible
+                    if (target.el.isConnected) {
+                        target.el.style.visibility = 'visible';
+                    } else {
+                        // L'élément a été remplacé par un re-render — retrouver le nouveau
+                        let currentTarget = null;
+                        if (owner === 'me') {
+                            const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
+                            currentTarget = handCards[handCards.length - 1];
+                        } else {
+                            const oppCards = document.querySelectorAll('#opp-hand .opp-card-back');
+                            currentTarget = oppCards[oppCards.length - 1];
+                        }
+                        if (currentTarget) currentTarget.style.visibility = 'visible';
+                    }
+                    wrapper.remove();
+                    resolve();
+                }
+            }
+            requestAnimationFrame(animate);
+        });
+    } else {
+        // Pas de cible — fade out
+        wrapper.style.transition = 'opacity 0.2s';
+        wrapper.style.opacity = '0';
+        setTimeout(() => wrapper.remove(), 200);
+    }
+
+    pendingBounce = null;
+
+    // Forcer la mise à jour du cimetière depuis le state actuel.
+    // Le render() a pu être bloqué par graveRenderBlocked (animations de mort/burn/sacrifice
+    // en cours quand le state est arrivé), donc le cimetière n'a jamais été mis à jour.
+    if (state) {
+        const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+        if (graveyard) {
+            updateGraveTopCard(owner, graveyard);
+            updateGraveDisplay(owner, graveyard);
+        }
+    }
 }
 
 // Slots en cours d'animation - render() ne doit pas les toucher
@@ -2482,7 +3420,7 @@ function resetAnimationStates() {
             const owner = item.data.targetPlayer === myNum ? 'me' : 'opp';
             slotsStillNeeded.add(`${owner}-${item.data.targetRow}-${item.data.targetCol}`);
         }
-        if ((item.type === 'damage' || item.type === 'spellDamage') && item.data) {
+        if ((item.type === 'damage' || item.type === 'spellDamage' || item.type === 'poisonDamage') && item.data) {
             const owner = item.data.player === myNum ? 'me' : 'opp';
             slotsStillNeeded.add(`${owner}-${item.data.row}-${item.data.col}`);
         }
@@ -2560,7 +3498,7 @@ function startFlyingAnimation(cardEl) {
 
         const time = performance.now() * flyingAnimationSpeed;
         const offset = Math.sin(time) * flyingAnimationAmplitude;
-        cardEl.style.transform = `translateY(${offset}px)`;
+        cardEl.style.transform = `translateY(${offset}px) translateZ(0)`;
 
         requestAnimationFrame(animate);
     }
@@ -2577,7 +3515,6 @@ function startFlyingAnimation(cardEl) {
 function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRect = null) {
     return new Promise(resolve => {
         let handRect = savedSourceRect;
-        console.log('[flyFromOppHand] savedSourceRect:', savedSourceRect, 'spell:', spell?.name, 'spell.uid:', spell?.uid);
 
         if (!handRect) {
             const handPanel = document.getElementById('opp-hand');
@@ -2600,7 +3537,6 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             const match = handPanel?.querySelector(`.opp-revealed[data-uid="${spell.uid}"]`);
             if (match) {
                 match.style.visibility = 'hidden';
-                console.log('[flyFromOppHand] Hiding source card in hand');
             }
         }
 
@@ -2618,7 +3554,6 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
         if (spell && spell.revealedToOpponent && typeof makeCard === 'function') {
             const cardFace = makeCard(spell, false);
             const bgImage = cardFace.style.backgroundImage;
-            console.log('[flyFromOppHand] makeCard bgImage:', bgImage, 'spell.image:', spell.image);
             cardFace.style.width = '100%';
             cardFace.style.height = '100%';
             cardFace.style.margin = '0';
@@ -2708,15 +3643,12 @@ function animateSummon(data) {
 
     const isRevealed = data.card && data.card.revealedToOpponent;
 
-    console.log('[animateSummon] card:', data.card?.name, 'uid:', data.card?.uid, 'isRevealed:', isRevealed);
-
     // Utiliser la position sauvegardée au début de la révélation (avant re-render)
     let savedSourceRect = null;
     if (isRevealed && data.card.uid) {
         savedSourceRect = savedRevealedCardRects.get(data.card.uid) || null;
         // NE PAS supprimer du cache ici — la carte reste cachée dans le DOM
         // tant que l'animation n'est pas terminée (state updates peuvent re-render)
-        console.log('[animateSummon] savedSourceRect from cache:', savedSourceRect);
     }
 
     // Phase 1 : carte vole de la main adverse vers le slot (300ms)
@@ -3133,11 +4065,8 @@ function animateMove(data) {
 
     const owner = 'opp';
 
-    // Bloquer les deux slots (origine et destination)
     const fromKey = `${owner}-${data.fromRow}-${data.fromCol}`;
     const toKey = `${owner}-${data.toRow}-${data.toCol}`;
-    animatingSlots.add(fromKey);
-    animatingSlots.add(toKey);
 
     const fromSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.fromRow}"][data-col="${data.fromCol}"]`);
     const toSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
@@ -3145,6 +4074,13 @@ function animateMove(data) {
     if (!fromSlot || !toSlot) {
         return;
     }
+
+    // Forcer render() AVANT de bloquer les slots (pour afficher les mises à jour en attente, ex: poison)
+    render();
+
+    // Bloquer les deux slots (origine et destination)
+    animatingSlots.add(fromKey);
+    animatingSlots.add(toKey);
 
     // Vider les DEUX slots immédiatement (pour éviter le doublon visuel)
     const labelFrom = fromSlot.querySelector('.slot-label');

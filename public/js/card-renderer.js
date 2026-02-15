@@ -61,8 +61,11 @@ const CardRenderer = {
         const W = this.CARD_WIDTH;
         const H = this.CARD_HEIGHT;
 
-        // Nettoyer
-        this.app.stage.removeChildren();
+        // Nettoyer (destroy les anciens enfants pour libérer la VRAM)
+        const oldChildren = this.app.stage.removeChildren();
+        for (const child of oldChildren) {
+            child.destroy({ children: true });
+        }
         const container = new PIXI.Container();
         this.app.stage.addChild(container);
 
@@ -147,10 +150,10 @@ const CardRenderer = {
 
         // Capacités
         const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité',
+            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité',
             intangible: 'Intangible', trample: 'Piétinement',
-            power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
+            power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', lifedrain: 'Drain de vie', antitoxin: 'Antitoxine'
         };
         const abilitiesList = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
@@ -159,6 +162,9 @@ const CardRenderer = {
             if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
             if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
             if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
+            if (a === 'poison') return `Poison ${card.poisonX || 1}`;
+            if (a === 'lifedrain') return `Drain de vie ${card.lifedrainX || ''}`.trim();
+            if (a === 'lifelink') return `Lien vital ${card.lifelinkX || ''}`.trim();
             return abilityNames[a] || a;
         });
         if (card.sacrifice) {
@@ -258,6 +264,11 @@ const CardRenderer = {
         try {
             const dataUrl = await this.app.renderer.extract.base64(this.app.stage);
             this.cache.set(cacheKey, dataUrl);
+            // LRU : limiter le cache à 150 entrées (les plus anciennes sont éjectées)
+            if (this.cache.size > 150) {
+                const firstKey = this.cache.keys().next().value;
+                this.cache.delete(firstKey);
+            }
             return dataUrl;
         } catch (e) {
             return null;

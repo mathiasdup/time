@@ -1,12 +1,96 @@
 // ==================== RENDU DU JEU ====================
 // Render principal, champ de bataille, main, cartes, preview, cimetière
+
+// ── Performance Monitor ──
+const PerfMonitor = (() => {
+    let renderCount = 0;
+    let renderTotalMs = 0;
+    let renderMaxMs = 0;
+    let lastReport = performance.now();
+    const REPORT_INTERVAL = 5000; // rapport toutes les 5s
+
+    function startRender() {
+        return performance.now();
+    }
+
+    function endRender(startTime) {
+        const elapsed = performance.now() - startTime;
+        renderCount++;
+        renderTotalMs += elapsed;
+        if (elapsed > renderMaxMs) renderMaxMs = elapsed;
+
+        const now = performance.now();
+        if (now - lastReport >= REPORT_INTERVAL) {
+            report();
+            lastReport = now;
+        }
+    }
+
+    function report() {
+        const domNodes = document.querySelectorAll('*').length;
+        const avgMs = renderCount > 0 ? (renderTotalMs / renderCount).toFixed(1) : 0;
+        const animQueueLen = typeof animationQueue !== 'undefined' ? animationQueue.length : '?';
+
+        // Breakdown détaillé des .card par conteneur
+        const allCards = document.querySelectorAll('.card');
+        let inMyHand = 0, inOppHand = 0, inSlots = 0, inGrave = 0, inZoom = 0, inPreview = 0, onBody = 0, elsewhere = 0;
+        const orphanDetails = [];
+
+        allCards.forEach(card => {
+            if (card.closest('#my-hand')) { inMyHand++; return; }
+            if (card.closest('#opp-hand')) { inOppHand++; return; }
+            if (card.closest('.card-slot')) { inSlots++; return; }
+            if (card.closest('.grave-card-layer') || card.closest('#me-grave-top') || card.closest('#opp-grave-top') || card.closest('#graveyard-cards')) { inGrave++; return; }
+            if (card.closest('#card-zoom-container')) { inZoom++; return; }
+            if (card.closest('.preview-container') || card.closest('.card-preview') || card.closest('.hero-preview')) { inPreview++; return; }
+            if (card.closest('.drag-ghost-container')) { onBody++; return; }
+            // Orphelin : pas dans un conteneur connu
+            elsewhere++;
+            const p = card.parentElement;
+            const pp = p?.parentElement;
+            orphanDetails.push(`${p?.tagName}.${(p?.className||'').substring(0,30)}>${pp?.tagName}.${(pp?.className||'').substring(0,30)}`);
+        });
+
+        // Wrappers d'animation sur body (éléments fixed z-index élevé)
+        let animWrappers = 0;
+        for (const child of document.body.children) {
+            if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) animWrappers++;
+        }
+
+
+        // Safety cleanup : retirer les wrappers d'animation DIV orphelins (> 10s)
+        // Exclure les CANVAS (PixiJS CombatVFX permanent) qui ont aussi fixed+z-index élevé
+        const now = Date.now();
+        for (const child of Array.from(document.body.children)) {
+            if (child.tagName === 'CANVAS') continue; // ne jamais supprimer les canvas PixiJS
+            if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) {
+                const born = parseInt(child.dataset.animBorn) || 0;
+                if (!born) {
+                    child.dataset.animBorn = now;
+                } else if (now - born > 10000) {
+                    child.remove();
+                }
+            }
+        }
+
+        // Reset
+        renderCount = 0;
+        renderTotalMs = 0;
+        renderMaxMs = 0;
+    }
+
+    return { startRender, endRender };
+})();
+
 function render() {
     if (!state) return;
+    const _perfStart = PerfMonitor.startRender();
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
     const me = state.me, opp = state.opponent;
 
     // Ne pas mettre à jour les HP si une animation zdejebel/trample est en cours ou en attente
     // Ces animations gèrent elles-mêmes l'affichage des HP
-    const hasHpAnimPending = animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
+    const hasHpAnimPending = lifestealHeroHealInProgress || animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
     if (!hasHpAnimPending) {
         const meHpNum = document.querySelector('#me-hp .hero-hp-number');
         const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
@@ -55,9 +139,11 @@ function render() {
     updateGraveDisplay('opp', opp.graveyard);
     
     const activeShieldKeys = new Set();
-    renderField('me', me.field, activeShieldKeys);
-    renderField('opp', opp.field, activeShieldKeys);
+    const activeCamoKeys = new Set();
+    renderField('me', me.field, activeShieldKeys, activeCamoKeys);
+    renderField('opp', opp.field, activeShieldKeys, activeCamoKeys);
     CombatVFX.syncShields(activeShieldKeys);
+    CombatVFX.syncCamouflages(activeCamoKeys);
     renderTraps();
     renderHand(me.hand, me.energy);
 
@@ -71,6 +157,7 @@ function render() {
     if (me.ready && state.phase === 'planning') {
         document.getElementById('end-turn-btn').classList.add('waiting');
     }
+    PerfMonitor.endRender(_perfStart);
 }
 
 function updateDeckDisplay(owner, deckCount) {
@@ -185,7 +272,7 @@ function updateGraveTopCard(owner, graveyard) {
     }
 }
 
-function renderField(owner, field, activeShieldKeys) {
+function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
             const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${r}"][data-col="${c}"]`);
@@ -194,40 +281,179 @@ function renderField(owner, field, activeShieldKeys) {
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
             if (animatingSlots.has(slotKey)) {
-                // DEBUG: log si ce slot bloqué contient une carte pétrifiée dans le state
-                const blockedCard = (owner === 'me' ? state?.me?.field : state?.opponent?.field)?.[r]?.[c];
-                if (blockedCard && (blockedCard.petrified || blockedCard.melodyLocked)) {
-                    console.log(`[RENDER BLOQUÉ] Slot ${slotKey} bloqué par animatingSlots ! Card: ${blockedCard.name}, petrified=${blockedCard.petrified}, melodyLocked=${blockedCard.melodyLocked}`);
+                continue;
+            }
+
+            const card = field[r][c];
+            const existingCardEl = slot.querySelector('.card');
+            const existingUid = existingCardEl?.dataset?.uid;
+            const existingName = existingCardEl?.querySelector('.arena-name')?.textContent || existingCardEl?.querySelector('.img-name')?.textContent || '?';
+
+            // LOG: détecter les changements de slot
+            if (!existingCardEl && card) {
+            } else if (existingCardEl && !card) {
+            } else if (existingCardEl && card && existingUid !== card.uid) {
+            }
+
+            // Fast path : même carte (uid identique), mettre à jour seulement les stats et états
+            if (card && existingCardEl && existingUid && existingUid === card.uid) {
+                // Mettre à jour HP
+                const hpVal = card.currentHp ?? card.hp;
+                const hpEl = existingCardEl.querySelector('.arena-hp') || existingCardEl.querySelector('.img-hp');
+                if (hpEl) {
+                    const hpStr = String(hpVal);
+                    if (hpEl.textContent !== hpStr) hpEl.textContent = hpStr;
+                    // Classes boosted/reduced (même noms que makeCard)
+                    const baseHp = card.baseHp ?? card.hp;
+                    hpEl.classList.toggle('boosted', hpVal > baseHp);
+                    hpEl.classList.toggle('reduced', hpVal < baseHp);
+                }
+                // Mettre à jour ATK
+                const atkEl = existingCardEl.querySelector('.arena-atk') || existingCardEl.querySelector('.img-atk');
+                if (atkEl) {
+                    const atkStr = String(card.atk);
+                    if (atkEl.textContent !== atkStr) atkEl.textContent = atkStr;
+                    const baseAtk = card.baseAtk ?? card.atk;
+                    atkEl.classList.toggle('boosted', card.atk > baseAtk);
+                    atkEl.classList.toggle('reduced', card.atk < baseAtk);
+                }
+                // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
+                if (card.poisonPerGraveyard) {
+                    const abilitiesEl = existingCardEl.querySelector('.arena-abilities');
+                    if (abilitiesEl) {
+                        const effectivePoison = card.poisonX || 1;
+                        const basePoison = card.basePoisonX ?? 1;
+                        const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
+                        abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
+                            /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
+                            `Poison <span${poisonClass}>${effectivePoison}</span>`
+                        );
+                    }
+                }
+                // Rebind hover/click avec les données fraîches de la carte
+                existingCardEl.onmouseenter = (e) => showCardPreview(card, e);
+                existingCardEl.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
+                // Mettre à jour les classes d'état sur la carte
+                const isJustPlayed = card.turnsOnField === 0 && !card.canAttack;
+                existingCardEl.classList.toggle('just-played', isJustPlayed);
+                existingCardEl.classList.toggle('can-attack', !!card.canAttack);
+                existingCardEl.classList.toggle('petrified', !!card.petrified);
+                existingCardEl.classList.toggle('melody-locked', !!card.melodyLocked);
+                // Gaze marker (Medusa) — propriété serveur : medusaGazeMarker
+                const gazeCount = card.medusaGazeMarker || 0;
+                let gazeMarker = existingCardEl.querySelector('.gaze-marker');
+                if (gazeCount > 0 && !gazeMarker) {
+                    gazeMarker = document.createElement('div');
+                    gazeMarker.className = 'gaze-marker';
+                    gazeMarker.innerHTML = `<div class="gaze-border"></div><span class="gaze-count">${gazeCount}</span>`;
+                    existingCardEl.appendChild(gazeMarker);
+                } else if (gazeCount > 0 && gazeMarker) {
+                    const countEl = gazeMarker.querySelector('.gaze-count');
+                    if (countEl) countEl.textContent = gazeCount;
+                } else if (gazeCount === 0 && gazeMarker) {
+                    gazeMarker.remove();
+                }
+                // Poison marker — propriété serveur : poisonCounters
+                const poisonCount = card.poisonCounters || 0;
+                let poisonMarker = existingCardEl.querySelector('.poison-marker');
+                if (poisonCount > 0 && !poisonMarker) {
+                    poisonMarker = document.createElement('div');
+                    poisonMarker.className = 'poison-marker';
+                    poisonMarker.innerHTML = `<div class="poison-border"></div><span class="poison-count">${poisonCount}</span>`;
+                    existingCardEl.appendChild(poisonMarker);
+                } else if (poisonCount > 0 && poisonMarker) {
+                    const countEl = poisonMarker.querySelector('.poison-count');
+                    if (countEl) countEl.textContent = poisonCount;
+                } else if (poisonCount === 0 && poisonMarker) {
+                    poisonMarker.remove();
+                }
+                // Entrave marker — propriété serveur : entraveCounters
+                const entraveCount = card.entraveCounters || 0;
+                let entraveMarker = existingCardEl.querySelector('.entrave-marker');
+                if (entraveCount > 0 && !entraveMarker) {
+                    entraveMarker = document.createElement('div');
+                    entraveMarker.className = 'entrave-marker';
+                    entraveMarker.innerHTML = `<div class="entrave-border"></div><span class="entrave-count">${entraveCount}</span>`;
+                    existingCardEl.appendChild(entraveMarker);
+                } else if (entraveCount > 0 && entraveMarker) {
+                    const countEl = entraveMarker.querySelector('.entrave-count');
+                    if (countEl) countEl.textContent = entraveCount;
+                } else if (entraveCount === 0 && entraveMarker) {
+                    entraveMarker.remove();
+                }
+                // Buff marker (+1/+1) — propriété serveur : buffCounters
+                const buffCount = card.buffCounters || 0;
+                let buffMarker = existingCardEl.querySelector('.buff-marker');
+                if (buffCount > 0 && !buffMarker) {
+                    buffMarker = document.createElement('div');
+                    buffMarker.className = 'buff-marker';
+                    buffMarker.innerHTML = `<span class="buff-count">${buffCount}</span>`;
+                    existingCardEl.appendChild(buffMarker);
+                } else if (buffCount > 0 && buffMarker) {
+                    const countEl = buffMarker.querySelector('.buff-count');
+                    if (countEl) countEl.textContent = buffCount;
+                } else if (buffCount === 0 && buffMarker) {
+                    buffMarker.remove();
+                }
+                // Positionner les marqueurs verticalement (empilés sur le côté droit)
+                let markerIdx = 0;
+                if (gazeMarker && gazeCount > 0) gazeMarker.style.top = `${-4 + markerIdx++ * 26}px`;
+                if (poisonMarker && poisonCount > 0) poisonMarker.style.top = `${-4 + markerIdx++ * 26}px`;
+                if (entraveMarker && entraveCount > 0) entraveMarker.style.top = `${-4 + markerIdx++ * 26}px`;
+                if (buffMarker && buffCount > 0) buffMarker.style.top = `${-4 + markerIdx++ * 26}px`;
+                // Flying animation (sécurité)
+                if (card.type === 'creature' && card.abilities?.includes('fly')) {
+                    if (!existingCardEl.classList.contains('flying-creature')) {
+                        existingCardEl.classList.add('flying-creature');
+                        slot.classList.add('has-flying');
+                        startFlyingAnimation(existingCardEl);
+                    }
+                }
+                // Protection / Camouflage VFX
+                if (card.hasProtection) {
+                    CombatVFX.registerShield(slotKey, existingCardEl);
+                    if (activeShieldKeys) activeShieldKeys.add(slotKey);
+                }
+                if (card.hasCamouflage) {
+                    CombatVFX.registerCamouflage(slotKey, existingCardEl);
+                    if (activeCamoKeys) activeCamoKeys.add(slotKey);
+                }
+                // Custom drag pour redéploiement (fast path — réattacher si conditions remplies)
+                if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
+                    if (!existingCardEl.dataset.draggable) {
+                        existingCardEl.dataset.draggable = '1';
+                        CustomDrag.makeDraggable(existingCardEl, {
+                            source: 'field',
+                            card: card,
+                            row: r,
+                            col: c,
+                            owner: owner
+                        });
+                    }
+                } else {
+                    delete existingCardEl.dataset.draggable;
                 }
                 continue;
             }
 
-            const hadCard = slot.classList.contains('has-card');
+            // Slow path : carte différente ou nouveau slot → recréer
             const label = slot.querySelector('.slot-label');
             slot.innerHTML = '';
             if (label) slot.appendChild(label.cloneNode(true));
 
             slot.classList.remove('has-card');
             slot.classList.remove('has-flying');
-            const card = field[r][c];
-
-            // DEBUG sacrifice : log quand une carte apparaît/disparaît d'un slot
-            if (!hadCard && card) {
-                console.log(`[RENDER] Carte APPARAÎT dans slot ${slotKey}: ${card.name} (animatingSlots: [${[...animatingSlots]}])`);
-            }
-            if (hadCard && !card) {
-                console.log(`[RENDER] Carte DISPARAÎT du slot ${slotKey} (animatingSlots: [${[...animatingSlots]}])`);
-            }
 
             if (card) {
                 slot.classList.add('has-card');
                 const cardEl = makeCard(card, false);
+                // Stocker le uid pour le fast path
+                cardEl.dataset.uid = card.uid || '';
 
                 // Ajouter l'effet de lévitation pour les créatures volantes
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     cardEl.classList.add('flying-creature');
                     slot.classList.add('has-flying');
-                    // Démarrer l'animation de lévitation continue
                     startFlyingAnimation(cardEl);
                 } else {
                     slot.classList.remove('has-flying');
@@ -237,6 +463,12 @@ function renderField(owner, field, activeShieldKeys) {
                 if (card.hasProtection) {
                     CombatVFX.registerShield(slotKey, cardEl);
                     if (activeShieldKeys) activeShieldKeys.add(slotKey);
+                }
+
+                // Effet de camouflage (fumée PixiJS) — même z-index que Protection
+                if (card.hasCamouflage) {
+                    CombatVFX.registerCamouflage(slotKey, cardEl);
+                    if (activeCamoKeys) activeCamoKeys.add(slotKey);
                 }
 
                 // Hover preview pour voir la carte en grand
@@ -324,12 +556,14 @@ const ABILITY_DESCRIPTIONS = {
     fly: { name: 'Vol', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
     shooter: { name: 'Tireur', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
     haste: { name: 'Célérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
+    superhaste: { name: 'Supercélérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée et peut se déplacer et attaquer dans le même tour.' },
     intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
     trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
 
     power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
     cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' },
     immovable: { name: 'Immobile', desc: 'Cette créature ne peut pas se déplacer.' },
+    wall: { name: 'Mur', desc: 'Cette créature ne peut pas attaquer.' },
     regeneration: { name: 'Régénération', desc: 'En fin de tour, cette créature récupère X PV (sans dépasser ses PV max).' },
     protection: { name: 'Protection', desc: 'Cette créature est protégée contre la prochaine source de dégâts qu\'elle subirait. Le bouclier est consommé après avoir bloqué une source.' },
     spellBoost: { name: 'Sort renforcé', desc: 'Tant que cette créature est en jeu, vos sorts infligent +X dégâts supplémentaires.' },
@@ -337,7 +571,12 @@ const ABILITY_DESCRIPTIONS = {
     bloodthirst: { name: 'Soif de sang', desc: 'Chaque fois qu\'une créature ennemie meurt, cette créature gagne +X ATK de façon permanente.' },
     melody: { name: 'Mélodie', desc: 'La première créature ennemie en face ne peut ni attaquer ni se déplacer. Après 2 tours, elle se transforme en pierre.' },
     sacrifice: { name: 'Sacrifice', desc: 'À l\'invocation, sacrifie une créature adjacente pouvant attaquer.' },
-    camouflage: { name: 'Camouflage', desc: 'Cette créature ne peut pas être ciblée par les attaques ni les sorts. Les attaquants l\'ignorent et frappent derrière. Se dissipe au début du prochain tour.' }
+    camouflage: { name: 'Camouflage', desc: 'Cette créature ne peut pas être ciblée par les attaques ni les sorts. Les attaquants l\'ignorent et frappent derrière. Se dissipe au début du prochain tour.' },
+    lethal: { name: 'Toucher mortel', desc: 'Si cette créature inflige des dégâts à une créature, elle la tue instantanément.' },
+    entrave: { name: 'Entrave', desc: 'Quand cette créature inflige des blessures de combat, elle met X marqueur(s) Entrave sur la cible. −1 ATK par marqueur (plancher 0).' },
+    lifelink: { name: 'Lien vital', desc: 'Quand cette créature inflige des blessures de combat, votre héros se soigne de X PV (plafonné à 20 PV).' },
+    lifedrain: { name: 'Drain de vie', desc: 'Quand cette créature inflige des blessures de combat, elle se soigne de X PV (plafonné aux PV max).' },
+    antitoxin: { name: 'Antitoxine', desc: 'Cette créature ne subit pas de dégâts de poison.' }
 };
 
 function showCardPreview(card, e) {
@@ -509,8 +748,25 @@ function showHeroDetail(hero, hp) {
     const cardEl = makeHeroCard(hero, hp);
     container.appendChild(cardEl);
 
+    // Bouton oeil pour toggle art-only (comme les créatures)
+    if (hero.image) {
+        const eyeBtn = document.createElement('div');
+        eyeBtn.className = 'zoom-art-toggle';
+        eyeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        eyeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cardEl.classList.toggle('art-only');
+            eyeBtn.classList.toggle('active');
+        });
+        container.appendChild(eyeBtn);
+    }
+
     zoomCardData = hero;
     overlay.classList.remove('hidden');
+
+    // Auto-fit du nom
+    const zoomNameEl = cardEl.querySelector('.arena-name');
+    if (zoomNameEl) fitArenaName(zoomNameEl);
 }
 
 function moveCardPreview(e) {
@@ -533,11 +789,9 @@ function renderTraps() {
             const hasTrapClass = slot.classList.contains('has-trap');
             const hasTriggered = slot.classList.contains('triggered');
             if (isProtected || trap || hasTrapClass) {
-                console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey}: protected=${isProtected}, stateTrap=${!!trap}, hasTrapClass=${hasTrapClass}, triggered=${hasTriggered}, innerHTML=${slot.innerHTML.substring(0,50)}`);
             }
             if (isProtected) {
                 if (!trap) {
-                    console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey} LIBÉRÉ (state trap=null)`);
                     animatingTrapSlots.delete(trapKey);
                     // fall through pour nettoyer le slot
                 } else {
@@ -571,11 +825,9 @@ function renderTraps() {
             const hasTrapClass = slot.classList.contains('has-trap');
             const hasTriggered = slot.classList.contains('triggered');
             if (isProtected || trap || hasTrapClass) {
-                console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey}: protected=${isProtected}, stateTrap=${!!trap}, hasTrapClass=${hasTrapClass}, triggered=${hasTriggered}, innerHTML=${slot.innerHTML.substring(0,50)}`);
             }
             if (isProtected) {
                 if (!trap) {
-                    console.log(`[RENDER TRAPS ${t.toFixed(0)}] ${trapKey} LIBÉRÉ (state trap=null)`);
                     animatingTrapSlots.delete(trapKey);
                     // fall through pour nettoyer le slot
                 } else {
@@ -593,33 +845,136 @@ function renderTraps() {
     });
 }
 
+// Signature de la dernière main rendue (pour le fast path)
+let _lastHandSig = '';
+let _lastCommittedSig = '';
+
+function _computeHandSig(hand) {
+    return hand.map(c => c.uid || c.id).join(',');
+}
+function _computeCommittedSig() {
+    return committedSpells.map(cs => cs.commitId).join(',');
+}
+
+// Fast path : met à jour les classes playable/coût sur les cartes existantes sans recréer le DOM
+function _updateHandInPlace(panel, hand, energy) {
+    const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
+    const spellsCast = state.me.spellsCastThisTurn || 0;
+    const hasHyruleDiscount = isHyrule && spellsCast === 1;
+    const totalPoisonCounters = state.me.totalPoisonCounters || 0;
+    const canPlayNow = canPlay();
+    const existingCards = panel.querySelectorAll('.card:not(.committed-spell)');
+
+    for (let i = 0; i < hand.length && i < existingCards.length; i++) {
+        const card = hand[i];
+        const el = existingCards[i];
+
+        // Recalculer le coût effectif
+        let effectiveCost = card.cost;
+        if (hasHyruleDiscount && card.type === 'spell') {
+            effectiveCost = Math.max(0, card.cost - 1);
+        }
+        if (card.poisonCostReduction && totalPoisonCounters > 0) {
+            effectiveCost = Math.max(0, effectiveCost - totalPoisonCounters);
+        }
+
+        // Mettre à jour le coût affiché si changé
+        const oldCost = parseInt(el.dataset.cost);
+        if (oldCost !== effectiveCost) {
+            el.dataset.cost = effectiveCost;
+            const costEl = el.querySelector('.arena-cost') || el.querySelector('.img-cost');
+            if (costEl) costEl.textContent = effectiveCost;
+        }
+
+        // Déterminer playable
+        let playable = effectiveCost <= energy && canPlayNow;
+        if (playable && (card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) {
+            playable = false;
+        }
+        if (playable && card.requiresGraveyardCreatures) {
+            const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatures < card.requiresGraveyardCreatures) playable = false;
+        }
+        if (playable && card.requiresGraveyardCreature) {
+            const availableCreatures = (state.me.graveyard || []).filter(c =>
+                c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+            );
+            if (availableCreatures.length === 0) playable = false;
+        }
+        if (playable && card.sacrifice && getValidSlots(card).length === 0) playable = false;
+        if (playable && card.targetSelfCreature) {
+            const hasCreature = state.me.field.some(row => row.some(c => c !== null));
+            if (!hasCreature) playable = false;
+        }
+
+        el.classList.toggle('playable', playable);
+
+        // Mettre à jour les données de drag (tooExpensive / effectiveCost)
+        if (el._dragData) {
+            el._dragData.tooExpensive = !playable;
+            el._dragData.effectiveCost = effectiveCost;
+        }
+
+        // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
+        if (card.poisonPerGraveyard) {
+            const abilitiesEl = el.querySelector('.arena-abilities');
+            if (abilitiesEl) {
+                const effectivePoison = card.poisonX || 1;
+                const basePoison = card.basePoisonX ?? 1;
+                const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
+                abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
+                    /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
+                    `Poison <span${poisonClass}>${effectivePoison}</span>`
+                );
+            }
+        }
+
+        // Visibility pour animations de pioche
+        if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i)) {
+            el.style.visibility = 'hidden';
+        } else {
+            el.style.visibility = '';
+        }
+
+        // Rebind hover/click avec les données fraîches
+        el.onmouseenter = (e) => showCardPreview(card, e);
+        el.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
+    }
+}
+
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
 
-    // FLIP step 1 : snapshot des positions avant de vider le DOM
-    let oldPositions = null;
-    let oldCommittedPositions = null;
-    const removedIdx = handCardRemovedIndex;
-    if (removedIdx >= 0) {
-        oldPositions = {};
-        oldCommittedPositions = {};
-        // Cartes normales
-        const oldCards = panel.querySelectorAll('.card:not(.committed-spell)');
-        oldCards.forEach(card => {
-            const idx = parseInt(card.dataset.idx);
-            if (idx !== removedIdx) {
-                const newIdx = idx > removedIdx ? idx - 1 : idx;
-                oldPositions[newIdx] = card.getBoundingClientRect().left;
-            }
-        });
-        // Sorts engagés (par commitId)
-        const oldCommitted = panel.querySelectorAll('.committed-spell');
-        oldCommitted.forEach(card => {
-            const commitId = card.dataset.commitId;
-            oldCommittedPositions[commitId] = card.getBoundingClientRect().left;
-        });
-        handCardRemovedIndex = -1;
+    // ── Fast path : même main, mêmes committed spells → mise à jour in-place ──
+    const handSig = _computeHandSig(hand);
+    const committedSig = _computeCommittedSig();
+    if (handSig === _lastHandSig && committedSig === _lastCommittedSig && handCardRemovedIndex < 0) {
+        _updateHandInPlace(panel, hand, energy);
+        return;
     }
+    _lastHandSig = handSig;
+    _lastCommittedSig = committedSig;
+
+    // ── Slow path : rebuild complet ──
+
+    // FLIP step 1 : snapshot des positions par UID avant de vider le DOM
+    // Fonctionne pour les retraits joueur (drag) ET serveur (résolution de sorts)
+    const oldPosByUid = {};
+    const oldCommittedPositions = {};
+    const oldCards = panel.querySelectorAll('.card:not(.committed-spell)');
+    oldCards.forEach(card => {
+        const uid = card.dataset.uid;
+        if (uid) {
+            oldPosByUid[uid] = card.getBoundingClientRect().left;
+        }
+    });
+    const oldCommitted = panel.querySelectorAll('.committed-spell');
+    oldCommitted.forEach(card => {
+        const commitId = card.dataset.commitId;
+        oldCommittedPositions[commitId] = card.getBoundingClientRect().left;
+    });
+    // Reset le flag de retrait (utilisé uniquement pour le tracking, pas pour le FLIP)
+    if (handCardRemovedIndex >= 0) handCardRemovedIndex = -1;
 
     panel.innerHTML = '';
 
@@ -627,6 +982,9 @@ function renderHand(hand, energy) {
     const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
     const spellsCast = state.me.spellsCastThisTurn || 0;
     const hasHyruleDiscount = isHyrule && spellsCast === 1;
+
+    // Compter les marqueurs poison en jeu pour la réduction de coût (Reine toxique)
+    const totalPoisonCounters = state.me.totalPoisonCounters || 0;
 
     hand.forEach((card, i) => {
         // Calculer le coût effectif pour les sorts avec Hyrule
@@ -636,9 +994,15 @@ function renderHand(hand, energy) {
             effectiveCost = Math.max(0, card.cost - 1);
             hasDiscount = true;
         }
+        // Réduction de coût par marqueurs poison (Reine toxique)
+        if (card.poisonCostReduction && totalPoisonCounters > 0) {
+            effectiveCost = Math.max(0, effectiveCost - totalPoisonCounters);
+            hasDiscount = true;
+        }
 
         const el = makeCard(card, true, hasDiscount ? effectiveCost : null);
         el.dataset.idx = i;
+        el.dataset.uid = card.uid || card.id || '';
         el.dataset.cost = effectiveCost;
 
         // Marquer comme jouable si : assez de mana + phase planning + pas encore validé le tour
@@ -753,17 +1117,18 @@ function renderHand(hand, energy) {
     }
 
     // FLIP step 2 : animer les cartes restantes de l'ancienne position vers la nouvelle
-    if (oldPositions && Object.keys(oldPositions).length > 0) {
+    const hasOldPositions = Object.keys(oldPosByUid).length > 0 || Object.keys(oldCommittedPositions).length > 0;
+    if (hasOldPositions) {
         const newCards = panel.querySelectorAll('.card:not(.committed-spell)');
         const newCommitted = panel.querySelectorAll('.committed-spell');
         const toAnimate = [];
 
         // Batch : poser tous les transforms d'un coup (sans transition)
-        // Cartes normales
+        // Cartes normales — matching par UID
         newCards.forEach(card => {
-            const idx = parseInt(card.dataset.idx);
-            if (oldPositions[idx] !== undefined) {
-                const dx = oldPositions[idx] - card.getBoundingClientRect().left;
+            const uid = card.dataset.uid;
+            if (uid && oldPosByUid[uid] !== undefined) {
+                const dx = oldPosByUid[uid] - card.getBoundingClientRect().left;
                 if (Math.abs(dx) > 1) {
                     card.style.transition = 'none';
                     card.style.transform = `translateX(${dx}px)`;
@@ -772,19 +1137,17 @@ function renderHand(hand, energy) {
             }
         });
         // Sorts engagés (par commitId)
-        if (oldCommittedPositions) {
-            newCommitted.forEach(card => {
-                const commitId = card.dataset.commitId;
-                if (oldCommittedPositions[commitId] !== undefined) {
-                    const dx = oldCommittedPositions[commitId] - card.getBoundingClientRect().left;
-                    if (Math.abs(dx) > 1) {
-                        card.style.transition = 'none';
-                        card.style.transform = `translateX(${dx}px)`;
-                        toAnimate.push(card);
-                    }
+        newCommitted.forEach(card => {
+            const commitId = card.dataset.commitId;
+            if (oldCommittedPositions[commitId] !== undefined) {
+                const dx = oldCommittedPositions[commitId] - card.getBoundingClientRect().left;
+                if (Math.abs(dx) > 1) {
+                    card.style.transition = 'none';
+                    card.style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(card);
                 }
-            });
-        }
+            }
+        });
 
         if (toAnimate.length > 0) {
             // Un seul reflow pour tout le batch
@@ -794,12 +1157,12 @@ function renderHand(hand, energy) {
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     toAnimate.forEach(card => {
-                        card.style.transition = 'transform 0.25s ease-out';
+                        card.style.transition = 'transform 0.35s ease-out';
                         card.style.transform = '';
                     });
                     setTimeout(() => {
                         toAnimate.forEach(card => { card.style.transition = ''; });
-                    }, 270);
+                    }, 380);
                 });
             });
         }
@@ -874,13 +1237,11 @@ function renderOppHand(count, oppHand) {
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
 
     const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
-    console.log(`[RENDER OPP HAND] count=${count} oldCount=${oldCount} drawActive=${drawActive} cacheSize=${cacheSize} pending=[${[...pendingDrawAnimations.opp.keys()]}] started=[${[...startedDrawAnimations.opp]}]`);
 
     // --- Mode freeze : ne PAS toucher au DOM pendant la transition de révélation ---
     // Tant que des cartes revealed sont en attente d'animation et que le count n'a pas changé,
     // on garde la main telle quelle (la carte revealed reste à sa place visuelle)
     if (cacheSize > 0 && count === oldCount) {
-        console.log('[RENDER OPP HAND] FREEZE mode - keeping DOM as-is (revealed card waiting for animation)');
         return;
     }
 
@@ -967,14 +1328,12 @@ function makeCard(card, inHand, discountedCost = null) {
     el.style.setProperty('--anim-offset', `${(performance.now() / 1000) % 6}s`);
 
     if (!inHand && card.type === 'creature') {
-        if (card.turnsOnField === 0 && !card.abilities?.includes('haste')) el.classList.add('just-played');
+        if (card.turnsOnField === 0 && !card.canAttack) el.classList.add('just-played');
         if (card.canAttack) el.classList.add('can-attack');
         if (card.melodyLocked) {
-            console.log(`[RENDER makeCard] ${card.name} → melody-locked`);
             el.classList.add('melody-locked');
         }
         if (card.petrified) {
-            console.log(`[RENDER makeCard] ${card.name} → petrified`);
             el.classList.add('petrified');
         }
     }
@@ -1018,21 +1377,34 @@ function makeCard(card, inHand, discountedCost = null) {
 
         // Capacités communes (sans shooter/fly car déjà dans le type)
         const commonAbilityNames = {
-            haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
+            haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
+            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine'
         };
         // Filtrer shooter et fly des capacités affichées
+        const addedAbils = card.addedAbilities || [];
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
+                const isAdded = addedAbils.includes(a);
                 if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
                 if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
                 if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
                 if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
                 if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
                 if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
-                return commonAbilityNames[a] || a;
+                if (a === 'poison') {
+                    const basePoison = card.basePoisonX ?? card.poisonX ?? 1;
+                    const effectivePoison = card.poisonX || 1;
+                    const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
+                    return `Poison <span${poisonClass}>${effectivePoison}</span>`;
+                }
+                if (a === 'entrave') return `Entrave ${card.entraveX || ''}`.trim();
+                if (a === 'lifedrain') return `Drain de vie ${card.lifedrainX || ''}`.trim();
+                if (a === 'lifelink') return `Lien vital ${card.lifelinkX || ''}`.trim();
+                const name = commonAbilityNames[a] || a;
+                if (isAdded) return `<span class="boosted">${name}</span>`;
+                return name;
             });
         if (card.sacrifice) {
             commonAbilities.push(`Sacrifice ${card.sacrifice}`);
@@ -1055,7 +1427,8 @@ function makeCard(card, inHand, discountedCost = null) {
             dragon: 'Dragon',
             serpent: 'Serpent',
             monstrosity: 'Monstruosité',
-            ogre: 'Ogre'
+            ogre: 'Ogre',
+            spider: 'Araignée'
         };
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 
@@ -1094,20 +1467,24 @@ function makeCard(card, inHand, discountedCost = null) {
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
-            // Jeton compteur de gaze (Medusa)
-            const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker">${card.medusaGazeMarker}</div>` : '';
+            // Jetons compteurs — empilés verticalement sur le côté droit
+            let mkIdx = 0;
+            const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${-4 + mkIdx++ * 26}px">${card.medusaGazeMarker}</div>` : '';
+            const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
+            const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
+            const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
             const melodyIcon = '';
             if (noStats) {
                 el.innerHTML = `
                     <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
-                    ${gazeMarker}${melodyIcon}`;
+                    ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
             } else {
                 el.innerHTML = `
                     <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
                     <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>
-                    ${gazeMarker}${melodyIcon}`;
+                    ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
             }
             autoFitCardName(el);
             return el;
@@ -1115,7 +1492,13 @@ function makeCard(card, inHand, discountedCost = null) {
 
         // Version complète (main, hover, cimetière)
         if (noStats) {
-            const typeName = isTrap ? 'Piège' : 'Sort';
+            let typeName = 'Sort';
+            if (isTrap) {
+                typeName = 'Piège';
+            } else if (card.spellType) {
+                const spellTypeMap = { offensif: 'Offensif', 'défensif': 'Défensif', hybride: 'Hybride' };
+                typeName = `Sort - ${spellTypeMap[card.spellType] || card.spellType}`;
+            }
             // Boost des dégâts de sorts si spellBoost actif
             let spellDescription = card.description || '';
             const spellBoost = (isSpell && card.offensive && card.damage && state?.me?.spellBoost) ? state.me.spellBoost : 0;
@@ -1153,145 +1536,9 @@ function makeCard(card, inHand, discountedCost = null) {
         return el;
     }
 
-    // Carte fullArt : image plein fond + ronds colorés style héros
-    if (card.fullArt && card.image) {
-        el.classList.add('full-art');
-        el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // Version allégée sur le terrain (sans zone de texte type/capacités, sans mana)
-        if (!inHand) {
-            el.classList.add('on-field');
-            el.innerHTML = `
-                <div class="fa-title"><div class="fa-name">${card.name}</div></div>
-                <div class="fa-atk ${atkClass}">${card.atk}</div>
-                <div class="fa-hp ${hpClass}">${hp}</div>`;
-            autoFitCardName(el);
-            return el;
-        }
 
-        // Version complète (main, hover, cimetière)
-        // Capacités communes (sans shooter/fly car déjà dans le type)
-        const commonAbilityNames = {
-            haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
-        };
-        const commonAbilities = (card.abilities || [])
-            .filter(a => a !== 'shooter' && a !== 'fly')
-            .map(a => {
-                if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
-                if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
-                if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
-                if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
-                if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
-                return commonAbilityNames[a] || a;
-            });
-        if (card.sacrifice) {
-            commonAbilities.push(`Sacrifice ${card.sacrifice}`);
-        }
-        const abilitiesText = commonAbilities.join(', ');
-
-        let combatTypeText = 'Mêlée';
-        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
-        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
-
-        el.innerHTML = `
-            <div class="fa-mana">${card.cost}</div>
-            <div class="fa-title"><div class="fa-name">${card.name}</div></div>
-            <div class="fa-text-zone">
-                <div class="fa-type">Créature - ${combatTypeText}</div>
-                ${abilitiesText ? `<div class="fa-abilities">${abilitiesText}</div>` : ''}
-            </div>
-            <div class="fa-atk ${atkClass}">${card.atk}</div>
-            <div class="fa-hp ${hpClass}">${hp}</div>`;
-        autoFitCardName(el);
-        return el;
-    }
-
-    // Si la carte a une image (système template avec texte positionné)
-    if (card.image) {
-        el.classList.add('has-image');
-        el.style.backgroundImage = `url('/cards/${card.image}')`;
-
-        const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage'
-        };
-        const abilitiesText = (card.abilities || []).map(a => {
-            if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
-            if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
-            if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
-            if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
-            if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
-            return abilityNames[a] || a;
-        }).join(', ');
-
-        let combatTypeText = 'Mêlée';
-        if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
-        else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
-
-        el.innerHTML = `
-            <div class="img-cost ${costClass}">${displayCost}</div>
-            <div class="img-subtype">${card.subtype || ''}</div>
-            <div class="img-name">${card.name}</div>
-            <div class="img-type-line">Créature - ${combatTypeText}</div>
-            <div class="img-abilities">${abilitiesText}</div>
-            <div class="img-atk ${atkClass}">${card.atk}</div>
-            <div class="img-hp ${hpClass}">${hp}</div>`;
-        autoFitCardName(el);
-        return el;
-    }
-
-    // Système classique avec emojis
-    const icons = {
-        fly: 'ðŸ¦…',
-        shooter: 'ðŸŽ¯',
-        haste: 'âš¡',
-        intangible: 'ðŸ‘»',
-        trample: 'ðŸ¦',
-        power: 'ðŸ’ª',
-        cleave: 'â›ï¸',
-        immovable: 'ðŸª¨',
-        regeneration: 'ðŸ’š',
-        protection: 'ðŸ›¡ï¸'
-    };
-    const abilities = (card.abilities || []).map(a => icons[a] || '').join(' ');
-
-    // Type icon for spells and traps
-    let typeIcon = '';
-    if (card.type === 'spell') {
-        typeIcon = `<div class="card-type-icon spell-icon">âœ¨</div>`;
-    } else if (card.type === 'trap') {
-        typeIcon = `<div class="card-type-icon trap-icon">ðŸª¤</div>`;
-    }
-
-    // Pattern info for spells
-    let patternInfo = '';
-    if (card.pattern === 'cross') {
-        patternInfo = '<div style="font-size:0.5em;color:#ff9800;">âœï¸ Zone</div>';
-    } else if (card.pattern === 'global' || card.pattern === 'all') {
-        patternInfo = '<div style="font-size:0.5em;color:#3498db;">ðŸŒ Global</div>';
-    } else if (card.pattern === 'hero') {
-        patternInfo = '<div style="font-size:0.5em;color:#e74c3c;">ðŸŽ¯ Héros</div>';
-    }
-
-    el.innerHTML = `
-        <div class="card-cost ${costClass}">${displayCost}</div>
-        ${typeIcon}
-        <div class="card-art">${card.icon || 'â“'}</div>
-        <div class="card-body">
-            <div class="card-name">${card.name}</div>
-            <div class="card-abilities">${abilities || (card.type === 'spell' ? (card.offensive ? 'âš”ï¸' : 'ðŸ’š') : '')}${patternInfo}</div>
-            <div class="card-stats">
-                ${card.atk !== undefined ? `<span class="stat stat-atk ${atkClass}">${card.atk}</span>` : ''}
-                ${card.damage ? (() => { const sb = (card.type === 'spell' && card.offensive && state?.me?.spellBoost) ? state.me.spellBoost : 0; return `<span class="stat stat-atk ${sb > 0 ? 'boosted' : ''}">${card.damage + sb}</span>`; })() : ''}
-                ${card.heal ? `<span class="stat stat-hp">${card.heal}</span>` : ''}
-                ${card.type === 'creature' ? `<span class="stat stat-hp ${hpClass}">${hp}</span>` : ''}
-            </div>
-        </div>`;
     autoFitCardName(el);
     return el;
 }
+

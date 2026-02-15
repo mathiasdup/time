@@ -71,6 +71,9 @@
         .card-zoom-container {
             transform: scale(2.5);
             pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         .card-zoom-container .card {
             animation: zoomPop 0.2s ease-out;
@@ -78,6 +81,41 @@
         @keyframes zoomPop {
             from { transform: scale(0.5); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
+        }
+        /* Bouton oeil toggle art-only */
+        .zoom-art-toggle {
+            margin-top: 8px;
+            width: 20px;
+            height: 20px;
+            color: rgba(255,255,255,0.5);
+            cursor: pointer;
+            pointer-events: auto;
+            transition: color 0.2s;
+        }
+        .zoom-art-toggle:hover { color: rgba(255,255,255,0.9); }
+        .zoom-art-toggle.active { color: #62d7ff; }
+        .zoom-art-toggle svg { width: 100%; height: 100%; }
+        /* Zoom : supprimer translateZ(0) des pseudo-éléments pour éviter le flou de rasterisation */
+        .card-zoom-container .card .arena-title::before,
+        .card-zoom-container .card .arena-text-zone::before,
+        .card-zoom-container .card .arena-stats::before {
+            transform: none !important;
+        }
+
+        /* Art-only mode : cacher tous les overlays texte */
+        .card-zoom-container .card.art-only .arena-title,
+        .card-zoom-container .card.art-only .arena-text-zone,
+        .card-zoom-container .card.art-only .arena-mana,
+        .card-zoom-container .card.art-only .arena-stats,
+        .card-zoom-container .card.art-only .arena-edition,
+        .card-zoom-container .card.art-only .arena-hero-hp,
+        .card-zoom-container .card.art-only .img-cost,
+        .card-zoom-container .card.art-only .img-atk,
+        .card-zoom-container .card.art-only .img-hp,
+        .card-zoom-container .card.art-only .gaze-marker,
+        .card-zoom-container .card.art-only .poison-marker,
+        .card-zoom-container .card.art-only .entrave-marker {
+            display: none !important;
         }
         
         .top-bar { position: absolute; top: 5px; left: 10px; right: 10px; height: 80px; display: flex; justify-content: space-between; align-items: center; background: transparent; z-index: 50; }
@@ -180,11 +218,11 @@
         .rank-tier-label {
             display: block;
             position: absolute;
-            bottom: -12px;
+            bottom: -16px;
             left: 50%;
             transform: translateX(-50%);
             font-family: 'Cinzel', serif;
-            font-size: 0.55em;
+            font-size: 0.85em;
             font-weight: 900;
             letter-spacing: 1px;
             color: #fff;
@@ -969,6 +1007,23 @@
             z-index: 30;
             pointer-events: none;
             animation: healAuraFlash 0.6s ease-out forwards;
+        }
+        /* Aura rouge sang DOM quand une créature lifesteal se soigne (perspective 3D) */
+        @keyframes lifestealAuraFlash {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .card-slot.lifesteal-aura::before {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: inherit;
+            border: 2px solid #cc0000;
+            background: rgba(139, 0, 0, 0.12);
+            z-index: 30;
+            pointer-events: none;
+            animation: lifestealAuraFlash 0.7s ease-out forwards;
         }
         /* Glow DOM quand un sort cible un slot (hérite de la perspective 3D) */
         @keyframes spellHighlightFlash {

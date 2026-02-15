@@ -135,6 +135,8 @@ function startGame() {
     }
 
     document.getElementById('mulligan-overlay').classList.add('hidden');
+    // Nettoyer les cartes du mulligan pour libérer le DOM
+    document.getElementById('mulligan-hand').innerHTML = '';
     document.getElementById('game-container').classList.add('active');
     buildBattlefield();
     setupCustomDrag();
@@ -178,7 +180,9 @@ function doMulligan() {
     socket.emit('mulligan');
 }
 
-// ==================== MODE TEST ====================
+// ==================== MODE TEST / MODE COMPLET ====================
+
+let pickerMode = 'test'; // 'test' ou 'complete'
 
 function showModeSelector() {
     document.getElementById('mode-selector-overlay').classList.remove('hidden');
@@ -189,6 +193,10 @@ function selectMode(mode) {
     if (mode === 'normal') {
         showMulligan();
     } else if (mode === 'test') {
+        pickerMode = 'test';
+        showCardPicker();
+    } else if (mode === 'complete') {
+        pickerMode = 'complete';
         showCardPicker();
     }
 }
@@ -197,6 +205,12 @@ function showCardPicker() {
     testModeSelection = [];
     const overlay = document.getElementById('card-picker-overlay');
     const grid = document.getElementById('card-picker-grid');
+    const isComplete = pickerMode === 'complete';
+
+    // Configurer le titre et les sections selon le mode
+    document.getElementById('card-picker-title').textContent = isComplete ? 'Construisez votre deck' : 'Choisissez vos cartes';
+    document.getElementById('card-picker-selection').classList.toggle('hidden', isComplete);
+    document.getElementById('deck-list-section').classList.toggle('hidden', !isComplete);
 
     // Afficher l'overlay immédiatement avec un état de chargement
     overlay.classList.remove('hidden');
@@ -207,7 +221,16 @@ function showCardPicker() {
             grid.innerHTML = '<div class="picker-loading" style="color:#e74c3c;">Erreur: catalogue vide</div>';
             return;
         }
-        cardCatalog = catalog;
+        if (isComplete) {
+            // Filtrer : faction noire + pièges neutres
+            cardCatalog = {
+                creatures: catalog.creatures.filter(c => c.faction === 'black'),
+                spells: catalog.spells.filter(c => c.faction === 'black'),
+                traps: catalog.traps || []
+            };
+        } else {
+            cardCatalog = catalog;
+        }
         renderPickerGrid('creatures');
         updatePickerUI();
     });
@@ -223,6 +246,7 @@ function showCardPicker() {
 function renderPickerGrid(tab) {
     const grid = document.getElementById('card-picker-grid');
     grid.innerHTML = '';
+    const isComplete = pickerMode === 'complete';
 
     document.querySelectorAll('.picker-tab').forEach(t => {
         t.classList.toggle('active', t.dataset.tab === tab);
@@ -239,11 +263,39 @@ function renderPickerGrid(tab) {
         cardEl.style.pointerEvents = 'none';
         wrapper.appendChild(cardEl);
 
-        const addBtn = document.createElement('button');
-        addBtn.className = 'picker-add-btn';
-        addBtn.textContent = 'Ajouter';
-        addBtn.onclick = () => addToTestHand(cardTemplate);
-        wrapper.appendChild(addBtn);
+        if (isComplete) {
+            // Mode complet : boutons +/- avec compteur
+            const controls = document.createElement('div');
+            controls.className = 'picker-count-controls';
+            controls.dataset.cardId = cardTemplate.id;
+
+            const minusBtn = document.createElement('button');
+            minusBtn.className = 'picker-minus-btn';
+            minusBtn.textContent = '\u2212';
+            minusBtn.onclick = () => { removeOneFromDeck(cardTemplate.id); updatePickerGrid(); };
+
+            const countSpan = document.createElement('span');
+            countSpan.className = 'picker-card-count';
+            const count = testModeSelection.filter(c => c.id === cardTemplate.id).length;
+            countSpan.textContent = count;
+
+            const plusBtn = document.createElement('button');
+            plusBtn.className = 'picker-plus-btn';
+            plusBtn.textContent = '+';
+            plusBtn.onclick = () => { addToTestHand(cardTemplate); updatePickerGrid(); };
+
+            controls.appendChild(minusBtn);
+            controls.appendChild(countSpan);
+            controls.appendChild(plusBtn);
+            wrapper.appendChild(controls);
+        } else {
+            // Mode test : bouton "Ajouter" simple
+            const addBtn = document.createElement('button');
+            addBtn.className = 'picker-add-btn';
+            addBtn.textContent = 'Ajouter';
+            addBtn.onclick = () => addToTestHand(cardTemplate);
+            wrapper.appendChild(addBtn);
+        }
 
         grid.appendChild(wrapper);
     });
@@ -254,7 +306,13 @@ function switchPickerTab(tab) {
 }
 
 function addToTestHand(cardTemplate) {
-    if (testModeSelection.length >= 7) return;
+    const maxCards = pickerMode === 'complete' ? 40 : 7;
+    if (testModeSelection.length >= maxCards) return;
+    // Mode complet : max 2 exemplaires par carte
+    if (pickerMode === 'complete') {
+        const copies = testModeSelection.filter(c => c.id === cardTemplate.id).length;
+        if (copies >= 2) return;
+    }
     testModeSelection.push({ ...cardTemplate });
     updatePickerUI();
 }
@@ -264,50 +322,148 @@ function removeFromTestHand(index) {
     updatePickerUI();
 }
 
+function removeOneFromDeck(cardId) {
+    const idx = testModeSelection.findIndex(c => c.id === cardId);
+    if (idx >= 0) {
+        testModeSelection.splice(idx, 1);
+        updatePickerUI();
+    }
+}
+
+// Met à jour uniquement les compteurs dans la grille (sans re-render complet)
+function updatePickerGrid() {
+    document.querySelectorAll('.picker-count-controls').forEach(ctrl => {
+        const cardId = ctrl.dataset.cardId;
+        const count = testModeSelection.filter(c => c.id === cardId).length;
+        const countSpan = ctrl.querySelector('.picker-card-count');
+        if (countSpan) countSpan.textContent = count;
+    });
+    updatePickerUI();
+}
+
 function updatePickerUI() {
+    const isComplete = pickerMode === 'complete';
+    const maxCards = isComplete ? 40 : 7;
     const counter = document.getElementById('card-picker-counter');
-    counter.textContent = `${testModeSelection.length} / 7 cartes`;
+    counter.textContent = `${testModeSelection.length} / ${maxCards} cartes`;
 
-    const row = document.getElementById('card-picker-selection-row');
-    row.innerHTML = '';
+    if (isComplete) {
+        // Mode complet : deck-list compacte
+        updateDeckList();
 
-    testModeSelection.forEach((card, i) => {
-        const thumb = document.createElement('div');
-        thumb.className = 'picker-selection-thumb';
+        const startBtn = document.getElementById('picker-start-btn');
+        startBtn.disabled = testModeSelection.length !== 40;
 
-        const cardEl = makeCard(card, true);
-        cardEl.style.pointerEvents = 'none';
-        thumb.appendChild(cardEl);
+        // Désactiver les boutons + si on est à 40 ou si la carte a déjà 2 copies
+        document.querySelectorAll('.picker-plus-btn').forEach(btn => {
+            const ctrl = btn.closest('.picker-count-controls');
+            const cardId = ctrl?.dataset.cardId;
+            const copies = cardId ? testModeSelection.filter(c => c.id === cardId).length : 0;
+            btn.disabled = testModeSelection.length >= 40 || copies >= 2;
+        });
+    } else {
+        // Mode test : thumbs dans la selection row
+        const row = document.getElementById('card-picker-selection-row');
+        row.innerHTML = '';
 
-        thumb.onclick = () => removeFromTestHand(i);
+        testModeSelection.forEach((card, i) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'picker-selection-thumb';
 
-        const removeBadge = document.createElement('div');
-        removeBadge.className = 'picker-remove-badge';
-        removeBadge.textContent = '\u00D7';
-        thumb.appendChild(removeBadge);
+            const cardEl = makeCard(card, true);
+            cardEl.style.pointerEvents = 'none';
+            thumb.appendChild(cardEl);
 
-        row.appendChild(thumb);
+            thumb.onclick = () => removeFromTestHand(i);
+
+            const removeBadge = document.createElement('div');
+            removeBadge.className = 'picker-remove-badge';
+            removeBadge.textContent = '\u00D7';
+            thumb.appendChild(removeBadge);
+
+            row.appendChild(thumb);
+        });
+
+        const startBtn = document.getElementById('picker-start-btn');
+        startBtn.disabled = testModeSelection.length < 1;
+
+        document.querySelectorAll('.picker-add-btn').forEach(btn => {
+            btn.disabled = testModeSelection.length >= 7;
+        });
+    }
+}
+
+function updateDeckList() {
+    const listEl = document.getElementById('deck-list');
+    const countEl = document.getElementById('deck-list-count');
+    listEl.innerHTML = '';
+    countEl.textContent = `${testModeSelection.length} / 40`;
+
+    // Grouper par id et compter
+    const counts = {};
+    const cardMap = {};
+    testModeSelection.forEach(c => {
+        counts[c.id] = (counts[c.id] || 0) + 1;
+        if (!cardMap[c.id]) cardMap[c.id] = c;
     });
 
-    const startBtn = document.getElementById('picker-start-btn');
-    startBtn.disabled = testModeSelection.length < 1;
+    // Trier par cout puis nom
+    const sortedIds = Object.keys(counts).sort((a, b) => {
+        const ca = cardMap[a], cb = cardMap[b];
+        return (ca.cost || 0) - (cb.cost || 0) || ca.name.localeCompare(cb.name);
+    });
 
-    document.querySelectorAll('.picker-add-btn').forEach(btn => {
-        btn.disabled = testModeSelection.length >= 7;
+    sortedIds.forEach(id => {
+        const card = cardMap[id];
+        const count = counts[id];
+        const item = document.createElement('div');
+        item.className = 'deck-list-item';
+
+        const costBadge = document.createElement('span');
+        costBadge.className = 'deck-list-cost';
+        costBadge.textContent = card.cost;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'deck-list-name';
+        nameSpan.textContent = card.name;
+
+        const countBadge = document.createElement('span');
+        countBadge.className = 'deck-list-qty';
+        countBadge.textContent = `x${count}`;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'deck-list-remove';
+        removeBtn.textContent = '\u2212';
+        removeBtn.onclick = () => { removeOneFromDeck(id); updatePickerGrid(); };
+
+        item.appendChild(costBadge);
+        item.appendChild(nameSpan);
+        item.appendChild(countBadge);
+        item.appendChild(removeBtn);
+        listEl.appendChild(item);
     });
 }
 
 function confirmTestHand() {
-    if (testModeSelection.length < 1) return;
     const cardIds = testModeSelection.map(c => c.id);
 
-    socket.emit('setTestHand', cardIds, (response) => {
-        if (response.success) {
-            document.getElementById('card-picker-overlay').classList.add('hidden');
-            showMulligan();
-        } else {
-        }
-    });
+    if (pickerMode === 'complete') {
+        if (cardIds.length !== 40) return;
+        socket.emit('setCompleteDeck', cardIds, (response) => {
+            if (response.success) {
+                document.getElementById('card-picker-overlay').classList.add('hidden');
+                showMulligan();
+            }
+        });
+    } else {
+        if (cardIds.length < 1) return;
+        socket.emit('setTestHand', cardIds, (response) => {
+            if (response.success) {
+                document.getElementById('card-picker-overlay').classList.add('hidden');
+                showMulligan();
+            }
+        });
+    }
 }
 
 function setupHeroes() {

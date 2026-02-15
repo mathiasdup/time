@@ -45,12 +45,15 @@ function setupCustomDrag() {
             if (data.source === 'hand') {
                 const accepted = handleHandDrop(data, target);
                 if (accepted) {
-                    if (data.card.type === 'spell') {
-                        // Sort engagé : stocker pour affichage grisé dans la main
-                        const tp = target.owner === 'me' ? myNum : (target.owner === 'opp' ? (myNum === 1 ? 2 : 1) : 0);
-                        commitSpell(data.card, target.type, tp, target.row, target.col);
+                    // Si pendingReanimation est actif, confirmReanimation gère le commit/remove
+                    if (!pendingReanimation) {
+                        if (data.card.type === 'spell') {
+                            // Sort engagé : stocker pour affichage grisé dans la main
+                            const tp = target.owner === 'me' ? myNum : (target.owner === 'opp' ? (myNum === 1 ? 2 : 1) : 0);
+                            commitSpell(data.card, target.type, tp, target.row, target.col);
+                        }
+                        handCardRemovedIndex = data.idx;
                     }
-                    handCardRemovedIndex = data.idx;
                     // Fade pour pièges (mode flèche — la carte est encore visible dans la main)
                     if (sourceEl && data.card.type === 'trap') {
                         sourceEl.style.transition = 'opacity 0.15s ease-out';
@@ -101,6 +104,18 @@ function handleHandDrop(data, target) {
             if (data.tooExpensive) {
                 data.triedToDrop = true;
                 return false;
+            }
+            // GraveyardToHand : ouvrir le cimetière pour sélectionner une créature
+            if (card.effect === 'graveyardToHand') {
+                pendingReanimation = {
+                    card: { ...card },
+                    handIndex: data.idx,
+                    effectiveCost: card.effectiveCost || card.cost,
+                    mode: 'graveyardToHand'
+                };
+                openGraveyardForSelection();
+                clearSel();
+                return true;
             }
             socket.emit('castGlobalSpell', { handIndex: data.idx });
             clearSel();
@@ -192,41 +207,6 @@ function initSocket() {
     });
 
     socket.on('gameStateUpdate', (s) => {
-        console.log(`[STATE UPDATE] Received. animatingSlots: [${[...animatingSlots]}]`);
-        // DEBUG sacrifice : afficher l'état de tous les slots du field me et opponent
-        const meSlots = [], oppSlots = [];
-        if (s.me?.field) {
-            for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
-                if (s.me.field[r]?.[c]) meSlots.push(`${r},${c}:${s.me.field[r][c].name}`);
-            }
-        }
-        if (s.opponent?.field) {
-            for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
-                if (s.opponent.field[r]?.[c]) oppSlots.push(`${r},${c}:${s.opponent.field[r][c].name}`);
-            }
-        }
-        console.log(`[STATE UPDATE] me field: [${meSlots.join(', ')}] | opp field: [${oppSlots.join(', ')}]`);
-        // DEBUG: Chercher les cartes pétrifiées dans le state reçu
-        if (s.me?.field) {
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 2; c++) {
-                    const card = s.me.field[r]?.[c];
-                    if (card && (card.petrified || card.melodyLocked || card.medusaGazeTurns > 0)) {
-                        console.log(`[CLIENT STATE] me field[${r}][${c}] ${card.name}: petrified=${card.petrified}, melodyLocked=${card.melodyLocked}, gazeTurns=${card.medusaGazeTurns}`);
-                    }
-                }
-            }
-        }
-        if (s.opponent?.field) {
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 2; c++) {
-                    const card = s.opponent.field[r]?.[c];
-                    if (card && (card.petrified || card.melodyLocked || card.medusaGazeTurns > 0)) {
-                        console.log(`[CLIENT STATE] opp field[${r}][${c}] ${card.name}: petrified=${card.petrified}, melodyLocked=${card.melodyLocked}, gazeTurns=${card.medusaGazeTurns}`);
-                    }
-                }
-            }
-        }
         const meGrave = s.me?.graveyard || [];
         const oppGrave = s.opponent?.graveyard || [];
         const prevMeGrave = state?.me?.graveyard?.length || 0;
@@ -241,13 +221,22 @@ function initSocket() {
             const prevOppCount = state.opponent.handCount || 0;
             const newOppCount = s.opponent?.handCount || 0;
             if (newOppCount > prevOppCount && s.phase === 'resolution') {
-                GameAnimations.autoHideNewDraws('opp', prevOppCount, newOppCount);
+                // Ne pas auto-cacher si pendingBounce gère déjà la visibilité (bounce/graveyardReturn)
+                if (!(typeof pendingBounce !== 'undefined' && pendingBounce && pendingBounce.owner === 'opp')) {
+                    GameAnimations.autoHideNewDraws('opp', prevOppCount, newOppCount);
+                }
             }
         }
 
         const wasInDeployPhase = state?.me?.inDeployPhase;
         const wasMulligan = state?.phase === 'mulligan';
+        // Détecter si le héros a changé (mode complet force Erebeth)
+        const heroChanged = window.heroData && s.me.hero && s.me.hero.id !== window.heroData.me?.id;
         state = s;
+
+        if (heroChanged) {
+            setupHeroes();
+        }
 
         // Si on est en phase mulligan et qu'on reçoit une mise à jour (après mulligan)
         if (s.phase === 'mulligan' && mulliganDone) {
@@ -283,6 +272,8 @@ function initSocket() {
         updatePhaseDisplay();
 
         if (p === 'resolution') {
+            // Annuler la réanimation en cours si la popup est ouverte
+            if (pendingReanimation) cancelReanimation();
             // Sauvegarder les positions des cartes revealed AVANT que le state update ne re-render la main
             if (typeof saveRevealedCardPositions === 'function') saveRevealedCardPositions();
             const endTurnBtn = document.getElementById('end-turn-btn');
@@ -332,7 +323,7 @@ function initSocket() {
 
         resetAnimationStates();
         committedSpells = [];
-        pendingReanimation = null;
+        if (pendingReanimation) cancelReanimation();
         committedGraveyardUids = [];
         committedReanimationSlots = [];
 
@@ -435,9 +426,8 @@ function initSocket() {
 
 function handleAnimation(data) {
     const { type } = data;
-
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn'];
 
     if (queuedTypes.includes(type)) {
         // Bloquer render() immédiatement pour les animations trample (avant traitement de la queue)
@@ -457,7 +447,6 @@ function handleAnimation(data) {
         if (type === 'trapTrigger') {
             const owner = data.player === myNum ? 'me' : 'opp';
             const trapKey = `${owner}-${data.row}`;
-            console.log(`[HANDLE ANIM ${performance.now().toFixed(0)}] trapTrigger reçu → protège ${trapKey}`);
             animatingTrapSlots.add(trapKey);
         }
         queueAnimation(type, data);
@@ -467,7 +456,37 @@ function handleAnimation(data) {
             case 'spellMiss': animateSpellMiss(data); break;
             case 'spellReturnToHand': animateSpellReturnToHand(data); break;
             case 'heal': animateHeal(data); break;
+            case 'searchSpell': {
+                const ssOwner = data.player === myNum ? 'me' : 'opp';
+                const ssSlot = document.querySelector(`.card-slot[data-owner="${ssOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                if (ssSlot) {
+                    const rect = ssSlot.getBoundingClientRect();
+                    CombatVFX.createSearchSpellEffect(
+                        rect.left + rect.width / 2,
+                        rect.top + rect.height / 2,
+                        rect.width,
+                        rect.height
+                    );
+                }
+                break;
+            }
             case 'buff': animateBuff(data); break;
+            case 'buffApply': {
+                const baOwner = data.player === myNum ? 'me' : 'opp';
+                const baSlot = document.querySelector(`.card-slot[data-owner="${baOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                if (baSlot) {
+                    const rect = baSlot.getBoundingClientRect();
+                    CombatVFX.createBuffEffect(
+                        rect.left + rect.width / 2,
+                        rect.top + rect.height / 2,
+                        data.atkBuff || 1,
+                        data.hpBuff || 1,
+                        rect.width,
+                        rect.height
+                    );
+                }
+                break;
+            }
             case 'summon': animateSummon(data); break;
             case 'trapSummon': animateTrapSummon(data); break;
             case 'reanimate': animateReanimate(data); break;
@@ -488,6 +507,35 @@ function handleAnimation(data) {
             case 'shield':
                 animateShieldBreak(data);
                 break;
+            case 'destroy': {
+                const destOwner = data.player === myNum ? 'me' : 'opp';
+                const destSlot = document.querySelector(`.card-slot[data-owner="${destOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                if (destSlot) {
+                    const rect = destSlot.getBoundingClientRect();
+                    CombatVFX.createDestroyEffect(
+                        rect.left + rect.width / 2,
+                        rect.top + rect.height / 2,
+                        rect.width,
+                        rect.height
+                    );
+                }
+                break;
+            }
+            case 'entrave': {
+                const entOwner = data.player === myNum ? 'me' : 'opp';
+                const entSlot = document.querySelector(`.card-slot[data-owner="${entOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                if (entSlot) {
+                    const rect = entSlot.getBoundingClientRect();
+                    CombatVFX.createEntraveEffect(
+                        rect.left + rect.width / 2,
+                        rect.top + rect.height / 2,
+                        data.amount,
+                        rect.width,
+                        rect.height
+                    );
+                }
+                break;
+            }
             case 'radiantDragonDraw': {
                 const rdOwner = data.player === myNum ? 'me' : 'opp';
                 const rdSlot = document.querySelector(`.card-slot[data-owner="${rdOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
@@ -520,14 +568,10 @@ function handleAnimation(data) {
                 break;
             }
             case 'petrify': {
-                console.log('[CLIENT PETRIFY] Animation reçue:', JSON.stringify(data));
-                console.log('[CLIENT PETRIFY] animatingSlots:', [...animatingSlots]);
                 const petOwner = data.player === myNum ? 'me' : 'opp';
                 const petSlot = document.querySelector(`.card-slot[data-owner="${petOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
-                console.log('[CLIENT PETRIFY] petOwner:', petOwner, 'petSlot trouvé:', !!petSlot);
                 if (petSlot) {
                     const rect = petSlot.getBoundingClientRect();
-                    console.log('[CLIENT PETRIFY] Lancement VFX à', rect.left + rect.width / 2, rect.top + rect.height / 2);
                     CombatVFX.createPetrifyEffect(
                         rect.left + rect.width / 2,
                         rect.top + rect.height / 2,
@@ -535,7 +579,6 @@ function handleAnimation(data) {
                         rect.height
                     );
                 } else {
-                    console.log('[CLIENT PETRIFY] SLOT NON TROUVÉ ! Sélecteur:', `.card-slot[data-owner="${petOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
                 }
                 break;
             }
@@ -581,9 +624,31 @@ function handleAnimationBatch(animations) {
             const stateHp = target === 'me' ? state?.me?.hp : state?.opponent?.hp;
             const displayedHp = document.querySelector(`#${target === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`)?.textContent;
             immediatePromises.push(animateZdejebelDamage(anim));
+        } else if (anim.type === 'poisonDamage') {
+            // Animation de poison : passer par la file d'attente pour le batch processing
+            queueAnimation(anim.type, anim);
+        } else if (anim.type === 'poisonApply') {
+            // Ignoré en batch — le state update (emitStateToBoth) qui suit se charge du rendu
+        } else if (anim.type === 'buffApply') {
+            const buffOwner = anim.player === myNum ? 'me' : 'opp';
+            const buffSlot = document.querySelector(`.card-slot[data-owner="${buffOwner}"][data-row="${anim.row}"][data-col="${anim.col}"]`);
+            if (buffSlot) {
+                const rect = buffSlot.getBoundingClientRect();
+                CombatVFX.createBuffEffect(
+                    rect.left + rect.width / 2,
+                    rect.top + rect.height / 2,
+                    anim.atkBuff || 1,
+                    anim.hpBuff || 1,
+                    rect.width,
+                    rect.height
+                );
+            }
         } else if (anim.type === 'death' || anim.type === 'deathTransform') {
             // Passer par la file pour respecter l'ordre des animations (après damage, etc.)
             queueAnimation(anim.type, anim);
+        } else if (anim.type === 'trapSummon') {
+            // Invocation via sort (ex: Mur de zombie) — jouer en parallèle
+            animateTrapSummon(anim);
         } else {
         }
     }
@@ -634,7 +699,11 @@ function animateShieldBreak(data) {
 function selectCard(i) {
     if (!canPlay()) return;
     const card = state.me.hand[i];
-    if (card.cost > state.me.energy) return;
+    let cost = card.cost;
+    if (card.poisonCostReduction && state.me.totalPoisonCounters > 0) {
+        cost = Math.max(0, cost - state.me.totalPoisonCounters);
+    }
+    if (cost > state.me.energy) return;
 
     clearSel();
     selected = { ...card, idx: i, fromHand: true };
@@ -665,7 +734,7 @@ function clickSlot(owner, row, col) {
     if (selected && selected.fromHand && selected.type === 'spell') {
         const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
         // Réanimation : ouvrir sélection cimetière au lieu d'émettre
-        if (selected.effect === 'reanimate') {
+        if (selected.requiresGraveyardCreature) {
             pendingReanimation = {
                 card: { ...selected },
                 handIndex: selected.idx,
@@ -731,7 +800,7 @@ function dropOnSlot(owner, row, col) {
     if (dragged.type === 'spell') {
         const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
         // Réanimation : ouvrir la sélection du cimetière au lieu d'émettre directement
-        if (dragged.effect === 'reanimate') {
+        if (dragged.requiresGraveyardCreature) {
             pendingReanimation = {
                 card: { ...dragged },
                 handIndex: dragged.idx,
@@ -799,6 +868,7 @@ function openGraveyard(owner) {
     } else {
         graveyard.forEach(card => {
             const cardEl = makeCard(card, true);
+            cardEl.dataset.uid = card.uid || card.id || '';
             cardEl.classList.add('in-graveyard');
             // Ajouter le preview au hover
             cardEl.onmouseenter = (e) => showCardPreview(card, e);
@@ -814,6 +884,7 @@ function openGraveyard(owner) {
         });
     }
 
+    popup.dataset.owner = owner;
     popup.classList.add('active');
 }
 
@@ -822,7 +893,11 @@ function closeGraveyard() {
         cancelReanimation();
         return;
     }
-    document.getElementById('graveyard-popup').classList.remove('active');
+    const popup = document.getElementById('graveyard-popup');
+    popup.classList.remove('active');
+    delete popup.dataset.owner;
+    // Nettoyer les cartes du popup pour libérer le DOM
+    document.getElementById('graveyard-cards').innerHTML = '';
 }
 
 // === Réanimation : sélection de créature au cimetière ===
@@ -837,8 +912,11 @@ function openGraveyardForSelection() {
     const container = document.getElementById('graveyard-cards');
 
     const graveyard = state.me.graveyard;
+    const isGraveyardToHand = pendingReanimation.mode === 'graveyardToHand';
 
-    title.textContent = 'Choisissez une créature à réanimer';
+    title.textContent = isGraveyardToHand
+        ? 'Choisissez une créature à renvoyer en main'
+        : 'Choisissez une créature à réanimer';
     container.innerHTML = '';
     popup.classList.add('selection-mode');
 
@@ -856,8 +934,8 @@ function openGraveyardForSelection() {
 
         const uid = card.uid || card.id;
         const alreadyCommitted = committedGraveyardUids.includes(uid);
-        // La créature doit pouvoir être placée sur la colonne du slot choisi
-        const fitsSlot = card.type === 'creature' && canPlaceAt(card, targetCol);
+        // GraveyardToHand : toute créature est sélectionnable (pas de filtre colonne)
+        const fitsSlot = card.type === 'creature' && (isGraveyardToHand || canPlaceAt(card, targetCol));
 
         if (fitsSlot && !alreadyCommitted) {
             hasCreature = true;
@@ -884,6 +962,7 @@ function openGraveyardForSelection() {
 
     graveyardSelectionOpenedAt = Date.now();
     document.getElementById('reanimate-backdrop').classList.add('active');
+    popup.dataset.owner = 'me';
     popup.classList.add('active');
 }
 
@@ -891,31 +970,40 @@ function confirmReanimation(creatureUid, graveyardIndex) {
     if (!pendingReanimation) return;
 
     const data = pendingReanimation;
+    const isGraveyardToHand = data.mode === 'graveyardToHand';
     pendingReanimation = null;
 
     // Tracker cette créature comme engagée (empêche double sélection)
     committedGraveyardUids.push(creatureUid);
-    // Réserver le slot (empêche de placer une créature dessus)
-    committedReanimationSlots.push({ row: data.row, col: data.col });
 
     // Fermer le popup et le backdrop
     const popup = document.getElementById('graveyard-popup');
     popup.classList.remove('active', 'selection-mode');
     document.getElementById('reanimate-backdrop').classList.remove('active');
 
-    // Engager le sort (apparaît en B&W dans la main)
-    commitSpell(data.card, 'field', data.targetPlayer, data.row, data.col);
-    handCardRemovedIndex = data.handIndex;
-
-    // Émettre au serveur avec les infos de la créature choisie
-    socket.emit('castSpell', {
-        handIndex: data.handIndex,
-        targetPlayer: data.targetPlayer,
-        row: data.row,
-        col: data.col,
-        graveyardCreatureUid: creatureUid,
-        graveyardIndex: graveyardIndex
-    });
+    if (isGraveyardToHand) {
+        // GraveyardToHand : sort global, pas de slot réservé
+        commitSpell(data.card, 'global');
+        handCardRemovedIndex = data.handIndex;
+        socket.emit('castGlobalSpell', {
+            handIndex: data.handIndex,
+            graveyardCreatureUid: creatureUid,
+            graveyardIndex: graveyardIndex
+        });
+    } else {
+        // Réanimation classique : réserver le slot
+        committedReanimationSlots.push({ row: data.row, col: data.col });
+        commitSpell(data.card, 'field', data.targetPlayer, data.row, data.col);
+        handCardRemovedIndex = data.handIndex;
+        socket.emit('castSpell', {
+            handIndex: data.handIndex,
+            targetPlayer: data.targetPlayer,
+            row: data.row,
+            col: data.col,
+            graveyardCreatureUid: creatureUid,
+            graveyardIndex: graveyardIndex
+        });
+    }
     // Le re-render de la main sera déclenché par le gameStateUpdate du serveur
     // avec handCardRemovedIndex pour l'animation FLIP smooth
 }
@@ -924,6 +1012,7 @@ function cancelReanimation() {
     pendingReanimation = null;
     const popup = document.getElementById('graveyard-popup');
     popup.classList.remove('active', 'selection-mode');
+    delete popup.dataset.owner;
     document.getElementById('reanimate-backdrop').classList.remove('active');
 }
 
@@ -1046,6 +1135,19 @@ function showCardZoom(card) {
     container.innerHTML = '';
     const cardEl = makeCard(card, true);
     container.appendChild(cardEl);
+
+    // Bouton oeil pour toggle art-only
+    if (card.arenaStyle && card.image) {
+        const eyeBtn = document.createElement('div');
+        eyeBtn.className = 'zoom-art-toggle';
+        eyeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        eyeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cardEl.classList.toggle('art-only');
+            eyeBtn.classList.toggle('active');
+        });
+        container.appendChild(eyeBtn);
+    }
 
     zoomCardData = card;
     overlay.classList.remove('hidden');

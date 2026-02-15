@@ -13,6 +13,9 @@ class GameVFXSystem {
         this.initialized = false;
         this.activeEffects = [];
         this.activeShields = new Map(); // slotKey → { container, element, startTime }
+        this.activeCamouflages = new Map(); // slotKey → { container, element, startTime, particles }
+        this._camoNoiseA = null; // Noise generators (initialized lazily)
+        this._camoNoiseB = null;
     }
 
     async init() {
@@ -84,8 +87,11 @@ class GameVFXSystem {
         // Nettoyer les effets ponctuels terminés
         this.activeEffects = this.activeEffects.filter(effect => {
             if (effect.finished) {
-                if (effect.container && effect.container.parent) {
-                    effect.container.parent.removeChild(effect.container);
+                if (effect.container) {
+                    if (effect.container.parent) {
+                        effect.container.parent.removeChild(effect.container);
+                    }
+                    effect.container.destroy({ children: true });
                 }
                 return false;
             }
@@ -94,6 +100,9 @@ class GameVFXSystem {
 
         // Mettre à jour les boucliers persistants
         this.updateShields();
+
+        // Mettre à jour les effets de camouflage
+        this.updateCamouflages();
     }
 
     // ==================== MÉTHODES UTILITAIRES VFX ====================
@@ -901,16 +910,19 @@ class GameVFXSystem {
             const progress = Math.min(elapsed / effect.duration, 1);
 
             if (progress < 0.1) {
+                // Fade in: scale 0.3 → 1.1
                 const p = progress / 0.1;
-                text.scale.set(0.3 + p * 0.9);
+                text.scale.set(0.3 + p * 0.8);
                 text.alpha = p;
                 glow.alpha = p * 0.3;
             } else if (progress < 0.5) {
+                // Pulse: 2 cycles complets (sin revient à 0 en fin de phase)
                 text.alpha = 1;
-                const pulse = 1 + Math.sin((progress - 0.1) * Math.PI * 4) * 0.05;
+                const pulse = 1 + Math.sin((progress - 0.1) * Math.PI * 10) * 0.05;
                 text.scale.set(1.1 * pulse);
                 glow.alpha = 0.3;
             } else {
+                // Fade out: scale 1.1 → 0.9
                 const fadeProgress = (progress - 0.5) / 0.5;
                 effectContainer.y = startY - fadeProgress * 50;
                 text.alpha = 1 - fadeProgress;
@@ -3476,6 +3488,221 @@ class GameVFXSystem {
         requestAnimationFrame(animate);
     }
 
+    // ==================== LIFESTEAL (PARTICULES SANG ASPIRÉES + FLASH ROUGE) ====================
+
+    createLifestealEffect(x, y, w, h) {
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 900,
+        };
+
+        const hw = w / 2, hh = h / 2;
+
+        // Flash central rouge sang (pulse)
+        const flash = new PIXI.Graphics();
+        flash.roundRect(-hw, -hh, w, h, 8);
+        flash.fill({ color: 0x8B0000, alpha: 0 });
+        effectContainer.addChild(flash);
+
+        // 16 particules de sang aspirées vers le centre (viennent de l'extérieur)
+        const particles = [];
+        for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.3;
+            const dist = 60 + Math.random() * 40;
+            const p = new PIXI.Graphics();
+            effectContainer.addChild(p);
+            particles.push({
+                gfx: p,
+                startX: Math.cos(angle) * dist,
+                startY: Math.sin(angle) * dist,
+                endX: (Math.random() - 0.5) * w * 0.3,
+                endY: (Math.random() - 0.5) * h * 0.3,
+                delay: Math.random() * 0.15,
+                size: 2 + Math.random() * 2.5,
+                color: [0xCC0000, 0x8B0000, 0xFF1A1A, 0xAA0000][i % 4],
+            });
+        }
+
+        // 6 étincelles lumineuses qui convergent (plus lent, plus grand)
+        const sparks = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2;
+            const s = new PIXI.Graphics();
+            effectContainer.addChild(s);
+            sparks.push({
+                gfx: s,
+                startX: Math.cos(angle) * 80,
+                startY: Math.sin(angle) * 80,
+                delay: 0.05 + Math.random() * 0.1,
+                size: 3 + Math.random() * 2,
+            });
+        }
+
+        const animate = () => {
+            if (effect.finished) return;
+            const elapsed = performance.now() - effect.startTime;
+            const progress = Math.min(elapsed / effect.duration, 1);
+
+            if (progress >= 1) {
+                effect.finished = true;
+                effectContainer.parent?.removeChild(effectContainer);
+                effectContainer.destroy({ children: true });
+                return;
+            }
+
+            // Flash central : pulse in-out
+            flash.clear();
+            flash.roundRect(-hw, -hh, w, h, 8);
+            if (progress < 0.3) {
+                const p = progress / 0.3;
+                flash.fill({ color: 0x8B0000, alpha: p * 0.25 });
+            } else if (progress < 0.6) {
+                flash.fill({ color: 0x8B0000, alpha: 0.25 });
+            } else {
+                const p = (progress - 0.6) / 0.4;
+                flash.fill({ color: 0x8B0000, alpha: 0.25 * (1 - p) });
+            }
+
+            // Particules de sang : convergent vers le centre
+            particles.forEach(p => {
+                p.gfx.clear();
+                const localP = Math.max(0, Math.min(1, (progress - p.delay) / (0.6 - p.delay)));
+                if (localP > 0 && localP < 1) {
+                    // Ease-in (accélération vers le centre, comme une aspiration)
+                    const eased = localP * localP;
+                    const px = p.startX + (p.endX - p.startX) * eased;
+                    const py = p.startY + (p.endY - p.startY) * eased;
+                    // Alpha : apparition rapide, maintien, disparition au centre
+                    const alpha = localP < 0.15 ? localP / 0.15
+                        : localP > 0.85 ? (1 - localP) / 0.15
+                        : 1;
+                    const size = p.size * (1.2 - eased * 0.5);
+                    // Goutte de sang (cercle + petit trail)
+                    p.gfx.circle(px, py, size);
+                    p.gfx.fill({ color: p.color, alpha: alpha * 0.9 });
+                    // Petit trail derrière la particule
+                    const trailX = px + (p.startX - p.endX) * 0.1;
+                    const trailY = py + (p.startY - p.endY) * 0.1;
+                    p.gfx.circle(trailX, trailY, size * 0.5);
+                    p.gfx.fill({ color: p.color, alpha: alpha * 0.4 });
+                }
+            });
+
+            // Étincelles lumineuses : convergent plus lentement
+            sparks.forEach(s => {
+                s.gfx.clear();
+                const localP = Math.max(0, Math.min(1, (progress - s.delay) / (0.7 - s.delay)));
+                if (localP > 0 && localP < 1) {
+                    const eased = localP * localP;
+                    const sx = s.startX * (1 - eased);
+                    const sy = s.startY * (1 - eased);
+                    const alpha = localP < 0.2 ? localP / 0.2
+                        : localP > 0.8 ? (1 - localP) / 0.2
+                        : 1;
+                    // Losange lumineux (comme le heal mais rouge)
+                    const sz = s.size * (1 - eased * 0.3);
+                    s.gfx.moveTo(sx, sy - sz);
+                    s.gfx.lineTo(sx + sz * 0.6, sy);
+                    s.gfx.lineTo(sx, sy + sz);
+                    s.gfx.lineTo(sx - sz * 0.6, sy);
+                    s.gfx.closePath();
+                    s.gfx.fill({ color: 0xFF4444, alpha: alpha * 0.8 });
+                }
+            });
+
+            requestAnimationFrame(animate);
+        };
+
+        this.activeEffects.push(effect);
+        requestAnimationFrame(animate);
+    }
+
+    showLifestealNumber(x, y, amount) {
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 1300,
+        };
+
+        // Texte "+X" rouge sang
+        const text = new PIXI.Text({
+            text: `+${amount}`,
+            style: {
+                fontFamily: 'Arial Black, Arial',
+                fontSize: 48,
+                fontWeight: 'bold',
+                fill: 0xCC0000,
+                stroke: { color: 0x000000, width: 6 },
+                dropShadow: {
+                    color: 0x000000,
+                    blur: 4,
+                    angle: Math.PI / 4,
+                    distance: 3,
+                },
+            }
+        });
+        text.anchor.set(0.5);
+        effectContainer.addChild(text);
+
+        // Glow rouge sang
+        const glow = new PIXI.Graphics();
+        glow.circle(0, 0, 30);
+        glow.fill({ color: 0xCC0000, alpha: 0.35 });
+        effectContainer.addChildAt(glow, 0);
+
+        const startY = y;
+
+        const animate = () => {
+            const elapsed = performance.now() - effect.startTime;
+            const progress = Math.min(elapsed / effect.duration, 1);
+
+            // Apparition (0 → 0.1) — le nombre arrive en scale-up
+            if (progress < 0.1) {
+                const p = progress / 0.1;
+                text.scale.set(0.3 + p * 0.9);
+                text.alpha = p;
+                glow.alpha = p * 0.35;
+            }
+            // Maintien avec pulse (0.1 → 0.5)
+            else if (progress < 0.5) {
+                text.alpha = 1;
+                const pulse = 1 + Math.sin((progress - 0.1) * Math.PI * 4) * 0.05;
+                text.scale.set(1.15 * pulse);
+                glow.alpha = 0.35;
+            }
+            // Montée et fade (0.5 → 1)
+            else {
+                const fadeProgress = (progress - 0.5) / 0.5;
+                effectContainer.y = startY - fadeProgress * 55;
+                text.alpha = 1 - fadeProgress;
+                glow.alpha = (1 - fadeProgress) * 0.35;
+                text.scale.set(1.15 - fadeProgress * 0.2);
+            }
+
+            if (progress >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        this.activeEffects.push(effect);
+
+        return effect;
+    }
+
     // ==================== DAMAGE FLASH (FLASH BLANC + ÉTINCELLES ROUGES) ====================
 
     createDamageFlashEffect(x, y, w, h) {
@@ -4350,10 +4577,1457 @@ class GameVFXSystem {
         this.activeEffects.push(effect);
         requestAnimationFrame(animate);
     }
+
+    // ==================== CAMOUFLAGE (FUMÉE PERSISTANTE) ====================
+
+    // Classe Noise interne pour la fumée organique
+    _initCamoNoise() {
+        if (this._camoNoiseA) return;
+        class Noise {
+            constructor(seed) {
+                this.perm = new Uint8Array(512);
+                const p = new Uint8Array(256);
+                for (let i = 0; i < 256; i++) p[i] = i;
+                for (let i = 255; i > 0; i--) {
+                    const x = Math.sin(i * 127.1 + seed * 311.7) * 43758.5453;
+                    const j = Math.floor((x - Math.floor(x)) * (i + 1));
+                    [p[i], p[j]] = [p[j], p[i]];
+                }
+                for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+            }
+            noise2D(x, y) {
+                const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+                const xf = x - Math.floor(x), yf = y - Math.floor(y);
+                const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+                const a = this.perm[X] + Y, b = this.perm[X + 1] + Y;
+                const grad = (h, gx, gy) => { const g = h & 3; return (g===0?gx+gy:g===1?-gx+gy:g===2?gx-gy:-gx-gy); };
+                const lerp = (a2, b2, t) => a2 + t * (b2 - a2);
+                return lerp(
+                    lerp(grad(this.perm[a], xf, yf), grad(this.perm[b], xf-1, yf), u),
+                    lerp(grad(this.perm[a+1], xf, yf-1), grad(this.perm[b+1], xf-1, yf-1), u), v
+                );
+            }
+            fbm(x, y, oct = 4) {
+                let val = 0, amp = 0.5, freq = 1;
+                for (let i = 0; i < oct; i++) { val += amp * this.noise2D(x*freq, y*freq); amp *= 0.5; freq *= 2.1; }
+                return val;
+            }
+        }
+        this._camoNoiseA = new Noise(42);
+        this._camoNoiseB = new Noise(137);
+    }
+
+    // Texture de fumée radiale douce (canvas → PixiJS texture)
+    _makeSmokeTexture(size, softness) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+        g.addColorStop(0, `rgba(255,255,255,${softness})`);
+        g.addColorStop(0.35, `rgba(255,255,255,${softness * 0.55})`);
+        g.addColorStop(0.65, `rgba(255,255,255,${softness * 0.15})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, size, size);
+        return PIXI.Texture.from(c);
+    }
+
+    registerCamouflage(slotKey, element) {
+        if (!this.initialized) return;
+        this._initCamoNoise();
+
+        // Si existe déjà, mettre à jour l'élément DOM
+        if (this.activeCamouflages.has(slotKey)) {
+            const existing = this.activeCamouflages.get(slotKey);
+            existing.element = element;
+            // Re-attacher le dark overlay DOM si l'élément a changé
+            if (existing.domOverlay && existing.domOverlay.parentElement !== element) {
+                existing.domOverlay.remove();
+                element.appendChild(existing.domOverlay);
+            }
+            return;
+        }
+
+        const container = new PIXI.Container();
+        this.shieldLayer.addChild(container);
+
+        // Textures fumée (3 tailles)
+        const smokeTexS = this._makeSmokeTexture(32, 0.6);
+        const smokeTexM = this._makeSmokeTexture(64, 0.5);
+        const smokeTexL = this._makeSmokeTexture(96, 0.35);
+        const smokeTex = [smokeTexS, smokeTexM, smokeTexL];
+
+        // Dark overlay en DOM (enfant de la carte — suit naturellement la perspective du board)
+        const domOverlay = document.createElement('div');
+        domOverlay.className = 'camo-dark-overlay';
+        domOverlay.style.cssText = `
+            position: absolute; inset: 0; border-radius: inherit;
+            background: rgba(8, 12, 18, 0.45); pointer-events: none; z-index: 5;
+        `;
+        element.appendChild(domOverlay);
+
+        // Masque rectangulaire pour la fumée (dimensions mises à jour dans updateCamouflages)
+        const smokeMask = new PIXI.Graphics();
+        container.addChild(smokeMask);
+
+        // Conteneur de fumée masqué
+        const smokeContainer = new PIXI.Container();
+        smokeContainer.mask = smokeMask;
+        container.addChild(smokeContainer);
+
+        // Créer les particules de fumée
+        const particles = [];
+        const baseTime = Math.random() * 100; // Décalage aléatoire pour que chaque carte ait un motif différent
+
+        // Couche 1 : Grand brouillard lent en fond (réduit pour petites cartes)
+        for (let i = 0; i < 8; i++) {
+            const s = new PIXI.Sprite(smokeTexL);
+            s.anchor.set(0.5);
+            s.blendMode = 'screen';
+            smokeContainer.addChild(s);
+            particles.push({
+                sprite: s, baseScale: 0.6 + Math.random() * 0.5,
+                maxAlpha: 0.04 + Math.random() * 0.06,
+                life: Math.random(), maxLife: 4 + Math.random() * 4,
+                riseSpeed: 3 + Math.random() * 6, drift: 10 + Math.random() * 15,
+                rotSpeed: (Math.random() - 0.5) * 0.008,
+                nox: Math.random() * 200, noy: Math.random() * 200,
+                fadeIn: 0.12 + Math.random() * 0.12, fadeOut: 0.6 + Math.random() * 0.2,
+                ox: 0, oy: 0
+            });
+        }
+
+        // Couche 2 : Fumée moyenne
+        for (let i = 0; i < 20; i++) {
+            const s = new PIXI.Sprite(smokeTex[Math.floor(Math.random() * 3)]);
+            s.anchor.set(0.5);
+            s.blendMode = 'screen';
+            smokeContainer.addChild(s);
+            particles.push({
+                sprite: s, baseScale: 0.3 + Math.random() * 0.5,
+                maxAlpha: 0.06 + Math.random() * 0.1,
+                life: Math.random(), maxLife: 3 + Math.random() * 4,
+                riseSpeed: 5 + Math.random() * 10, drift: 6 + Math.random() * 12,
+                rotSpeed: (Math.random() - 0.5) * 0.01,
+                nox: Math.random() * 200, noy: Math.random() * 200,
+                fadeIn: 0.12 + Math.random() * 0.12, fadeOut: 0.6 + Math.random() * 0.2,
+                ox: 0, oy: 0
+            });
+        }
+
+        // Couche 3 : Petits filets denses
+        for (let i = 0; i < 12; i++) {
+            const s = new PIXI.Sprite(smokeTexS);
+            s.anchor.set(0.5);
+            s.blendMode = 'screen';
+            smokeContainer.addChild(s);
+            particles.push({
+                sprite: s, baseScale: 0.2 + Math.random() * 0.3,
+                maxAlpha: 0.08 + Math.random() * 0.14,
+                life: Math.random(), maxLife: 2 + Math.random() * 2.5,
+                riseSpeed: 8 + Math.random() * 12, drift: 4 + Math.random() * 8,
+                rotSpeed: (Math.random() - 0.5) * 0.015,
+                nox: Math.random() * 200, noy: Math.random() * 200,
+                fadeIn: 0.12 + Math.random() * 0.12, fadeOut: 0.6 + Math.random() * 0.2,
+                ox: 0, oy: 0
+            });
+        }
+
+        this.activeCamouflages.set(slotKey, {
+            container, element, startTime: performance.now(),
+            particles, domOverlay, smokeMask, smokeContainer, baseTime,
+            lastW: 0, lastH: 0
+        });
+    }
+
+    removeCamouflage(slotKey) {
+        const camo = this.activeCamouflages.get(slotKey);
+        if (!camo) return;
+        // Retirer le dark overlay DOM
+        if (camo.domOverlay) camo.domOverlay.remove();
+        camo.container.parent?.removeChild(camo.container);
+        camo.container.destroy({ children: true });
+        this.activeCamouflages.delete(slotKey);
+    }
+
+    syncCamouflages(activeSlotKeys) {
+        for (const slotKey of this.activeCamouflages.keys()) {
+            if (!activeSlotKeys.has(slotKey)) {
+                this.removeCamouflage(slotKey);
+            }
+        }
+    }
+
+    updateCamouflages() {
+        if (this.activeCamouflages.size === 0) return;
+        const now = performance.now();
+        const nA = this._camoNoiseA;
+        const nB = this._camoNoiseB;
+
+        for (const [slotKey, camo] of this.activeCamouflages) {
+            const { container, element, particles, domOverlay, smokeMask, baseTime } = camo;
+
+            if (!element || !document.contains(element)) {
+                container.visible = false;
+                if (domOverlay) domOverlay.style.display = 'none';
+                continue;
+            }
+            container.visible = true;
+            if (domOverlay) domOverlay.style.display = '';
+
+            const rect = element.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const hw = rect.width / 2;
+            const hh = rect.height / 2;
+            const inset = 4; // retrait pour la fumée PixiJS (compense la perspective du board)
+
+            container.position.set(cx, cy);
+
+            // Reconstruire le smoke mask si les dimensions changent
+            if (Math.abs(rect.width - camo.lastW) > 2 || Math.abs(rect.height - camo.lastH) > 2) {
+                camo.lastW = rect.width;
+                camo.lastH = rect.height;
+
+                smokeMask.clear();
+                smokeMask.roundRect(-hw + inset, -hh + inset, rect.width - inset * 2, rect.height - inset * 2, 4);
+                smokeMask.fill({ color: 0xffffff });
+            }
+
+            // Temps écoulé
+            const elapsed = (now - camo.startTime) / 1000 + baseTime;
+
+            // Mettre à jour chaque particule
+            for (const p of particles) {
+                p.life += 0.016; // ~60fps
+                const t = p.life / p.maxLife;
+
+                if (t >= 1) {
+                    // Reset
+                    p.life = 0;
+                    p.ox = (Math.random() - 0.5) * rect.width * 0.9;
+                    p.oy = (Math.random() - 0.5) * rect.height * 0.8 + rect.height * 0.08;
+                    p.sprite.rotation = Math.random() * Math.PI * 2;
+                    p.sprite.alpha = 0;
+                    continue;
+                }
+
+                // Init position if first frame
+                if (p.ox === 0 && p.oy === 0) {
+                    p.ox = (Math.random() - 0.5) * rect.width * 0.9;
+                    p.oy = (Math.random() - 0.5) * rect.height * 0.8 + rect.height * 0.08;
+                }
+
+                // Noise-driven drift
+                const nx = nA.fbm(p.nox + elapsed * 0.12, p.noy, 3);
+                const ny = nB.fbm(p.nox, p.noy + elapsed * 0.12, 3);
+
+                p.sprite.x = p.ox + nx * p.drift;
+                p.sprite.y = p.oy + ny * p.drift * 0.6 - t * p.riseSpeed;
+
+                // Alpha envelope
+                let a;
+                if (t < p.fadeIn) a = t / p.fadeIn;
+                else if (t > p.fadeOut) a = 1 - (t - p.fadeOut) / (1 - p.fadeOut);
+                else a = 1;
+                p.sprite.alpha = a * p.maxAlpha;
+
+                // Scale
+                const pulse = 1 + Math.sin(elapsed * 0.7 + p.nox) * 0.06;
+                p.sprite.scale.set(p.baseScale * (1 + t * 0.4) * pulse);
+
+                p.sprite.rotation += p.rotSpeed;
+            }
+        }
+    }
+
+    // ==================== EFFET DE POISON (Gouttes toxiques) ====================
+
+    /**
+     * Animation de poison : cloaques toxiques qui grossissent, pulsent, enflent et éclatent.
+     * @param {number} x - Centre X de la carte
+     * @param {number} y - Centre Y de la carte
+     * @param {number} damage - Nombre de dégâts de poison
+     * @param {number} cardW - Largeur de la carte
+     * @param {number} cardH - Hauteur de la carte
+     */
+    createPoisonDripEffect(x, y, damage, cardW = 90, cardH = 120) {
+        if (!this.initialized) return;
+
+        const effectContainer = new PIXI.Container();
+        this.container.addChild(effectContainer);
+
+        const duration = 1600;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+        this.activeEffects.push(effect);
+
+        const rand = (a, b) => Math.random() * (b - a) + a;
+        const randInt = (a, b) => Math.floor(rand(a, b + 1));
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+        const easeInOutSine = t => -(Math.cos(Math.PI * t) - 1) / 2;
+        const easeInQuad = t => t * t;
+
+        // ═══════ MASQUE (limiter l'effet à la zone de la carte) ═══════
+        const cardLeft = x - cardW / 2;
+        const cardTop = y - cardH / 2;
+        const mask = new PIXI.Graphics();
+        mask.roundRect(cardLeft, cardTop, cardW, cardH, 8);
+        mask.fill({ color: 0xffffff });
+        effectContainer.addChild(mask);
+        const blobContainer = new PIXI.Container();
+        blobContainer.mask = mask;
+        effectContainer.addChild(blobContainer);
+
+        // ═══════ PALETTE POISON ═══════
+        function pickOuter() { return [0x30a855, 0x28994a, 0x35b050, 0x2a8f40, 0x3dbb58][randInt(0, 4)]; }
+        function pickInner() { return [0x45cc65, 0x50dd70, 0x3bbf55][randInt(0, 2)]; }
+        function pickCore()  { return [0x70ee88, 0x80ff95, 0x65e87a][randInt(0, 2)]; }
+        const C_YELLOW   = 0xccdd22;
+        const C_YELLOW_W = 0xddee44;
+        const C_HL       = 0xccffe0;
+        const C_HL_WARM  = 0xddffaa;
+
+        // ═══════ BLOB GENERATION ═══════
+        function blobPoints(cx, cy, baseR, irregularity, n) {
+            const offsets = [];
+            for (let i = 0; i < n; i++) offsets.push(rand(-irregularity, irregularity));
+            const pts = [];
+            for (let i = 0; i <= n; i++) {
+                const idx = i % n;
+                const angle = (Math.PI * 2 / n) * i;
+                const prev = offsets[(idx - 1 + n) % n];
+                const curr = offsets[idx];
+                const next = offsets[(idx + 1) % n];
+                const r = baseR + prev * 0.25 + curr * 0.5 + next * 0.25;
+                pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+            }
+            return pts;
+        }
+
+        function drawBlobFill(g, points, color, alpha) {
+            if (alpha <= 0.001 || points.length < 3) return;
+            g.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length - 1; i++) {
+                const curr = points[i], next = points[i + 1];
+                g.quadraticCurveTo(curr.x, curr.y, (curr.x + next.x) / 2, (curr.y + next.y) / 2);
+            }
+            g.closePath();
+            g.fill({ color, alpha });
+        }
+
+        // ═══════ BLISTER FACTORY ═══════
+        const margin = cardW * 0.1;
+        function makeBlister() {
+            const cx = rand(cardLeft + margin, cardLeft + cardW - margin);
+            const cy = rand(cardTop + margin, cardTop + cardH - margin);
+            const maxSize = rand(cardW * 0.06, cardW * 0.18);
+            return {
+                cx, cy, maxSize,
+                blobPts: blobPoints(0, 0, maxSize, maxSize * 0.25, 16),
+                innerPts: blobPoints(0, 0, maxSize * 0.7, maxSize * 0.15, 12),
+                corePts: blobPoints(0, 0, maxSize * 0.35, maxSize * 0.1, 10),
+                growStart: rand(0, 0.2),
+                growDur: rand(0.2, 0.4),
+                pulsePhase: rand(0, Math.PI * 2),
+                pulseSpeed: rand(3, 6),
+                pulseAmp: rand(0.02, 0.05),
+                outerColor: pickOuter(),
+                innerColor: pickInner(),
+                coreColor: pickCore(),
+                yellowAmount: rand(0, 1),
+                hlAngle: rand(-1.2, -0.3),
+                phase: 'growing',
+                swellStart: 0,
+                swellProgress: 0,
+                popParticles: [],
+                popSplats: [],
+                popRingAlpha: 0,
+                popRingSize: 0,
+                alpha: 0,
+            };
+        }
+
+        // ═══════ CREATE BLISTERS ═══════
+        const blisters = [];
+        const bigCount = 5 + Math.min(damage * 2, 6);
+        for (let i = 0; i < bigCount; i++) blisters.push(makeBlister());
+        const smallCount = 3 + Math.min(damage, 4);
+        for (let i = 0; i < smallCount; i++) {
+            const b = makeBlister();
+            b.maxSize = rand(cardW * 0.03, cardW * 0.07);
+            b.blobPts = blobPoints(0, 0, b.maxSize, b.maxSize * 0.2, 12);
+            b.innerPts = blobPoints(0, 0, b.maxSize * 0.6, b.maxSize * 0.12, 10);
+            b.corePts = blobPoints(0, 0, b.maxSize * 0.3, b.maxSize * 0.08, 8);
+            b.growStart = rand(0.05, 0.3);
+            blisters.push(b);
+        }
+
+        // Compute timing for each blister
+        blisters.forEach(b => {
+            b.growEnd = b.growStart + b.growDur;
+            b.swellStart = b.growEnd + rand(0.08, 0.2);
+            b.popAt = b.swellStart + rand(0.08, 0.18);
+            if (b.popAt > 0.85) {
+                const shift = b.popAt - 0.85;
+                b.growStart -= shift; b.growEnd -= shift;
+                b.swellStart -= shift; b.popAt -= shift;
+            }
+        });
+
+        // ═══════ DRAW FUNCTIONS ═══════
+        function drawBlister(g, b, time, scale) {
+            if (b.phase === 'popped') return;
+            const s = scale;
+            if (s <= 0.01) return;
+
+            const pulse = 1 + Math.sin(time * b.pulseSpeed + b.pulsePhase) * b.pulseAmp;
+            const swell = b.phase === 'swelling' ? 1 + (b.swellProgress || 0) * 0.2 : 1;
+            const sz = s * pulse * swell;
+            const a = b.alpha;
+            const yw = b.yellowAmount;
+
+            // Ombre douce
+            g.circle(b.cx, b.cy + 2, b.maxSize * sz * 1.05);
+            g.fill({ color: 0x000000, alpha: a * 0.04 });
+
+            // Couche externe
+            const outer = b.blobPts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
+            drawBlobFill(g, outer, b.outerColor, a * 0.08);
+            if (yw > 0.3) drawBlobFill(g, outer, C_YELLOW, a * 0.03 * yw);
+
+            // Couche interne
+            const inner = b.innerPts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
+            drawBlobFill(g, inner, b.innerColor, a * 0.07);
+            if (yw > 0.2) drawBlobFill(g, inner, C_YELLOW, a * 0.025 * yw);
+
+            // Noyau
+            const core = b.corePts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
+            drawBlobFill(g, core, b.coreColor, a * 0.06);
+            if (yw > 0.5) drawBlobFill(g, core, C_YELLOW_W, a * 0.04 * yw);
+
+            // Reflet spéculaire
+            const hlX = b.cx + Math.cos(b.hlAngle) * b.maxSize * sz * 0.25;
+            const hlY = b.cy + Math.sin(b.hlAngle) * b.maxSize * sz * 0.25;
+            const hlR = b.maxSize * sz * 0.17;
+            g.circle(hlX, hlY, hlR * 1.8);
+            g.fill({ color: yw > 0.5 ? C_HL_WARM : C_HL, alpha: a * 0.06 });
+            g.circle(hlX, hlY, hlR);
+            g.fill({ color: 0xffffff, alpha: a * 0.14 });
+            g.circle(hlX, hlY, hlR * 0.35);
+            g.fill({ color: 0xffffff, alpha: a * 0.22 });
+
+            // Reflet secondaire
+            const hl2X = b.cx + Math.cos(b.hlAngle + Math.PI + 0.6) * b.maxSize * sz * 0.45;
+            const hl2Y = b.cy + Math.sin(b.hlAngle + Math.PI + 0.6) * b.maxSize * sz * 0.45;
+            g.circle(hl2X, hl2Y, b.maxSize * sz * 0.05);
+            g.fill({ color: 0xffffff, alpha: a * 0.12 });
+
+            // Pulsation d'enflure
+            if (b.phase === 'swelling') {
+                const throb = Math.sin(time * 14 + b.pulsePhase) * 0.5 + 0.5;
+                g.circle(b.cx, b.cy, b.maxSize * sz * 0.4);
+                g.fill({ color: yw > 0.5 ? C_YELLOW_W : C_HL, alpha: a * 0.025 * throb });
+            }
+        }
+
+        function triggerPop(b) {
+            b.phase = 'popped';
+            b.popRingAlpha = 0.35;
+            b.popRingSize = b.maxSize * 0.5;
+            const yw = b.yellowAmount;
+
+            const numDrops = Math.max(4, Math.floor(b.maxSize * 0.6));
+            for (let i = 0; i < numDrops; i++) {
+                const angle = rand(0, Math.PI * 2);
+                const speed = rand(1, 4) * (b.maxSize / 20);
+                const isYellowDrop = yw > 0.3 && Math.random() < yw * 0.5;
+                b.popParticles.push({
+                    x: b.cx + Math.cos(angle) * b.maxSize * 0.2,
+                    y: b.cy + Math.sin(angle) * b.maxSize * 0.2,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: rand(1, Math.max(2, b.maxSize * 0.12)),
+                    alpha: rand(0.15, 0.35),
+                    color: isYellowDrop
+                        ? [C_YELLOW, C_YELLOW_W][randInt(0, 1)]
+                        : [b.outerColor, b.innerColor, b.coreColor][randInt(0, 2)],
+                    drag: rand(0.94, 0.98),
+                    gravity: rand(0.02, 0.06),
+                });
+            }
+
+            const numSplats = randInt(2, 4);
+            for (let i = 0; i < numSplats; i++) {
+                const angle = rand(0, Math.PI * 2);
+                const dist = rand(b.maxSize * 0.3, b.maxSize * 1.2);
+                const sz = rand(4, b.maxSize * 0.35);
+                const isYellow = yw > 0.4 && Math.random() < yw * 0.4;
+                b.popSplats.push({
+                    x: b.cx + Math.cos(angle) * dist,
+                    y: b.cy + Math.sin(angle) * dist,
+                    size: sz, scale: 0, targetScale: 1,
+                    points: blobPoints(0, 0, sz, sz * 0.3, 8),
+                    alpha: rand(0.05, 0.12),
+                    color: isYellow ? C_YELLOW : [b.outerColor, b.innerColor][randInt(0, 1)],
+                });
+            }
+        }
+
+        function drawBlisterPop(g, b, gf) {
+            if (b.popRingAlpha > 0.003) {
+                g.circle(b.cx, b.cy, b.popRingSize);
+                g.fill({ color: b.innerColor, alpha: b.popRingAlpha * 0.05 * gf });
+            }
+            b.popSplats.forEach(s => {
+                if (s.alpha <= 0) return;
+                const pts = s.points.map(p => ({ x: s.x + p.x * s.scale, y: s.y + p.y * s.scale }));
+                drawBlobFill(g, pts, s.color, s.alpha * gf);
+            });
+            b.popParticles.forEach(p => {
+                if (p.alpha <= 0) return;
+                g.circle(p.x - p.vx * 1.5, p.y - p.vy * 1.5, p.size * 0.35);
+                g.fill({ color: p.color, alpha: p.alpha * 0.12 * gf });
+                g.circle(p.x, p.y, p.size);
+                g.fill({ color: p.color, alpha: p.alpha * 0.35 * gf });
+                g.circle(p.x, p.y, p.size * 0.25);
+                g.fill({ color: 0xffffff, alpha: p.alpha * 0.1 * gf });
+            });
+        }
+
+        // ═══════ NOMBRE DE DÉGÂTS POISON ═══════
+        const dmgText = new PIXI.Text({
+            text: `-${damage}`,
+            style: {
+                fontFamily: 'Arial Black, Arial',
+                fontSize: 52,
+                fontWeight: 'bold',
+                fill: 0x2ecc71,
+                stroke: { color: 0x0a2a0a, width: 6 },
+                dropShadow: { color: 0x000000, blur: 4, angle: Math.PI / 4, distance: 3 },
+            }
+        });
+        dmgText.anchor.set(0.5);
+        dmgText.position.set(x, y);
+        dmgText.alpha = 0;
+        dmgText.scale.set(0.3);
+        effectContainer.addChild(dmgText);
+
+        const dmgGlow = new PIXI.Graphics();
+        dmgGlow.circle(0, 0, 35);
+        dmgGlow.fill({ color: 0x2ecc71, alpha: 0.4 });
+        dmgGlow.position.set(x, y);
+        dmgGlow.alpha = 0;
+        effectContainer.addChild(dmgGlow);
+
+        // ═══════ BOUCLE D'ANIMATION ═══════
+        let elapsedSec = 0;
+        const DUR_SEC = duration / 1000;
+
+        const animate = () => {
+            if (effect.finished) return;
+            const now = performance.now();
+            const elapsed = now - effect.startTime;
+            elapsedSec = elapsed / 1000;
+            const t = Math.min(elapsed / duration, 1);
+            const gf = t > 0.82 ? easeInOutSine((1 - t) / 0.18) : 1;
+
+            const g = new PIXI.Graphics();
+
+            blisters.forEach(b => {
+                if (b.phase === 'popped') {
+                    b.popRingSize += 1.5;
+                    b.popRingAlpha *= 0.93;
+                    b.popParticles.forEach(p => {
+                        p.x += p.vx; p.y += p.vy;
+                        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
+                        p.alpha -= 0.008;
+                    });
+                    b.popSplats.forEach(s => {
+                        s.scale += (s.targetScale - s.scale) * 0.15;
+                        s.alpha -= 0.0015;
+                    });
+                    drawBlisterPop(g, b, gf);
+                    return;
+                }
+
+                if (t >= b.growStart && t < b.growEnd) {
+                    b.phase = 'growing';
+                    const growT = easeOutCubic((t - b.growStart) / b.growDur);
+                    b.currentSize = growT;
+                    b.alpha = Math.min(growT * 1.5, 1) * 0.85;
+                    drawBlister(g, b, elapsedSec, b.currentSize);
+                } else if (t >= b.growEnd && t < b.swellStart) {
+                    b.phase = 'pulsing';
+                    b.currentSize = 1;
+                    b.alpha = 0.85;
+                    drawBlister(g, b, elapsedSec, 1);
+                } else if (t >= b.swellStart && t < b.popAt) {
+                    b.phase = 'swelling';
+                    b.swellProgress = easeInQuad((t - b.swellStart) / (b.popAt - b.swellStart));
+                    b.currentSize = 1;
+                    b.alpha = 0.85;
+                    b.pulseAmp = 0.05 + b.swellProgress * 0.08;
+                    b.pulseSpeed = 6 + b.swellProgress * 12;
+                    drawBlister(g, b, elapsedSec, 1);
+                } else if (t >= b.popAt && b.phase !== 'popped') {
+                    triggerPop(b);
+                    drawBlisterPop(g, b, gf);
+                }
+            });
+
+            blobContainer.addChild(g);
+            while (blobContainer.children.length > 2) blobContainer.removeChild(blobContainer.children[0]).destroy();
+
+            // ── Nombre de dégâts (0.3 → 1) ──
+            if (t >= 0.3) {
+                const dmgT = (t - 0.3) / 0.7;
+                if (dmgT < 0.15) {
+                    const p = easeOutCubic(dmgT / 0.15);
+                    dmgText.scale.set(0.3 + p * 0.9);
+                    dmgText.alpha = p;
+                    dmgGlow.alpha = p * 0.4;
+                } else if (dmgT < 0.55) {
+                    dmgText.alpha = 1;
+                    const pulse = 1 + Math.sin((dmgT - 0.15) * Math.PI * 4) * 0.05;
+                    dmgText.scale.set(1.2 * pulse);
+                    dmgGlow.alpha = 0.4;
+                } else {
+                    const fadeT = (dmgT - 0.55) / 0.45;
+                    dmgText.y = y - fadeT * 50;
+                    dmgText.alpha = 1 - fadeT;
+                    dmgGlow.alpha = (1 - fadeT) * 0.4;
+                    dmgGlow.y = y - fadeT * 50;
+                    dmgText.scale.set(1.2 - fadeT * 0.3);
+                }
+            }
+
+            if (t >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        this.screenShake(3, 100);
+        return effect;
+    }
+
+    /**
+     * Animation d'entrave : traînées rouges verticales tombant sur la carte + nombre "-X" qui s'envole.
+     * @param {number} x - Centre X de la carte
+     * @param {number} y - Centre Y de la carte
+     * @param {number} amount - Nombre de marqueurs entrave appliqués
+     * @param {number} cardW - Largeur de la carte
+     * @param {number} cardH - Hauteur de la carte
+     */
+    createEntraveEffect(x, y, amount, cardW = 90, cardH = 120) {
+        if (!this.initialized) return;
+
+        const effectContainer = new PIXI.Container();
+        this.container.addChild(effectContainer);
+
+        const duration = 1400;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+        this.activeEffects.push(effect);
+
+        const rand = (a, b) => Math.random() * (b - a) + a;
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+        const STREAK_COLOR = 0xcc2222;
+        const cardLeft = x - cardW / 2;
+        const cardTop = y - cardH / 2;
+
+        // ═══════ MASQUE ═══════
+        const mask = new PIXI.Graphics();
+        mask.roundRect(cardLeft, cardTop, cardW, cardH, 8);
+        mask.fill({ color: 0xffffff });
+        effectContainer.addChild(mask);
+        const streakContainer = new PIXI.Container();
+        streakContainer.mask = mask;
+        effectContainer.addChild(streakContainer);
+
+        // ═══════ STREAKS ═══════
+        const streaks = [];
+        const margin = cardW * 0.05;
+        const leftEdge = cardLeft + margin;
+        const usableWidth = cardW - margin * 2;
+
+        // ~14 streaks répartis sur la largeur
+        const mainCount = 14;
+        for (let i = 0; i < mainCount; i++) {
+            const baseX = leftEdge + (i / (mainCount - 1)) * usableWidth;
+            streaks.push({
+                x: baseX + rand(-3, 3),
+                y: cardTop - 20 + rand(-25, 25),
+                vy: 50 + rand(0, 80),
+                accel: 100 + rand(0, 160),
+                length: 25 + rand(0, 40),
+                thickness: 1.2 + rand(0, 1.8),
+                maxLife: 0.7 + rand(0, 0.5),
+                delay: rand(0, 0.15),
+                baseAlpha: 0.4 + rand(0, 0.25),
+                glowSize: 4 + rand(0, 5),
+                fadeInEnd: 0.06 + rand(0, 0.06),
+                fadeOutStart: 0.35 + rand(0, 0.15),
+                life: 0,
+                active: false,
+                gfx: new PIXI.Graphics(),
+            });
+        }
+        // ~6 streaks supplémentaires décalés
+        for (let i = 0; i < 6; i++) {
+            streaks.push({
+                x: leftEdge + rand(0, usableWidth),
+                y: cardTop - 30 + rand(0, 30),
+                vy: 40 + rand(0, 60),
+                accel: 80 + rand(0, 120),
+                length: 18 + rand(0, 28),
+                thickness: 0.8 + rand(0, 1.2),
+                maxLife: 0.8 + rand(0, 0.4),
+                delay: 0.15 + rand(0, 0.25),
+                baseAlpha: 0.3 + rand(0, 0.2),
+                glowSize: 3 + rand(0, 4),
+                fadeInEnd: 0.08 + rand(0, 0.06),
+                fadeOutStart: 0.4 + rand(0, 0.15),
+                life: 0,
+                active: false,
+                gfx: new PIXI.Graphics(),
+            });
+        }
+        for (const s of streaks) {
+            streakContainer.addChild(s.gfx);
+        }
+
+        // ═══════ NOMBRE "-X" QUI S'ENVOLE ═══════
+        const flyText = new PIXI.Text({
+            text: `-${amount}`,
+            style: {
+                fontFamily: 'Georgia, serif',
+                fontSize: 36,
+                fontWeight: 'bold',
+                fill: 0xe74c3c,
+                stroke: { color: 0x000000, width: 4 },
+                dropShadow: { alpha: 0.6, color: 0xff0000, blur: 12, distance: 0 },
+            }
+        });
+        flyText.anchor.set(0.5);
+        flyText.x = cardLeft + 25;
+        flyText.y = y + cardH * 0.25;
+        flyText.alpha = 0;
+        flyText.scale.set(0.3);
+        effectContainer.addChild(flyText);
+
+        // ═══════ BOUCLE D'ANIMATION ═══════
+        const animate = () => {
+            if (effect.finished) return;
+            const now = performance.now();
+            const elapsed = now - effect.startTime;
+            const dt = 1 / 60;
+            const t = Math.min(elapsed / duration, 1);
+
+            // ── Streaks ──
+            for (const s of streaks) {
+                if (s.delay > 0) { s.delay -= dt; continue; }
+                if (!s.active) s.active = true;
+                s.life += dt;
+                const st = s.life / s.maxLife;
+                if (st >= 1) { s.gfx.visible = false; continue; }
+
+                s.vy += s.accel * dt;
+                s.y += s.vy * dt;
+
+                let alpha;
+                if (st < s.fadeInEnd) alpha = (st / s.fadeInEnd) ** 2;
+                else if (st > s.fadeOutStart) { const fo = (st - s.fadeOutStart) / (1 - s.fadeOutStart); alpha = 1 - fo * fo; }
+                else alpha = 1;
+                alpha *= s.baseAlpha;
+
+                const lenMul = st < 0.15 ? st / 0.15 : 1;
+                const curLen = s.length * lenMul;
+
+                s.gfx.clear();
+
+                // Glow externe
+                const glowW = s.thickness + s.glowSize;
+                s.gfx.rect(s.x - glowW / 2, s.y, glowW, curLen);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.12 });
+
+                // Glow moyen
+                const midW = s.thickness + s.glowSize * 0.3;
+                s.gfx.rect(s.x - midW / 2, s.y, midW, curLen);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.25 });
+
+                // Core fin en haut
+                s.gfx.rect(s.x - s.thickness * 0.3, s.y, s.thickness * 0.6, curLen * 0.5);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.9 });
+
+                // Core épais en bas
+                s.gfx.rect(s.x - s.thickness * 0.5, s.y + curLen * 0.35, s.thickness, curLen * 0.65);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha });
+            }
+
+            // ── Fly-off number ──
+            const flyT = elapsed / 1000;
+            if (flyT < 0.15) {
+                flyText.alpha = 1;
+                flyText.scale.set(0.3 + (flyT / 0.15) * 0.9);
+            } else if (flyT < 0.25) {
+                flyText.scale.set(1.2 - ((flyT - 0.15) / 0.1) * 0.2);
+            } else {
+                flyText.scale.set(1.0);
+            }
+            flyText.y -= 35 * dt;
+            if (flyT > 0.7) flyText.alpha = Math.max(0, flyText.alpha - dt * 2.5);
+
+            if (t >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        return effect;
+    }
+
+    // ==================== BUFF EFFECT (ARMES MAGIQUES) ====================
+    /**
+     * Animation de buff : traînées bleu marine montant depuis le bas de la carte + nombre "+X/+X" qui s'envole.
+     * Miroir de l'animation d'entrave : flèches vers le HAUT, couleur bleu marine.
+     * @param {number} x - Centre X de la carte
+     * @param {number} y - Centre Y de la carte
+     * @param {number} atkBuff - Bonus ATK
+     * @param {number} hpBuff - Bonus HP
+     * @param {number} cardW - Largeur de la carte
+     * @param {number} cardH - Hauteur de la carte
+     */
+    createBuffEffect(x, y, atkBuff = 1, hpBuff = 1, cardW = 90, cardH = 120) {
+        if (!this.initialized) return;
+
+        const effectContainer = new PIXI.Container();
+        this.container.addChild(effectContainer);
+
+        const duration = 1400;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+        this.activeEffects.push(effect);
+
+        const rand = (a, b) => Math.random() * (b - a) + a;
+
+        const isDebuff = atkBuff < 0 || hpBuff < 0;
+        const STREAK_COLOR = isDebuff ? 0x6b0d0d : 0x0d2f6b;
+        const cardLeft = x - cardW / 2;
+        const cardTop = y - cardH / 2;
+        const cardBottom = y + cardH / 2;
+
+        // ═══════ MASQUE ═══════
+        const mask = new PIXI.Graphics();
+        mask.roundRect(cardLeft, cardTop, cardW, cardH, 8);
+        mask.fill({ color: 0xffffff });
+        effectContainer.addChild(mask);
+        const streakContainer = new PIXI.Container();
+        streakContainer.mask = mask;
+        effectContainer.addChild(streakContainer);
+
+        // ═══════ STREAKS (vers le HAUT) ═══════
+        const streaks = [];
+        const margin = cardW * 0.05;
+        const leftEdge = cardLeft + margin;
+        const usableWidth = cardW - margin * 2;
+
+        // ~14 streaks répartis sur la largeur
+        const mainCount = 14;
+        for (let i = 0; i < mainCount; i++) {
+            const baseX = leftEdge + (i / (mainCount - 1)) * usableWidth;
+            streaks.push({
+                x: baseX + rand(-3, 3),
+                y: cardBottom + 20 + rand(-25, 25),
+                vy: -(50 + rand(0, 80)),
+                accel: -(100 + rand(0, 160)),
+                length: 25 + rand(0, 40),
+                thickness: 1.2 + rand(0, 1.8),
+                maxLife: 0.7 + rand(0, 0.5),
+                delay: rand(0, 0.15),
+                baseAlpha: 0.4 + rand(0, 0.25),
+                glowSize: 4 + rand(0, 5),
+                fadeInEnd: 0.06 + rand(0, 0.06),
+                fadeOutStart: 0.35 + rand(0, 0.15),
+                life: 0,
+                active: false,
+                gfx: new PIXI.Graphics(),
+            });
+        }
+        // ~6 streaks supplémentaires décalés
+        for (let i = 0; i < 6; i++) {
+            streaks.push({
+                x: leftEdge + rand(0, usableWidth),
+                y: cardBottom + 30 + rand(-30, 0),
+                vy: -(40 + rand(0, 60)),
+                accel: -(80 + rand(0, 120)),
+                length: 18 + rand(0, 28),
+                thickness: 0.8 + rand(0, 1.2),
+                maxLife: 0.8 + rand(0, 0.4),
+                delay: 0.15 + rand(0, 0.25),
+                baseAlpha: 0.3 + rand(0, 0.2),
+                glowSize: 3 + rand(0, 4),
+                fadeInEnd: 0.08 + rand(0, 0.06),
+                fadeOutStart: 0.4 + rand(0, 0.15),
+                life: 0,
+                active: false,
+                gfx: new PIXI.Graphics(),
+            });
+        }
+        for (const s of streaks) {
+            streakContainer.addChild(s.gfx);
+        }
+
+        // ═══════ NOMBRE "+X/+X" OU "-X/-X" QUI S'ENVOLE ═══════
+        const atkStr = atkBuff >= 0 ? `+${atkBuff}` : `${atkBuff}`;
+        const hpStr = hpBuff >= 0 ? `+${hpBuff}` : `${hpBuff}`;
+        const buffStr = `${atkStr}/${hpStr}`;
+        const textColor = isDebuff ? 0xd94a4a : 0x4a90d9;
+        const shadowColor = isDebuff ? 0xdb1a1a : 0x1a56db;
+        const flyText = new PIXI.Text({
+            text: buffStr,
+            style: {
+                fontFamily: 'Georgia, serif',
+                fontSize: 36,
+                fontWeight: 'bold',
+                fill: textColor,
+                stroke: { color: 0x000000, width: 4 },
+                dropShadow: { alpha: 0.6, color: shadowColor, blur: 12, distance: 0 },
+            }
+        });
+        flyText.anchor.set(0.5);
+        flyText.x = x;
+        flyText.y = y + cardH * 0.15;
+        flyText.alpha = 0;
+        flyText.scale.set(0.3);
+        effectContainer.addChild(flyText);
+
+        // ═══════ BOUCLE D'ANIMATION ═══════
+        const animate = () => {
+            if (effect.finished) return;
+            const now = performance.now();
+            const elapsed = now - effect.startTime;
+            const dt = 1 / 60;
+            const t = Math.min(elapsed / duration, 1);
+
+            // ── Streaks (vers le haut) ──
+            for (const s of streaks) {
+                if (s.delay > 0) { s.delay -= dt; continue; }
+                if (!s.active) s.active = true;
+                s.life += dt;
+                const st = s.life / s.maxLife;
+                if (st >= 1) { s.gfx.visible = false; continue; }
+
+                s.vy += s.accel * dt;
+                s.y += s.vy * dt;
+
+                let alpha;
+                if (st < s.fadeInEnd) alpha = (st / s.fadeInEnd) ** 2;
+                else if (st > s.fadeOutStart) { const fo = (st - s.fadeOutStart) / (1 - s.fadeOutStart); alpha = 1 - fo * fo; }
+                else alpha = 1;
+                alpha *= s.baseAlpha;
+
+                const lenMul = st < 0.15 ? st / 0.15 : 1;
+                const curLen = s.length * lenMul;
+
+                s.gfx.clear();
+
+                // Glow externe
+                const glowW = s.thickness + s.glowSize;
+                s.gfx.rect(s.x - glowW / 2, s.y - curLen, glowW, curLen);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.12 });
+
+                // Glow moyen
+                const midW = s.thickness + s.glowSize * 0.3;
+                s.gfx.rect(s.x - midW / 2, s.y - curLen, midW, curLen);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.25 });
+
+                // Core fin en bas (pointe)
+                s.gfx.rect(s.x - s.thickness * 0.3, s.y - curLen * 0.5, s.thickness * 0.6, curLen * 0.5);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.9 });
+
+                // Core épais en haut (tête)
+                s.gfx.rect(s.x - s.thickness * 0.5, s.y - curLen, s.thickness, curLen * 0.65);
+                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha });
+            }
+
+            // ── Fly-off number (monte vers le haut) ──
+            const flyT = elapsed / 1000;
+            if (flyT < 0.15) {
+                flyText.alpha = 1;
+                flyText.scale.set(0.3 + (flyT / 0.15) * 0.9);
+            } else if (flyT < 0.25) {
+                flyText.scale.set(1.2 - ((flyT - 0.15) / 0.1) * 0.2);
+            } else {
+                flyText.scale.set(1.0);
+            }
+            flyText.y -= 35 * dt;
+            if (flyT > 0.7) flyText.alpha = Math.max(0, flyText.alpha - dt * 2.5);
+
+            if (t >= 1) {
+                effect.finished = true;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        return effect;
+    }
+
+    // ==================== SEARCH SPELL (ARCANE DRAW) ====================
+
+    createSearchSpellEffect(x, y, cardW = 90, cardH = 120) {
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 1200,
+        };
+
+        const GOLD = 0xFFD700;
+        const BLUE = 0x4488FF;
+        const CYAN = 0x66CCFF;
+        const WHITE = 0xFFFFFF;
+
+        // --- OUTER ARCANE CIRCLE (rotates clockwise) ---
+        const outerCircle = new PIXI.Graphics();
+        outerCircle.alpha = 0;
+        effectContainer.addChild(outerCircle);
+
+        // --- INNER ARCANE CIRCLE (rotates counter-clockwise) ---
+        const innerCircle = new PIXI.Graphics();
+        innerCircle.alpha = 0;
+        effectContainer.addChild(innerCircle);
+
+        // Draw arcane circle segments (dashes with gaps)
+        function drawArcaneRing(gfx, radius, segments, dashRatio, color, width) {
+            const anglePerSeg = (Math.PI * 2) / segments;
+            const dashAngle = anglePerSeg * dashRatio;
+            for (let i = 0; i < segments; i++) {
+                const startAngle = i * anglePerSeg;
+                const steps = 12;
+                for (let s = 0; s < steps; s++) {
+                    const a1 = startAngle + (s / steps) * dashAngle;
+                    const a2 = startAngle + ((s + 1) / steps) * dashAngle;
+                    gfx.moveTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
+                    gfx.lineTo(Math.cos(a2) * radius, Math.sin(a2) * radius);
+                }
+                gfx.stroke({ color, width, alpha: 0.8 });
+            }
+        }
+
+        const outerRadius = cardW * 0.52;
+        const innerRadius = cardW * 0.35;
+        drawArcaneRing(outerCircle, outerRadius, 8, 0.65, GOLD, 1.8);
+        drawArcaneRing(innerCircle, innerRadius, 6, 0.55, CYAN, 1.2);
+
+        // --- RUNE SIGILS orbiting ---
+        const runeChars = ['◇', '△', '○', '☆', '◈', '▽'];
+        const runes = [];
+        for (let i = 0; i < 6; i++) {
+            const text = new PIXI.Text({
+                text: runeChars[i],
+                style: {
+                    fontFamily: 'Georgia, serif',
+                    fontSize: 12,
+                    fill: GOLD,
+                    stroke: { color: 0x000000, width: 2 },
+                }
+            });
+            text.anchor.set(0.5);
+            text.alpha = 0;
+            effectContainer.addChild(text);
+            runes.push({
+                gfx: text,
+                baseAngle: (i / 6) * Math.PI * 2,
+                radius: outerRadius * 0.85,
+                riseSpeed: 15 + Math.random() * 10,
+            });
+        }
+
+        // --- SPIRAL PARTICLES (golden sparkles rising) ---
+        const particles = [];
+        for (let i = 0; i < 24; i++) {
+            const g = new PIXI.Graphics();
+            const size = 1 + Math.random() * 2;
+            g.circle(0, 0, size);
+            g.fill({ color: i % 3 === 0 ? GOLD : (i % 3 === 1 ? CYAN : WHITE) });
+            g.alpha = 0;
+            effectContainer.addChild(g);
+            particles.push({
+                gfx: g,
+                angle: Math.random() * Math.PI * 2,
+                radius: 5 + Math.random() * cardW * 0.4,
+                speed: 1.5 + Math.random() * 2,
+                riseSpeed: 40 + Math.random() * 60,
+                startY: (Math.random() - 0.3) * cardH * 0.4,
+                delay: Math.random() * 0.3,
+                life: 0.4 + Math.random() * 0.4,
+            });
+        }
+
+        // --- LIGHT BEAM (vertical, centered) ---
+        const beam = new PIXI.Graphics();
+        beam.alpha = 0;
+        effectContainer.addChild(beam);
+
+        // --- CENTER GLOW ---
+        const glow = new PIXI.Graphics();
+        glow.alpha = 0;
+        effectContainer.addChild(glow);
+
+        const animate = () => {
+            const elapsed = performance.now() - effect.startTime;
+            const t = Math.min(elapsed / effect.duration, 1);
+
+            // ===== ARCANE CIRCLES (0 → 0.8) =====
+            if (t < 0.8) {
+                const ct = t / 0.8;
+                const circleAlpha = ct < 0.12 ? ct / 0.12 : (ct > 0.7 ? (1 - ct) / 0.3 : 1);
+
+                outerCircle.alpha = circleAlpha * 0.7;
+                outerCircle.rotation = t * Math.PI * 1.5;
+                outerCircle.scale.set(0.85 + ct * 0.15);
+
+                innerCircle.alpha = circleAlpha * 0.6;
+                innerCircle.rotation = -t * Math.PI * 2.2;
+                innerCircle.scale.set(0.9 + ct * 0.1);
+            } else {
+                outerCircle.alpha = 0;
+                innerCircle.alpha = 0;
+            }
+
+            // ===== RUNES (0.05 → 0.75) =====
+            for (let i = 0; i < runes.length; i++) {
+                const r = runes[i];
+                const runeStart = 0.05 + i * 0.03;
+                const rt = (t - runeStart) / 0.65;
+                if (rt < 0 || rt > 1) { r.gfx.alpha = 0; continue; }
+                r.gfx.alpha = rt < 0.15 ? rt / 0.15 : (rt > 0.7 ? (1 - rt) / 0.3 : 0.75);
+                const angle = r.baseAngle + t * Math.PI * 1.8;
+                const currentRadius = r.radius * (1 - rt * 0.3);
+                r.gfx.x = Math.cos(angle) * currentRadius;
+                r.gfx.y = Math.sin(angle) * currentRadius - rt * r.riseSpeed;
+                r.gfx.scale.set(0.8 + Math.sin(rt * Math.PI) * 0.4);
+            }
+
+            // ===== SPIRAL PARTICLES (0.1 → 0.9) =====
+            for (const p of particles) {
+                const pt = (t - p.delay) / p.life;
+                if (pt < 0 || pt > 1) { p.gfx.alpha = 0; continue; }
+                p.gfx.alpha = pt < 0.15 ? pt / 0.15 : (pt > 0.7 ? (1 - pt) / 0.3 : 0.7);
+                const angle = p.angle + pt * Math.PI * 3 * p.speed;
+                const shrinkRadius = p.radius * (1 - pt * 0.5);
+                p.gfx.x = Math.cos(angle) * shrinkRadius;
+                p.gfx.y = p.startY - pt * p.riseSpeed;
+                p.gfx.scale.set(1 - pt * 0.5);
+            }
+
+            // ===== LIGHT BEAM (0.3 → 0.85) =====
+            if (t > 0.3 && t < 0.85) {
+                const bt = (t - 0.3) / 0.55;
+                beam.clear();
+                const beamW = cardW * 0.06;
+                const beamH = cardH * 0.9;
+                // Outer glow
+                beam.rect(-beamW * 2, -beamH * 0.6, beamW * 4, beamH);
+                beam.fill({ color: BLUE, alpha: 0.06 });
+                // Mid glow
+                beam.rect(-beamW, -beamH * 0.6, beamW * 2, beamH);
+                beam.fill({ color: CYAN, alpha: 0.1 });
+                // Core
+                beam.rect(-beamW * 0.3, -beamH * 0.6, beamW * 0.6, beamH);
+                beam.fill({ color: WHITE, alpha: 0.2 });
+                beam.alpha = bt < 0.15 ? bt / 0.15 : (bt > 0.75 ? (1 - bt) / 0.25 : 1);
+            } else {
+                beam.alpha = 0;
+            }
+
+            // ===== CENTER GLOW (0.2 → 0.7) =====
+            if (t > 0.2 && t < 0.7) {
+                const gt = (t - 0.2) / 0.5;
+                glow.clear();
+                const pulse = 1 + Math.sin(gt * Math.PI * 6) * 0.15;
+                const r = cardW * 0.18 * pulse;
+                glow.circle(0, 0, r * 1.8);
+                glow.fill({ color: GOLD, alpha: 0.06 });
+                glow.circle(0, 0, r);
+                glow.fill({ color: GOLD, alpha: 0.12 });
+                glow.circle(0, 0, r * 0.4);
+                glow.fill({ color: WHITE, alpha: 0.15 });
+                glow.alpha = gt < 0.15 ? gt / 0.15 : (gt > 0.8 ? (1 - gt) / 0.2 : 1);
+            } else {
+                glow.alpha = 0;
+            }
+
+            if (t >= 1) {
+                effect.finished = true;
+                effectContainer.destroy({ children: true });
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        return effect;
+    }
+
+    // ==================== DESTROY (ANNIHILATION SOMBRE) ====================
+
+    createDestroyEffect(x, y, cardW = 90, cardH = 120) {
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 1500,
+        };
+
+        const PURPLE = 0x9B30FF;
+        const DARK_PURPLE = 0x4B0082;
+        const CRIMSON = 0xCC1144;
+        const WHITE = 0xFFFFFF;
+
+        // --- VORTEX PARTICLES spiraling inward ---
+        const vortexParticles = [];
+        for (let i = 0; i < 28; i++) {
+            const angle = (i / 28) * Math.PI * 2 + Math.random() * 0.3;
+            const g = new PIXI.Graphics();
+            const r = 1.5 + Math.random() * 2.5;
+            g.circle(0, 0, r);
+            g.fill({ color: i % 3 === 0 ? CRIMSON : PURPLE });
+            g.alpha = 0;
+            effectContainer.addChild(g);
+            vortexParticles.push({
+                gfx: g, startAngle: angle,
+                startDist: cardW * 0.6 + Math.random() * cardW * 0.4,
+                rotSpeed: 2.5 + Math.random() * 2,
+                delay: Math.random() * 0.15,
+            });
+        }
+
+        // --- CLOSING RING ---
+        const ring = new PIXI.Graphics();
+        ring.alpha = 0;
+        effectContainer.addChild(ring);
+
+        // --- DARK OVERLAY (builds up on card) ---
+        const darkOverlay = new PIXI.Graphics();
+        darkOverlay.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 6);
+        darkOverlay.fill({ color: 0x0a000a });
+        darkOverlay.alpha = 0;
+        effectContainer.addChild(darkOverlay);
+
+        // --- CRACK LINES from center ---
+        const NUM_CRACKS = 7;
+        const crackData = [];
+        for (let i = 0; i < NUM_CRACKS; i++) {
+            const angle = (i / NUM_CRACKS) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+            const len = cardW * 0.35 + Math.random() * cardW * 0.25;
+            const g = new PIXI.Graphics();
+            effectContainer.addChild(g);
+            const branches = [];
+            const nb = 1 + Math.floor(Math.random() * 2);
+            for (let b = 0; b < nb; b++) {
+                branches.push({
+                    start: 0.25 + Math.random() * 0.5,
+                    angle: angle + (Math.random() - 0.5) * 1.4,
+                    length: 8 + Math.random() * 18,
+                });
+            }
+            crackData.push({ gfx: g, angle, length: len, branches });
+        }
+
+        // --- FLASH ---
+        const flash = new PIXI.Graphics();
+        flash.roundRect(-cardW / 2 - 5, -cardH / 2 - 5, cardW + 10, cardH + 10, 8);
+        flash.fill({ color: WHITE });
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        // --- SHATTER SHARDS ---
+        const shards = [];
+        for (let i = 0; i < 20; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const g = new PIXI.Graphics();
+            const s = 3 + Math.random() * 7;
+            // Triangle shard
+            g.moveTo(0, -s);
+            g.lineTo(s * 0.7, s * 0.5);
+            g.lineTo(-s * 0.5, s * 0.3);
+            g.closePath();
+            g.fill({ color: i % 3 === 0 ? 0x333344 : DARK_PURPLE });
+            g.alpha = 0;
+            g.rotation = Math.random() * Math.PI * 2;
+            effectContainer.addChild(g);
+            shards.push({
+                gfx: g, angle,
+                speed: 100 + Math.random() * 160,
+                rotSpeed: (Math.random() - 0.5) * 12,
+                ox: (Math.random() - 0.5) * cardW * 0.3,
+                oy: (Math.random() - 0.5) * cardH * 0.3,
+            });
+        }
+
+        // --- INNER GLOW PULSE (purple halo) ---
+        const innerGlow = new PIXI.Graphics();
+        innerGlow.alpha = 0;
+        effectContainer.addChild(innerGlow);
+
+        const animate = () => {
+            const elapsed = performance.now() - effect.startTime;
+            const t = Math.min(elapsed / effect.duration, 1);
+
+            // ===== VORTEX (0 → 0.45): particles spiral inward =====
+            for (const p of vortexParticles) {
+                const pt = Math.max(0, (t - p.delay) / 0.42);
+                if (pt <= 0 || pt > 1) { p.gfx.alpha = 0; continue; }
+                const ease = pt * pt * pt; // cubic ease-in — accelerate inward
+                const dist = p.startDist * (1 - ease);
+                const angle = p.startAngle + pt * Math.PI * 4 * p.rotSpeed;
+                p.gfx.x = Math.cos(angle) * dist;
+                p.gfx.y = Math.sin(angle) * dist;
+                p.gfx.alpha = pt < 0.1 ? pt / 0.1 : (pt > 0.85 ? (1 - pt) / 0.15 : 0.85);
+                p.gfx.scale.set(1.2 - ease * 0.8);
+            }
+
+            // ===== CLOSING RING (0.08 → 0.48) =====
+            if (t > 0.08 && t < 0.48) {
+                const rt = (t - 0.08) / 0.4;
+                const radius = (cardW * 0.55) * (1 - rt * rt * 0.85);
+                ring.clear();
+                ring.circle(0, 0, radius);
+                ring.stroke({ color: PURPLE, width: 2 + rt * 4, alpha: 0.5 });
+                ring.circle(0, 0, radius * 0.65);
+                ring.stroke({ color: CRIMSON, width: 1.5 + rt * 2, alpha: 0.35 });
+                ring.alpha = rt < 0.15 ? rt / 0.15 : (rt > 0.8 ? (1 - rt) / 0.2 : 1);
+            } else {
+                ring.alpha = 0;
+            }
+
+            // ===== DARK OVERLAY (0.15 → 0.55 builds, 0.55 → 0.75 fades) =====
+            if (t > 0.15 && t < 0.75) {
+                const dt = (t - 0.15) / 0.4;
+                darkOverlay.alpha = t < 0.55 ? Math.min(0.65, dt * 0.65) : 0.65 * (1 - (t - 0.55) / 0.2);
+            } else {
+                darkOverlay.alpha = 0;
+            }
+
+            // ===== INNER GLOW (0.25 → 0.55) =====
+            if (t > 0.25 && t < 0.55) {
+                const gt = (t - 0.25) / 0.3;
+                innerGlow.clear();
+                const gr = cardW * 0.2 + gt * cardW * 0.15;
+                innerGlow.circle(0, 0, gr);
+                innerGlow.fill({ color: PURPLE, alpha: 0.2 + gt * 0.15 });
+                innerGlow.circle(0, 0, gr * 0.5);
+                innerGlow.fill({ color: WHITE, alpha: 0.08 + gt * 0.08 });
+                innerGlow.alpha = gt < 0.15 ? gt / 0.15 : (gt > 0.8 ? (1 - gt) / 0.2 : 1);
+            } else {
+                innerGlow.alpha = 0;
+            }
+
+            // ===== CRACKS (0.28 → 0.65) =====
+            if (t > 0.28 && t < 0.65) {
+                const ct = Math.min(1, (t - 0.28) / 0.25);
+                const fadeAlpha = t > 0.55 ? (0.65 - t) / 0.1 : 1;
+                for (const c of crackData) {
+                    c.gfx.clear();
+                    const len = c.length * ct;
+                    const ex = Math.cos(c.angle) * len;
+                    const ey = Math.sin(c.angle) * len;
+
+                    // Outer glow
+                    c.gfx.moveTo(0, 0); c.gfx.lineTo(ex, ey);
+                    c.gfx.stroke({ color: WHITE, width: 5, alpha: 0.15 * fadeAlpha });
+                    // Core
+                    c.gfx.moveTo(0, 0); c.gfx.lineTo(ex, ey);
+                    c.gfx.stroke({ color: PURPLE, width: 2.5, alpha: 0.85 * fadeAlpha });
+                    // Bright center
+                    c.gfx.moveTo(0, 0); c.gfx.lineTo(ex * 0.5, ey * 0.5);
+                    c.gfx.stroke({ color: WHITE, width: 1.5, alpha: 0.5 * fadeAlpha });
+
+                    // Branches
+                    if (ct > 0.35) {
+                        const bp = (ct - 0.35) / 0.65;
+                        for (const br of c.branches) {
+                            const bx = Math.cos(c.angle) * c.length * br.start;
+                            const by = Math.sin(c.angle) * c.length * br.start;
+                            const bex = bx + Math.cos(br.angle) * br.length * bp;
+                            const bey = by + Math.sin(br.angle) * br.length * bp;
+                            c.gfx.moveTo(bx, by); c.gfx.lineTo(bex, bey);
+                            c.gfx.stroke({ color: PURPLE, width: 1.5, alpha: 0.6 * fadeAlpha });
+                        }
+                    }
+                }
+            } else {
+                for (const c of crackData) c.gfx.alpha = 0;
+            }
+
+            // ===== FLASH (0.42 → 0.58) =====
+            if (t > 0.42 && t < 0.58) {
+                const ft = (t - 0.42) / 0.16;
+                flash.alpha = ft < 0.25 ? (ft / 0.25) * 0.85 : 0.85 * (1 - (ft - 0.25) / 0.75);
+            } else {
+                flash.alpha = 0;
+            }
+
+            // ===== SHARDS (0.5 → 1.0): fragments burst outward =====
+            if (t > 0.5) {
+                const sht = (t - 0.5) / 0.5;
+                for (const s of shards) {
+                    s.gfx.alpha = sht < 0.08 ? sht / 0.08 : Math.max(0, 1 - (sht - 0.15) / 0.55);
+                    const dist = sht * sht * s.speed * 0.012;
+                    s.gfx.x = s.ox + Math.cos(s.angle) * dist * cardW;
+                    s.gfx.y = s.oy + Math.sin(s.angle) * dist * cardH;
+                    s.gfx.rotation += s.rotSpeed * 0.016;
+                }
+            }
+
+            if (t >= 1) {
+                effect.finished = true;
+                effectContainer.destroy({ children: true });
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        requestAnimationFrame(animate);
+        return effect;
+    }
 }
 
 // Instance globale (GameVFX est le nom principal, CombatVFX est un alias rétrocompat)
 const GameVFX = new GameVFXSystem();
+GameVFX.getActiveCount = function() {
+    return this.activeEffects.length + this.activeShields.size + this.activeCamouflages.size;
+};
 const CombatVFX = GameVFX;
 
 // ==================== SYSTÈME D'ANIMATION ZZZ (SOMMEIL) ====================

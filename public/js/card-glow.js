@@ -37,6 +37,10 @@ const CardGlow = (() => {
     const NUM_CTRL = 36; // Points de contrôle (léger pour Canvas 2D)
     const GLOW_MARGIN = 1;
 
+    // ── Cache DOM : recalculé uniquement quand dirty ──
+    let _dirty = true;
+    let _cachedTargets = []; // { el, layers, borderW, borderR }
+
     // ── Périmètre helpers ──
 
     function perimPoint(tRaw, cx, cy, hw, hh, cw, ch) {
@@ -110,15 +114,12 @@ const CardGlow = (() => {
         ctx.stroke();
     }
 
-    // ── Boucle d'animation ──
+    // ── Recalcul des cibles (appelé uniquement quand dirty) ──
 
-    function update(timestamp) {
-        const dt = lastTime ? (timestamp - lastTime) / 1000 : 1 / 60;
-        lastTime = timestamp;
-        elapsed += dt;
-
-        // Collecter toutes les cartes à illuminer (main + ghost drag)
-        const glowTargets = [];
+    function rebuildTargets() {
+        _dirty = false;
+        const newTargets = [];
+        const activeEls = new Set();
 
         // Cartes en main (playable, pas committed, pas cachée par custom-dragging)
         const playableCards = document.querySelectorAll('.my-hand .card.playable');
@@ -129,64 +130,122 @@ const CardGlow = (() => {
                 continue;
             }
             const isDragging = cardEl.classList.contains('arrow-dragging');
-            glowTargets.push({ el: cardEl, layers: isDragging ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE });
+            const style = getComputedStyle(cardEl);
+            const borderW = parseFloat(style.borderLeftWidth) || 0;
+            const borderR = parseFloat(style.borderRadius) || 0;
+            newTargets.push({ el: cardEl, layers: isDragging ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR });
+            activeEls.add(cardEl);
         }
 
         // Ghost de drag (élément flottant hors de la main)
         const ghostCard = document.querySelector('.drag-ghost-card');
         if (ghostCard) {
-            glowTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE });
-        }
-
-        // Cartes sur le terrain qui peuvent attaquer (glow vert)
-        const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
-        for (const cardEl of attackCards) {
-            glowTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN });
-        }
-
-        for (const { el: cardEl, layers } of glowTargets) {
-            // Lire dynamiquement la bordure CSS (varie selon état hover, has-image, etc.)
-            const style = getComputedStyle(cardEl);
+            const style = getComputedStyle(ghostCard);
             const borderW = parseFloat(style.borderLeftWidth) || 0;
             const borderR = parseFloat(style.borderRadius) || 0;
+            newTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR });
+            activeEls.add(ghostCard);
+        }
+
+        // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
+        const spellDragging = typeof dragged !== 'undefined' && dragged && dragged.type === 'spell';
+        if (!spellDragging) {
+            const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
+            for (const cardEl of attackCards) {
+                const style = getComputedStyle(cardEl);
+                const borderW = parseFloat(style.borderLeftWidth) || 0;
+                const borderR = parseFloat(style.borderRadius) || 0;
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR });
+                activeEls.add(cardEl);
+            }
+        }
+
+        // Nettoyer les canvas orphelins (cartes qui ne sont plus cibles)
+        const allGlows = document.querySelectorAll('.card-glow-canvas');
+        for (const c of allGlows) {
+            if (!c.parentElement || !activeEls.has(c.parentElement)) {
+                c.remove();
+            }
+        }
+
+        _cachedTargets = newTargets;
+    }
+
+    // ── Boucle d'animation (30fps cap) ──
+
+    const FRAME_INTERVAL = 1000 / 30; // 30fps — fluide visuellement, 2× moins de CPU
+    let _lastFrameTime = 0;
+
+    function update(timestamp) {
+        animId = requestAnimationFrame(update);
+
+        // Cap à 30fps : skip si le delta est trop court
+        if (timestamp - _lastFrameTime < FRAME_INTERVAL) return;
+        _lastFrameTime = timestamp;
+
+        const dt = lastTime ? (timestamp - lastTime) / 1000 : 1 / 60;
+        lastTime = timestamp;
+        elapsed += dt;
+
+        // Recalculer les cibles DOM uniquement si l'état a changé
+        if (_dirty) {
+            rebuildTargets();
+        }
+
+        for (const target of _cachedTargets) {
+            const { el: cardEl, layers, borderW, borderR } = target;
+            // Vérifier que l'élément est toujours dans le DOM
+            if (!cardEl.isConnected) continue;
 
             // Créer ou récupérer le canvas glow
-            let glowCanvas = cardEl.querySelector('.card-glow-canvas');
-            if (!glowCanvas) {
-                glowCanvas = document.createElement('canvas');
-                glowCanvas.className = 'card-glow-canvas';
-                glowCanvas.style.cssText = `
-                    position: absolute;
-                    z-index: -1;
-                    pointer-events: none;
-                `;
-                cardEl.appendChild(glowCanvas);
+            let glowCanvas = target._canvas;
+            if (!glowCanvas || !glowCanvas.isConnected) {
+                glowCanvas = cardEl.querySelector('.card-glow-canvas');
+                if (!glowCanvas) {
+                    glowCanvas = document.createElement('canvas');
+                    glowCanvas.className = 'card-glow-canvas';
+                    glowCanvas.style.cssText = `
+                        position: absolute;
+                        z-index: -1;
+                        pointer-events: none;
+                    `;
+                    cardEl.appendChild(glowCanvas);
+                }
+                target._canvas = glowCanvas;
+                target._ctx = glowCanvas.getContext('2d');
+                target._sized = false; // forcer le recalcul des dimensions
             }
 
-            // Mettre à jour le positionnement du canvas (compense le padding-edge offset)
-            // position:absolute left/top sont relatifs au padding-edge, pas au border-box
-            const totalOff = PADDING + borderW;
-            glowCanvas.style.left = `-${totalOff}px`;
-            glowCanvas.style.top = `-${totalOff}px`;
-            glowCanvas.style.width = `calc(100% + ${totalOff * 2}px)`;
-            glowCanvas.style.height = `calc(100% + ${totalOff * 2}px)`;
-
-            // Dimensions du canvas (haute résolution)
-            // offsetWidth/Height incluent la bordure CSS
-            const cw = cardEl.offsetWidth;
-            const ch = cardEl.offsetHeight;
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const canvasW = cw + PADDING * 2;
-            const canvasH = ch + PADDING * 2;
-            const pxW = Math.round(canvasW * dpr);
-            const pxH = Math.round(canvasH * dpr);
-
-            if (glowCanvas.width !== pxW || glowCanvas.height !== pxH) {
-                glowCanvas.width = pxW;
-                glowCanvas.height = pxH;
+            // Mettre à jour le positionnement (une seule fois quand dirty ou pas encore fait)
+            if (!target._positioned) {
+                const totalOff = PADDING + borderW;
+                glowCanvas.style.left = `-${totalOff}px`;
+                glowCanvas.style.top = `-${totalOff}px`;
+                glowCanvas.style.width = `calc(100% + ${totalOff * 2}px)`;
+                glowCanvas.style.height = `calc(100% + ${totalOff * 2}px)`;
+                target._positioned = true;
             }
 
-            const ctx = glowCanvas.getContext('2d');
+            // Dimensions du canvas — cachées, recalculées uniquement quand dirty
+            if (!target._sized) {
+                const cw = cardEl.offsetWidth;
+                const ch = cardEl.offsetHeight;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                target._cw = cw;
+                target._ch = ch;
+                target._dpr = dpr;
+                target._canvasW = cw + PADDING * 2;
+                target._canvasH = ch + PADDING * 2;
+                const pxW = Math.round(target._canvasW * dpr);
+                const pxH = Math.round(target._canvasH * dpr);
+                if (glowCanvas.width !== pxW || glowCanvas.height !== pxH) {
+                    glowCanvas.width = pxW;
+                    glowCanvas.height = pxH;
+                }
+                target._sized = true;
+            }
+
+            const { _ctx: ctx, _cw: cw, _ch: ch, _dpr: dpr, _canvasW: canvasW, _canvasH: canvasH } = target;
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, canvasW, canvasH);
 
@@ -212,26 +271,6 @@ const CardGlow = (() => {
             ctx.globalAlpha = 1;
             ctx.restore();
         }
-
-        // Nettoyer les canvas orphelins
-        const allGlows = document.querySelectorAll('.card-glow-canvas');
-        for (const c of allGlows) {
-            const parent = c.parentElement;
-            if (!parent) { c.remove(); continue; }
-            // Ghost cards : garder
-            if (parent.classList.contains('drag-ghost-card')) continue;
-            // Cartes en main : garder si playable et pas committed/cachée
-            if (parent.classList.contains('playable') &&
-                !parent.classList.contains('committed') &&
-                !parent.classList.contains('custom-dragging') &&
-                parent.closest('.my-hand')) continue;
-            // Cartes sur le terrain : garder si can-attack
-            if (parent.classList.contains('can-attack') &&
-                parent.closest('.card-slot')) continue;
-            c.remove();
-        }
-
-        animId = requestAnimationFrame(update);
     }
 
     // ── API publique ──
@@ -239,6 +278,7 @@ const CardGlow = (() => {
     function init() {
         if (animId) return;
         lastTime = 0;
+        _dirty = true;
         animId = requestAnimationFrame(update);
     }
 
@@ -248,9 +288,15 @@ const CardGlow = (() => {
             animId = null;
         }
         document.querySelectorAll('.card-glow-canvas').forEach(c => c.remove());
+        _cachedTargets = [];
+        _dirty = true;
         elapsed = 0;
         lastTime = 0;
     }
 
-    return { init, destroy };
+    function markDirty() {
+        _dirty = true;
+    }
+
+    return { init, destroy, markDirty };
 })();

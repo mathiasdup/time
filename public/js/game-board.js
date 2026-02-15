@@ -262,13 +262,27 @@ function getValidSlots(card) {
         }
         // Sorts ciblés normaux
         else {
-            // Sorts offensifs → uniquement les slots ennemis (exclure camouflés)
+            // Sorts offensifs → uniquement les slots ennemis (exclure camouflés/inciblables)
             if (card.offensive) {
+                // Spell Magnet : vérifier si l'adversaire a une créature qui attire les sorts
+                const magnetSlots = [];
                 for (let row = 0; row < 4; row++) {
                     for (let col = 0; col < 2; col++) {
                         const target = state.opponent.field[row][col];
-                        if (target && target.hasCamouflage) continue;
-                        valid.push({ owner: 'opp', row, col });
+                        if (target && target.spellMagnet && !target.hasCamouflage && !target.hasUntargetable) {
+                            magnetSlots.push({ owner: 'opp', row, col });
+                        }
+                    }
+                }
+                if (magnetSlots.length > 0) {
+                    valid.push(...magnetSlots);
+                } else {
+                    for (let row = 0; row < 4; row++) {
+                        for (let col = 0; col < 2; col++) {
+                            const target = state.opponent.field[row][col];
+                            if (target && (target.hasCamouflage || target.hasUntargetable)) continue;
+                            valid.push({ owner: 'opp', row, col });
+                        }
                     }
                 }
             } else {
@@ -314,7 +328,11 @@ function highlightValidSlots(card, forceShow = false) {
         } else {
             const owner = v.owner || 'me';
             const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${v.row}"][data-col="${v.col}"]`);
-            if (slot) slot.classList.add('valid-target');
+            if (slot) {
+                slot.classList.add('valid-target');
+                const cardEl = slot.querySelector('.card');
+                if (cardEl) cardEl.classList.add('spell-targetable');
+            }
         }
     });
 }
@@ -406,6 +424,8 @@ function highlightMoveTargets(fromRow, fromCol, card) {
 function clearHighlights() {
     document.querySelectorAll('.card-slot, .trap-slot').forEach(s => {
         s.classList.remove('valid-target', 'drag-over', 'moveable', 'cross-target');
+        const cardEl = s.querySelector('.card');
+        if (cardEl) cardEl.classList.remove('spell-targetable');
     });
     // Enlever le highlight des héros
     document.querySelectorAll('.hero-card').forEach(h => {
