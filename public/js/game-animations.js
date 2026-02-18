@@ -89,7 +89,6 @@ function saveRevealedCardPositions() {
 // Initialiser le système d'animation
 async function initCombatAnimations() {
     await CombatAnimations.init();
-    await CardRenderer.init();
 }
 
 function queueAnimation(type, data) {
@@ -106,7 +105,6 @@ function queueAnimation(type, data) {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
     }
-
     // Pour death/sacrifice, bloquer aussi le slot du terrain pour que render() ne retire pas
     // la carte avant que l'animation ne la prenne en charge
     if ((type === 'death' || type === 'sacrifice') && data.row !== undefined && data.col !== undefined) {
@@ -127,6 +125,16 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+
+        // Pré-enregistrer pendingBounce au moment du queue (même technique que graveyardReturn)
+        // pour que render() cache la carte en main AVANT que l'animation ne démarre.
+        // Sans ça, dans les parties longues avec beaucoup d'animations dans la queue,
+        // le state arrive et render() montre la carte en main avant que bounce ne démarre.
+        if (!data.toGraveyard && !pendingBounce) {
+            data._bounceTargetPromise = new Promise(resolve => {
+                pendingBounce = { owner, card: data.card, resolveTarget: resolve };
+            });
+        }
     }
 
     // Pour onDeathDamage créature (Torche vivante), bloquer le slot pour que render()
@@ -240,9 +248,18 @@ function queueAnimation(type, data) {
     // Soupape de sécurité : si la queue dépasse 100, vider les animations non-critiques
     if (animationQueue.length > 100) {
         const critical = new Set(['death', 'deathTransform', 'heroHit', 'zdejebel', 'trampleHeroHit']);
-        const before = animationQueue.length;
         for (let i = animationQueue.length - 1; i >= 0; i--) {
             if (!critical.has(animationQueue[i].type)) {
+                const purged = animationQueue[i];
+                // Nettoyer animatingSlots et graveRenderBlocked pour les animations purgées
+                if (purged.data?.row !== undefined && purged.data?.col !== undefined) {
+                    const pOwner = purged.data.player === myNum ? 'me' : 'opp';
+                    animatingSlots.delete(`${pOwner}-${purged.data.row}-${purged.data.col}`);
+                }
+                if (purged.type === 'burn' || purged.type === 'death' || purged.type === 'sacrifice' || purged.type === 'spell' || purged.type === 'trapTrigger') {
+                    const gOwner = (purged.type === 'spell' ? purged.data.caster : purged.data.player) === myNum ? 'me' : 'opp';
+                    graveRenderBlocked.delete(gOwner);
+                }
                 animationQueue.splice(i, 1);
             }
         }
@@ -511,9 +528,20 @@ async function executeAnimationAsync(type, data) {
         case 'poisonDamage':
             await handlePoisonDamage(data);
             break;
-        case 'poisonApply':
-            // Simple state update — le rendu du compteur se fait via render()
+        case 'poisonApply': {
+            const paOwner = data.player === myNum ? 'me' : 'opp';
+            const paSlot = getSlot(paOwner, data.row, data.col);
+            if (paSlot) {
+                const rect = paSlot.getBoundingClientRect();
+                CombatVFX.createPoisonCloudEffect(
+                    rect.left + rect.width / 2,
+                    rect.top + rect.height / 2,
+                    rect.width, rect.height
+                );
+            }
+            await new Promise(r => setTimeout(r, 600));
             break;
+        }
         case 'death':
             await animateDeathToGraveyard(data);
             break;
@@ -555,6 +583,33 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'regen':
             await handleRegenAnim(data);
+            break;
+        case 'buildingActivate':
+            await handleBuildingActivate(data);
+            break;
+        case 'combatRowStart':
+            // Retirer le glow violet de toutes les cartes précédentes
+            document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
+                c.dataset.inCombat = 'false';
+            });
+            // Marquer uniquement les cartes qui vont combattre
+            if (data.activeSlots) {
+                for (const s of data.activeSlots) {
+                    const owner = s.player === myNum ? 'me' : 'opp';
+                    const slot = getSlot(owner, data.row, s.col);
+                    const card = slot?.querySelector('.card');
+                    if (card) card.dataset.inCombat = 'true';
+                }
+            }
+            CardGlow.markDirty();
+            // Laisser le glow apparaître avant l'animation suivante
+            await new Promise(r => setTimeout(r, 50));
+            break;
+        case 'combatEnd':
+            document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
+                c.dataset.inCombat = 'false';
+            });
+            CardGlow.markDirty();
             break;
     }
 }
@@ -673,7 +728,7 @@ async function handlePixiDamage(data) {
 
 async function handlePoisonDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) return;
 
     const rect = slot.getBoundingClientRect();
@@ -694,10 +749,42 @@ async function handlePoisonDamage(data) {
 
 async function handlePixiHeroHit(data) {
     const owner = data.defender === myNum ? 'me' : 'opp';
-    await CombatAnimations.animateHeroHit({
-        owner: owner,
-        amount: data.damage
-    });
+
+    // Bloquer render() pour les HP pendant l'animation
+    zdejebelAnimationInProgress = true;
+
+    // Lire les HP depuis le DOM (ce que le joueur voit avant l'animation)
+    const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
+    const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
+    const domHp = hpElement ? parseInt(hpElement.textContent) : null;
+    const hpBefore = domHp ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
+    const hpAfter = hpBefore - data.damage;
+
+    // Garder les HP d'avant pendant l'animation de dégâts
+    if (hpElement) hpElement.textContent = hpBefore;
+
+    // Pour les sorts/effets : afficher le VFX (shake + explosion + chiffre)
+    // Pour les créatures : déjà fait par animateSoloAttack à l'impact
+    if (!data.skipVfx) {
+        const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
+        if (heroEl) {
+            heroEl.style.animation = 'heroShake 0.5s ease-out';
+            heroEl.classList.add('hero-hit');
+            setTimeout(() => { heroEl.style.animation = ''; heroEl.classList.remove('hero-hit'); }, 550);
+            const rect = heroEl.getBoundingClientRect();
+            CombatVFX.createHeroHitEffect(rect.left + rect.width / 2, rect.top + rect.height / 2, rect.width, rect.height);
+            CombatVFX.createDamageExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, data.damage);
+        }
+        await new Promise(r => setTimeout(r, 400));
+    } else {
+        await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Mettre à jour les HP APRÈS l'animation
+    if (hpElement) hpElement.textContent = hpAfter;
+
+    // Débloquer render()
+    zdejebelAnimationInProgress = false;
 }
 
 async function handleOnDeathDamage(data) {
@@ -836,7 +923,7 @@ function showDamageNumber(element, damage) {
 // Animation de dégâts de piétinement sur une créature
 async function animateTrampleDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     const card = slot?.querySelector('.card');
 
     if (!card) return;
@@ -846,7 +933,7 @@ async function animateTrampleDamage(data) {
     animatingSlots.add(slotKey);
 
     // Sauvegarder les HP d'avant dans l'affichage
-    const hpEl = card.querySelector('.arena-hp') || card.querySelector('.fa-hp') || card.querySelector('.img-hp');
+    const hpEl = card.querySelector('.arena-armor') || card.querySelector('.arena-hp') || card.querySelector('.fa-hp') || card.querySelector('.img-hp');
     if (hpEl && data.hpBefore !== undefined) {
         hpEl.textContent = data.hpBefore;
     }
@@ -954,7 +1041,7 @@ async function handlePixiSpellDamage(data) {
 // ==========================================
 function animateAtkBoost(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) return;
 
     const rect = slot.getBoundingClientRect();
@@ -965,7 +1052,7 @@ function animateAtkBoost(data) {
 
 function animateDeath(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     const card = slot?.querySelector('.card');
     if (card) card.classList.add('dying');
 }
@@ -1022,7 +1109,7 @@ async function animateDeathTransform(data) {
     const frontFace = makeCard(data.fromCard, false);
     const frontBg = frontFace.style.backgroundImage;
     frontFace.style.cssText = `
-        position: absolute; top: -2px; left: -2px; width: 105px; height: 140px; margin: 0;
+        position: absolute; top: -2px; left: -2px; width: 140px; height: 189px; margin: 0;
         backface-visibility: hidden;
         border-color: rgba(255,255,255,0.4) !important;
     `;
@@ -1032,7 +1119,7 @@ async function animateDeathTransform(data) {
     const backFace = makeCard(data.toCard, false);
     const backBg = backFace.style.backgroundImage;
     backFace.style.cssText = `
-        position: absolute; top: -2px; left: -2px; width: 105px; height: 140px; margin: 0;
+        position: absolute; top: -2px; left: -2px; width: 140px; height: 189px; margin: 0;
         backface-visibility: hidden;
         transform: rotateY(180deg);
     `;
@@ -1087,115 +1174,6 @@ async function animateDeathTransform(data) {
  * Animation de transformation en début de tour (Pile d'Os → Petit Os)
  * Flip 3D inverse : la face avant (fromCard/Pile d'Os) se retourne pour révéler la face arrière (toCard/Petit Os)
  */
-async function animateStartOfTurnTransform(data) {
-    const owner = data.player === myNum ? 'me' : 'opp';
-    const slotKey = `${owner}-${data.row}-${data.col}`;
-
-    animatingSlots.add(slotKey);
-    activeDeathTransformSlots.add(slotKey);
-
-    const slot = document.querySelector(
-        `.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`
-    );
-    if (!slot) {
-        activeDeathTransformSlots.delete(slotKey);
-        animatingSlots.delete(slotKey);
-        return;
-    }
-
-    if (!data.fromCard || !data.toCard || typeof makeCard !== 'function') {
-        activeDeathTransformSlots.delete(slotKey);
-        animatingSlots.delete(slotKey);
-        return;
-    }
-
-    // Retirer la carte actuelle du slot (garder le label)
-    const slotLabel = slot.querySelector('.slot-label');
-    const allChildren = [...slot.children];
-    for (const child of allChildren) {
-        if (!child.classList.contains('slot-label')) child.remove();
-    }
-
-    // Flip directement dans le slot — le tilt du board s'applique naturellement
-    const origPerspective = slot.style.perspective;
-    const origOverflow = slot.style.overflow;
-    slot.style.perspective = '600px';
-    slot.style.overflow = 'visible';
-
-    const flipContainer = document.createElement('div');
-    flipContainer.style.cssText = `
-        width: 100%; height: 100%;
-        transform-style: preserve-3d;
-        transform-origin: center center;
-        position: relative;
-    `;
-
-    // Face avant (Pile d'Os) — 105x140 + offset -2px pour couvrir la bordure du slot
-    const frontFace = makeCard(data.fromCard, false);
-    const frontBg = frontFace.style.backgroundImage;
-    frontFace.style.cssText = `
-        position: absolute; top: -2px; left: -2px; width: 105px; height: 140px; margin: 0;
-        backface-visibility: hidden;
-        border-color: rgba(255,255,255,0.4) !important;
-    `;
-    if (frontBg) frontFace.style.backgroundImage = frontBg;
-
-    // Face arrière (Petit Os) — pré-retournée, révélée par le flip inverse
-    const backFace = makeCard(data.toCard, false);
-    const backBg = backFace.style.backgroundImage;
-    backFace.style.cssText = `
-        position: absolute; top: -2px; left: -2px; width: 105px; height: 140px; margin: 0;
-        backface-visibility: hidden;
-        border-color: rgba(255,255,255,0.4) !important;
-        transform: rotateY(-180deg);
-    `;
-    if (backBg) backFace.style.backgroundImage = backBg;
-
-    flipContainer.appendChild(frontFace);
-    flipContainer.appendChild(backFace);
-    slot.appendChild(flipContainer);
-
-    // --- Animation flip inverse (600ms) — rotateY dans le slot ---
-    const TOTAL = 600;
-
-    await new Promise(resolve => {
-        const startTime = performance.now();
-        const safetyTimeout = setTimeout(() => { resolve(); }, TOTAL + 500);
-
-        function animate() {
-            const elapsed = performance.now() - startTime;
-            const t = Math.min(elapsed / TOTAL, 1);
-            const ep = easeInOutCubic(t);
-            flipContainer.style.transform = `rotateY(${ep * -180}deg)`;
-
-            if (t < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                clearTimeout(safetyTimeout);
-                resolve();
-            }
-        }
-
-        requestAnimationFrame(animate);
-    });
-
-    // Placer manuellement toCard dans le slot
-    flipContainer.remove();
-    slot.style.perspective = origPerspective;
-    slot.style.overflow = origOverflow;
-
-    // Garder le label, placer la nouvelle carte
-    slot.innerHTML = '';
-    if (slotLabel) slot.appendChild(slotLabel);
-    const placedCard = makeCard(data.toCard, false);
-    slot.appendChild(placedCard);
-    slot.classList.add('has-card');
-
-    // Débloquer le slot
-    activeDeathTransformSlots.delete(slotKey);
-    animatingSlots.delete(slotKey);
-}
-
 /**
  * Animation de défausse depuis la main (désintégration sur place)
  */
@@ -1278,8 +1256,8 @@ async function animateBurn(data) {
     const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
 
     const deckRect = deckEl.getBoundingClientRect();
-    const cardWidth = 105;
-    const cardHeight = 140;
+    const cardWidth = 140;
+    const cardHeight = 189;
 
     const startX = deckRect.left + deckRect.width / 2 - cardWidth / 2;
     const startY = deckRect.top;
@@ -1350,6 +1328,7 @@ async function animateBurn(data) {
         ? makeCard(card, false)
         : createCardElementForAnimation(card);
     frontFace.classList.remove('just-played', 'can-attack');
+    frontFace.classList.add('in-graveyard');
     const bgImage = frontFace.style.backgroundImage;
     frontFace.style.position = 'absolute';
     frontFace.style.top = '0';
@@ -1581,8 +1560,8 @@ async function animateDeathToGraveyard(data) {
     // 2. Positions de départ (slot sur le battlefield)
     // Dimensions CSS fixes — getBoundingClientRect retourne la projection 2D après le tilt du board
     const slotRect = slot.getBoundingClientRect();
-    const cardWidth = 105;
-    const cardHeight = 140;
+    const cardWidth = 140;
+    const cardHeight = 189;
     // Centrer la carte fixe sur le centre visuel du slot
     const startX = slotRect.left + slotRect.width / 2 - cardWidth / 2;
     const startY = slotRect.top + slotRect.height / 2 - cardHeight / 2;
@@ -2163,8 +2142,8 @@ function createCardElementForAnimation(card) {
 async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const isMine = casterPlayerNum === myNum;
     const side = isMine ? 'me' : 'opp';
-    const cardWidth = 105;
-    const cardHeight = 140;
+    const cardWidth = 140;
+    const cardHeight = 189;
 
     // graveRenderBlocked déjà incrémenté par queueAnimation — pas de double add
 
@@ -2438,10 +2417,13 @@ async function animateSpell(data) {
         const gameBoard = document.querySelector('.game-board');
         if (gameBoard) {
             const gbRect = gameBoard.getBoundingClientRect();
-            const cardW = 105, cardH = 140, sc = 1.8;
+            const cardW = 140, cardH = 189, sc = 1.8;
             const showcaseX = gbRect.left + gbRect.width * 0.80 - (cardW * sc) / 2;
             const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardH * sc) / 2;
-            await flyFromOppHand({ left: showcaseX, top: showcaseY, width: cardW * sc, height: cardH * sc }, 300, data.spell);
+            // Utiliser la position sauvegardée de la carte dans la main adverse (avant le rebuild)
+            const savedRect = (data.visualHandIndex >= 0 && savedOppHandRects)
+                ? savedOppHandRects[data.visualHandIndex] : null;
+            await flyFromOppHand({ left: showcaseX, top: showcaseY, width: cardW * sc, height: cardH * sc }, 300, data.spell, savedRect);
         }
     }
     // Pour nos propres sorts : récupérer la position du sort engagé dans la main
@@ -2452,51 +2434,61 @@ async function animateSpell(data) {
         const csIdx = committedSpells.findIndex(cs => cs.card.id === data.spell.id);
         if (csIdx >= 0) {
             const commitId = committedSpells[csIdx].commitId;
+            // Chercher l'élément DOM du sort engagé
+            let foundEl = null;
             for (const el of committedEls) {
                 if (parseInt(el.dataset.commitId) === commitId) {
-                    startRect = el.getBoundingClientRect();
-
-                    // FLIP : capturer les positions des cartes voisines AVANT de retirer le sort
-                    const siblings = handPanel.querySelectorAll('.card');
-                    const oldPositions = new Map();
-                    for (const sibling of siblings) {
-                        if (sibling === el) continue;
-                        oldPositions.set(sibling, sibling.getBoundingClientRect().left);
-                    }
-
-                    // Retirer immédiatement le sort engagé du DOM
-                    el.remove();
-
-                    // FLIP : animer les cartes restantes vers leurs nouvelles positions
-                    const toAnimate = [];
-                    for (const [card, oldLeft] of oldPositions) {
-                        if (!card.isConnected) continue;
-                        const dx = oldLeft - card.getBoundingClientRect().left;
-                        if (Math.abs(dx) > 1) {
-                            card.style.transition = 'none';
-                            card.style.transform = `translateX(${dx}px)`;
-                            toAnimate.push(card);
-                        }
-                    }
-                    if (toAnimate.length > 0) {
-                        handPanel.getBoundingClientRect(); // force reflow
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                                toAnimate.forEach(card => {
-                                    card.style.transition = 'transform 0.3s ease-out';
-                                    card.style.transform = '';
-                                });
-                                setTimeout(() => {
-                                    toAnimate.forEach(card => { card.style.transition = ''; });
-                                }, 350);
-                            });
-                        });
-                    }
-
+                    foundEl = el;
                     break;
                 }
             }
+
+            if (foundEl) {
+                // Élément trouvé dans le DOM — récupérer sa position et le retirer
+                startRect = foundEl.getBoundingClientRect();
+
+                // FLIP : capturer les positions des cartes voisines AVANT de retirer le sort
+                const siblings = handPanel.querySelectorAll('.card');
+                const oldPositions = new Map();
+                for (const sibling of siblings) {
+                    if (sibling === foundEl) continue;
+                    oldPositions.set(sibling, sibling.getBoundingClientRect().left);
+                }
+
+                foundEl.remove();
+
+                // FLIP : animer les cartes restantes vers leurs nouvelles positions
+                const toAnimate = [];
+                for (const [card, oldLeft] of oldPositions) {
+                    if (!card.isConnected) continue;
+                    const dx = oldLeft - card.getBoundingClientRect().left;
+                    if (Math.abs(dx) > 1) {
+                        card.style.transition = 'none';
+                        card.style.transform = `translateX(${dx}px)`;
+                        toAnimate.push(card);
+                    }
+                }
+                if (toAnimate.length > 0) {
+                    handPanel.getBoundingClientRect(); // force reflow
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            toAnimate.forEach(card => {
+                                card.style.transition = 'transform 0.3s ease-out';
+                                card.style.transform = '';
+                            });
+                            setTimeout(() => {
+                                toAnimate.forEach(card => { card.style.transition = ''; });
+                            }, 350);
+                        });
+                    });
+                }
+            } else if (cachedCommittedRects[commitId]) {
+                // Élément déjà retiré du DOM — utiliser la position cachée (par commitId, unique)
+                startRect = cachedCommittedRects[commitId];
+            }
+
             committedSpells.splice(csIdx, 1);
+            delete cachedCommittedRects[commitId];
         }
     }
     // Afficher la carte du sort avec animation de révélation
@@ -2507,7 +2499,7 @@ async function animateSpell(data) {
 
 function animateSpellMiss(data) {
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(targetOwner, data.row, data.col);
     if (slot) {
         const rect = slot.getBoundingClientRect();
         CombatVFX.createSpellMissEffect(
@@ -2546,7 +2538,7 @@ function animateSpellReturnToHand(data) {
 
 function animateHeal(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (slot) {
         // Aura verte DOM (hérite de la perspective 3D)
         slot.classList.add('heal-aura');
@@ -2567,12 +2559,12 @@ async function handleRegenAnim(data) {
     // Bloquer le slot pour que render() ne touche pas à la carte
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
     // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts (avant regen)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             hpEl.textContent = data._preHealHp;
             if (data._preHealHp < data._preHealMax) {
@@ -2601,7 +2593,7 @@ async function handleRegenAnim(data) {
 
     // ÉTAPE 5 : Mettre à jour les HP finaux dans le DOM
     if (cardEl) {
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -2618,6 +2610,30 @@ async function handleRegenAnim(data) {
     }
 }
 
+async function handleBuildingActivate(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = getSlot(owner, data.row, data.col);
+    if (!slot) return;
+
+    const rect = slot.getBoundingClientRect();
+    CombatVFX.createBuildingActivateEffect(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+        rect.width, rect.height
+    );
+    await new Promise(r => setTimeout(r, 900));
+
+    // Nuage poison pour selfPoison (Pustule vivante) — joué APRÈS le VFX doré
+    if (data.selfPoison) {
+        const poisonRect = slot.getBoundingClientRect();
+        CombatVFX.createPoisonCloudEffect(
+            poisonRect.left + poisonRect.width / 2,
+            poisonRect.top + poisonRect.height / 2,
+            poisonRect.width, poisonRect.height
+        );
+    }
+}
+
 async function handleLifestealAnim(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
@@ -2625,13 +2641,13 @@ async function handleLifestealAnim(data) {
     // Le slot est déjà bloqué depuis le queue (dans queueAnimation)
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
     // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts directement dans le DOM
     // (le state global peut déjà avoir les HP soignés, on utilise les HP capturés à la réception)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             hpEl.textContent = data._preHealHp;
             // Colorer en rouge si endommagé (classe "reduced" pour arena-style)
@@ -2695,7 +2711,7 @@ async function handleLifestealAnim(data) {
         lifestealHeroHealInProgress = false;
     } else if (cardEl) {
         // Lifedrain : mettre à jour les HP de la créature
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -2719,12 +2735,12 @@ async function handleHealOnDeathAnim(data) {
     // Bloquer le slot pour que render() ne touche pas à la carte
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
     // ÉTAPE 1 : Forcer l'affichage des HP post-dégâts (avant heal)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             hpEl.textContent = data._preHealHp;
             if (data._preHealHp < data._preHealMax) {
@@ -2754,7 +2770,7 @@ async function handleHealOnDeathAnim(data) {
 
     // ÉTAPE 5 : Mettre à jour les HP finaux dans le DOM
     if (cardEl) {
-        const hpEl = cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -2773,7 +2789,7 @@ async function handleHealOnDeathAnim(data) {
 
 function animateTrapPlace(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
+    const trapSlot = getTrapSlot(owner, data.row);
     if (!trapSlot) return;
 
     const trapRect = trapSlot.getBoundingClientRect();
@@ -2790,7 +2806,10 @@ function animateTrapPlace(data) {
 
     // Si c'est l'adversaire, faire voler la carte de la main d'abord
     if (owner === 'opp') {
-        flyFromOppHand(trapRect, 280).then(showTrapReveal);
+        // Utiliser savedOppHandRects pour la position correcte (state arrive avant l'animation)
+        const savedRect = (data.visualHandIndex >= 0 && savedOppHandRects)
+            ? savedOppHandRects[data.visualHandIndex] : null;
+        flyFromOppHand(trapRect, 280, null, savedRect).then(showTrapReveal);
     } else {
         showTrapReveal();
     }
@@ -2799,7 +2818,7 @@ function animateTrapPlace(data) {
 async function animateTrap(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const trapKey = `${owner}-${data.row}`;
-    const trapSlot = document.querySelector(`.trap-slot[data-owner="${owner}"][data-row="${data.row}"]`);
+    const trapSlot = getTrapSlot(owner, data.row);
 
     // Protéger le slot (déjà fait dans handleAnimation, mais au cas où)
     animatingTrapSlots.add(trapKey);
@@ -2867,7 +2886,7 @@ async function animateBounceToHand(data) {
     const slotKey = `${owner}-${data.row}-${data.col}`;
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) {
         animatingSlots.delete(slotKey);
         return;
@@ -2877,8 +2896,8 @@ async function animateBounceToHand(data) {
     const slotRect = slot.getBoundingClientRect();
 
     // Dimensions de la carte sur le board
-    const cardWidth = 105;
-    const cardHeight = 140;
+    const cardWidth = 140;
+    const cardHeight = 189;
     const startX = slotRect.left + slotRect.width / 2 - cardWidth / 2;
     const startY = slotRect.top + slotRect.height / 2 - cardHeight / 2;
 
@@ -3087,10 +3106,21 @@ async function animateBounceToHand(data) {
 
     // === Main pas pleine → voler vers la main (flow normal) ===
 
-    // Enregistrer le pending bounce — render() fournira la position exacte
-    const targetPromise = new Promise(resolve => {
-        pendingBounce = { owner, card: data.card, wrapper, resolveTarget: resolve };
-    });
+    // Utiliser le pendingBounce pré-enregistré au queue time, ou en créer un nouveau
+    let targetPromise;
+    if (data._bounceTargetPromise) {
+        targetPromise = data._bounceTargetPromise;
+        if (pendingBounce) pendingBounce.wrapper = wrapper;
+    } else {
+        targetPromise = new Promise(resolve => {
+            pendingBounce = { owner, card: data.card, wrapper, resolveTarget: resolve };
+        });
+    }
+
+    // Forcer un render() au cas où l'état est déjà arrivé pendant que la queue traitait
+    // une animation précédente (ex: trapTrigger avant bounce). Sans ça, pendingBounce
+    // ne serait jamais résolu car render() a déjà tourné avant qu'on le définisse.
+    render();
 
     // Animation de flottement pendant l'attente
     let floating = true;
@@ -3205,8 +3235,8 @@ async function animateGraveyardReturn(data) {
     const sourceRect = sourceEl.getBoundingClientRect();
 
     // Dimensions de la carte (même taille que bounce)
-    const cardWidth = 105;
-    const cardHeight = 140;
+    const cardWidth = 140;
+    const cardHeight = 189;
     const startX = sourceRect.left + sourceRect.width / 2 - cardWidth / 2;
     const startY = sourceRect.top + sourceRect.height / 2 - cardHeight / 2;
 
@@ -3483,12 +3513,16 @@ const flyingAnimationSpeed = 0.002; // Vitesse de l'oscillation
 const flyingAnimationAmplitude = 4; // Amplitude en pixels
 
 function startFlyingAnimation(cardEl) {
-    // Marquer la carte comme ayant une animation de vol active
+    // Guard : ne pas empiler de boucles RAF sur le même élément
+    if (cardEl.dataset.flyingAnimation === 'true') return;
     cardEl.dataset.flyingAnimation = 'true';
 
     function animate() {
         // Stop si la carte n'est plus dans le DOM
-        if (!cardEl.isConnected) return;
+        if (!cardEl.isConnected) {
+            delete cardEl.dataset.flyingAnimation;
+            return;
+        }
 
         // Stop si la carte est en train d'attaquer (l'animation de combat prend le dessus)
         if (cardEl.dataset.inCombat === 'true') {
@@ -3608,7 +3642,7 @@ function animateSummon(data) {
     // Délai pour synchroniser la fin avec l'animation adverse (fly+flip ≈ 1040ms, ripple ≈ 820ms)
     if (data.player === myNum) {
         setTimeout(() => {
-            const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${data.row}"][data-col="${data.col}"]`);
+            const slot = getSlot('me', data.row, data.col);
             if (!slot) return;
             const rect = slot.getBoundingClientRect();
             CombatVFX.createSummonEffect(
@@ -3629,7 +3663,7 @@ function animateSummon(data) {
     animatingSlots.add(slotKey);
 
     // Trouver le slot cible
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) { animatingSlots.delete(slotKey); return; }
 
     // Vider le slot (au cas où)
@@ -3649,6 +3683,15 @@ function animateSummon(data) {
         savedSourceRect = savedRevealedCardRects.get(data.card.uid) || null;
         // NE PAS supprimer du cache ici — la carte reste cachée dans le DOM
         // tant que l'animation n'est pas terminée (state updates peuvent re-render)
+    }
+
+    // Pour les créatures non révélées : utiliser visualHandIndex pour voler depuis la bonne position
+    if (!savedSourceRect && data.visualHandIndex >= 0) {
+        const handPanel = document.getElementById('opp-hand');
+        const handCards = handPanel ? handPanel.querySelectorAll('.opp-card-back') : [];
+        if (data.visualHandIndex < handCards.length) {
+            savedSourceRect = handCards[data.visualHandIndex].getBoundingClientRect();
+        }
     }
 
     // Phase 1 : carte vole de la main adverse vers le slot (300ms)
@@ -3860,7 +3903,7 @@ function animateTrapSummon(data) {
     const slotKey = `${owner}-${data.row}-${data.col}`;
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) { animatingSlots.delete(slotKey); return; }
 
     // Vider le slot
@@ -3985,7 +4028,7 @@ function animateReanimate(data) {
     // Bloquer le slot pour que render() n'y touche pas pendant l'animation
     animatingSlots.add(slotKey);
 
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) { animatingSlots.delete(slotKey); return; }
 
     // Vider le slot
@@ -4044,7 +4087,7 @@ function animateMove(data) {
     // Délai pour synchroniser la fin avec l'animation adverse (slide ≈ 500ms, vent ≈ 480ms)
     if (data.player === myNum) {
         setTimeout(() => {
-            const toSlot = document.querySelector(`.card-slot[data-owner="me"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
+            const toSlot = getSlot('me', data.toRow, data.toCol);
             if (!toSlot) return;
 
             const rect = toSlot.getBoundingClientRect();
@@ -4068,8 +4111,8 @@ function animateMove(data) {
     const fromKey = `${owner}-${data.fromRow}-${data.fromCol}`;
     const toKey = `${owner}-${data.toRow}-${data.toCol}`;
 
-    const fromSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.fromRow}"][data-col="${data.fromCol}"]`);
-    const toSlot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.toRow}"][data-col="${data.toCol}"]`);
+    const fromSlot = getSlot(owner, data.fromRow, data.fromCol);
+    const toSlot = getSlot(owner, data.toRow, data.toCol);
 
     if (!fromSlot || !toSlot) {
         return;
@@ -4121,10 +4164,12 @@ function animateMove(data) {
 
     // Nettoyer après l'animation (500ms transition + 100ms marge)
     setTimeout(() => {
-        movingCard.remove();
+        // Débloquer et render AVANT de supprimer l'overlay
+        // pour éviter un flash sans jeton buff
         animatingSlots.delete(fromKey);
         animatingSlots.delete(toKey);
         render();
+        movingCard.remove();
     }, 600);
 }
 

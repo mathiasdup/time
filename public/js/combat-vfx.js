@@ -866,81 +866,9 @@ class GameVFXSystem {
     }
 
     // ==================== INDICATEUR DE BUFF ====================
-
+    // Redirige vers l'animation unifiée createBuffEffect
     showBuffNumber(x, y, atk, hp) {
-        const effectContainer = new PIXI.Container();
-        effectContainer.position.set(x, y);
-        this.container.addChild(effectContainer);
-
-        const effect = {
-            container: effectContainer,
-            finished: false,
-            startTime: performance.now(),
-            duration: 1200,
-        };
-
-        const text = new PIXI.Text({
-            text: `+${atk}/+${hp}`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 44,
-                fontWeight: 'bold',
-                fill: 0xFFFFFF,
-                stroke: { color: 0x000000, width: 6 },
-                dropShadow: {
-                    color: 0x000000,
-                    blur: 4,
-                    angle: Math.PI / 4,
-                    distance: 3,
-                },
-            }
-        });
-        text.anchor.set(0.5);
-        effectContainer.addChild(text);
-
-        const glow = new PIXI.Graphics();
-        glow.circle(0, 0, 30);
-        glow.fill({ color: 0xFFDD44, alpha: 0.3 });
-        effectContainer.addChildAt(glow, 0);
-
-        const startY = y;
-
-        const animate = () => {
-            const elapsed = performance.now() - effect.startTime;
-            const progress = Math.min(elapsed / effect.duration, 1);
-
-            if (progress < 0.1) {
-                // Fade in: scale 0.3 → 1.1
-                const p = progress / 0.1;
-                text.scale.set(0.3 + p * 0.8);
-                text.alpha = p;
-                glow.alpha = p * 0.3;
-            } else if (progress < 0.5) {
-                // Pulse: 2 cycles complets (sin revient à 0 en fin de phase)
-                text.alpha = 1;
-                const pulse = 1 + Math.sin((progress - 0.1) * Math.PI * 10) * 0.05;
-                text.scale.set(1.1 * pulse);
-                glow.alpha = 0.3;
-            } else {
-                // Fade out: scale 1.1 → 0.9
-                const fadeProgress = (progress - 0.5) / 0.5;
-                effectContainer.y = startY - fadeProgress * 50;
-                text.alpha = 1 - fadeProgress;
-                glow.alpha = (1 - fadeProgress) * 0.3;
-                text.scale.set(1.1 - fadeProgress * 0.2);
-            }
-
-            if (progress >= 1) {
-                effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
-            }
-        };
-
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
-
-        return effect;
+        return this.createBuffEffect(x, y, atk, hp);
     }
 
     // ==================== TORRENT D'EAU (DRAGON D'ÉCLAT) ====================
@@ -3227,8 +3155,15 @@ class GameVFXSystem {
         const gameContainer = document.getElementById('game-container');
         if (!gameContainer) return;
 
+        // Annuler le shake précédent s'il existe
+        if (this._shakeRafId) {
+            cancelAnimationFrame(this._shakeRafId);
+            this._shakeRafId = null;
+        }
+
         const startTime = performance.now();
-        const originalTransform = gameContainer.style.transform;
+        const originalTransform = this._shakeOriginalTransform || gameContainer.style.transform;
+        if (!this._shakeOriginalTransform) this._shakeOriginalTransform = originalTransform;
 
         const shake = () => {
             const elapsed = performance.now() - startTime;
@@ -3239,13 +3174,15 @@ class GameVFXSystem {
                 const offsetX = (Math.random() - 0.5) * 2 * currentIntensity;
                 const offsetY = (Math.random() - 0.5) * 2 * currentIntensity;
                 gameContainer.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
-                requestAnimationFrame(shake);
+                this._shakeRafId = requestAnimationFrame(shake);
             } else {
-                gameContainer.style.transform = originalTransform || '';
+                gameContainer.style.transform = this._shakeOriginalTransform || '';
+                this._shakeRafId = null;
+                this._shakeOriginalTransform = null;
             }
         };
 
-        requestAnimationFrame(shake);
+        this._shakeRafId = requestAnimationFrame(shake);
     }
 
     // ==================== HERO HIT EFFECT (FLASH ROUGE + ÉTINCELLES) ====================
@@ -4651,11 +4588,15 @@ class GameVFXSystem {
         const container = new PIXI.Container();
         this.shieldLayer.addChild(container);
 
-        // Textures fumée (3 tailles)
-        const smokeTexS = this._makeSmokeTexture(32, 0.6);
-        const smokeTexM = this._makeSmokeTexture(64, 0.5);
-        const smokeTexL = this._makeSmokeTexture(96, 0.35);
-        const smokeTex = [smokeTexS, smokeTexM, smokeTexL];
+        // Textures fumée cachées (réutilisées entre toutes les instances)
+        if (!this._smokeTexCache) {
+            this._smokeTexCache = [
+                this._makeSmokeTexture(32, 0.6),
+                this._makeSmokeTexture(64, 0.5),
+                this._makeSmokeTexture(96, 0.35)
+            ];
+        }
+        const smokeTex = this._smokeTexCache;
 
         // Dark overlay en DOM (enfant de la carte — suit naturellement la perspective du board)
         const domOverlay = document.createElement('div');
@@ -5401,16 +5342,19 @@ class GameVFXSystem {
         return effect;
     }
 
-    // ==================== BUFF EFFECT (ARMES MAGIQUES) ====================
+    // ==================== BUFF / DEBUFF EFFECT (UNIFIED PRO) ====================
     /**
-     * Animation de buff : traînées bleu marine montant depuis le bas de la carte + nombre "+X/+X" qui s'envole.
-     * Miroir de l'animation d'entrave : flèches vers le HAUT, couleur bleu marine.
-     * @param {number} x - Centre X de la carte
-     * @param {number} y - Centre Y de la carte
-     * @param {number} atkBuff - Bonus ATK
-     * @param {number} hpBuff - Bonus HP
-     * @param {number} cardW - Largeur de la carte
-     * @param {number} cardH - Hauteur de la carte
+     * Animation professionnelle unifiée pour tous les buffs et debuffs.
+     * Buff : pilier de lumière émeraude ascendant + runes + particules convergentes + shockwave
+     * Debuff : vortex pourpre/rouge descendant + runes de malédiction + drain + implosion
+     *
+     * Phases :
+     *   0-8%   Flash initial (carte s'illumine)
+     *   5-55%  Pilier / vortex de particules
+     *   8-45%  Runes arcanes orbitant
+     *   20-70% Texte "+X/+X" scale-bounce
+     *   50-80% Shockwave ring
+     *   60-100% Fade-out global
      */
     createBuffEffect(x, y, atkBuff = 1, hpBuff = 1, cardW = 90, cardH = 120) {
         if (!this.initialized) return;
@@ -5418,7 +5362,7 @@ class GameVFXSystem {
         const effectContainer = new PIXI.Container();
         this.container.addChild(effectContainer);
 
-        const duration = 1400;
+        const duration = 1600;
         const effect = {
             container: effectContainer,
             finished: false,
@@ -5428,159 +5372,359 @@ class GameVFXSystem {
         this.activeEffects.push(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
+        const lerp = (a, b, t) => a + (b - a) * t;
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+        const easeOutQuart = t => 1 - Math.pow(1 - t, 4);
+        const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
         const isDebuff = atkBuff < 0 || hpBuff < 0;
-        const STREAK_COLOR = isDebuff ? 0x6b0d0d : 0x0d2f6b;
-        const cardLeft = x - cardW / 2;
-        const cardTop = y - cardH / 2;
-        const cardBottom = y + cardH / 2;
 
-        // ═══════ MASQUE ═══════
+        // Palette couleurs
+        const COLORS = isDebuff ? {
+            primary: 0xCC2222,
+            secondary: 0x881111,
+            glow: 0xFF3333,
+            accent: 0xFF6644,
+            text: 0xFF4444,
+            textShadow: 0xCC0000,
+            particle: [0xCC2222, 0xFF3333, 0xAA1111, 0xFF6644, 0x881111],
+            rune: 0xFF4444,
+            flash: 0xFF2222,
+            ring: 0xCC3333,
+        } : {
+            primary: 0x22CC66,
+            secondary: 0x11AA44,
+            glow: 0x33FF88,
+            accent: 0x88FFBB,
+            text: 0x33FF77,
+            textShadow: 0x00CC44,
+            particle: [0x22CC66, 0x33FF88, 0x11AA44, 0x88FFBB, 0x44DD77],
+            rune: 0x44FFAA,
+            flash: 0x33FF88,
+            ring: 0x22DD66,
+        };
+
+        const halfW = cardW / 2;
+        const halfH = cardH / 2;
+
+        // ═══════ LAYER 0 : FLASH INITIAL ═══════
+        const flash = new PIXI.Graphics();
+        flash.roundRect(x - halfW, y - halfH, cardW, cardH, 8);
+        flash.fill({ color: COLORS.flash, alpha: 1 });
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        // ═══════ LAYER 1 : PILIER DE LUMIÈRE (masqué à la carte) ═══════
         const mask = new PIXI.Graphics();
-        mask.roundRect(cardLeft, cardTop, cardW, cardH, 8);
+        mask.roundRect(x - halfW - 4, y - halfH - 4, cardW + 8, cardH + 8, 10);
         mask.fill({ color: 0xffffff });
         effectContainer.addChild(mask);
-        const streakContainer = new PIXI.Container();
-        streakContainer.mask = mask;
-        effectContainer.addChild(streakContainer);
 
-        // ═══════ STREAKS (vers le HAUT) ═══════
-        const streaks = [];
-        const margin = cardW * 0.05;
-        const leftEdge = cardLeft + margin;
-        const usableWidth = cardW - margin * 2;
+        const pillarContainer = new PIXI.Container();
+        pillarContainer.mask = mask;
+        effectContainer.addChild(pillarContainer);
 
-        // ~14 streaks répartis sur la largeur
-        const mainCount = 14;
-        for (let i = 0; i < mainCount; i++) {
-            const baseX = leftEdge + (i / (mainCount - 1)) * usableWidth;
-            streaks.push({
-                x: baseX + rand(-3, 3),
-                y: cardBottom + 20 + rand(-25, 25),
-                vy: -(50 + rand(0, 80)),
-                accel: -(100 + rand(0, 160)),
-                length: 25 + rand(0, 40),
-                thickness: 1.2 + rand(0, 1.8),
-                maxLife: 0.7 + rand(0, 0.5),
-                delay: rand(0, 0.15),
-                baseAlpha: 0.4 + rand(0, 0.25),
-                glowSize: 4 + rand(0, 5),
-                fadeInEnd: 0.06 + rand(0, 0.06),
-                fadeOutStart: 0.35 + rand(0, 0.15),
-                life: 0,
-                active: false,
-                gfx: new PIXI.Graphics(),
+        // Colonnes de lumière (barres verticales qui montent ou descendent)
+        const pillars = [];
+        const pillarCount = 18;
+        for (let i = 0; i < pillarCount; i++) {
+            const g = new PIXI.Graphics();
+            pillarContainer.addChild(g);
+            const px = x - halfW + (i / (pillarCount - 1)) * cardW;
+            pillars.push({
+                gfx: g,
+                x: px + rand(-2, 2),
+                baseY: isDebuff ? (y - halfH - 30) : (y + halfH + 30),
+                width: rand(1.5, 4),
+                length: rand(30, 70),
+                speed: rand(120, 250),
+                delay: rand(0, 0.12),
+                alpha: rand(0.15, 0.45),
+                color: COLORS.particle[Math.floor(rand(0, COLORS.particle.length))],
+                offset: 0,
             });
         }
-        // ~6 streaks supplémentaires décalés
-        for (let i = 0; i < 6; i++) {
-            streaks.push({
-                x: leftEdge + rand(0, usableWidth),
-                y: cardBottom + 30 + rand(-30, 0),
-                vy: -(40 + rand(0, 60)),
-                accel: -(80 + rand(0, 120)),
-                length: 18 + rand(0, 28),
-                thickness: 0.8 + rand(0, 1.2),
-                maxLife: 0.8 + rand(0, 0.4),
-                delay: 0.15 + rand(0, 0.25),
-                baseAlpha: 0.3 + rand(0, 0.2),
-                glowSize: 3 + rand(0, 4),
-                fadeInEnd: 0.08 + rand(0, 0.06),
-                fadeOutStart: 0.4 + rand(0, 0.15),
-                life: 0,
-                active: false,
-                gfx: new PIXI.Graphics(),
+
+        // ═══════ LAYER 2 : PARTICULES CONVERGENTES ═══════
+        const particles = [];
+        const particleCount = 24;
+        for (let i = 0; i < particleCount; i++) {
+            const g = new PIXI.Graphics();
+            const size = rand(1.5, 4);
+            const color = COLORS.particle[Math.floor(rand(0, COLORS.particle.length))];
+            g.circle(0, 0, size);
+            g.fill({ color });
+            g.alpha = 0;
+            effectContainer.addChild(g);
+
+            const angle = (i / particleCount) * Math.PI * 2 + rand(-0.3, 0.3);
+            const dist = rand(halfW * 1.2, halfW * 2.2);
+            particles.push({
+                gfx: g,
+                startX: x + Math.cos(angle) * dist,
+                startY: y + Math.sin(angle) * dist,
+                angle,
+                dist,
+                delay: rand(0.03, 0.2),
+                speed: rand(0.6, 1.0),
+                size,
+                orbitSpeed: rand(1.5, 3.0) * (i % 2 === 0 ? 1 : -1),
             });
         }
-        for (const s of streaks) {
-            streakContainer.addChild(s.gfx);
+
+        // ═══════ LAYER 3 : RUNES ARCANES ═══════
+        const runeChars = isDebuff
+            ? ['\u2620', '\u2666', '\u25C6', '\u2716', '\u2718', '\u2605']  // skull, diamond, filled diamond, X marks
+            : ['\u2726', '\u2728', '\u2736', '\u2734', '\u2742', '\u2748']; // stars, sparkles
+        const runes = [];
+        const runeCount = 6;
+        const runeRadius = Math.max(halfW, halfH) * 0.85;
+        for (let i = 0; i < runeCount; i++) {
+            const text = new PIXI.Text({
+                text: runeChars[i % runeChars.length],
+                style: {
+                    fontFamily: 'Georgia, serif',
+                    fontSize: 14,
+                    fill: COLORS.rune,
+                    stroke: { color: 0x000000, width: 2 },
+                }
+            });
+            text.anchor.set(0.5);
+            text.alpha = 0;
+            effectContainer.addChild(text);
+            runes.push({
+                gfx: text,
+                baseAngle: (i / runeCount) * Math.PI * 2,
+                radius: runeRadius,
+                rotSpeed: isDebuff ? -2.5 : 2.5,
+            });
         }
 
-        // ═══════ NOMBRE "+X/+X" OU "-X/-X" QUI S'ENVOLE ═══════
+        // ═══════ LAYER 4 : HALO GLOW (derrière le texte) ═══════
+        const halo = new PIXI.Graphics();
+        halo.circle(x, y - 10, 28);
+        halo.fill({ color: COLORS.glow, alpha: 0.25 });
+        halo.alpha = 0;
+        effectContainer.addChild(halo);
+
+        // ═══════ LAYER 5 : TEXTE "+X/+X" ═══════
         const atkStr = atkBuff >= 0 ? `+${atkBuff}` : `${atkBuff}`;
         const hpStr = hpBuff >= 0 ? `+${hpBuff}` : `${hpBuff}`;
         const buffStr = `${atkStr}/${hpStr}`;
-        const textColor = isDebuff ? 0xd94a4a : 0x4a90d9;
-        const shadowColor = isDebuff ? 0xdb1a1a : 0x1a56db;
         const flyText = new PIXI.Text({
             text: buffStr,
             style: {
-                fontFamily: 'Georgia, serif',
-                fontSize: 36,
+                fontFamily: 'Arial Black, Impact, sans-serif',
+                fontSize: 40,
                 fontWeight: 'bold',
-                fill: textColor,
-                stroke: { color: 0x000000, width: 4 },
-                dropShadow: { alpha: 0.6, color: shadowColor, blur: 12, distance: 0 },
+                fill: COLORS.text,
+                stroke: { color: 0x000000, width: 5 },
+                dropShadow: { alpha: 0.7, color: COLORS.textShadow, blur: 16, distance: 0 },
             }
         });
         flyText.anchor.set(0.5);
-        flyText.x = x;
-        flyText.y = y + cardH * 0.15;
+        flyText.position.set(x, y - 8);
         flyText.alpha = 0;
-        flyText.scale.set(0.3);
+        flyText.scale.set(0);
         effectContainer.addChild(flyText);
+
+        // ═══════ LAYER 6 : SHOCKWAVE RING ═══════
+        const ring = new PIXI.Graphics();
+        ring.alpha = 0;
+        effectContainer.addChild(ring);
+
+        // ═══════ LAYER 7 : SPARKLES D'IMPACT ═══════
+        const sparkles = [];
+        const sparkleCount = 12;
+        for (let i = 0; i < sparkleCount; i++) {
+            const g = new PIXI.Graphics();
+            const s = rand(1, 3);
+            g.star(0, 0, 4, s, s * 0.3);
+            g.fill({ color: COLORS.accent });
+            g.alpha = 0;
+            effectContainer.addChild(g);
+            const ang = (i / sparkleCount) * Math.PI * 2 + rand(-0.3, 0.3);
+            sparkles.push({
+                gfx: g,
+                angle: ang,
+                speed: rand(60, 140),
+                dist: 0,
+                maxDist: rand(halfW * 0.8, halfW * 1.8),
+                delay: rand(0.35, 0.55),
+                size: s,
+            });
+        }
 
         // ═══════ BOUCLE D'ANIMATION ═══════
         const animate = () => {
             if (effect.finished) return;
-            const now = performance.now();
-            const elapsed = now - effect.startTime;
-            const dt = 1 / 60;
+            const elapsed = performance.now() - effect.startTime;
             const t = Math.min(elapsed / duration, 1);
+            const dt = 1 / 60;
 
-            // ── Streaks (vers le haut) ──
-            for (const s of streaks) {
-                if (s.delay > 0) { s.delay -= dt; continue; }
-                if (!s.active) s.active = true;
-                s.life += dt;
-                const st = s.life / s.maxLife;
-                if (st >= 1) { s.gfx.visible = false; continue; }
-
-                s.vy += s.accel * dt;
-                s.y += s.vy * dt;
-
-                let alpha;
-                if (st < s.fadeInEnd) alpha = (st / s.fadeInEnd) ** 2;
-                else if (st > s.fadeOutStart) { const fo = (st - s.fadeOutStart) / (1 - s.fadeOutStart); alpha = 1 - fo * fo; }
-                else alpha = 1;
-                alpha *= s.baseAlpha;
-
-                const lenMul = st < 0.15 ? st / 0.15 : 1;
-                const curLen = s.length * lenMul;
-
-                s.gfx.clear();
-
-                // Glow externe
-                const glowW = s.thickness + s.glowSize;
-                s.gfx.rect(s.x - glowW / 2, s.y - curLen, glowW, curLen);
-                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.12 });
-
-                // Glow moyen
-                const midW = s.thickness + s.glowSize * 0.3;
-                s.gfx.rect(s.x - midW / 2, s.y - curLen, midW, curLen);
-                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.25 });
-
-                // Core fin en bas (pointe)
-                s.gfx.rect(s.x - s.thickness * 0.3, s.y - curLen * 0.5, s.thickness * 0.6, curLen * 0.5);
-                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha * 0.9 });
-
-                // Core épais en haut (tête)
-                s.gfx.rect(s.x - s.thickness * 0.5, s.y - curLen, s.thickness, curLen * 0.65);
-                s.gfx.fill({ color: STREAK_COLOR, alpha: alpha });
-            }
-
-            // ── Fly-off number (monte vers le haut) ──
-            const flyT = elapsed / 1000;
-            if (flyT < 0.15) {
-                flyText.alpha = 1;
-                flyText.scale.set(0.3 + (flyT / 0.15) * 0.9);
-            } else if (flyT < 0.25) {
-                flyText.scale.set(1.2 - ((flyT - 0.15) / 0.1) * 0.2);
+            // ── Phase 0 : Flash initial (0-12%) ──
+            if (t < 0.12) {
+                const p = t / 0.12;
+                if (p < 0.3) {
+                    flash.alpha = easeOutCubic(p / 0.3) * 0.55;
+                } else {
+                    flash.alpha = 0.55 * (1 - easeOutCubic((p - 0.3) / 0.7));
+                }
             } else {
-                flyText.scale.set(1.0);
+                flash.alpha = 0;
             }
-            flyText.y -= 35 * dt;
-            if (flyT > 0.7) flyText.alpha = Math.max(0, flyText.alpha - dt * 2.5);
+
+            // ── Phase 1 : Piliers de lumière (5-60%) ──
+            if (t > 0.05 && t < 0.65) {
+                const pillarT = (t - 0.05) / 0.6;
+                let fadeAlpha = 1;
+                if (pillarT > 0.7) fadeAlpha = 1 - easeOutCubic((pillarT - 0.7) / 0.3);
+
+                for (const p of pillars) {
+                    if (pillarT < p.delay) continue;
+                    const localT = (pillarT - p.delay) / (1 - p.delay);
+                    p.offset += p.speed * dt * (isDebuff ? 1 : -1);
+
+                    p.gfx.clear();
+                    const py = p.baseY + p.offset;
+                    const a = p.alpha * fadeAlpha * (localT < 0.15 ? localT / 0.15 : 1);
+                    // Glow
+                    p.gfx.rect(p.x - p.width * 1.5, py, p.width * 3, p.length);
+                    p.gfx.fill({ color: p.color, alpha: a * 0.15 });
+                    // Core
+                    p.gfx.rect(p.x - p.width * 0.5, py, p.width, p.length);
+                    p.gfx.fill({ color: p.color, alpha: a * 0.7 });
+                    // Bright center
+                    p.gfx.rect(p.x - p.width * 0.15, py + p.length * 0.2, p.width * 0.3, p.length * 0.6);
+                    p.gfx.fill({ color: 0xFFFFFF, alpha: a * 0.3 });
+                }
+            } else {
+                for (const p of pillars) p.gfx.visible = false;
+            }
+
+            // ── Phase 2 : Particules convergentes (5-55%) ──
+            if (t > 0.05 && t < 0.58) {
+                const partT = (t - 0.05) / 0.53;
+                for (const p of particles) {
+                    if (partT < p.delay) { p.gfx.alpha = 0; continue; }
+                    const localT = Math.min((partT - p.delay) / (0.85 * p.speed), 1);
+                    const eased = easeInOutCubic(localT);
+
+                    const curAngle = p.angle + p.orbitSpeed * partT;
+                    const curDist = p.dist * (1 - eased);
+                    p.gfx.x = lerp(p.startX, x + Math.cos(curAngle) * curDist * 0.2, eased);
+                    p.gfx.y = lerp(p.startY, y + Math.sin(curAngle) * curDist * 0.2, eased);
+
+                    let alpha = 1;
+                    if (localT < 0.15) alpha = localT / 0.15;
+                    else if (localT > 0.8) alpha = (1 - localT) / 0.2;
+                    p.gfx.alpha = alpha * 0.8;
+                    p.gfx.scale.set(1 + (1 - localT) * 0.5);
+                }
+            } else {
+                for (const p of particles) p.gfx.alpha = 0;
+            }
+
+            // ── Phase 3 : Runes (8-50%) ──
+            if (t > 0.08 && t < 0.55) {
+                const runeT = (t - 0.08) / 0.47;
+                let runeAlpha = 1;
+                if (runeT < 0.15) runeAlpha = runeT / 0.15;
+                else if (runeT > 0.7) runeAlpha = (1 - runeT) / 0.3;
+
+                for (const r of runes) {
+                    const angle = r.baseAngle + r.rotSpeed * runeT * Math.PI;
+                    const curR = r.radius * (1 - runeT * 0.3);
+                    r.gfx.x = x + Math.cos(angle) * curR;
+                    r.gfx.y = y + Math.sin(angle) * curR;
+                    r.gfx.alpha = runeAlpha * 0.75;
+                    r.gfx.rotation = angle + (isDebuff ? Math.PI : 0);
+                    r.gfx.scale.set(0.8 + Math.sin(runeT * Math.PI * 4) * 0.15);
+                }
+            } else {
+                for (const r of runes) r.gfx.alpha = 0;
+            }
+
+            // ── Phase 4 : Halo glow (15-75%) ──
+            if (t > 0.15 && t < 0.75) {
+                const haloT = (t - 0.15) / 0.6;
+                let haloAlpha = 0.35;
+                if (haloT < 0.2) haloAlpha = 0.35 * (haloT / 0.2);
+                else if (haloT > 0.6) haloAlpha = 0.35 * (1 - (haloT - 0.6) / 0.4);
+                halo.alpha = haloAlpha;
+                const pulse = 1 + Math.sin(haloT * Math.PI * 6) * 0.12;
+                halo.scale.set(pulse);
+            } else {
+                halo.alpha = 0;
+            }
+
+            // ── Phase 5 : Texte "+X/+X" (20-85%) ──
+            if (t > 0.18 && t < 0.88) {
+                const textT = (t - 0.18) / 0.7;
+
+                if (textT < 0.12) {
+                    // Scale bounce in : 0 → 1.3
+                    const p = textT / 0.12;
+                    flyText.scale.set(easeOutCubic(p) * 1.35);
+                    flyText.alpha = Math.min(1, p * 2);
+                } else if (textT < 0.2) {
+                    // Bounce back : 1.3 → 1.0
+                    const p = (textT - 0.12) / 0.08;
+                    flyText.scale.set(1.35 - easeOutCubic(p) * 0.35);
+                    flyText.alpha = 1;
+                } else if (textT < 0.65) {
+                    // Hold with subtle pulse
+                    flyText.scale.set(1 + Math.sin((textT - 0.2) * Math.PI * 6) * 0.04);
+                    flyText.alpha = 1;
+                } else {
+                    // Float up + fade out
+                    const fadeT = (textT - 0.65) / 0.35;
+                    flyText.y = (y - 8) - easeOutCubic(fadeT) * 45;
+                    flyText.alpha = 1 - easeOutQuart(fadeT);
+                    flyText.scale.set(1 - fadeT * 0.15);
+                }
+            } else {
+                flyText.alpha = 0;
+            }
+
+            // ── Phase 6 : Shockwave ring (40-70%) ──
+            if (t > 0.38 && t < 0.72) {
+                const ringT = (t - 0.38) / 0.34;
+                const ringRadius = easeOutCubic(ringT) * halfW * 1.6;
+                const ringAlpha = (1 - ringT) * 0.45;
+
+                ring.clear();
+                ring.circle(x, y, ringRadius);
+                ring.stroke({ color: COLORS.ring, width: 2.5 - ringT * 1.5, alpha: 1 });
+                ring.alpha = ringAlpha;
+
+                // Second ring (décalé)
+                if (ringT > 0.15) {
+                    const r2T = (ringT - 0.15) / 0.85;
+                    const r2Radius = easeOutCubic(r2T) * halfW * 1.3;
+                    ring.circle(x, y, r2Radius);
+                    ring.stroke({ color: COLORS.glow, width: 1.5 - r2T, alpha: (1 - r2T) * 0.3 });
+                }
+            } else {
+                ring.alpha = 0;
+            }
+
+            // ── Phase 7 : Sparkles d'impact (35-65%) ──
+            if (t > 0.33 && t < 0.68) {
+                const sparkT = (t - 0.33) / 0.35;
+                for (const s of sparkles) {
+                    if (sparkT < (s.delay - 0.33) / 0.35) { s.gfx.alpha = 0; continue; }
+                    const localT = Math.min((sparkT - Math.max(0, (s.delay - 0.33) / 0.35)) / 0.6, 1);
+                    s.dist = easeOutCubic(localT) * s.maxDist;
+                    s.gfx.x = x + Math.cos(s.angle) * s.dist;
+                    s.gfx.y = y + Math.sin(s.angle) * s.dist;
+                    s.gfx.alpha = localT < 0.2 ? localT / 0.2 : (1 - localT) * 0.8;
+                    s.gfx.rotation += 0.15;
+                    s.gfx.scale.set((1 - localT * 0.5) * 1.2);
+                }
+            } else {
+                for (const s of sparkles) s.gfx.alpha = 0;
+            }
 
             if (t >= 1) {
                 effect.finished = true;
@@ -5793,6 +5937,185 @@ class GameVFXSystem {
 
         requestAnimationFrame(animate);
         return effect;
+    }
+
+    // ==================== BUILDING ACTIVATE (ACTIVATION RITUELLE) ====================
+
+    createBuildingActivateEffect(x, y, w, h) {
+        if (!this.initialized) return;
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration: 900,
+        };
+
+        const maxR = Math.max(w, h) * 0.65;
+
+        const AMBER     = 0xD4A040;
+        const GOLD      = 0xFFD080;
+        const PALE_GOLD = 0xFFF0CC;
+        const WHITE     = 0xFFFFFF;
+
+        // --- Phase 1: Cercle runique segmenté (8 arcs) ---
+        const outerRing = new PIXI.Graphics();
+        outerRing.alpha = 0;
+        effectContainer.addChild(outerRing);
+
+        const outerSegments = 8;
+        const dashRatio = 0.6;
+        const anglePerSeg = (Math.PI * 2) / outerSegments;
+        const dashAngle = anglePerSeg * dashRatio;
+
+        function drawSegmentedCircle(gfx, radius, color, lineWidth) {
+            gfx.clear();
+            for (let i = 0; i < outerSegments; i++) {
+                const startAngle = i * anglePerSeg;
+                const steps = 16;
+                for (let s = 0; s < steps; s++) {
+                    const a1 = startAngle + (s / steps) * dashAngle;
+                    const a2 = startAngle + ((s + 1) / steps) * dashAngle;
+                    gfx.moveTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
+                    gfx.lineTo(Math.cos(a2) * radius, Math.sin(a2) * radius);
+                }
+            }
+            gfx.stroke({ color, width: lineWidth, alpha: 1 });
+        }
+
+        // --- Phase 2: Sigil hexagonal ---
+        const hexSigil = new PIXI.Graphics();
+        hexSigil.alpha = 0;
+        effectContainer.addChild(hexSigil);
+
+        function drawHexagon(gfx, radius, color, lineWidth) {
+            gfx.clear();
+            for (let i = 0; i < 6; i++) {
+                const a1 = (i / 6) * Math.PI * 2 - Math.PI / 2;
+                const a2 = ((i + 1) / 6) * Math.PI * 2 - Math.PI / 2;
+                gfx.moveTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
+                gfx.lineTo(Math.cos(a2) * radius, Math.sin(a2) * radius);
+                if (i % 2 === 0) {
+                    gfx.moveTo(0, 0);
+                    gfx.lineTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
+                }
+            }
+            gfx.stroke({ color, width: lineWidth, alpha: 1 });
+        }
+
+        // --- Phase 3: Particules convergentes ---
+        const particles = [];
+        for (let i = 0; i < 10; i++) {
+            const gfx = new PIXI.Graphics();
+            const size = 1.5 + Math.random() * 1.5;
+            gfx.circle(0, 0, size);
+            gfx.fill({ color: i % 3 === 0 ? WHITE : (i % 2 === 0 ? PALE_GOLD : GOLD), alpha: 0.9 });
+            gfx.alpha = 0;
+            const angle = (i / 10) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+            const dist = maxR * (0.8 + Math.random() * 0.4);
+            particles.push({
+                gfx, angle, dist,
+                startX: Math.cos(angle) * dist,
+                startY: Math.sin(angle) * dist,
+                spiralSpeed: 1.5 + Math.random() * 1.0,
+                delay: Math.random() * 0.1,
+            });
+            effectContainer.addChild(gfx);
+        }
+
+        // --- Phase 4: Flash central + anneau expansif ---
+        const flash = new PIXI.Graphics();
+        flash.alpha = 0;
+        effectContainer.addChild(flash);
+
+        const pulseRing = new PIXI.Graphics();
+        pulseRing.alpha = 0;
+        effectContainer.addChild(pulseRing);
+
+        // --- Boucle d'animation ---
+        const animate = () => {
+            if (effect.finished) return;
+            const progress = (performance.now() - effect.startTime) / effect.duration;
+            if (progress >= 1) { effect.finished = true; return; }
+
+            // Phase 1: Cercle runique (0 → 0.7)
+            if (progress < 0.7) {
+                const p1 = progress / 0.7;
+                const alpha = p1 < 0.15 ? p1 / 0.15 : (p1 > 0.75 ? (1 - p1) / 0.25 : 1);
+                const radius = maxR * (1 - p1 * 0.5);
+                const lineWidth = 2.0 * (1 - p1 * 0.3) + 0.5;
+                drawSegmentedCircle(outerRing, radius, AMBER, lineWidth);
+                outerRing.alpha = alpha * 0.8;
+                outerRing.rotation = progress * Math.PI * 1.2;
+            } else {
+                outerRing.alpha = Math.max(0, outerRing.alpha - 0.08);
+            }
+
+            // Phase 2: Sigil hexagonal (0.05 → 0.6)
+            if (progress > 0.05 && progress < 0.6) {
+                const p2 = (progress - 0.05) / 0.55;
+                const alpha = p2 < 0.15 ? p2 / 0.15 : (p2 > 0.7 ? (1 - p2) / 0.3 : 1);
+                const radius = maxR * 0.45 * (1 - p2 * 0.2);
+                const lineWidth = 1.5 * (1 - p2 * 0.3) + 0.3;
+                drawHexagon(hexSigil, radius, GOLD, lineWidth);
+                hexSigil.alpha = alpha * 0.6;
+                hexSigil.rotation = -progress * Math.PI * 1.8;
+            } else if (progress >= 0.6) {
+                hexSigil.alpha = Math.max(0, hexSigil.alpha - 0.06);
+            }
+
+            // Phase 3: Particules convergentes (0 → 0.7)
+            for (const p of particles) {
+                const pStart = p.delay;
+                if (progress < pStart || progress > 0.7) {
+                    p.gfx.alpha = progress > 0.7 ? Math.max(0, p.gfx.alpha - 0.08) : 0;
+                    continue;
+                }
+                const pp = (progress - pStart) / (0.7 - pStart);
+                const ease = 1 - Math.pow(1 - pp, 3);
+                const spiralAngle = p.angle + pp * Math.PI * p.spiralSpeed;
+                const currentDist = p.dist * (1 - ease);
+                p.gfx.position.set(
+                    Math.cos(spiralAngle) * currentDist,
+                    Math.sin(spiralAngle) * currentDist
+                );
+                p.gfx.alpha = pp < 0.1 ? pp / 0.1 : (pp > 0.85 ? (1 - pp) / 0.15 : 0.85);
+                p.gfx.scale.set(1 - pp * 0.4);
+            }
+
+            // Phase 4: Flash + anneau (0.5 → 1.0)
+            if (progress > 0.5) {
+                const p4 = (progress - 0.5) / 0.5;
+
+                const flashAlpha = p4 < 0.3 ? p4 / 0.3 : Math.max(0, (1 - p4) / 0.7);
+                const flashRadius = 5 + p4 * maxR * 0.35;
+                flash.clear();
+                flash.circle(0, 0, flashRadius);
+                flash.fill({ color: PALE_GOLD, alpha: flashAlpha * 0.4 });
+                flash.circle(0, 0, flashRadius * 0.5);
+                flash.fill({ color: WHITE, alpha: flashAlpha * 0.3 });
+                flash.alpha = 1;
+
+                if (p4 > 0.15) {
+                    const rp = (p4 - 0.15) / 0.85;
+                    const ringRadius = 8 + rp * (maxR * 0.8);
+                    const ringAlpha = (1 - rp) * 0.9;
+                    const ringWidth = 2.5 * (1 - rp) + 0.5;
+                    pulseRing.clear();
+                    pulseRing.circle(0, 0, ringRadius);
+                    pulseRing.stroke({ color: GOLD, width: ringWidth, alpha: ringAlpha });
+                    pulseRing.alpha = 1;
+                }
+            }
+
+            requestAnimationFrame(animate);
+        };
+
+        this.activeEffects.push(effect);
+        requestAnimationFrame(animate);
     }
 
     // ==================== DESTROY (ANNIHILATION SOMBRE) ====================
@@ -6018,6 +6341,168 @@ class GameVFXSystem {
             }
         };
 
+        requestAnimationFrame(animate);
+        return effect;
+    }
+
+    // ==================== POISON CLOUD (NUAGE TOXIQUE) ====================
+
+    createPoisonCloudEffect(x, y, cardW = 90, cardH = 120) {
+        if (!this.initialized) return;
+
+        const effectContainer = new PIXI.Container();
+        this.container.addChild(effectContainer);
+
+        const duration = 900;
+        const effect = {
+            container: effectContainer,
+            finished: false,
+            startTime: performance.now(),
+            duration,
+        };
+        this.activeEffects.push(effect);
+
+        const rand = (a, b) => Math.random() * (b - a) + a;
+
+        // Masque pour limiter l'effet à la zone de la carte
+        const cardLeft = x - cardW / 2;
+        const cardTop = y - cardH / 2;
+        const mask = new PIXI.Graphics();
+        mask.roundRect(cardLeft, cardTop, cardW, cardH, 8);
+        mask.fill({ color: 0xffffff });
+        effectContainer.addChild(mask);
+        const cloudContainer = new PIXI.Container();
+        cloudContainer.mask = mask;
+        effectContainer.addChild(cloudContainer);
+
+        // Palette : vert poison sombre → vert acide lumineux
+        const COLORS = [0x2a7a35, 0x35994a, 0x40b858, 0x55cc6a, 0x70dd80];
+        const HIGHLIGHT = 0xaaff88;
+
+        // Créer des wisps de brume (petits disques flous qui dérivent)
+        const wisps = [];
+        const WISP_COUNT = 14;
+        for (let i = 0; i < WISP_COUNT; i++) {
+            const g = new PIXI.Graphics();
+            const baseR = rand(12, 28);
+            const color = COLORS[Math.floor(rand(0, COLORS.length))];
+            // Disque flou multi-couche
+            g.circle(0, 0, baseR * 1.5);
+            g.fill({ color, alpha: 0.08 });
+            g.circle(0, 0, baseR);
+            g.fill({ color, alpha: 0.15 });
+            g.circle(0, 0, baseR * 0.5);
+            g.fill({ color: HIGHLIGHT, alpha: 0.1 });
+
+            const startX = x + rand(-cardW * 0.45, cardW * 0.45);
+            const startY = y + cardH * 0.5 + rand(5, 20); // Naît en bas
+            g.x = startX;
+            g.y = startY;
+            g.alpha = 0;
+            cloudContainer.addChild(g);
+
+            wisps.push({
+                gfx: g, baseR, startX, startY,
+                targetY: y + rand(-cardH * 0.35, cardH * 0.15), // Monte vers le haut
+                driftX: rand(-15, 15), // Dérive latérale
+                phaseOffset: rand(0, Math.PI * 2),
+                delayIn: rand(0, 0.2), // Apparition échelonnée
+                fadeOutStart: rand(0.5, 0.7),
+            });
+        }
+
+        // Petites particules scintillantes (gouttelettes toxiques)
+        const sparkles = [];
+        const SPARKLE_COUNT = 8;
+        for (let i = 0; i < SPARKLE_COUNT; i++) {
+            const g = new PIXI.Graphics();
+            const r = rand(1.5, 3);
+            g.circle(0, 0, r);
+            g.fill({ color: HIGHLIGHT, alpha: 0.9 });
+            g.x = x + rand(-cardW * 0.35, cardW * 0.35);
+            g.y = y + rand(cardH * 0.1, cardH * 0.45);
+            g.alpha = 0;
+            cloudContainer.addChild(g);
+
+            sparkles.push({
+                gfx: g,
+                startY: g.y,
+                riseSpeed: rand(20, 50),
+                delayIn: rand(0.15, 0.45),
+                lifetime: rand(0.2, 0.35),
+                wobbleAmp: rand(2, 6),
+                wobbleFreq: rand(3, 8),
+            });
+        }
+
+        // Voile vert translucide (overlay temporaire sur la carte)
+        const veil = new PIXI.Graphics();
+        veil.roundRect(cardLeft + 2, cardTop + 2, cardW - 4, cardH - 4, 6);
+        veil.fill({ color: 0x30a855, alpha: 0.25 });
+        veil.alpha = 0;
+        cloudContainer.addChild(veil);
+
+        const startTime = performance.now();
+        const animate = () => {
+            const now = performance.now();
+            const t = Math.min((now - startTime) / duration, 1);
+
+            // Voile : apparaît rapidement, disparaît lentement
+            if (t < 0.15) {
+                veil.alpha = (t / 0.15) * 0.35;
+            } else if (t > 0.5) {
+                veil.alpha = Math.max(0, 0.35 * (1 - (t - 0.5) / 0.5));
+            } else {
+                veil.alpha = 0.35;
+            }
+
+            // Wisps : montée + dérive + fondu
+            for (const w of wisps) {
+                if (t < w.delayIn) { w.gfx.alpha = 0; continue; }
+                const localT = (t - w.delayIn) / (1 - w.delayIn);
+
+                // Fade in/out
+                let alpha;
+                if (localT < 0.25) {
+                    alpha = (localT / 0.25) * 0.7;
+                } else if (localT > w.fadeOutStart) {
+                    alpha = 0.7 * Math.max(0, 1 - (localT - w.fadeOutStart) / (1 - w.fadeOutStart));
+                } else {
+                    alpha = 0.7;
+                }
+                w.gfx.alpha = alpha;
+
+                // Mouvement : montée + ondulation latérale
+                const rise = localT * localT; // ease-in pour montée progressive
+                w.gfx.y = w.startY + (w.targetY - w.startY) * rise;
+                w.gfx.x = w.startX + w.driftX * localT + Math.sin(localT * 5 + w.phaseOffset) * 4;
+
+                // Scale pulse subtile
+                const scale = 0.8 + 0.4 * localT + Math.sin(localT * 8 + w.phaseOffset) * 0.08;
+                w.gfx.scale.set(scale);
+            }
+
+            // Sparkles : apparition brève puis disparition
+            for (const s of sparkles) {
+                if (t < s.delayIn || t > s.delayIn + s.lifetime) {
+                    s.gfx.alpha = 0;
+                    continue;
+                }
+                const localT = (t - s.delayIn) / s.lifetime;
+                s.gfx.alpha = localT < 0.3 ? localT / 0.3 : Math.max(0, 1 - (localT - 0.3) / 0.7);
+                s.gfx.y = s.startY - s.riseSpeed * localT * (duration / 1000);
+                s.gfx.x += Math.sin(localT * s.wobbleFreq * Math.PI * 2) * s.wobbleAmp * 0.02;
+            }
+
+            if (t >= 1) {
+                effect.finished = true;
+                effectContainer.destroy({ children: true });
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        this.activeEffects.push(effect);
         requestAnimationFrame(animate);
         return effect;
     }

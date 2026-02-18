@@ -1,6 +1,20 @@
 // ==================== PLATEAU DE JEU ====================
 // Construction du battlefield, slots, ciblage, highlights
 
+// Cache DOM pour les slots (évite querySelectorAll répétitifs)
+const _slotCache = {};
+const _trapSlotCache = {};
+
+function getSlot(owner, row, col) {
+    const key = `${owner}-${row}-${col}`;
+    return _slotCache[key] || null;
+}
+
+function getTrapSlot(owner, row) {
+    const key = `${owner}-${row}`;
+    return _trapSlotCache[key] || null;
+}
+
 function buildBattlefield() {
     const bf = document.getElementById('battlefield');
     bf.innerHTML = '<div class="global-spell-zone" id="global-spell-zone"></div>';
@@ -56,7 +70,7 @@ function buildBattlefield() {
             if (dragged.tooExpensive) {
                 dragged.triedToDrop = true;
             } else {
-                commitSpell(dragged, 'global', 0, -1, -1);
+                commitSpell(dragged, 'global', 0, -1, -1, dragged.idx);
                 handCardRemovedIndex = dragged.idx;
                 socket.emit('castGlobalSpell', { handIndex: dragged.idx });
             }
@@ -77,6 +91,9 @@ function makeSlot(owner, row, col) {
     el.innerHTML = `<span class="slot-label">${label}</span>`;
     // Synchroniser l'animation de bordure rotative
     el.style.setProperty('--anim-offset', `${(performance.now() / 1000) % 6}s`);
+
+    // Enregistrer dans le cache DOM
+    _slotCache[`${owner}-${row}-${col}`] = el;
 
     el.onclick = () => clickSlot(owner, row, col);
 
@@ -146,6 +163,9 @@ function makeTrapSlot(owner, row) {
     el.dataset.owner = owner;
     el.dataset.row = row;
 
+    // Enregistrer dans le cache DOM
+    _trapSlotCache[`${owner}-${row}`] = el;
+
     el.onclick = () => clickTrap(owner, row);
     el.ondragover = (e) => {
         e.preventDefault();
@@ -179,7 +199,7 @@ function getValidSlots(card) {
             const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
             if (graveyardCreatures < card.requiresGraveyardCreatures) return valid;
         }
-        if (card.sacrifice) {
+        if (false && card.sacrifice) { // V2 : sacrifice désactivé
             for (let row = 0; row < 4; row++) {
                 for (let col = 0; col < 2; col++) {
                     if (!state.me.field[row][col] && canPlaceAt(card, col)
@@ -211,10 +231,14 @@ function getValidSlots(card) {
         }
         // Sorts qui ciblent un héros
         else if (card.pattern === 'hero') {
-            // targetEnemy = seulement héros adverse (ex: Frappe directe)
-            // targetSelf = seulement notre héros (ex: Cristal de mana)
-            // sinon = les deux héros (ex: Inspiration)
-            if (card.targetEnemy) {
+            // targetEnemy + targetSelf = les deux héros (ex: Ensevelissement)
+            // targetEnemy seul = seulement héros adverse (ex: Frappe directe)
+            // targetSelf seul = seulement notre héros (ex: Cristal de mana)
+            // aucun = les deux héros (ex: Inspiration)
+            if (card.targetEnemy && card.targetSelf) {
+                valid.push({ hero: true, owner: 'me' });
+                valid.push({ hero: true, owner: 'opp' });
+            } else if (card.targetEnemy) {
                 valid.push({ hero: true, owner: 'opp' });
             } else if (card.targetSelf) {
                 valid.push({ hero: true, owner: 'me' });
@@ -323,11 +347,11 @@ function highlightValidSlots(card, forceShow = false) {
             const hero = document.getElementById(heroId);
             if (hero) hero.classList.add('hero-targetable');
         } else if (v.trap) {
-            const slot = document.querySelector(`.trap-slot[data-owner="me"][data-row="${v.row}"]`);
+            const slot = getTrapSlot('me', v.row);
             if (slot) slot.classList.add('valid-target');
         } else {
             const owner = v.owner || 'me';
-            const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${v.row}"][data-col="${v.col}"]`);
+            const slot = getSlot(owner, v.row, v.col);
             if (slot) {
                 slot.classList.add('valid-target');
                 const cardEl = slot.querySelector('.card');
@@ -350,7 +374,7 @@ function previewCrossTargets(targetOwner, row, col) {
     const adjacents = getCrossTargetsClient(targetPlayer, row, col);
 
     // Centre en orange aussi (cross-target prime sur drag-over/valid-target)
-    const centerSlot = document.querySelector(`.card-slot[data-owner="${targetOwner}"][data-row="${row}"][data-col="${col}"]`);
+    const centerSlot = getSlot(targetOwner, row, col);
     if (centerSlot) {
         centerSlot.classList.add('cross-target');
         const centerCard = centerSlot.querySelector('.card');
@@ -360,7 +384,7 @@ function previewCrossTargets(targetOwner, row, col) {
     // Adjacents en orange + bordure orange sur les créatures présentes
     adjacents.forEach(t => {
         const owner = t.player === myNum ? 'me' : 'opp';
-        const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${t.row}"][data-col="${t.col}"]`);
+        const slot = getSlot(owner, t.row, t.col);
         if (slot) {
             slot.classList.add('cross-target');
             const card = slot.querySelector('.card');
@@ -383,15 +407,18 @@ function isSacrificeTargetClient(card) {
     if (!card || card.type !== 'creature') return false;
     if (card.petrified) return false;
     if (card.movedThisTurn) return false;
+    if (card.abilities?.includes('unsacrificable')) return false;
     return !!card.canAttack;
 }
 
 function countAdjacentSacrificeTargets(owner, row, col) {
     const field = (owner === 'me') ? state.me.field : state.opponent.field;
+    const excludeSlots = (owner === 'me') ? (state.me.pendingSacrificeSlots || []) : [];
     const neighbors = [[row-1,col],[row,col+1],[row+1,col],[row,col-1]];
     let count = 0;
     for (const [r,c] of neighbors) {
         if (r < 0 || r >= 4 || c < 0 || c >= 2) continue;
+        if (excludeSlots.some(s => s.row === r && s.col === c)) continue;
         if (isSacrificeTargetClient(field[r][c])) count++;
     }
     return count;
@@ -399,6 +426,7 @@ function countAdjacentSacrificeTargets(owner, row, col) {
 
 function highlightMoveTargets(fromRow, fromCol, card) {
     clearHighlights();
+    if (card.isBuilding) return;
     if (card.abilities?.includes('immovable')) return;
     if (card.melodyLocked || card.petrified) return;
     const isFlying = card.abilities?.includes('fly');
@@ -407,7 +435,7 @@ function highlightMoveTargets(fromRow, fromCol, card) {
     [fromRow - 1, fromRow + 1].forEach(toRow => {
         if (toRow < 0 || toRow > 3) return;
         if (state.me.field[toRow][fromCol]) return;
-        const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${toRow}"][data-col="${fromCol}"]`);
+        const slot = getSlot('me', toRow, fromCol);
         if (slot) slot.classList.add('moveable');
     });
 
@@ -415,7 +443,7 @@ function highlightMoveTargets(fromRow, fromCol, card) {
     if (isFlying) {
         const toCol = fromCol === 0 ? 1 : 0;
         if (!state.me.field[fromRow][toCol]) {
-            const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${fromRow}"][data-col="${toCol}"]`);
+            const slot = getSlot('me', fromRow, toCol);
             if (slot) slot.classList.add('moveable');
         }
     }

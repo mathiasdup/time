@@ -190,6 +190,7 @@ function showModeSelector() {
 
 function selectMode(mode) {
     document.getElementById('mode-selector-overlay').classList.add('hidden');
+    socket.emit('selectMode', mode);
     if (mode === 'normal') {
         showMulligan();
     } else if (mode === 'test') {
@@ -508,7 +509,7 @@ function setupHeroes() {
                 const canTarget = selected.pattern === 'hero' || selected.canTargetHero;
                 if (canTarget && canPlay() && selected.cost <= state.me.energy) {
                     const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
-                    commitSpell(selected, 'hero', targetPlayer, -1, -1);
+                    commitSpell(selected, 'hero', targetPlayer, -1, -1, selected.idx);
                     handCardRemovedIndex = selected.idx;
                     socket.emit('castSpell', {
                         idx: selected.idx,

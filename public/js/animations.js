@@ -34,11 +34,21 @@ function prepareDrawAnimation(data) {
         autoHiddenCards[owner].delete(handIndex);
         // Stocker pour que le render crée la carte cachée
         pendingDrawAnimations[owner].set(handIndex, card);
+        // Marquer les tokens pour animation d'apparition directe
+        if (drawData.isToken) {
+            pendingTokenSpawns[owner].add(handIndex);
+        }
     }
 }
 
 // Cartes qui reviennent du cimetière (pour utiliser grave-stack au lieu de deck-stack)
 const pendingGraveyardReturns = {
+    me: new Set(),
+    opp: new Set()
+};
+
+// Cartes tokens qui apparaissent directement en main (pas depuis le deck)
+const pendingTokenSpawns = {
     me: new Set(),
     opp: new Set()
 };
@@ -89,14 +99,19 @@ function remapOppDrawIndices(newStartIdx) {
     const oldIndices = [...pendingDrawAnimations.opp.keys()];
     const cards = [...pendingDrawAnimations.opp.values()];
     pendingDrawAnimations.opp.clear();
-    // Remapper aussi pendingGraveyardReturns pour garder la correspondance
+    // Remapper aussi pendingGraveyardReturns et pendingTokenSpawns pour garder la correspondance
     const oldGraveReturns = [...pendingGraveyardReturns.opp];
     pendingGraveyardReturns.opp.clear();
+    const oldTokenSpawns = [...pendingTokenSpawns.opp];
+    pendingTokenSpawns.opp.clear();
     for (let i = 0; i < cards.length; i++) {
         const newIdx = newStartIdx + i;
         pendingDrawAnimations.opp.set(newIdx, cards[i]);
         if (oldGraveReturns.includes(oldIndices[i])) {
             pendingGraveyardReturns.opp.add(newIdx);
+        }
+        if (oldTokenSpawns.includes(oldIndices[i])) {
+            pendingTokenSpawns.opp.add(newIdx);
         }
     }
 }
@@ -117,7 +132,7 @@ function startPendingDrawAnimations() {
                 // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
                 const panel = document.querySelector('#my-hand');
                 if (panel) {
-                    const cards = panel.querySelectorAll('.card');
+                    const cards = panel.querySelectorAll('.card:not(.committed-spell)');
                     if (cards[handIndex]) cards[handIndex].style.visibility = 'visible';
                 }
             });
@@ -229,7 +244,7 @@ function easeOutBack(t) {
  */
 function animateCardDraw(card, owner, handIndex, onComplete) {
     const handSelector = owner === 'me' ? '#my-hand' : '#opp-hand';
-    const cardSelector = owner === 'me' ? '.card' : '.opp-card-back';
+    const cardSelector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
 
     if (!handEl) { if (onComplete) onComplete(); return; }
@@ -251,6 +266,16 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
     // Vérifier si la carte revient du cimetière
     const fromGraveyard = pendingGraveyardReturns[owner].has(handIndex);
     if (fromGraveyard) pendingGraveyardReturns[owner].delete(handIndex);
+
+    // Vérifier si c'est un token (apparition directe en main)
+    const isToken = pendingTokenSpawns[owner].has(handIndex);
+    if (isToken) pendingTokenSpawns[owner].delete(handIndex);
+
+    // Token : animation d'apparition directe sur place
+    if (isToken) {
+        animateTokenSpawn(card, owner, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+        return;
+    }
 
     const startElId = fromGraveyard ? `${owner}-grave-stack` : `${owner}-deck-stack`;
     const startEl = document.querySelector(`#${startElId}`);
@@ -300,7 +325,7 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             const nameElGrave = frontFace.querySelector('.arena-name');
             if (nameElGrave && typeof fitArenaName === 'function') fitArenaName(nameElGrave);
 
-            animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
         } else {
             // Pioche normale : flipper 3D, dos visible au départ, face cachée
             const flipper = document.createElement('div');
@@ -370,7 +395,7 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             const nameElOppGrave = frontFace.querySelector('.arena-name');
             if (nameElOppGrave && typeof fitArenaName === 'function') fitArenaName(nameElOppGrave);
 
-            animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
         } else {
             // Adversaire pioche normale : dos de carte
             const backCard = createCardBackElement();
@@ -525,7 +550,7 @@ function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, ta
 /**
  * Animation de retour du cimetière pour le joueur — arc simple, carte face visible
  */
-function animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
+function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
     const duration = 550;
     const startTime = performance.now();
     const controlX = (startX + endX) / 2;
@@ -548,6 +573,102 @@ function animateGraveyardReturn(wrapper, startX, startY, endX, endY, cardW, card
         wrapper.style.top = y + 'px';
         wrapper.style.opacity = Math.min(1, progress * 3);
         wrapper.style.transform = `scale(${scale})`;
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            targetCard.style.visibility = 'visible';
+            wrapper.remove();
+            if (onComplete) onComplete();
+        }
+    }
+
+    requestAnimationFrame(animate);
+}
+
+/**
+ * Animation d'apparition de token directement en main (pas depuis le deck)
+ * Scale-up avec glow + léger bounce
+ */
+function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, onComplete) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        position: fixed;
+        z-index: 10000;
+        pointer-events: none;
+        left: ${endX}px;
+        top: ${endY}px;
+        width: ${cardW}px;
+        height: ${cardH}px;
+        transform-origin: center center;
+        transform: scale(0);
+        opacity: 0;
+        perspective: 800px;
+    `;
+
+    if (owner === 'me') {
+        const frontFace = (typeof makeCard === 'function')
+            ? makeCard(card, true)
+            : createCardElement(card);
+        const bgImage = frontFace.style.backgroundImage;
+        frontFace.style.cssText = `
+            width: 100%; height: 100%;
+            margin: 0; position: relative;
+            border-radius: 6px;
+        `;
+        if (bgImage) frontFace.style.backgroundImage = bgImage;
+        wrapper.appendChild(frontFace);
+
+        const nameEl = frontFace.querySelector('.arena-name');
+        if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+    } else {
+        const frontFace = (typeof makeCard === 'function')
+            ? makeCard(card, true)
+            : createCardElement(card);
+        frontFace.classList.add('opp-card-back', 'opp-revealed');
+        const bgImage = frontFace.style.backgroundImage;
+        frontFace.style.cssText = `
+            width: 100%; height: 100%;
+            margin: 0; position: relative;
+            border-radius: 6px;
+        `;
+        if (bgImage) frontFace.style.backgroundImage = bgImage;
+        wrapper.appendChild(frontFace);
+
+        const nameEl = frontFace.querySelector('.arena-name');
+        if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+    }
+
+    document.body.appendChild(wrapper);
+
+    const duration = 500;
+    const startTime = performance.now();
+
+    function animate() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        let scale, opacity;
+        if (progress < 0.4) {
+            // Scale up avec overshoot : 0 → 1.15
+            const p = progress / 0.4;
+            const eased = 1 - Math.pow(1 - p, 3);
+            scale = eased * 1.15;
+            opacity = Math.min(1, p * 2.5);
+        } else if (progress < 0.65) {
+            // Bounce back : 1.15 → 0.95
+            const p = (progress - 0.4) / 0.25;
+            scale = 1.15 - p * 0.2;
+            opacity = 1;
+        } else {
+            // Settle : 0.95 → 1.0
+            const p = (progress - 0.65) / 0.35;
+            scale = 0.95 + p * 0.05;
+            opacity = 1;
+        }
+
+        wrapper.style.transform = `scale(${scale})`;
+        wrapper.style.opacity = opacity;
 
         if (progress < 1) {
             requestAnimationFrame(animate);
@@ -596,6 +717,8 @@ const GameAnimations = {
         pendingDrawAnimations.opp.clear();
         autoHiddenCards.me.clear();
         autoHiddenCards.opp.clear();
+        pendingTokenSpawns.me.clear();
+        pendingTokenSpawns.opp.clear();
     },
     
     get isReady() { return true; }

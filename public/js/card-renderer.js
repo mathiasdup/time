@@ -9,7 +9,7 @@ const CardRenderer = {
     isReady: false,
     app: null,
 
-    CARD_WIDTH: 200,
+    CARD_WIDTH: 210,
     CARD_HEIGHT: 280,
 
     async init() {
@@ -22,7 +22,7 @@ const CardRenderer = {
                 height: this.CARD_HEIGHT,
                 backgroundAlpha: 0,
                 antialias: true,
-                resolution: 2,
+                resolution: 3,
                 autoDensity: true
             });
 
@@ -137,6 +137,18 @@ const CardRenderer = {
         if (card.abilities?.includes('shooter')) typeStr = 'Créature - Tireur';
         else if (card.abilities?.includes('fly')) typeStr = 'Créature - Volant';
 
+        // Ajouter le creatureType si présent
+        if (card.creatureType) {
+            const creatureTypeNames = {
+                undead: 'Mort-vivant', goblin: 'Gobelin', spirit: 'Esprit', demon: 'Démon',
+                human: 'Humain', beast: 'Bête', parasite: 'Parasite', dragon: 'Dragon',
+                monstrosity: 'Monstruosité', elemental: 'Élémentaire', plant: 'Plante',
+                serpent: 'Serpent', spider: 'Araignée', vampire: 'Vampire', insect: 'Insecte'
+            };
+            const typeName = creatureTypeNames[card.creatureType] || card.creatureType;
+            typeStr += ` - ${typeName}`;
+        }
+
         const typeStyle = new PIXI.TextStyle({
             fontFamily: 'Arial',
             fontSize: 9,
@@ -153,7 +165,7 @@ const CardRenderer = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité',
             intangible: 'Intangible', trample: 'Piétinement',
             power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', lifedrain: 'Drain de vie', antitoxin: 'Antitoxine'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', lifedrain: 'Drain de vie', antitoxin: 'Anti-toxine', dissipation: 'Dissipation', unsacrificable: 'Non sacrifiable'
         };
         const abilitiesList = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();

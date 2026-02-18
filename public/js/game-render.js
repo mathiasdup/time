@@ -27,42 +27,11 @@ const PerfMonitor = (() => {
     }
 
     function report() {
-        const domNodes = document.querySelectorAll('*').length;
-        const avgMs = renderCount > 0 ? (renderTotalMs / renderCount).toFixed(1) : 0;
-        const animQueueLen = typeof animationQueue !== 'undefined' ? animationQueue.length : '?';
-
-        // Breakdown détaillé des .card par conteneur
-        const allCards = document.querySelectorAll('.card');
-        let inMyHand = 0, inOppHand = 0, inSlots = 0, inGrave = 0, inZoom = 0, inPreview = 0, onBody = 0, elsewhere = 0;
-        const orphanDetails = [];
-
-        allCards.forEach(card => {
-            if (card.closest('#my-hand')) { inMyHand++; return; }
-            if (card.closest('#opp-hand')) { inOppHand++; return; }
-            if (card.closest('.card-slot')) { inSlots++; return; }
-            if (card.closest('.grave-card-layer') || card.closest('#me-grave-top') || card.closest('#opp-grave-top') || card.closest('#graveyard-cards')) { inGrave++; return; }
-            if (card.closest('#card-zoom-container')) { inZoom++; return; }
-            if (card.closest('.preview-container') || card.closest('.card-preview') || card.closest('.hero-preview')) { inPreview++; return; }
-            if (card.closest('.drag-ghost-container')) { onBody++; return; }
-            // Orphelin : pas dans un conteneur connu
-            elsewhere++;
-            const p = card.parentElement;
-            const pp = p?.parentElement;
-            orphanDetails.push(`${p?.tagName}.${(p?.className||'').substring(0,30)}>${pp?.tagName}.${(pp?.className||'').substring(0,30)}`);
-        });
-
-        // Wrappers d'animation sur body (éléments fixed z-index élevé)
-        let animWrappers = 0;
-        for (const child of document.body.children) {
-            if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) animWrappers++;
-        }
-
-
-        // Safety cleanup : retirer les wrappers d'animation DIV orphelins (> 10s)
+        // Safety cleanup uniquement : retirer les wrappers d'animation DIV orphelins (> 10s)
         // Exclure les CANVAS (PixiJS CombatVFX permanent) qui ont aussi fixed+z-index élevé
         const now = Date.now();
         for (const child of Array.from(document.body.children)) {
-            if (child.tagName === 'CANVAS') continue; // ne jamais supprimer les canvas PixiJS
+            if (child.tagName === 'CANVAS') continue;
             if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) {
                 const born = parseInt(child.dataset.animBorn) || 0;
                 if (!born) {
@@ -90,7 +59,7 @@ function render() {
 
     // Ne pas mettre à jour les HP si une animation zdejebel/trample est en cours ou en attente
     // Ces animations gèrent elles-mêmes l'affichage des HP
-    const hasHpAnimPending = lifestealHeroHealInProgress || animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
+    const hasHpAnimPending = lifestealHeroHealInProgress || animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || a.type === 'heroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
     if (!hasHpAnimPending) {
         const meHpNum = document.querySelector('#me-hp .hero-hp-number');
         const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
@@ -275,7 +244,7 @@ function updateGraveTopCard(owner, graveyard) {
 function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
-            const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${r}"][data-col="${c}"]`);
+            const slot = getSlot(owner, r, c);
             if (!slot) continue;
 
             // Si ce slot est en cours d'animation, ne pas y toucher
@@ -297,25 +266,32 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
 
             // Fast path : même carte (uid identique), mettre à jour seulement les stats et états
             if (card && existingCardEl && existingUid && existingUid === card.uid) {
+
+                // Debug: log pour Vampire sordide
+
                 // Mettre à jour HP
                 const hpVal = card.currentHp ?? card.hp;
-                const hpEl = existingCardEl.querySelector('.arena-hp') || existingCardEl.querySelector('.img-hp');
+                const hpEl = existingCardEl.querySelector('.arena-armor') || existingCardEl.querySelector('.arena-hp') || existingCardEl.querySelector('.img-hp');
                 if (hpEl) {
                     const hpStr = String(hpVal);
                     if (hpEl.textContent !== hpStr) hpEl.textContent = hpStr;
-                    // Classes boosted/reduced (même noms que makeCard)
-                    const baseHp = card.baseHp ?? card.hp;
-                    hpEl.classList.toggle('boosted', hpVal > baseHp);
-                    hpEl.classList.toggle('reduced', hpVal < baseHp);
+                    // Classes boosted/reduced (même noms que makeCard) — pas pour les bâtiments
+                    if (!card.isBuilding) {
+                        const baseHp = card.baseHp ?? card.hp;
+                        hpEl.classList.toggle('boosted', hpVal > baseHp);
+                        hpEl.classList.toggle('reduced', hpVal < baseHp);
+                    }
                 }
-                // Mettre à jour ATK
-                const atkEl = existingCardEl.querySelector('.arena-atk') || existingCardEl.querySelector('.img-atk');
-                if (atkEl) {
-                    const atkStr = String(card.atk);
-                    if (atkEl.textContent !== atkStr) atkEl.textContent = atkStr;
-                    const baseAtk = card.baseAtk ?? card.atk;
-                    atkEl.classList.toggle('boosted', card.atk > baseAtk);
-                    atkEl.classList.toggle('reduced', card.atk < baseAtk);
+                // Mettre à jour ATK (pas pour les bâtiments)
+                if (!card.isBuilding) {
+                    const atkEl = existingCardEl.querySelector('.arena-atk') || existingCardEl.querySelector('.img-atk');
+                    if (atkEl) {
+                        const atkStr = String(card.atk);
+                        if (atkEl.textContent !== atkStr) atkEl.textContent = atkStr;
+                        const baseAtk = card.baseAtk ?? card.atk;
+                        atkEl.classList.toggle('boosted', card.atk > baseAtk);
+                        atkEl.classList.toggle('reduced', card.atk < baseAtk);
+                    }
                 }
                 // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
                 if (card.poisonPerGraveyard) {
@@ -344,12 +320,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 let gazeMarker = existingCardEl.querySelector('.gaze-marker');
                 if (gazeCount > 0 && !gazeMarker) {
                     gazeMarker = document.createElement('div');
-                    gazeMarker.className = 'gaze-marker';
+                    gazeMarker.className = 'gaze-marker marker-pop';
                     gazeMarker.innerHTML = `<div class="gaze-border"></div><span class="gaze-count">${gazeCount}</span>`;
                     existingCardEl.appendChild(gazeMarker);
                 } else if (gazeCount > 0 && gazeMarker) {
                     const countEl = gazeMarker.querySelector('.gaze-count');
-                    if (countEl) countEl.textContent = gazeCount;
+                    if (countEl && countEl.textContent !== String(gazeCount)) {
+                        countEl.textContent = gazeCount;
+                        countEl.classList.remove('marker-bump');
+                        void countEl.offsetWidth;
+                        countEl.classList.add('marker-bump');
+                    }
                 } else if (gazeCount === 0 && gazeMarker) {
                     gazeMarker.remove();
                 }
@@ -358,12 +339,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 let poisonMarker = existingCardEl.querySelector('.poison-marker');
                 if (poisonCount > 0 && !poisonMarker) {
                     poisonMarker = document.createElement('div');
-                    poisonMarker.className = 'poison-marker';
+                    poisonMarker.className = 'poison-marker marker-pop';
                     poisonMarker.innerHTML = `<div class="poison-border"></div><span class="poison-count">${poisonCount}</span>`;
                     existingCardEl.appendChild(poisonMarker);
                 } else if (poisonCount > 0 && poisonMarker) {
                     const countEl = poisonMarker.querySelector('.poison-count');
-                    if (countEl) countEl.textContent = poisonCount;
+                    if (countEl && countEl.textContent !== String(poisonCount)) {
+                        countEl.textContent = poisonCount;
+                        countEl.classList.remove('marker-bump');
+                        void countEl.offsetWidth;
+                        countEl.classList.add('marker-bump');
+                    }
                 } else if (poisonCount === 0 && poisonMarker) {
                     poisonMarker.remove();
                 }
@@ -372,12 +358,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 let entraveMarker = existingCardEl.querySelector('.entrave-marker');
                 if (entraveCount > 0 && !entraveMarker) {
                     entraveMarker = document.createElement('div');
-                    entraveMarker.className = 'entrave-marker';
+                    entraveMarker.className = 'entrave-marker marker-pop';
                     entraveMarker.innerHTML = `<div class="entrave-border"></div><span class="entrave-count">${entraveCount}</span>`;
                     existingCardEl.appendChild(entraveMarker);
                 } else if (entraveCount > 0 && entraveMarker) {
                     const countEl = entraveMarker.querySelector('.entrave-count');
-                    if (countEl) countEl.textContent = entraveCount;
+                    if (countEl && countEl.textContent !== String(entraveCount)) {
+                        countEl.textContent = entraveCount;
+                        countEl.classList.remove('marker-bump');
+                        void countEl.offsetWidth;
+                        countEl.classList.add('marker-bump');
+                    }
                 } else if (entraveCount === 0 && entraveMarker) {
                     entraveMarker.remove();
                 }
@@ -386,21 +377,27 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 let buffMarker = existingCardEl.querySelector('.buff-marker');
                 if (buffCount > 0 && !buffMarker) {
                     buffMarker = document.createElement('div');
-                    buffMarker.className = 'buff-marker';
+                    buffMarker.className = 'buff-marker marker-pop';
                     buffMarker.innerHTML = `<span class="buff-count">${buffCount}</span>`;
                     existingCardEl.appendChild(buffMarker);
                 } else if (buffCount > 0 && buffMarker) {
                     const countEl = buffMarker.querySelector('.buff-count');
-                    if (countEl) countEl.textContent = buffCount;
+                    if (countEl && countEl.textContent !== String(buffCount)) {
+                        countEl.textContent = buffCount;
+                        countEl.classList.remove('marker-bump');
+                        void countEl.offsetWidth;
+                        countEl.classList.add('marker-bump');
+                    }
                 } else if (buffCount === 0 && buffMarker) {
                     buffMarker.remove();
                 }
                 // Positionner les marqueurs verticalement (empilés sur le côté droit)
+                const markerBase = card.isBuilding ? 40 : 2;
                 let markerIdx = 0;
-                if (gazeMarker && gazeCount > 0) gazeMarker.style.top = `${-4 + markerIdx++ * 26}px`;
-                if (poisonMarker && poisonCount > 0) poisonMarker.style.top = `${-4 + markerIdx++ * 26}px`;
-                if (entraveMarker && entraveCount > 0) entraveMarker.style.top = `${-4 + markerIdx++ * 26}px`;
-                if (buffMarker && buffCount > 0) buffMarker.style.top = `${-4 + markerIdx++ * 26}px`;
+                if (gazeMarker && gazeCount > 0) gazeMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
+                if (poisonMarker && poisonCount > 0) poisonMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
+                if (entraveMarker && entraveCount > 0) entraveMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
+                if (buffMarker && buffCount > 0) buffMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
                 // Flying animation (sécurité)
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     if (!existingCardEl.classList.contains('flying-creature')) {
@@ -419,7 +416,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
                 }
                 // Custom drag pour redéploiement (fast path — réattacher si conditions remplies)
-                if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
+                if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     if (!existingCardEl.dataset.draggable) {
                         existingCardEl.dataset.draggable = '1';
                         CustomDrag.makeDraggable(existingCardEl, {
@@ -477,7 +474,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 cardEl.onmousemove = (e) => moveCardPreview(e);
 
                 // Custom drag pour redéploiement (seulement mes cartes)
-                if (owner === 'me' && !state.me.inDeployPhase && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
+                if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     CustomDrag.makeDraggable(cardEl, {
                         source: 'field',
                         card: card,
@@ -503,13 +500,15 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
 }
 
 // Auto-fit : réduit le font-size d'un .arena-name jusqu'à ce que le texte tienne
-function fitArenaName(el) {
+function fitArenaName(el, _retries) {
     const parent = el.parentElement; // .arena-title
     if (!parent) return;
     const maxW = parent.clientWidth;
     if (maxW === 0) {
-        // Parent pas encore layouté (ex: display:none) → réessayer au prochain frame
-        requestAnimationFrame(() => fitArenaName(el));
+        // Parent pas encore layouté (ex: display:none) → réessayer (max 5 tentatives)
+        const retryCount = (_retries || 0) + 1;
+        if (retryCount > 5 || !el.isConnected) return;
+        requestAnimationFrame(() => fitArenaName(el, retryCount));
         return;
     }
     // Reset
@@ -576,7 +575,8 @@ const ABILITY_DESCRIPTIONS = {
     entrave: { name: 'Entrave', desc: 'Quand cette créature inflige des blessures de combat, elle met X marqueur(s) Entrave sur la cible. −1 ATK par marqueur (plancher 0).' },
     lifelink: { name: 'Lien vital', desc: 'Quand cette créature inflige des blessures de combat, votre héros se soigne de X PV (plafonné à 20 PV).' },
     lifedrain: { name: 'Drain de vie', desc: 'Quand cette créature inflige des blessures de combat, elle se soigne de X PV (plafonné aux PV max).' },
-    antitoxin: { name: 'Antitoxine', desc: 'Cette créature ne subit pas de dégâts de poison.' }
+    antitoxin: { name: 'Antitoxine', desc: 'Cette créature ne subit pas de dégâts de poison.' },
+    unsacrificable: { name: 'Non sacrifiable', desc: 'Cette créature ne peut pas être sacrifiée.' }
 };
 
 function showCardPreview(card, e) {
@@ -780,26 +780,26 @@ function hideCardPreview() {
 }
 
 function renderTraps() {
-    const t = performance.now();
     state.me.traps.forEach((trap, i) => {
-        const slot = document.querySelector(`.trap-slot[data-owner="me"][data-row="${i}"]`);
+        const slot = getTrapSlot('me', i);
         if (slot) {
             const trapKey = `me-${i}`;
             const isProtected = animatingTrapSlots.has(trapKey);
-            const hasTrapClass = slot.classList.contains('has-trap');
-            const hasTriggered = slot.classList.contains('triggered');
-            if (isProtected || trap || hasTrapClass) {
-            }
             if (isProtected) {
                 if (!trap) {
                     animatingTrapSlots.delete(trapKey);
-                    // fall through pour nettoyer le slot
                 } else {
-                    return; // piège encore actif côté serveur, on ne touche pas
+                    return;
                 }
             }
+            // Fast path : si l'état du trap n'a pas changé, ne rien faire
+            const hadTrap = slot.dataset.trapState === '1';
+            const hasTrap = !!trap;
+            if (hadTrap === hasTrap) return;
+
             slot.classList.remove('has-trap', 'mine', 'triggered');
             if (trap) {
+                slot.dataset.trapState = '1';
                 slot.classList.add('has-trap', 'mine');
                 slot.innerHTML = '<img class="trap-icon-img mine" src="/battlefield_elements/beartraparmed.png" alt="trap">';
                 const trapCard = state.me.trapCards ? state.me.trapCards[i] : null;
@@ -809,6 +809,7 @@ function renderTraps() {
                     slot.onmousemove = (e) => moveCardPreview(e);
                 }
             } else {
+                delete slot.dataset.trapState;
                 slot.innerHTML = '';
                 slot.onmouseenter = null;
                 slot.onmouseleave = null;
@@ -818,27 +819,29 @@ function renderTraps() {
     });
 
     state.opponent.traps.forEach((trap, i) => {
-        const slot = document.querySelector(`.trap-slot[data-owner="opp"][data-row="${i}"]`);
+        const slot = getTrapSlot('opp', i);
         if (slot) {
             const trapKey = `opp-${i}`;
             const isProtected = animatingTrapSlots.has(trapKey);
-            const hasTrapClass = slot.classList.contains('has-trap');
-            const hasTriggered = slot.classList.contains('triggered');
-            if (isProtected || trap || hasTrapClass) {
-            }
             if (isProtected) {
                 if (!trap) {
                     animatingTrapSlots.delete(trapKey);
-                    // fall through pour nettoyer le slot
                 } else {
                     return;
                 }
             }
+            // Fast path : si l'état du trap n'a pas changé, ne rien faire
+            const hadTrap = slot.dataset.trapState === '1';
+            const hasTrap = !!trap;
+            if (hadTrap === hasTrap) return;
+
             slot.classList.remove('has-trap', 'mine', 'triggered');
             if (trap) {
+                slot.dataset.trapState = '1';
                 slot.classList.add('has-trap');
                 slot.innerHTML = '<img class="trap-icon-img enemy" src="/battlefield_elements/beartraparmed.png" alt="trap">';
             } else {
+                delete slot.dataset.trapState;
                 slot.innerHTML = '';
             }
         }
@@ -848,6 +851,7 @@ function renderTraps() {
 // Signature de la dernière main rendue (pour le fast path)
 let _lastHandSig = '';
 let _lastCommittedSig = '';
+let _lastHandPhase = '';
 
 function _computeHandSig(hand) {
     return hand.map(c => c.uid || c.id).join(',');
@@ -945,15 +949,17 @@ function _updateHandInPlace(panel, hand, energy) {
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
 
-    // ── Fast path : même main, mêmes committed spells → mise à jour in-place ──
+    // ── Fast path : même main, mêmes committed spells, même phase → mise à jour in-place ──
     const handSig = _computeHandSig(hand);
     const committedSig = _computeCommittedSig();
-    if (handSig === _lastHandSig && committedSig === _lastCommittedSig && handCardRemovedIndex < 0) {
+    const currentPhase = state?.phase || '';
+    if (handSig === _lastHandSig && committedSig === _lastCommittedSig && currentPhase === _lastHandPhase && handCardRemovedIndex < 0) {
         _updateHandInPlace(panel, hand, energy);
         return;
     }
     _lastHandSig = handSig;
     _lastCommittedSig = committedSig;
+    _lastHandPhase = currentPhase;
 
     // ── Slow path : rebuild complet ──
 
@@ -1086,29 +1092,55 @@ function renderHand(hand, energy) {
         if (nameEl) fitArenaName(nameEl);
     });
 
-    // Sorts engagés : afficher les sorts joués (grisés avec numéro d'ordre)
-    committedSpells.forEach((cs, csIdx) => {
-        const el = makeCard(cs.card, false);
-        el.classList.add('committed-spell');
-        el.dataset.commitId = cs.commitId;
-        el.dataset.order = cs.order;
-        el.style.zIndex = hand.length + csIdx + 1;
+    // Sorts engagés : toujours afficher à leur position d'origine dans la main.
+    // animateSpell les retire un par un du DOM quand ils sont joués.
+    // L'insertion par insertBefore garantit qu'ils restent en place même quand des tokens arrivent.
+    if (committedSpells.length > 0) {
+        // Calculer les indices d'origine (les sorts sont retirés de la main un par un,
+        // donc chaque handIndex est relatif à la main réduite — on reconstruit la position absolue)
+        const origIndices = [];
+        for (let i = 0; i < committedSpells.length; i++) {
+            let origIdx = committedSpells[i].handIndex;
+            if (origIdx < 0) { origIdx = hand.length + i; } // fallback : fin de main
+            for (let j = 0; j < i; j++) {
+                if (origIndices[j] <= origIdx) origIdx++;
+            }
+            origIndices.push(origIdx);
+        }
 
-        el.onmouseenter = (e) => {
-            showCardPreview(cs.card, e);
-            highlightCommittedSpellTargets(cs);
-        };
-        el.onmouseleave = () => {
-            hideCardPreview();
-            clearCommittedSpellHighlights();
-        };
-        el.onclick = (e) => {
-            e.stopPropagation();
-            showCardZoom(cs.card);
-        };
+        // Trier par position d'origine pour insérer dans l'ordre
+        const indexed = committedSpells.map((cs, i) => ({ cs, csIdx: i, origIdx: origIndices[i] }));
+        indexed.sort((a, b) => a.origIdx - b.origIdx);
 
-        panel.appendChild(el);
-    });
+        for (const { cs, csIdx, origIdx } of indexed) {
+            const el = makeCard(cs.card, false);
+            el.classList.add('committed-spell');
+            el.dataset.commitId = cs.commitId;
+            el.dataset.cardId = cs.card.id;
+            el.dataset.order = cs.order;
+
+            el.onmouseenter = (e) => {
+                showCardPreview(cs.card, e);
+                highlightCommittedSpellTargets(cs);
+            };
+            el.onmouseleave = () => {
+                hideCardPreview();
+                clearCommittedSpellHighlights();
+            };
+            el.onclick = (e) => {
+                e.stopPropagation();
+                showCardZoom(cs.card);
+            };
+
+            // Insérer à la position d'origine (pas à la fin)
+            const children = panel.children;
+            if (origIdx < children.length) {
+                panel.insertBefore(el, children[origIdx]);
+            } else {
+                panel.appendChild(el);
+            }
+        }
+    }
 
     // Bounce : cacher la dernière carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'me') {
@@ -1189,7 +1221,7 @@ function highlightCommittedSpellTargets(cs) {
         if (cs.card.pattern === 'cross') {
             previewCrossTargets(owner, cs.row, cs.col);
         } else {
-            const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${cs.row}"][data-col="${cs.col}"]`);
+            const slot = getSlot(owner, cs.row, cs.col);
             if (slot) {
                 slot.classList.add('cross-target');
                 const card = slot.querySelector('.card');
@@ -1235,6 +1267,7 @@ function renderOppHand(count, oppHand) {
     const oldCards = panel.querySelectorAll('.opp-card-back');
     const oldCount = oldCards.length;
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
+    const revealedIndices = oppHand ? oppHand.map((c, i) => c ? i : null).filter(x => x !== null) : [];
 
     const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
 
@@ -1250,8 +1283,21 @@ function renderOppHand(count, oppHand) {
         if (count > oldCount) {
             GameAnimations.remapOppDrawIndices(oldCount);
         }
+
+        // FLIP : sauvegarder les positions des cartes existantes avant d'ajouter les nouvelles
+        const oldPositions = count > oldCount
+            ? Array.from(oldCards).map(c => c.getBoundingClientRect().left) : null;
+
         for (let i = 0; i < oldCount; i++) {
-            if (count === oldCount) {
+            // Si une carte anciennement cachée est maintenant revealed, la remplacer
+            const revealedCard = oppHand && oppHand[i];
+            if (revealedCard && !oldCards[i].classList.contains('opp-revealed')) {
+                const newEl = createOppHandCard(revealedCard);
+                newEl.style.zIndex = i + 1;
+                const shouldHide = GameAnimations.shouldHideCard('opp', i);
+                if (shouldHide) newEl.style.visibility = 'hidden';
+                oldCards[i].replaceWith(newEl);
+            } else if (count === oldCount) {
                 const shouldHide = GameAnimations.shouldHideCard('opp', i);
                 oldCards[i].style.visibility = shouldHide ? 'hidden' : '';
             } else {
@@ -1268,6 +1314,35 @@ function renderOppHand(count, oppHand) {
             }
             panel.appendChild(el);
         }
+
+        // FLIP : animer le glissement des cartes existantes vers leurs nouvelles positions
+        if (oldPositions) {
+            const currentCards = panel.querySelectorAll('.opp-card-back');
+            const toAnimate = [];
+            for (let i = 0; i < oldPositions.length; i++) {
+                if (i >= currentCards.length || !currentCards[i].isConnected) continue;
+                const newLeft = currentCards[i].getBoundingClientRect().left;
+                const dx = oldPositions[i] - newLeft;
+                if (Math.abs(dx) > 1) {
+                    currentCards[i].style.transition = 'none';
+                    currentCards[i].style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(currentCards[i]);
+                }
+            }
+            if (toAnimate.length > 0) {
+                panel.getBoundingClientRect(); // force reflow
+                requestAnimationFrame(() => {
+                    for (const card of toAnimate) {
+                        card.style.transition = 'transform 0.3s ease-out';
+                        card.style.transform = '';
+                    }
+                    setTimeout(() => {
+                        for (const card of toAnimate) { card.style.transition = ''; }
+                    }, 350);
+                });
+            }
+        }
+
         if (pendingBounce && pendingBounce.owner === 'opp') {
             const allCards = panel.querySelectorAll('.opp-card-back');
             checkPendingBounce('opp', allCards);
@@ -1278,6 +1353,11 @@ function renderOppHand(count, oppHand) {
     // --- Mode normal : rebuild complet ---
     // FLIP : sauvegarder les positions avant de reconstruire
     const oldRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
+
+    // Sauvegarder les rects pour flyFromOppHand (animation de sort adverse)
+    if (count < oldCount && state?.phase === 'resolution') {
+        savedOppHandRects = oldRects.slice();
+    }
 
     panel.innerHTML = '';
 
@@ -1294,8 +1374,8 @@ function renderOppHand(count, oppHand) {
         panel.appendChild(el);
     }
 
-    // Animation glissante si la main a rétréci
-    if (count < oldCount && oldCount > 0) {
+    // Animation glissante quand la main change de taille (ajout ou retrait de cartes)
+    if (count !== oldCount && oldCount > 0) {
         const newCards = panel.querySelectorAll('.opp-card-back');
         newCards.forEach((card, i) => {
             if (i < oldRects.length) {
@@ -1349,21 +1429,21 @@ function makeCard(card, inHand, discountedCost = null) {
     let hpClass = '';
     let atkClass = '';
     if (card.type === 'creature') {
-        const baseHp = card.baseHp ?? card.hp; // Si pas de baseHp, utiliser hp comme référence
-        const baseAtk = card.baseAtk ?? card.atk; // Si pas de baseAtk, utiliser atk comme référence
-
-        // HP: comparer currentHp avec baseHp
+        const baseHp = card.baseHp ?? card.hp;
         if (hp > baseHp) {
             hpClass = 'boosted';
         } else if (hp < baseHp) {
             hpClass = 'reduced';
         }
 
-        // ATK: comparer atk avec baseAtk
-        if (card.atk > baseAtk) {
-            atkClass = 'boosted';
-        } else if (card.atk < baseAtk) {
-            atkClass = 'reduced';
+        // ATK: comparer atk avec baseAtk (pas pour les bâtiments)
+        if (!card.isBuilding) {
+            const baseAtk = card.baseAtk ?? card.atk;
+            if (card.atk > baseAtk) {
+                atkClass = 'boosted';
+            } else if (card.atk < baseAtk) {
+                atkClass = 'reduced';
+            }
         }
     }
 
@@ -1379,7 +1459,7 @@ function makeCard(card, inHand, discountedCost = null) {
         const commonAbilityNames = {
             haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
             trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', unsacrificable: 'Non sacrifiable'
         };
         // Filtrer shooter et fly des capacités affichées
         const addedAbils = card.addedAbilities || [];
@@ -1428,7 +1508,11 @@ function makeCard(card, inHand, discountedCost = null) {
             serpent: 'Serpent',
             monstrosity: 'Monstruosité',
             ogre: 'Ogre',
-            spider: 'Araignée'
+            spider: 'Araignée',
+            parasite: 'Parasite',
+            plant: 'Plante',
+            vampire: 'Vampire',
+            insect: 'Insecte'
         };
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 
@@ -1451,9 +1535,13 @@ function makeCard(card, inHand, discountedCost = null) {
         const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
 
         // Ligne de type complète
-        let typeLineText = `Créature - ${combatTypeText}`;
-        if (creatureTypeName) {
-            typeLineText += ` - ${creatureTypeName}`;
+        let typeLineText;
+        if (card.isBuilding) {
+            typeLineText = 'Bâtiment';
+            if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
+        } else {
+            typeLineText = `Créature - ${combatTypeText}`;
+            if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
         }
 
         // Style du titre (couleur personnalisée si définie)
@@ -1463,16 +1551,19 @@ function makeCard(card, inHand, discountedCost = null) {
         const isSpell = card.type === 'spell';
         const isTrap = card.type === 'trap';
         const noStats = isSpell || isTrap;
+        if (noStats) el.classList.add('card-spell');
+        if (card.isBuilding) el.classList.add('card-building');
 
         // Version allégée sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
             // Jetons compteurs — empilés verticalement sur le côté droit
             let mkIdx = 0;
-            const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${-4 + mkIdx++ * 26}px">${card.medusaGazeMarker}</div>` : '';
-            const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
-            const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
-            const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${-4 + mkIdx++ * 26}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
+            const mkBase = card.isBuilding ? 40 : 2;
+            const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${mkBase + mkIdx++ * 28}px">${card.medusaGazeMarker}</div>` : '';
+            const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
+            const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
+            const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
             const melodyIcon = '';
             if (noStats) {
                 el.innerHTML = `
@@ -1483,7 +1574,7 @@ function makeCard(card, inHand, discountedCost = null) {
                 el.innerHTML = `
                     <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
-                    <div class="arena-stats"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>
+                    <div class="arena-stats">${card.isBuilding ? `<span class="arena-armor">${hp}</span>` : `<span class="arena-atk ${atkClass}">${card.atk}</span><span class="arena-hp ${hpClass}">${hp}</span>`}</div>
                     ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
             }
             autoFitCardName(el);
@@ -1495,6 +1586,8 @@ function makeCard(card, inHand, discountedCost = null) {
             let typeName = 'Sort';
             if (isTrap) {
                 typeName = 'Piège';
+            } else if (card.spellSpeed !== undefined) {
+                typeName = `Sort - Vitesse ${card.spellSpeed}`;
             } else if (card.spellType) {
                 const spellTypeMap = { offensif: 'Offensif', 'défensif': 'Défensif', hybride: 'Hybride' };
                 typeName = `Sort - ${spellTypeMap[card.spellType] || card.spellType}`;
@@ -1530,7 +1623,7 @@ function makeCard(card, inHand, discountedCost = null) {
                 </div>
                 ${rarityDiamond}
                 <div class="arena-mana ${costClass}">${displayCost}</div>
-                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}"><span class="arena-atk ${atkClass}">${card.atk}</span>/<span class="arena-hp ${hpClass}">${hp}</span></div>`;
+                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.isBuilding ? `<span class="arena-armor">${hp}</span>` : `<span class="arena-atk ${atkClass}">${card.atk}</span><span class="arena-hp ${hpClass}">${hp}</span>`}</div>`;
         }
         autoFitCardName(el);
         return el;

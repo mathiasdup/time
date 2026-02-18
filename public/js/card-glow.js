@@ -34,6 +34,13 @@ const CardGlow = (() => {
         { spread: 1,   alpha: 1.0,  lineW: 1.5, color: '#90ff70' },
     ];
 
+    const LAYER_CONFIGS_PURPLE = [
+        { spread: 3,   alpha: 0.5,  lineW: 9, color: '#7b2fbf' },
+        { spread: 2,   alpha: 0.65, lineW: 5, color: '#9b40e0' },
+        { spread: 1.5, alpha: 0.85, lineW: 3, color: '#b860ff' },
+        { spread: 1,   alpha: 1.0,  lineW: 1.5, color: '#d080ff' },
+    ];
+
     const NUM_CTRL = 36; // Points de contrôle (léger pour Canvas 2D)
     const GLOW_MARGIN = 1;
 
@@ -122,6 +129,15 @@ const CardGlow = (() => {
         const activeEls = new Set();
 
         // Cartes en main (playable, pas committed, pas cachée par custom-dragging)
+        // Cache borderW/borderR par élément pour éviter getComputedStyle à chaque frame
+        function getCachedBorder(el) {
+            if (el._glowBorderW !== undefined) return { borderW: el._glowBorderW, borderR: el._glowBorderR };
+            const style = getComputedStyle(el);
+            el._glowBorderW = parseFloat(style.borderLeftWidth) || 0;
+            el._glowBorderR = parseFloat(style.borderRadius) || 0;
+            return { borderW: el._glowBorderW, borderR: el._glowBorderR };
+        }
+
         const playableCards = document.querySelectorAll('.my-hand .card.playable');
         for (const cardEl of playableCards) {
             if (cardEl.classList.contains('committed') || cardEl.classList.contains('custom-dragging')) {
@@ -130,9 +146,7 @@ const CardGlow = (() => {
                 continue;
             }
             const isDragging = cardEl.classList.contains('arrow-dragging');
-            const style = getComputedStyle(cardEl);
-            const borderW = parseFloat(style.borderLeftWidth) || 0;
-            const borderR = parseFloat(style.borderRadius) || 0;
+            const { borderW, borderR } = getCachedBorder(cardEl);
             newTargets.push({ el: cardEl, layers: isDragging ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR });
             activeEls.add(cardEl);
         }
@@ -140,11 +154,17 @@ const CardGlow = (() => {
         // Ghost de drag (élément flottant hors de la main)
         const ghostCard = document.querySelector('.drag-ghost-card');
         if (ghostCard) {
-            const style = getComputedStyle(ghostCard);
-            const borderW = parseFloat(style.borderLeftWidth) || 0;
-            const borderR = parseFloat(style.borderRadius) || 0;
+            const { borderW, borderR } = getCachedBorder(ghostCard);
             newTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR });
             activeEls.add(ghostCard);
+        }
+
+        // Cartes en combat (glow violet) — prioritaire sur le glow vert
+        const combatCards = document.querySelectorAll('.card-slot .card[data-in-combat="true"]');
+        for (const cardEl of combatCards) {
+            const { borderW, borderR } = getCachedBorder(cardEl);
+            newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR });
+            activeEls.add(cardEl);
         }
 
         // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
@@ -152,9 +172,8 @@ const CardGlow = (() => {
         if (!spellDragging) {
             const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
             for (const cardEl of attackCards) {
-                const style = getComputedStyle(cardEl);
-                const borderW = parseFloat(style.borderLeftWidth) || 0;
-                const borderR = parseFloat(style.borderRadius) || 0;
+                if (activeEls.has(cardEl)) continue; // déjà en combat (glow violet)
+                const { borderW, borderR } = getCachedBorder(cardEl);
                 newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR });
                 activeEls.add(cardEl);
             }

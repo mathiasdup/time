@@ -2,6 +2,11 @@
    Structure, board, top bar, panels, héros, deck/graveyard, slots */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
+        :root {
+            /* Taille de référence des cartes sur le board */
+            --card-w: 144px;
+            --card-h: 192px;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         *, *::before, *::after { cursor: none !important; }
 
@@ -9,8 +14,20 @@
             font-family: 'Cinzel', serif;
             background: url('../battlefield/background_1.png') no-repeat center center fixed;
             background-size: cover;
+            background-color: #000;
             min-height: 100vh;
             color: white;
+            overflow: hidden;
+        }
+
+        /* ── Game Scaler : résolution de référence 1920×1080 ── */
+        #game-scaler {
+            width: 1920px;
+            height: 1080px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: top left;
             overflow: hidden;
         }
 
@@ -35,7 +52,7 @@
             transform: scale(0.95);
         }
         
-        .lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; background: rgba(0,0,0,0.7); }
+        .lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 20px; background: rgba(0,0,0,0.7); }
         .lobby.hidden { display: none; }
         .lobby-title { font-size: 3em; color: #ffd700; text-shadow: 0 0 30px rgba(255,215,0,0.5); margin-bottom: 30px; }
         .lobby-box { background: rgba(20,20,40,0.95); padding: 35px; border-radius: 15px; border: 3px solid #8b7355; text-align: center; min-width: 380px; }
@@ -48,7 +65,7 @@
         .waiting-text { color: #aaa; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         
-        .game-container { width: 100vw; height: 100vh; display: none; position: relative; user-select: none; -webkit-user-select: none; }
+        .game-container { width: 100%; height: 100%; display: none; position: relative; user-select: none; -webkit-user-select: none; }
         .game-container.active { display: block; }
 
         /* Card Zoom Overlay */
@@ -56,8 +73,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             background: rgba(0,0,0,0.85);
             display: flex;
             align-items: center;
@@ -928,8 +945,8 @@
         }
         
         .hero-card {
-            width: 130px;
-            height: 175px;
+            width: calc(var(--card-w) * 1.25);
+            height: calc(var(--card-h) * 1.25);
             border-radius: 4px;
             background: rgba(255,255,255,0.05);
             border: 2px solid rgba(255,255,255,0.3);
@@ -939,7 +956,7 @@
             justify-content: center;
             position: relative;
             box-shadow: 0 8px 25px rgba(0,0,0,0.5), 0 20px 40px rgba(0,0,0,0.25);
-            transition: all 0.3s;
+            transition: border-color 0.3s, background-color 0.3s;
         }
         .hero-card.hero-targetable {
             border-color: transparent !important;
@@ -1085,117 +1102,88 @@
         .hero-title {
             display: none; /* Caché sur le terrain, visible uniquement en hover/preview */
         }
-        /* HP Héros - Style pilule métallique */
+        /* HP Héros — style arena (même design que les stats de créature) */
         .hero-hp {
             position: absolute;
-            bottom: -18px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 70px;
-            height: 36px;
-            border-radius: 18px;
-            padding: 2.8px;
-            background: linear-gradient(135deg,
-                #8b7355 0%,
-                #d4c4a8 15%,
-                #a08060 30%,
-                #6b5344 50%,
-                #8b7355 70%,
-                #c4b896 85%,
-                #8b7355 100%
-            );
-            box-shadow:
-                0 4px 15px rgba(0, 0, 0, 0.5),
-                0 2px 5px rgba(0, 0, 0, 0.3),
-                inset 0 1px 2px rgba(255, 255, 255, 0.2);
+            width: 42px;
+            height: 42px;
+            background: #9a1b1bd6;
+            border: 2px solid #dc4d4dbd;
+            box-sizing: border-box;
             z-index: 10;
             pointer-events: none;
-        }
-        .hero-hp-inner {
-            width: 100%;
-            height: 100%;
-            border-radius: 15px;
-            background: linear-gradient(180deg, #c91d1d 0%, #aa1616cc 40%, #c11c1cde 70%, #ac0000e3 100%);
-            box-shadow: inset 0 2px 8px rgb(1 1 1 / 72%), inset 0 0 12px rgb(189 89 89 / 30%), 0 0 6px rgba(180, 30, 30, 0.2);
             display: flex;
             justify-content: center;
             align-items: center;
-            position: relative;
-            overflow: hidden;
+        }
+        .hero-hp-inner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         .hero-hp-inner::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 15%;
-            right: 15%;
-            height: 40%;
-            background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 100%);
-            border-radius: 15px;
-            pointer-events: none;
+            display: none;
         }
         .hero-hp-number {
             font-family: 'Cinzel', serif;
-            font-size: 1.2em;
+            font-size: 22px;
             font-weight: 900;
-            color: #ffffff;
-            text-shadow:
-                0 0 15px rgba(196, 184, 150, 0.4),
-                0 2px 4px rgba(0, 0, 0, 0.8);
+            color: #e5e5e5;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
             z-index: 2;
         }
-        /* Mana héros - Style cercle métallique bleu avec intérieur transparent */
+        /* Mana héros — style arena (même design que les stats de créature) */
         .hero-mana {
             position: absolute;
-            top: -22px;
-            left: -20px;
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: #83adef94;
+            min-width: 42px;
+            height: 42px;
+            padding: 0 4px;
+            background: rgba(50, 90, 160, 0.75);
+            border: 2px solid #6baef0;
+            box-sizing: border-box;
             z-index: 5;
             pointer-events: none;
-        }
-        /* Bordure dégradée métallique */
-        .hero-mana::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            border-radius: 50%;
-            padding: 2.5px;
-            background: linear-gradient(135deg, #79c9ff 0%, #aad3f1 15%, #95cffd 30%, #5face7 50%, #6bafe4 70%, #93cbed 85%, #76b8eb 100%);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            box-shadow:
-                0 4px 15px rgba(0, 0, 0, 0.5),
-                0 2px 5px rgba(0, 0, 0, 0.3);
-        }
-        .hero-mana-inner {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background: transparent;
             display: flex;
             justify-content: center;
             align-items: center;
-            position: relative;
+        }
+        .hero-mana::before {
+            display: none;
+        }
+        .hero-mana-inner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         .hero-mana-number {
             font-family: 'Cinzel', serif;
-            font-size: 1.3em;
+            font-size: 20px;
             font-weight: 900;
-            color: #ffffff;
-            text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
+            color: #e5e5e5;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
             z-index: 2;
         }
-        /* Mana héros adverse - miroir à droite */
+        /* Notre héros (side-panel left) — HP bas-droite, Mana haut-gauche */
+        .side-panel.left .hero-hp {
+            bottom: 2px;
+            right: 2px;
+            border-radius: 2px 10px 2px 10px;
+        }
+        .side-panel.left .hero-mana {
+            top: 2px;
+            left: 2px;
+            border-radius: 2px 10px 2px 10px;
+        }
+        /* Héros adverse (side-panel right) — HP bas-gauche, Mana haut-droite */
+        .side-panel.right .hero-hp {
+            bottom: 2px;
+            left: 2px;
+            border-radius: 10px 2px 10px 2px;
+        }
         .side-panel.right .hero-mana {
-            left: auto;
-            right: -20px;
+            top: 2px;
+            right: 2px;
+            border-radius: 10px 2px 10px 2px;
         }
 
         .deck-grave-row {
@@ -1205,8 +1193,8 @@
             align-items: flex-start;
         }
         .deck-box {
-            width: 105px;
-            height: 140px;
+            width: var(--card-w);
+            height: var(--card-h);
             font-size: 0.75em;
             background: transparent;
             border: none;
@@ -1219,8 +1207,8 @@
             top: 0;
             left: 50%;
             transform: translateX(-50%);
-            width: 105px;
-            height: 140px;
+            width: var(--card-w);
+            height: var(--card-h);
         }
         /* Tooltip du deck */
         .deck-tooltip, .grave-tooltip {
@@ -1372,8 +1360,8 @@
         
         /* Cimetière avec pile de cartes */
         .grave-box {
-            width: 105px;
-            height: 140px;
+            width: var(--card-w);
+            height: var(--card-h);
             font-size: 0.75em;
             background: transparent;
             border: none;
@@ -1386,8 +1374,8 @@
             top: 3px;
             left: 50%;
             transform: translateX(-50%);
-            width: 105px;
-            height: 140px;
+            width: var(--card-w);
+            height: var(--card-h);
         }
         /* Cartes empilées du cimetière — vraies cartes */
         .grave-card-layer {
@@ -1446,8 +1434,6 @@
 
         /* La visibilité des couches est contrôlée dynamiquement par JS (updateGraveDisplay) */
         
-        .card.in-graveyard .arena-stats,
-        .card.arena-style.on-field.in-graveyard .arena-stats,
         .card.in-graveyard .img-atk,
         .card.in-graveyard .img-hp {
             display: none !important;
@@ -1575,7 +1561,7 @@
         .battlefield {
             display: flex;
             gap: 12px;
-            padding: 22px;
+            padding: 24px;
             background: rgba(0,0,0,0.5);
             border-radius: 12px;
             border: 2px solid rgba(100,80,60,0.6);
@@ -1583,36 +1569,36 @@
             transform: translateZ(1px);
         }
         
-        .field-side { 
-            display: grid; 
-            grid-template-columns: repeat(2, 105px); 
-            grid-template-rows: repeat(4, 140px); 
-            gap: 8px;
+        .field-side {
+            display: grid;
+            grid-template-columns: repeat(2, var(--card-w));
+            grid-template-rows: repeat(4, var(--card-h));
+            gap: 12px;
             transform: translateZ(1px);
         }
         
         .trap-center { display: flex; gap: 8px; transform: translateZ(1px); }
-        .trap-col { display: grid; grid-template-rows: repeat(4, 140px); gap: 8px; }
+        .trap-col { display: grid; grid-template-rows: repeat(4, var(--card-h)); gap: 8px; }
         
-        .card-slot { 
-            width: 105px; 
-            height: 140px; 
+        .card-slot {
+            width: var(--card-w);
+            height: var(--card-h);
             border: 2px solid rgba(255,255,255,0.3); 
             border-radius: 4px; 
             background: rgba(255,255,255,0.05); 
-            cursor: pointer; 
-            transition: all 0.2s; 
-            position: relative; 
-            display: flex; 
-            align-items: center; 
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+            position: relative;
+            display: flex;
+            align-items: center;
             justify-content: center;
         }
         /* Losange intérieur */
         .card-slot::before {
             content: '';
             position: absolute;
-            width: 40px;
-            height: 40px;
+            width: 53px;
+            height: 53px;
             border: 2px solid rgba(255,255,255,0.25);
             background: transparent;
             transform: rotate(45deg);
@@ -1626,10 +1612,10 @@
         .card-slot.has-card {
             padding: 0;
         }
-        .card-slot.has-card::before { display: none; }
+        .card-slot.has-card::before { z-index: 0; }
         .card-slot.has-card .card {
-            width: 105px;
-            height: 140px;
+            width: var(--card-w);
+            height: var(--card-h);
             cursor: default;
             transition: none;
         }
@@ -1638,18 +1624,18 @@
         .card-slot.cross-target { border-color: transparent !important; background: rgba(243,156,18,0.3) !important; }
         .card-slot.moveable { border-color: #3498db !important; background: rgba(52,152,219,0.25) !important; }
         
-        .trap-slot { 
-            width: 55px; 
-            height: 55px; 
+        .trap-slot {
+            width: 73px;
+            height: 73px;
             margin: auto 0; 
             border: 2px solid rgba(255,255,255,0.25); 
             border-radius: 50%; 
             background: rgba(255,255,255,0.05); 
-            cursor: pointer; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            transition: all 0.2s; 
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s, background-color 0.2s;
             font-size: 0.6em; 
             color: rgba(255,255,255,0.4);
             position: relative;

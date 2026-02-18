@@ -73,14 +73,23 @@ const CustomDrag = (function() {
         const cleanCard = cardEl.cloneNode(true);
         container.appendChild(cleanCard);
 
-        // Positionner sur la carte source
+        // Positionner sur la carte source, taille = slot visuel (--card-w × --card-h × gameScale)
         const rect = sourceEl.getBoundingClientRect();
+        const rootStyle = getComputedStyle(document.documentElement);
+        const gameScale = parseFloat(rootStyle.getPropertyValue('--game-scale')) || 1;
+        const baseW = parseFloat(rootStyle.getPropertyValue('--card-w')) || 144;
+        const baseH = parseFloat(rootStyle.getPropertyValue('--card-h')) || 192;
+        const ghostW = baseW * gameScale;
+        const ghostH = baseH * gameScale;
+        // Centrer le ghost sur le centre de la carte source
+        const ghostLeft = rect.left + (rect.width - ghostW) / 2;
+        const ghostTop = rect.top + (rect.height - ghostH) / 2;
         container.style.cssText = `
             position: fixed;
-            left: ${rect.left}px;
-            top: ${rect.top}px;
-            width: ${rect.width}px;
-            height: ${rect.height}px;
+            left: ${ghostLeft}px;
+            top: ${ghostTop}px;
+            width: ${ghostW}px;
+            height: ${ghostH}px;
             z-index: 10000;
             pointer-events: none;
             will-change: transform;
@@ -89,6 +98,12 @@ const CustomDrag = (function() {
         `;
 
         document.body.appendChild(container);
+
+        // Re-fit le nom de la carte (la taille a changé par rapport à la main)
+        if (typeof autoFitCardName === 'function') {
+            autoFitCardName(cleanCard);
+        }
+
         return container;
     }
 
@@ -146,11 +161,12 @@ const CustomDrag = (function() {
         tiltX += (targetTiltX - tiltX) * config.tiltSmoothing;
         tiltY += (targetTiltY - tiltY) * config.tiltSmoothing;
 
-        // Appliquer la transformation
+        // Appliquer la transformation (18deg = inclinaison du board)
+        const boardTilt = 18;
         ghostEl.style.transform =
             `translate3d(${dx}px, ${dy}px, 0) ` +
             `scale(${config.ghostScale}) ` +
-            `perspective(600px) rotateX(${tiltX.toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg)`;
+            `perspective(600px) rotateX(${(boardTilt + tiltX).toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg)`;
     }
 
     function clamp(val, min, max) {
@@ -277,7 +293,7 @@ const CustomDrag = (function() {
         requestAnimationFrame(() => {
             if (!ghostEl) return;
             ghostEl.style.transform =
-                `translate3d(${snapDx}px, ${snapDy}px, 0) scale(0.95)`;
+                `translate3d(${snapDx}px, ${snapDy}px, 0) scale(0.95) perspective(600px) rotateX(18deg)`;
             ghostEl.style.opacity = '0';
         });
 
@@ -438,8 +454,19 @@ const CustomDrag = (function() {
             } else {
                 isArrowMode = false;
 
-                // Mode classique : créer le ghost
+                // Mode classique : créer le ghost (taille slot)
                 ghostEl = createGhost(dragState.data, dragState.sourceEl);
+
+                // Mettre à jour originRect/offset pour le ghost slot-sized
+                const ghostRect = ghostEl.getBoundingClientRect();
+                dragState.originRect = {
+                    left: ghostRect.left,
+                    top: ghostRect.top,
+                    width: ghostRect.width,
+                    height: ghostRect.height
+                };
+                dragState.offsetX = mouseX - ghostRect.left;
+                dragState.offsetY = mouseY - ghostRect.top;
 
                 // Masquer la carte source
                 dragState.sourceEl.classList.add('custom-dragging');
@@ -595,7 +622,11 @@ const CustomDrag = (function() {
          */
         makeDraggable(el, data) {
             el._dragData = data; // Référence mutable pour mise à jour par le fast-path
-            el.addEventListener('mousedown', (e) => handleMouseDown(e, el, el._dragData));
+            // Guard : ne pas empiler de listeners sur le même élément
+            if (!el._dragMouseDown) {
+                el._dragMouseDown = (e) => handleMouseDown(e, el, el._dragData);
+                el.addEventListener('mousedown', el._dragMouseDown);
+            }
 
             // Empêcher le drag natif
             el.draggable = false;

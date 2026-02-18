@@ -14,6 +14,11 @@ let handCardRemovedIndex = -1;
 // Sorts engagés : sorts joués pendant la planification, visibles dans la main en grisé
 let committedSpells = [];
 let commitIdCounter = 0;
+// Cache des positions des committed spells au début de la résolution
+// (pour que animateSpell puisse les utiliser après que renderHand les ait retirés du DOM)
+let cachedCommittedRects = {};
+// Positions sauvegardées de la main adverse avant un rebuild (pour animer flyFromOppHand depuis la bonne position)
+let savedOppHandRects = null;
 
 // Réanimation : sort en attente de sélection d'une créature au cimetière
 let pendingReanimation = null;
@@ -40,5 +45,6 @@ const ANIMATION_DELAYS = {
     spell: 200,        // Délai après animation de sort (le gros est dans animateSpellReveal)
     trapTrigger: 500,  // Délai après animation de piège (séparation entre pièges consécutifs)
     lifesteal: 200,    // Délai après animation lifesteal (le gros de l'anim est dans handleLifestealAnim)
+    buildingActivate: 100, // Délai après activation de bâtiment (le gros est dans handleBuildingActivate)
     default: 300       // Délai par défaut
 };

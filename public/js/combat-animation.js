@@ -27,12 +27,12 @@ class CombatAnimationSystem {
     // ==================== UTILITAIRES ====================
 
     getCardElement(owner, row, col) {
-        const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${row}"][data-col="${col}"]`);
+        const slot = getSlot(owner, row, col);
         return slot?.querySelector('.card');
     }
 
     getSlotCenter(owner, row, col) {
-        const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${row}"][data-col="${col}"]`);
+        const slot = getSlot(owner, row, col);
         if (!slot) return null;
         const rect = slot.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -146,6 +146,18 @@ class CombatAnimationSystem {
             this.showDamageEffect(targetPos.x, targetPos.y, damage);
         }
 
+        // Shake + explosion sur le héros à l'impact
+        if (targetCol === -1) {
+            const heroEl = document.getElementById(targetOwner === 'me' ? 'hero-me' : 'hero-opp');
+            if (heroEl) {
+                heroEl.style.animation = 'heroShake 0.5s ease-out';
+                heroEl.classList.add('hero-hit');
+                setTimeout(() => { heroEl.style.animation = ''; heroEl.classList.remove('hero-hit'); }, 550);
+                const heroRect = heroEl.getBoundingClientRect();
+                CombatVFX.createHeroHitEffect(heroRect.left + heroRect.width / 2, heroRect.top + heroRect.height / 2, heroRect.width, heroRect.height);
+            }
+        }
+
         // Retour
         attackerCard.style.transition = `transform ${this.TIMINGS.ATTACK_RETURN}ms ease-out`;
         attackerCard.style.transform = '';
@@ -154,9 +166,6 @@ class CombatAnimationSystem {
 
         attackerCard.style.transition = '';
         attackerCard.style.zIndex = '';
-
-        // Libérer la carte - l'animation de vol peut reprendre
-        attackerCard.dataset.inCombat = 'false';
     }
 
     // ==================== COMBAT MUTUEL MÊLÉE (ÉPIQUE) ====================
@@ -286,10 +295,6 @@ class CombatAnimationSystem {
         card2.style.transition = '';
         card1.style.zIndex = '';
         card2.style.zIndex = '';
-
-        // Libérer les cartes
-        card1.dataset.inCombat = 'false';
-        card2.dataset.inCombat = 'false';
     }
 
     /**
@@ -359,7 +364,6 @@ class CombatAnimationSystem {
 
             flyerCard.style.transition = '';
             flyerCard.style.zIndex = '';
-            flyerCard.dataset.inCombat = 'false';
         })();
 
         const projectileAnimation = (async () => {

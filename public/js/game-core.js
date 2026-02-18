@@ -17,6 +17,8 @@ function setupCustomDrag() {
                 draggedFromField = null;
                 highlightValidSlots(data.card);
             } else if (data.source === 'field') {
+                if (state.me.inDeployPhase) return;
+                if (data.card.isBuilding) return;
                 if (data.card.abilities?.includes('immovable')) return;
                 if (data.card.melodyLocked || data.card.petrified) return;
                 draggedFromField = { row: data.row, col: data.col, card: data.card };
@@ -50,7 +52,7 @@ function setupCustomDrag() {
                         if (data.card.type === 'spell') {
                             // Sort engagé : stocker pour affichage grisé dans la main
                             const tp = target.owner === 'me' ? myNum : (target.owner === 'opp' ? (myNum === 1 ? 2 : 1) : 0);
-                            commitSpell(data.card, target.type, tp, target.row, target.col);
+                            commitSpell(data.card, target.type, tp, target.row, target.col, data.idx);
                         }
                         handCardRemovedIndex = data.idx;
                     }
@@ -83,11 +85,12 @@ function setupCustomDrag() {
     });
 }
 
-function commitSpell(card, targetType, targetPlayer, row, col) {
+function commitSpell(card, targetType, targetPlayer, row, col, handIndex) {
     committedSpells.push({
         card: { ...card },
         commitId: ++commitIdCounter,
         order: committedSpells.length + 1,
+        handIndex: handIndex !== undefined ? handIndex : -1,
         targetType: targetType,
         targetPlayer: targetPlayer,
         row: row !== undefined ? row : -1,
@@ -180,8 +183,8 @@ function handleFieldDrop(data, target) {
 function canTargetHero(spell, owner) {
     if (!spell || spell.type !== 'spell') return false;
     if (spell.pattern === 'hero') {
-        if (spell.targetEnemy && owner === 'me') return false;
-        if (spell.targetSelf && owner === 'opp') return false;
+        if (owner === 'me' && !spell.targetSelf) return false;
+        if (owner === 'opp' && !spell.targetEnemy) return false;
         return true;
     }
     if (spell.canTargetHero) return true;
@@ -274,6 +277,16 @@ function initSocket() {
         if (p === 'resolution') {
             // Annuler la réanimation en cours si la popup est ouverte
             if (pendingReanimation) cancelReanimation();
+            // Sauvegarder les positions des committed spells comme fallback (par commitId, unique)
+            cachedCommittedRects = {};
+            const handPanel = document.getElementById('my-hand');
+            if (handPanel) {
+                const committedEls = handPanel.querySelectorAll('.committed-spell');
+                for (const el of committedEls) {
+                    const commitId = el.dataset.commitId;
+                    if (commitId) cachedCommittedRects[commitId] = el.getBoundingClientRect();
+                }
+            }
             // Sauvegarder les positions des cartes revealed AVANT que le state update ne re-render la main
             if (typeof saveRevealedCardPositions === 'function') saveRevealedCardPositions();
             const endTurnBtn = document.getElementById('end-turn-btn');
@@ -374,7 +387,7 @@ function initSocket() {
     socket.on('spellHighlight', (data) => {
         data.targets.forEach((t, index) => {
             const owner = t.player === myNum ? 'me' : 'opp';
-            const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${t.row}"][data-col="${t.col}"]`);
+            const slot = getSlot(owner, t.row, t.col);
             if (slot) {
                 const rect = slot.getBoundingClientRect();
                 const cx = rect.left + rect.width / 2;
@@ -427,7 +440,7 @@ function initSocket() {
 function handleAnimation(data) {
     const { type } = data;
     // Les animations de combat utilisent la file d'attente
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn'];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn', 'combatRowStart', 'combatEnd', 'buildingActivate'];
 
     if (queuedTypes.includes(type)) {
         // Bloquer render() immédiatement pour les animations trample (avant traitement de la queue)
@@ -458,7 +471,7 @@ function handleAnimation(data) {
             case 'heal': animateHeal(data); break;
             case 'searchSpell': {
                 const ssOwner = data.player === myNum ? 'me' : 'opp';
-                const ssSlot = document.querySelector(`.card-slot[data-owner="${ssOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                const ssSlot = getSlot(ssOwner, data.row, data.col);
                 if (ssSlot) {
                     const rect = ssSlot.getBoundingClientRect();
                     CombatVFX.createSearchSpellEffect(
@@ -473,14 +486,14 @@ function handleAnimation(data) {
             case 'buff': animateBuff(data); break;
             case 'buffApply': {
                 const baOwner = data.player === myNum ? 'me' : 'opp';
-                const baSlot = document.querySelector(`.card-slot[data-owner="${baOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                const baSlot = getSlot(baOwner, data.row, data.col);
                 if (baSlot) {
                     const rect = baSlot.getBoundingClientRect();
                     CombatVFX.createBuffEffect(
                         rect.left + rect.width / 2,
                         rect.top + rect.height / 2,
-                        data.atkBuff || 1,
-                        data.hpBuff || 1,
+                        data.atkBuff ?? 1,
+                        data.hpBuff ?? 1,
                         rect.width,
                         rect.height
                     );
@@ -509,7 +522,7 @@ function handleAnimation(data) {
                 break;
             case 'destroy': {
                 const destOwner = data.player === myNum ? 'me' : 'opp';
-                const destSlot = document.querySelector(`.card-slot[data-owner="${destOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                const destSlot = getSlot(destOwner, data.row, data.col);
                 if (destSlot) {
                     const rect = destSlot.getBoundingClientRect();
                     CombatVFX.createDestroyEffect(
@@ -523,7 +536,7 @@ function handleAnimation(data) {
             }
             case 'entrave': {
                 const entOwner = data.player === myNum ? 'me' : 'opp';
-                const entSlot = document.querySelector(`.card-slot[data-owner="${entOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                const entSlot = getSlot(entOwner, data.row, data.col);
                 if (entSlot) {
                     const rect = entSlot.getBoundingClientRect();
                     CombatVFX.createEntraveEffect(
@@ -536,25 +549,11 @@ function handleAnimation(data) {
                 }
                 break;
             }
-            case 'radiantDragonDraw': {
-                const rdOwner = data.player === myNum ? 'me' : 'opp';
-                const rdSlot = document.querySelector(`.card-slot[data-owner="${rdOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
-                if (rdSlot) {
-                    const rect = rdSlot.getBoundingClientRect();
-                    CombatVFX.createWaterTorrentEffect(
-                        rect.left + rect.width / 2,
-                        rect.top + rect.height / 2,
-                        rect.width,
-                        rect.height
-                    );
-                }
-                break;
-            }
             case 'melodyGaze': {
                 const gazeSrcOwner = data.srcPlayer === myNum ? 'me' : 'opp';
                 const gazeTgtOwner = data.tgtPlayer === myNum ? 'me' : 'opp';
-                const gazeSrcSlot = document.querySelector(`.card-slot[data-owner="${gazeSrcOwner}"][data-row="${data.srcRow}"][data-col="${data.srcCol}"]`);
-                const gazeTgtSlot = document.querySelector(`.card-slot[data-owner="${gazeTgtOwner}"][data-row="${data.tgtRow}"][data-col="${data.tgtCol}"]`);
+                const gazeSrcSlot = getSlot(gazeSrcOwner, data.srcRow, data.srcCol);
+                const gazeTgtSlot = getSlot(gazeTgtOwner, data.tgtRow, data.tgtCol);
                 if (gazeSrcSlot && gazeTgtSlot) {
                     const srcRect = gazeSrcSlot.getBoundingClientRect();
                     const tgtRect = gazeTgtSlot.getBoundingClientRect();
@@ -569,7 +568,7 @@ function handleAnimation(data) {
             }
             case 'petrify': {
                 const petOwner = data.player === myNum ? 'me' : 'opp';
-                const petSlot = document.querySelector(`.card-slot[data-owner="${petOwner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+                const petSlot = getSlot(petOwner, data.row, data.col);
                 if (petSlot) {
                     const rect = petSlot.getBoundingClientRect();
                     CombatVFX.createPetrifyEffect(
@@ -580,15 +579,6 @@ function handleAnimation(data) {
                     );
                 } else {
                 }
-                break;
-            }
-            case 'startOfTurnTransform': {
-                // Bloquer le slot IMMÉDIATEMENT (avant que le state update ne render Petit Os)
-                const stOwner = data.player === myNum ? 'me' : 'opp';
-                const stSlotKey = `${stOwner}-${data.row}-${data.col}`;
-                animatingSlots.add(stSlotKey);
-                activeDeathTransformSlots.add(stSlotKey);
-                animateStartOfTurnTransform(data);
                 break;
             }
         }
@@ -628,17 +618,27 @@ function handleAnimationBatch(animations) {
             // Animation de poison : passer par la file d'attente pour le batch processing
             queueAnimation(anim.type, anim);
         } else if (anim.type === 'poisonApply') {
-            // Ignoré en batch — le state update (emitStateToBoth) qui suit se charge du rendu
+            // VFX nuage toxique sur la carte ciblée
+            const poisonOwner = anim.player === myNum ? 'me' : 'opp';
+            const poisonSlot = getSlot(poisonOwner, anim.row, anim.col);
+            if (poisonSlot) {
+                const rect = poisonSlot.getBoundingClientRect();
+                CombatVFX.createPoisonCloudEffect(
+                    rect.left + rect.width / 2,
+                    rect.top + rect.height / 2,
+                    rect.width, rect.height
+                );
+            }
         } else if (anim.type === 'buffApply') {
             const buffOwner = anim.player === myNum ? 'me' : 'opp';
-            const buffSlot = document.querySelector(`.card-slot[data-owner="${buffOwner}"][data-row="${anim.row}"][data-col="${anim.col}"]`);
+            const buffSlot = getSlot(buffOwner, anim.row, anim.col);
             if (buffSlot) {
                 const rect = buffSlot.getBoundingClientRect();
                 CombatVFX.createBuffEffect(
                     rect.left + rect.width / 2,
                     rect.top + rect.height / 2,
-                    anim.atkBuff || 1,
-                    anim.hpBuff || 1,
+                    anim.atkBuff ?? 1,
+                    anim.hpBuff ?? 1,
                     rect.width,
                     rect.height
                 );
@@ -661,19 +661,24 @@ function handleAnimationBatch(animations) {
 
 function animateBuff(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (slot) {
         const rect = slot.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        CombatVFX.showBuffNumber(x, y, data.atk, data.hp);
+        CombatVFX.createBuffEffect(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+            data.atk || 0,
+            data.hp || 0,
+            rect.width,
+            rect.height
+        );
     }
 }
 
 
 function animateShieldBreak(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const slot = document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${data.row}"][data-col="${data.col}"]`);
+    const slot = getSlot(owner, data.row, data.col);
     if (!slot) return;
     const cardEl = slot.querySelector('.card');
     if (!cardEl) return;
@@ -715,13 +720,14 @@ function clickFieldCard(row, col, card) {
     if (!canPlay()) return;
     if (state.me.inDeployPhase) return;
     if (card.movedThisTurn) return;
+    if (card.isBuilding) return;
     if (card.abilities?.includes('immovable')) return;
     if (card.melodyLocked || card.petrified) return;
 
     clearSel();
     selected = { ...card, fromField: true, row, col };
 
-    const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${row}"][data-col="${col}"]`);
+    const slot = getSlot('me', row, col);
     const cardEl = slot?.querySelector('.card');
     if (cardEl) cardEl.classList.add('field-selected');
 
@@ -745,7 +751,7 @@ function clickSlot(owner, row, col) {
             clearSel();
             return;
         }
-        commitSpell(selected, 'field', targetPlayer, row, col);
+        commitSpell(selected, 'field', targetPlayer, row, col, selected.idx);
         handCardRemovedIndex = selected.idx;
         socket.emit('castSpell', { handIndex: selected.idx, targetPlayer, row, col });
         clearSel();
@@ -764,7 +770,7 @@ function clickSlot(owner, row, col) {
     }
 
     if (selected && selected.fromField) {
-        const slot = document.querySelector(`.card-slot[data-owner="me"][data-row="${row}"][data-col="${col}"]`);
+        const slot = getSlot('me', row, col);
         if (slot && slot.classList.contains('moveable')) {
             socket.emit('moveCard', { fromRow: selected.row, fromCol: selected.col, toRow: row, toCol: col });
             clearSel();
@@ -983,7 +989,7 @@ function confirmReanimation(creatureUid, graveyardIndex) {
 
     if (isGraveyardToHand) {
         // GraveyardToHand : sort global, pas de slot réservé
-        commitSpell(data.card, 'global');
+        commitSpell(data.card, 'global', 0, -1, -1, data.handIndex);
         handCardRemovedIndex = data.handIndex;
         socket.emit('castGlobalSpell', {
             handIndex: data.handIndex,
@@ -993,7 +999,7 @@ function confirmReanimation(creatureUid, graveyardIndex) {
     } else {
         // Réanimation classique : réserver le slot
         committedReanimationSlots.push({ row: data.row, col: data.col });
-        commitSpell(data.card, 'field', data.targetPlayer, data.row, data.col);
+        commitSpell(data.card, 'field', data.targetPlayer, data.row, data.col, data.handIndex);
         handCardRemovedIndex = data.handIndex;
         socket.emit('castSpell', {
             handIndex: data.handIndex,
@@ -1122,6 +1128,11 @@ function log(msg, type = 'action') {
     const c = document.getElementById('log-content');
     // Insérer en haut (plus récent en premier)
     c.insertBefore(el, c.firstChild);
+
+    // Limiter à 150 entrées pour éviter la croissance DOM infinie
+    while (c.children.length > 150) {
+        c.removeChild(c.lastChild);
+    }
 }
 
 // ==================== CARD ZOOM ====================
@@ -1163,7 +1174,29 @@ function hideCardZoom() {
     zoomCardData = null;
 }
 
+// ── Game Scaler : adapte le jeu à toutes les résolutions ──
+// transform:scale() au lieu de zoom → rendu identique à toutes les résolutions
+// (le layout est calculé à 1920×1080, puis mis à l'échelle GPU)
+function resizeGame() {
+    const scaler = document.getElementById('game-scaler');
+    if (!scaler) return;
+    const REF_W = 1920, REF_H = 1080;
+    const scaleX = window.innerWidth / REF_W;
+    const scaleY = window.innerHeight / REF_H;
+    const scale = Math.min(scaleX, scaleY);
+    scaler.style.transform = `scale(${scale})`;
+    // Centrage letterbox (bandes noires si ratio ≠ 16:9)
+    scaler.style.left = `${(window.innerWidth - REF_W * scale) / 2}px`;
+    scaler.style.top = `${(window.innerHeight - REF_H * scale) / 2}px`;
+    // Exposer le scale pour les éléments hors-scaler (drag ghost, animations)
+    document.documentElement.style.setProperty('--game-scale', scale);
+}
+window.addEventListener('resize', resizeGame);
+
 document.addEventListener('DOMContentLoaded', async () => {
+    // Adapter le scaling à la résolution
+    resizeGame();
+
     // Initialiser le système d'animation PixiJS
     await initCombatAnimations();
 

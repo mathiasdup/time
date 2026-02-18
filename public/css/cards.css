@@ -2,8 +2,8 @@
    Styles de cartes, arena/fullart/image, main, animations cartes */
 
         .card {
-            width: 100px; 
-            height: 135px; 
+            width: calc(var(--card-w) * 19 / 24);  /* main = 114×152 */
+            height: calc(var(--card-h) * 19 / 24);
             border-radius: 4px;
             position: relative;
             cursor: grab;
@@ -38,12 +38,11 @@
             border-radius: 4px !important;
             overflow: visible !important;
             box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-            width: 100px !important;
-            height: 135px !important;
+            width: 100% !important;
+            height: 100% !important;
             margin: 0 !important;
             cursor: grabbing;
-            transform-origin: top left;
-            transform: scale(1.3);
+            transform: none !important;
         }
         .card.custom-dragging {
             visibility: hidden;
@@ -59,7 +58,7 @@
         }
         .my-hand .card.arrow-dragging,
         .my-hand .card.arena-style.arrow-dragging[class*="faction-"] {
-            transform: translateY(-50px) scale(1.3) !important;
+            transform: translateY(-50px) scale(1.2632) !important; /* 19/24 × 24/19 = BASE */
             z-index: 1000 !important;
             border: 2px solid #252525 !important;
             pointer-events: none;
@@ -182,6 +181,8 @@
             border: 2px solid #333;
             position: relative;
             overflow: visible;
+            will-change: transform;
+            transform: translateZ(0);
         }
 
         /* Titre en haut - fond vert par défaut */
@@ -206,28 +207,31 @@
 
         /* Zone de texte au milieu */
         .card.arena-style .arena-text-zone {
-            padding-left: 5px;
-            padding-right: 5px;
+            padding-left: 3px;
+            padding-right: 3px;
             position: absolute;
-            bottom: 14px;
+            bottom: 24px;
             left: 2px;
             right: 2px;
-            height: 45px;
+            height: 60px;
             border-radius: 4px;
             text-align: left;
             overflow: visible;
         }
+        .card.arena-style.card-spell .arena-text-zone {
+            bottom: 14px;
+        }
         .card.arena-style .arena-type {
             margin-top: 3px;
             font-family: 'Quicksand', sans-serif;
-            font-size: 3.5px;
+            font-size: 4px;
             font-weight: 500;
             color: #ffd700;
             text-align: center;
         }
         .card.arena-style .arena-abilities {
             font-family: 'Quicksand', sans-serif;
-            font-size: 5px;
+            font-size: 6px;
             font-weight: 600;
             color: #e5e5e5;
             margin-top: 1px;
@@ -235,7 +239,7 @@
         }
         .card.arena-style .arena-special {
             font-family: 'Quicksand', sans-serif;
-            font-size: 5px;
+            font-size: 6px;
             font-weight: 500;
             color: #d0d0d0;
             margin-top: 2px;
@@ -265,8 +269,9 @@
         .card.arena-style .arena-edition {
             position: absolute;
             bottom: 2px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            right: 0;
+            margin: 0 auto;
             z-index: 10;
             width: 10px;
             height: 10px;
@@ -371,35 +376,23 @@
         /* Mana - Cercle métallique bleu style héros mana pool */
         .card.arena-style .arena-mana {
             position: absolute;
-            top: 18px;
+            top: 21px;
             left: 2px;
-            width: 18px;
-            height: 18px;
-            background: #83adef94;
-            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            background: rgba(50, 90, 160, 0.75);
+            border: 1px solid #6baef0;
+            border-radius: 2px 10px 2px 10px;
             display: flex;
-            align-items: center;
+            align-items: normal;
             justify-content: center;
             font-family: 'Cinzel', serif;
-            font-size: 0.7em;
+            font-size: 15px;
             font-weight: 900;
             color: #ffffff;
             text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
-            border: none;
             z-index: 10;
             pointer-events: none;
-        }
-        .card.arena-style .arena-mana::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            border-radius: 50%;
-            padding: 1.4px;
-            background: linear-gradient(135deg, #79c9ff 0%, #aad3f1 15%, #95cffd 30%, #5face7 50%, #6bafe4 70%, #93cbed 85%, #76b8eb 100%);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.3);
         }
         /* Mana réduit par Hyrule - chiffre vert */
         .card.arena-style .arena-mana.discounted {
@@ -410,17 +403,18 @@
         /* Stats - Pilule style Magic Arena */
         .card.arena-style .arena-stats {
             position: absolute;
-            bottom: -8px;
+            bottom: 2px;
+            height: 12%;
             right: -6px;
             border-radius: 12px;
-            padding: 0px 6px;
+            padding: 0px 6px 0px 6px;
             font-family: 'Cinzel', serif;
             font-size: 0.8em;
             font-weight: 900;
             color: #e5e5e5;
             z-index: 10;
-            -webkit-text-stroke: 1.8px #353535;
-            paint-order: stroke fill;
+            text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
+            text-align: center;
         }
         /* Stats individuelles colorées */
         .card.arena-style .arena-atk.boosted,
@@ -436,30 +430,58 @@
         }
 
         /* Version terrain : pas de mana affiché */
+        .card.arena-style.on-field:not(.in-graveyard) .arena-title {
+            display: none;
+        }
         .card.arena-style.on-field .arena-mana {
             display: none;
         }
         .card.arena-style.on-field .arena-stats {
-            font-size: 1em;
-            -webkit-text-stroke: 2px #353535;
             min-width: 40px;
             height: 22px;
             box-sizing: border-box;
             display: flex;
             justify-content: center;
+        }
+        /* Bâtiments : repositionner le conteneur stats */
+        .card.arena-style.card-building .arena-stats {
+            top: 20px;
+        }
+        .card-slot .card.arena-style.on-field.card-building .arena-stats,
+        .drag-ghost-card.arena-style.card-building .arena-stats {
+            top: 2px;
+        }
+        /* Style de l'armor (HP bâtiment) */
+        .card.arena-style .arena-stats .arena-armor {
+            background: #8c8888e3;
+            border: 1px solid #beb4b4bd;
+            border-radius: 10px 2px 10px 2px;
+            color: #fff;
+            width: 20px;
+            height: 20px;
+            font-size: 14px;
+            display: flex;
             align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .card-slot .card.arena-style.on-field .arena-stats .arena-armor,
+        .drag-ghost-card.arena-style .arena-stats .arena-armor {
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+            border-width: 2px;
         }
 
         /* États arena-style — bordures et glow gérés plus bas avec spécificité élevée */
 
-        /* ========== STYLES PAR FACTION - Bordures métalliques dégradées ========== */
-        /* Définition des dégradés par faction */
-        .card.arena-style.faction-green { --faction-grad: linear-gradient(135deg, #2d5039 0%, #6b9b7a 15%, #427253 30%, #2a4536 50%, #427253 70%, #7aab8a 85%, #2d5039 100%); }
-        .card.arena-style.faction-red { --faction-grad: linear-gradient(135deg, #8a2d32 0%, #d86a6f 15%, #ba3d43 30%, #7a2428 50%, #ba3d43 70%, #e87a7f 85%, #8a2d32 100%); }
-        .card.arena-style.faction-black { --faction-grad: linear-gradient(135deg, #2a2a2a 0%, #6a6a6a 15%, #4a4a4a 30%, #1a1a1a4d 50%, #4a4a4a 70%, #7a7a7a 85%, #2a2a2a 100%); }
-        .card.arena-style.faction-blue { --faction-grad: linear-gradient(135deg, #4673c9 0%, #8ab3ff 15%, #6493e9 30%, #3663b9 50%, #6493e9 70%, #9ac3ff 85%, #4673c9 100%); }
-        .card.arena-style.faction-white { --faction-grad: linear-gradient(135deg, #c9c5b8 0%, #f5f3eb 15%, #e7e3d5 30%, #b8b4a7 50%, #e7e3d5 70%, #faf8f2 85%, #c9c5b8 100%); }
-        .card.arena-style.faction-neutral { --faction-grad: linear-gradient(135deg, #4a3728 0%, #8b6b4a 15%, #6b4423 30%, #3d2a1a 50%, #6b4423 70%, #9b7b5a 85%, #4a3728 100%); }
+        /* ========== STYLES PAR FACTION - Bordures mono-couleur ========== */
+        .card.arena-style.faction-green { --faction-border: #4a7a5a; }
+        .card.arena-style.faction-red { --faction-border: #a04048; }
+        .card.arena-style.faction-black { --faction-border: #5a5a5a; }
+        .card.arena-style.faction-blue { --faction-border: #6a93d9; }
+        .card.arena-style.faction-white { --faction-border: #d5d0c5; }
+        .card.arena-style.faction-neutral { --faction-border: #6b5535; }
 
         /* Bordure de carte - noir sombre 2px */
         .card.arena-style[class*="faction-"] {
@@ -469,117 +491,108 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
         }
 
-        /* Titre - pilule avec bordure dégradée transparente */
+        /* Titre - bordure mono-couleur */
         .card.arena-style[class*="faction-"] .arena-title {
             background: #323e82c4;
+            border: 2px solid var(--faction-border);
             border-radius: 4px;
-        }
-        .card.arena-style[class*="faction-"] .arena-title::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--faction-grad);
-            border-radius: 4px;
-            padding: 1.4px;
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            transform: translateZ(0);
         }
         .card.arena-style[class*="faction-"] .arena-name {
-            padding: 1.8px 6px 2px 6px;
-            position: relative;
-            z-index: 1;
+            padding: 1px 6px 2px 6px;
         }
-        .card.arena-style.faction-red .arena-title {
-            background: rgb(189 66 66 / 50%);
-        }
-        .card.arena-style.faction-blue .arena-title {
-            background: #323e828a;
-        }
-        .card.arena-style.faction-white .arena-title {
-            background: #ffffff91;
-        }
-        .card.arena-style.faction-green .arena-title {
-            background: #29573c94;
-        }
+        .card.arena-style.faction-red .arena-title { background: rgb(189 66 66 / 50%); }
+        .card.arena-style.faction-blue .arena-title { background: #323e828a; }
+        .card.arena-style.faction-white .arena-title { background: #ffffff91; }
+        .card.arena-style.faction-green .arena-title { background: #29573c94; }
+        .card.arena-style.faction-black .arena-title { background: #2a2a2acc; }
+        .card.arena-style.faction-neutral .arena-title { background: #573a29b5; }
 
-        .card.arena-style.faction-black .arena-title {
-            background: #353535ab;
-            border-radius: 4px;
-        }
-
-        .card.arena-style.faction-neutral .arena-title {
-            background: #573a29b5;
-            border-radius: 4px;
-        }
-
-        /* Zone de texte - pilule avec bordure dégradée transparente */
+        /* Zone de texte - bordure mono-couleur */
         .card.arena-style[class*="faction-"] .arena-text-zone {
-            background: rgba(0, 0, 0, 0.65);
+            background: rgba(0, 0, 0, 0.72);
+            border: 2px solid var(--faction-border);
         }
-        .card.arena-style[class*="faction-"] .arena-text-zone::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--faction-grad);
-            border-radius: 4px;
-            padding: 1.2px;
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            transform: translateZ(0);
-        }
-        .card.arena-style[class*="faction-"] .arena-text-zone > * {
-            position: relative;
-            z-index: 1;
-        }
+        .card.arena-style.faction-black .arena-text-zone { background: rgba(20, 20, 20, 0.8); }
 
-        /* Stats - pilule avec bordure dégradée transparente */
+        /* Stats - bordure mono-couleur */
         .card.arena-style[class*="faction-"] .arena-stats {
             background: rgba(0, 0, 0, 0.5) !important;
+            border: 2px solid var(--faction-border);
         }
-        .card.arena-style.faction-green .arena-stats {
-            background: #29573cbd !important;
+        /* Ronds séparés ATK / HP — toutes factions */
+        .card.arena-style[class*="faction-"] .arena-stats {
+            left: 2px;
+            right: 2px;
+            background: none !important;
             border: none !important;
+            border-radius: 0 !important;
+            padding: 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0;
+            height: auto;
+            min-width: auto;
         }
-        .card.arena-style[class*="faction-"] .arena-stats::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--faction-grad);
-            border-radius: 12px;
-            padding: 1.2px;
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            transform: translateZ(0);
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 900;
+            color: #e5e5e5;
         }
-        .card.arena-style[class*="faction-"] .arena-atk,
-        .card.arena-style[class*="faction-"] .arena-hp {
-            position: relative;
-            z-index: 1;
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk {
+            background: #f96916c2;
+            border: 1px solid #f06717;
+            border-radius: 10px 2px 10px 2px;
         }
-        .card.arena-style.faction-red .arena-stats {
-            background: rgb(189 66 66 / 60%) !important;
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp {
+            background: #9a1b1bd6;
+            border: 1px solid #dc4d4dbd;
+            border-radius: 2px 10px 2px 10px;
         }
-        .card.arena-style.faction-blue .arena-stats {
-            background: #323e82b3 !important;
+        /* Bâtiments — stats uniquement à droite (pas de left) */
+        .card.arena-style.card-building[class*="faction-"] .arena-stats {
+            left: auto;
+        }
+        /* Board — ronds plus grands */
+        .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-atk,
+        .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-hp {
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+        }
+        .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-atk {
+            border: 2px solid #f06717;
+        }
+        .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-hp {
+            border: 2px solid #dc4d4dbd;
+        }
+        /* Boosted/reduced — spécificité suffisante pour écraser la couleur par défaut */
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk.boosted,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp.boosted {
+            color: #7fff7f;
+        }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk.reduced,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp.reduced {
+            color: #ff6b6b;
         }
 
         /* Faction white - texte clair */
-        .card.arena-style.faction-white .arena-name {
-            color: #e5e5e5;
-        }
+        .card.arena-style.faction-white .arena-name { color: #e5e5e5; }
 
-        .card.arena-style.faction-white .arena-stats {
-            background: #ffffff9e !important;
+        /* Cartes créatures sur le board — nom plus grand */
+        .card-slot .card.arena-style .arena-name {
+            font-size: 0.8em;
         }
-
-        .card.arena-style.faction-black .arena-stats {
-            background: #353535b8 !important;
+        .card-slot .card.arena-style[class*="faction-"] .arena-name {
+            padding: 4px 6px 5px 6px;
         }
-
+        .card-slot .card.arena-style.on-field .arena-stats {
+        }
 
         /* Code couleur des bordures — double classe pour écraser faction */
         .card.card.just-played, .card.arena-style.just-played[class*="faction-"] {
@@ -740,25 +753,12 @@
 
 
         /* Le slot avec un volant - pas de couleur spéciale */
-        /* Ombre au sol pour les volants */
-        .card-slot.has-flying::after {
-            content: '';
-            position: absolute;
-            bottom: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60%;
-            height: 15px;
-            background: radial-gradient(ellipse, rgba(0, 0, 0, 0.5) 0%, transparent 70%);
-            pointer-events: none;
-            z-index: 5;
-        }
         
         /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
-        .my-hand { 
-            position: absolute; 
-            bottom: -35px; /* Cache 30% de la carte (116px * 0.3) */
-            left: 140px; 
+        .my-hand {
+            position: absolute;
+            bottom: -30px; /* Cache ~20% de la carte */
+            left: 185px;
             display: flex; 
             padding: 10px 15px 0 15px;
             background: transparent; 
@@ -766,7 +766,7 @@
             z-index: 20;
         }
         .my-hand .card {
-            margin-left: -40px;
+            margin-left: -44px;
             transition: transform 0.2s ease-out, z-index 0s;
             flex-shrink: 0;
             position: relative;
@@ -775,7 +775,7 @@
         }
         .my-hand .card:first-child { margin-left: 0; }
         .my-hand .card:hover:not(.dragging), .my-hand .card.dragging {
-            transform: translateY(-50px) scale(1.3);
+            transform: translateY(-50px) scale(1.2632); /* 19/24 × 24/19 = BASE */
             z-index: 100 !important;
             animation: none !important;
         }
@@ -783,24 +783,24 @@
             border-color: #353535 !important;
         }
         .my-hand .card.selected {
-            transform: translateY(-55px) scale(1.35);
+            transform: translateY(-55px) scale(1.4737); /* → 168×224 (sélectionnée) */
             z-index: 101 !important;
         }
         
         /* MAIN ADVERSE - 30% cachée */
-        .opp-hand { 
-            position: absolute; 
-            bottom: -58px; /* 50% cachée */
-            right: 140px; 
+        .opp-hand {
+            position: absolute;
+            bottom: -60px; /* 50% cachée */
+            right: 185px;
             display: flex; 
             padding: 10px 15px 0 15px;
             background: transparent;
             z-index: 20;
         }
         .opp-card-back {
-            width: 86px;
-            height: 116px;
-            margin-left: -55px;
+            width: calc(var(--card-w) * 19 / 24);
+            height: calc(var(--card-h) * 19 / 24);
+            margin-left: -60px;
             border-radius: 4px;
             background: url('../cardback/back_1.png') center/cover no-repeat;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -817,8 +817,8 @@
             background-image: none;
             background-size: cover;
             background-position: center;
-            width: 86px;
-            height: 116px;
+            width: calc(var(--card-w) * 19 / 24);
+            height: calc(var(--card-h) * 19 / 24);
             cursor: pointer;
         }
         .opp-card-back.opp-revealed .arena-stats {
@@ -884,138 +884,111 @@
         /* Jeton compteur de gaze (Medusa) — bordure gradient violet rotatif */
         .gaze-marker {
             position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 22px;
-            height: 22px;
-            background: radial-gradient(circle, #2a0030, #120018);
+            top: 2px;
+            right: 6px;
+            width: 24px;
+            height: 24px;
+            background: #6b21a8;
+            border: 2px solid #D0BBA0;
             border-radius: 50%;
             color: #e5e5e5;
-            font-size: 0.8em;
+            font-size: 1em;
             font-weight: 900;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 20;
-            box-shadow: 0 0 8px rgba(140, 50, 180, 0.7);
-        }
-        .gaze-marker::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 50%;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), #a855f7, #7c3aed, #c084fc, #7c3aed, #a855f7);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: rotateBorder 3s linear infinite;
         }
 
-        /* Jeton compteur de poison — bordure gradient vert rotatif */
         .poison-marker {
             position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 22px;
-            height: 22px;
-            background: radial-gradient(circle, #40a028, #2a7919);
+            top: 2px;
+            right: 6px;
+            width: 24px;
+            height: 24px;
+            background: #479805;
+            border: 2px solid #D0BBA0;
             border-radius: 50%;
             color: #e5e5e5;
-            font-size: 0.8em;
+            font-size: 1em;
             font-weight: 900;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 20;
-            box-shadow: 0 0 8px rgba(50, 180, 50, 0.7);
-        }
-        .poison-marker::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 50%;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), #22c55e, #16a34a, #4ade80, #16a34a, #22c55e);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: rotateBorder 3s linear infinite;
-        }
-        /* Jeton compteur d'entrave (Araignée) — bordure gradient noir/gris rotatif */
-        .entrave-marker {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 22px;
-            height: 22px;
-            background: radial-gradient(circle, #2d2d2d, #000000);
-            border-radius: 50%;
-            color: #e5e5e5;
-            font-size: 0.8em;
-            font-weight: 900;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
-        }
-        .entrave-marker::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 50%;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), #888, #444, #aaa, #444, #888);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: rotateBorder 3s linear infinite;
-        }
-        /* Jeton compteur de buff (Armes magiques) — bordure gradient bleu clair rotatif */
-        .buff-marker {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 22px;
-            height: 22px;
-            background: radial-gradient(circle, #002a4a, #001828);
-            border-radius: 50%;
-            color: #e5e5e5;
-            font-size: 0.8em;
-            font-weight: 900;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            box-shadow: 0 0 8px rgba(50, 140, 220, 0.7);
-        }
-        .buff-marker::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 50%;
-            padding: 2px;
-            background: conic-gradient(from var(--border-angle), #38bdf8, #0ea5e9, #7dd3fc, #0ea5e9, #38bdf8);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: rotateBorder 3s linear infinite;
         }
 
-        /* Cacher les markers de combat sur les cartes au cimetière */
+        .entrave-marker {
+            position: absolute;
+            top: 2px;
+            right: 6px;
+            width: 24px;
+            height: 24px;
+            background: #1a1a1a;
+            border: 2px solid #D0BBA0;
+            border-radius: 50%;
+            color: #e5e5e5;
+            font-size: 1em;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        .buff-marker {
+            position: absolute;
+            top: 2px;
+            right: 6px;
+            width: 24px;
+            height: 24px;
+            background: #0e4d82;
+            border: 2px solid #D0BBA0;
+            border-radius: 50%;
+            color: #e5e5e5;
+            font-size: 1em;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        /* Cacher titre, stats et markers sur les cartes au cimetière (pile uniquement, pas la popup) */
+        .grave-card-layer .card.in-graveyard .arena-title,
+        .grave-card-layer .card.in-graveyard .arena-stats,
+        .grave-card-layer .card.in-graveyard .arena-mana,
+        .grave-top-card .card.in-graveyard .arena-title,
+        .grave-top-card .card.in-graveyard .arena-stats,
+        .grave-top-card .card.in-graveyard .arena-mana {
+            display: none !important;
+        }
         .card.in-graveyard .gaze-marker,
         .card.in-graveyard .poison-marker,
         .card.in-graveyard .entrave-marker,
         .card.in-graveyard .buff-marker {
             display: none;
+        }
+
+        /* Animation pop d'apparition des marqueurs */
+        @keyframes markerPop {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.35); opacity: 1; }
+            70% { transform: scale(0.9); }
+            85% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .marker-pop {
+            animation: markerPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        /* Flash du compteur quand il s'incrémente */
+        @keyframes markerCountBump {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.4); color: #fff; }
+            100% { transform: scale(1); }
+        }
+        .marker-bump {
+            animation: markerCountBump 0.3s ease-out;
         }
 
