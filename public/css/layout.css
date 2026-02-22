@@ -27,8 +27,8 @@
             position: absolute;
             top: 0;
             left: 0;
-            transform-origin: top left;
             overflow: hidden;
+            will-change: transform;
         }
 
         /* ── Curseur fantasy custom ── */
@@ -738,7 +738,7 @@
                 inset 0 1px 2px rgba(255, 255, 255, 0.2);
             border: none;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
             position: relative;
             transform: translateY(-3px);
         }
@@ -930,12 +930,11 @@
         /* Phase indicator masqué - remplacé par le bouton fin de tour */
         .phase-indicator { display: none !important; }
         
-        .side-panel { 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             gap: 12px;
-            transform: translateZ(1px);
         }
         .side-panel.left {
             margin-right: 50px;
@@ -975,6 +974,24 @@
             z-index: 30;
             pointer-events: none;
             animation: heroHitFlash 0.55s ease-out forwards;
+        }
+        /* Aura verte DOM quand le héros est soigné (Erebeth) */
+        @keyframes heroHealFlash {
+            0% { opacity: 0; }
+            25% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .hero-card.hero-heal-aura::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 2px solid rgba(46, 204, 113, 0.6);
+            background: rgba(46, 204, 113, 0.1);
+            box-shadow: inset 0 0 15px rgba(46, 204, 113, 0.25), 0 0 12px rgba(46, 204, 113, 0.3);
+            z-index: 30;
+            pointer-events: none;
+            animation: heroHealFlash 0.7s ease-out forwards;
         }
         /* Flash blanc→rouge DOM quand une créature prend des dégâts (hérite de la perspective 3D) */
         @keyframes cardDamageFlash {
@@ -1105,10 +1122,11 @@
         /* HP Héros — style arena (même design que les stats de créature) */
         .hero-hp {
             position: absolute;
-            width: 42px;
-            height: 42px;
-            background: #9a1b1bd6;
-            border: 2px solid #dc4d4dbd;
+            width: 60px;
+            height: 35px;
+            background: linear-gradient(135deg, #ef5350, #d32f2f, #a52a2a);
+            background-clip: padding-box;
+            border: 2px solid #ff440180;
             box-sizing: border-box;
             z-index: 10;
             pointer-events: none;
@@ -1135,11 +1153,12 @@
         /* Mana héros — style arena (même design que les stats de créature) */
         .hero-mana {
             position: absolute;
-            min-width: 42px;
-            height: 42px;
-            padding: 0 4px;
-            background: rgba(50, 90, 160, 0.75);
-            border: 2px solid #6baef0;
+            width: 60px;
+            height: 35px;
+            background: #233793;
+            background-clip: padding-box;
+            border: 2px solid #5aa3d985;
+            border-radius: 10px 2px 10px 2px;
             box-sizing: border-box;
             z-index: 5;
             pointer-events: none;
@@ -1157,7 +1176,7 @@
         }
         .hero-mana-number {
             font-family: 'Cinzel', serif;
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 900;
             color: #e5e5e5;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
@@ -1167,23 +1186,21 @@
         .side-panel.left .hero-hp {
             bottom: 2px;
             right: 2px;
-            border-radius: 2px 10px 2px 10px;
+            border-radius: 10px 2px 10px 2px;
         }
         .side-panel.left .hero-mana {
             top: 2px;
             left: 2px;
-            border-radius: 2px 10px 2px 10px;
         }
         /* Héros adverse (side-panel right) — HP bas-gauche, Mana haut-droite */
         .side-panel.right .hero-hp {
             bottom: 2px;
-            left: 2px;
+            right: 2px;
             border-radius: 10px 2px 10px 2px;
         }
         .side-panel.right .hero-mana {
             top: 2px;
-            right: 2px;
-            border-radius: 10px 2px 10px 2px;
+            left: 2px;
         }
 
         .deck-grave-row {
@@ -1226,7 +1243,7 @@
             pointer-events: none;
             transition: opacity 0.2s ease;
             z-index: 100;
-            backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.75);
         }
         .deck-tooltip {
             top: 100%;
@@ -1546,49 +1563,50 @@
             top: 46%;
             left: 50%;
             transform: translate(-50%, -50%);
-            perspective: 1500px;
+            perspective: 1000px;
+            perspective-origin: 50% 80%;
             padding-bottom: 50px;
         }
         
         .game-board {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            transform: rotateX(18deg);
-            transform-style: preserve-3d;
+            transform: rotateX(10deg);
         }
         
         .battlefield {
+            position: relative;
             display: flex;
             gap: 12px;
             padding: 24px;
             background: rgba(0,0,0,0.5);
             border-radius: 12px;
             border: 2px solid rgba(100,80,60,0.6);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 30px rgba(0,0,0,0.3);
-            transform: translateZ(1px);
+            box-shadow: 0 20px 60px rgb(0 0 0 / 20%), inset 0 0 10px rgba(0, 0, 0, 0.6);
         }
-        
+
         .field-side {
             display: grid;
             grid-template-columns: repeat(2, var(--card-w));
             grid-template-rows: repeat(4, var(--card-h));
             gap: 12px;
-            transform: translateZ(1px);
         }
-        
-        .trap-center { display: flex; gap: 8px; transform: translateZ(1px); }
+
+        .trap-center { display: flex; gap: 8px; }
         .trap-col { display: grid; grid-template-rows: repeat(4, var(--card-h)); gap: 8px; }
         
         .card-slot {
             width: var(--card-w);
             height: var(--card-h);
-            border: 2px solid rgba(255,255,255,0.3); 
-            border-radius: 4px; 
-            background: rgba(255,255,255,0.05); 
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 4px;
+            background: rgba(255,255,255,0.05);
             cursor: pointer;
             transition: border-color 0.2s, background-color 0.2s;
             position: relative;
+            contain: layout style;
             display: flex;
             align-items: center;
             justify-content: center;

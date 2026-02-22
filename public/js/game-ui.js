@@ -11,9 +11,15 @@ function canPlay() {
     if (state.me.ready) {
         return false;
     }
-    // Vérifier aussi si on a cliqué fin de tour (avant que le serveur confirme)
+    // Bloquer pendant les animations — le serveur peut envoyer phase='planning'
+    // avant que les animations de combat/pioche ne soient terminées côté client
+    if (isAnimating || animationQueue.length > 0) {
+        return false;
+    }
+    // Vérifier aussi si on a cliqué fin de tour ou si la résolution est encore en cours
+    // ('resolving' est retiré uniquement dans le handler newTurn APRÈS la fin des animations)
     const endTurnBtn = document.getElementById('end-turn-btn');
-    if (endTurnBtn && endTurnBtn.classList.contains('waiting')) {
+    if (endTurnBtn && (endTurnBtn.classList.contains('waiting') || endTurnBtn.classList.contains('resolving'))) {
         return false;
     }
     return true;
@@ -137,7 +143,9 @@ function startGame() {
     document.getElementById('mulligan-overlay').classList.add('hidden');
     // Nettoyer les cartes du mulligan pour libérer le DOM
     document.getElementById('mulligan-hand').innerHTML = '';
-    document.getElementById('game-container').classList.add('active');
+    const gc = document.getElementById('game-container');
+    gc.classList.add('active');
+    gc.style.display = 'block'; // Défensif : empêche le flash si la classe active est retirée
     buildBattlefield();
     setupCustomDrag();
     render();

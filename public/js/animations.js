@@ -29,6 +29,7 @@ function prepareDrawAnimation(data) {
         const owner = drawData.player === myPlayerNum ? 'me' : 'opp';
         const handIndex = drawData.handIndex;
         const card = drawData.card;
+        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] prepareDraw owner=${owner} handIndex=${handIndex} card=${card?.name || card?.id || '-'} isToken=${!!drawData.isToken}`);
 
         // Le vrai event draw remplace l'auto-hide
         autoHiddenCards[owner].delete(handIndex);
@@ -66,6 +67,16 @@ function shouldHideCard(owner, handIndex) {
     return pendingDrawAnimations[owner].has(handIndex) || autoHiddenCards[owner].has(handIndex);
 }
 
+function shouldHideCardByUid(owner, uid) {
+    const key = String(uid || '');
+    if (!key) return false;
+    for (const [, pendingCard] of pendingDrawAnimations[owner]) {
+        const pendingUid = String(pendingCard?.uid || pendingCard?.id || '');
+        if (pendingUid && pendingUid === key) return true;
+    }
+    return false;
+}
+
 /**
  * Vérifie si des animations de pioche sont actives (pending ou started) pour un owner
  */
@@ -90,9 +101,35 @@ function autoHideNewDraws(owner, oldCount, newCount) {
 }
 
 /**
+ * Résout la carte cible dans la main.
+ * Fallback par uid/id si l'index serveur ne correspond pas exactement au DOM.
+ */
+function resolveHandTarget(owner, handIndex, card, handCards) {
+    let resolvedIndex = handIndex;
+    let targetCard = handCards[resolvedIndex];
+
+    if (!targetCard && card) {
+        const uid = String(card.uid || card.id || '');
+        if (uid) {
+            for (let i = 0; i < handCards.length; i++) {
+                const el = handCards[i];
+                const elUid = String(el?.dataset?.uid || el?.dataset?.cardId || '');
+                if (elUid && elUid === uid) {
+                    targetCard = el;
+                    resolvedIndex = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    return { targetCard, resolvedIndex };
+}
+
+/**
  * Remappe les indices de pioche adverse pour cibler les nouvelles cartes en fin de main.
  * Le serveur renvoie un handIndex basé sur le tableau interne, mais côté DOM
- * toutes les cartes adverses sont des dos identiques — on anime toujours la fin.
+ * toutes les cartes adverses sont des dos identiques - on anime toujours la fin.
  */
 function remapOppDrawIndices(newStartIdx) {
     if (pendingDrawAnimations.opp.size === 0) return;
@@ -120,39 +157,83 @@ function remapOppDrawIndices(newStartIdx) {
  * Lance les animations après le render
  */
 function startPendingDrawAnimations() {
+    // Ne pas lancer les animations de pioche tant que la queue d'animations est active
+    // (ex: combats en cours). La queue appellera cette fonction quand elle sera vide.
+    if (typeof isAnimating !== 'undefined' && (isAnimating || (typeof animationQueue !== 'undefined' && animationQueue.length > 0))) {
+        const qLen = (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0;
+        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] startPendingDraw blocked isAnimating=${!!isAnimating} queueLen=${qLen}`);
+        return;
+    }
     // Attendre le prochain frame pour s'assurer que le DOM est rendu
     requestAnimationFrame(() => {
-        // Animer les cartes du joueur (seulement si pas déjà lancé)
+        const mePanel = document.querySelector('#my-hand');
+        const meCards = mePanel ? mePanel.querySelectorAll('.card:not(.committed-spell)') : [];
+        let allMeTargetsReady = true;
         for (const [handIndex, card] of pendingDrawAnimations.me) {
             if (startedDrawAnimations.me.has(handIndex)) continue;
-            startedDrawAnimations.me.add(handIndex);
-            animateCardDraw(card, 'me', handIndex, () => {
-                pendingDrawAnimations.me.delete(handIndex);
-                startedDrawAnimations.me.delete(handIndex);
-                // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
-                const panel = document.querySelector('#my-hand');
-                if (panel) {
-                    const cards = panel.querySelectorAll('.card:not(.committed-spell)');
-                    if (cards[handIndex]) cards[handIndex].style.visibility = 'visible';
-                }
-            });
+            const { targetCard } = resolveHandTarget('me', handIndex, card, meCards);
+            if (!targetCard) {
+                allMeTargetsReady = false;
+                if (window.DEBUG_LOGS) console.log(`[BLAST-RET] me target not ready handIndex=${handIndex} card=${card?.name || card?.id || '-'} domCount=${meCards.length}`);
+                break;
+            }
+        }
+
+        // Animer les cartes du joueur (seulement si pas déjà lancé)
+        if (allMeTargetsReady) {
+            for (const [handIndex, card] of pendingDrawAnimations.me) {
+                if (startedDrawAnimations.me.has(handIndex)) continue;
+                startedDrawAnimations.me.add(handIndex);
+                animateCardDraw(card, 'me', handIndex, (finalIndex) => {
+                    const resolvedIndex = Number.isInteger(finalIndex) ? finalIndex : handIndex;
+                    pendingDrawAnimations.me.delete(handIndex);
+                    pendingDrawAnimations.me.delete(resolvedIndex);
+                    startedDrawAnimations.me.delete(handIndex);
+                    startedDrawAnimations.me.delete(resolvedIndex);
+                    // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
+                    const panel = document.querySelector('#my-hand');
+                    if (panel) {
+                        const cards = panel.querySelectorAll('.card:not(.committed-spell)');
+                        if (cards[resolvedIndex]) cards[resolvedIndex].style.visibility = 'visible';
+                    }
+                });
+            }
         }
 
         // Animer les cartes de l'adversaire (seulement si pas déjà lancé)
+        // Vérifier d'abord que toutes les cibles DOM existent pour synchroniser le batch
+        const oppPanel = document.querySelector('#opp-hand');
+        const oppCards = oppPanel ? oppPanel.querySelectorAll('.opp-card-back') : [];
+        let allOppTargetsReady = true;
         for (const [handIndex, card] of pendingDrawAnimations.opp) {
             if (startedDrawAnimations.opp.has(handIndex)) continue;
-            startedDrawAnimations.opp.add(handIndex);
-            animateCardDraw(card, 'opp', handIndex, () => {
-                pendingDrawAnimations.opp.delete(handIndex);
-                startedDrawAnimations.opp.delete(handIndex);
-                autoHiddenCards.opp.delete(handIndex);
-                // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
-                const panel = document.querySelector('#opp-hand');
-                if (panel) {
-                    const cards = panel.querySelectorAll('.opp-card-back');
-                    if (cards[handIndex]) cards[handIndex].style.visibility = 'visible';
-                }
-            });
+            const { targetCard } = resolveHandTarget('opp', handIndex, card, oppCards);
+            if (!targetCard) {
+                allOppTargetsReady = false;
+                if (window.DEBUG_LOGS) console.log(`[BLAST-RET] opp target not ready handIndex=${handIndex} card=${card?.name || card?.id || '-'} domCount=${oppCards.length}`);
+                break;
+            }
+        }
+        if (allOppTargetsReady) {
+            for (const [handIndex, card] of pendingDrawAnimations.opp) {
+                if (startedDrawAnimations.opp.has(handIndex)) continue;
+                startedDrawAnimations.opp.add(handIndex);
+                animateCardDraw(card, 'opp', handIndex, (finalIndex) => {
+                    const resolvedIndex = Number.isInteger(finalIndex) ? finalIndex : handIndex;
+                    pendingDrawAnimations.opp.delete(handIndex);
+                    pendingDrawAnimations.opp.delete(resolvedIndex);
+                    startedDrawAnimations.opp.delete(handIndex);
+                    startedDrawAnimations.opp.delete(resolvedIndex);
+                    autoHiddenCards.opp.delete(handIndex);
+                    autoHiddenCards.opp.delete(resolvedIndex);
+                    // Re-query le DOM (peut avoir été reconstruit pendant l'animation)
+                    const panel = document.querySelector('#opp-hand');
+                    if (panel) {
+                        const cards = panel.querySelectorAll('.opp-card-back');
+                        if (cards[resolvedIndex]) cards[resolvedIndex].style.visibility = 'visible';
+                    }
+                });
+            }
         }
     });
 }
@@ -173,7 +254,7 @@ function createCardElement(card) {
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
             trample: 'Piétinement', power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', untargetable: 'Inciblable'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', untargetable: 'Inciblable', provocation: 'Provocation'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
@@ -247,15 +328,36 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
     const cardSelector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
     const handEl = document.querySelector(handSelector);
 
-    if (!handEl) { if (onComplete) onComplete(); return; }
+    if (!handEl) { if (onComplete) onComplete(handIndex); return; }
 
     const handCards = handEl.querySelectorAll(cardSelector);
-    const targetCard = handCards[handIndex];
+    const resolved = resolveHandTarget(owner, handIndex, card, handCards);
+    const targetCard = resolved.targetCard;
+    const resolvedIndex = resolved.resolvedIndex;
+    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] animateCardDraw start owner=${owner} reqIdx=${handIndex} resolvedIdx=${resolvedIndex} card=${card?.name || card?.id || '-'} domCount=${handCards.length} target=${targetCard ? 'found' : 'missing'}`);
 
     if (!targetCard) {
         startedDrawAnimations[owner].delete(handIndex);
+        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] animateCardDraw abort no-target owner=${owner} reqIdx=${handIndex} card=${card?.name || card?.id || '-'}`);
         return;
     }
+    // Sécurité: si l'index serveur est stale, recaler les sets sur l'index réel.
+    if (resolvedIndex !== handIndex) {
+        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] resolve fallback owner=${owner} reqIdx=${handIndex} resolvedIdx=${resolvedIndex} card=${card?.name || card?.id || '-'}`);
+        if (pendingDrawAnimations[owner].has(handIndex)) {
+            pendingDrawAnimations[owner].delete(handIndex);
+            pendingDrawAnimations[owner].set(resolvedIndex, card);
+        }
+        if (pendingGraveyardReturns[owner].has(handIndex)) {
+            pendingGraveyardReturns[owner].delete(handIndex);
+            pendingGraveyardReturns[owner].add(resolvedIndex);
+        }
+        if (pendingTokenSpawns[owner].has(handIndex)) {
+            pendingTokenSpawns[owner].delete(handIndex);
+            pendingTokenSpawns[owner].add(resolvedIndex);
+        }
+    }
+    targetCard.style.visibility = 'hidden';
 
     const targetRect = targetCard.getBoundingClientRect();
     const endX = targetRect.left;
@@ -264,32 +366,53 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
     const cardHeight = targetRect.height;
 
     // Vérifier si la carte revient du cimetière
-    const fromGraveyard = pendingGraveyardReturns[owner].has(handIndex);
-    if (fromGraveyard) pendingGraveyardReturns[owner].delete(handIndex);
+    const fromGraveyard = pendingGraveyardReturns[owner].has(resolvedIndex) || pendingGraveyardReturns[owner].has(handIndex);
+    if (fromGraveyard) {
+        pendingGraveyardReturns[owner].delete(handIndex);
+        pendingGraveyardReturns[owner].delete(resolvedIndex);
+    }
 
     // Vérifier si c'est un token (apparition directe en main)
-    const isToken = pendingTokenSpawns[owner].has(handIndex);
-    if (isToken) pendingTokenSpawns[owner].delete(handIndex);
+    const isToken = pendingTokenSpawns[owner].has(resolvedIndex) || pendingTokenSpawns[owner].has(handIndex);
+    if (isToken) {
+        pendingTokenSpawns[owner].delete(handIndex);
+        pendingTokenSpawns[owner].delete(resolvedIndex);
+    }
 
     // Token : animation d'apparition directe sur place
     if (isToken) {
-        animateTokenSpawn(card, owner, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+        animateTokenSpawn(card, owner, endX, endY, cardWidth, cardHeight, targetCard, () => {
+            if (onComplete) onComplete(resolvedIndex);
+        });
         return;
     }
 
     const startElId = fromGraveyard ? `${owner}-grave-stack` : `${owner}-deck-stack`;
     const startEl = document.querySelector(`#${startElId}`);
+    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] animateCardDraw route owner=${owner} idx=${resolvedIndex} fromGraveyard=${fromGraveyard} isToken=${isToken} startEl=${startElId} exists=${!!startEl}`);
     if (!startEl) {
         targetCard.style.visibility = 'visible';
-        if (onComplete) onComplete();
+        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] animateCardDraw fallback-show owner=${owner} idx=${resolvedIndex} reason=no-startEl`);
+        if (onComplete) onComplete(resolvedIndex);
         return;
     }
 
     const startElRect = startEl.getBoundingClientRect();
     const startX = startElRect.left + startElRect.width / 2 - cardWidth / 2;
     const startY = startElRect.top;
+    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] animateCardDraw path owner=${owner} idx=${resolvedIndex} start=(${startX.toFixed(1)},${startY.toFixed(1)}) end=(${endX.toFixed(1)},${endY.toFixed(1)}) size=${cardWidth.toFixed(1)}x${cardHeight.toFixed(1)}`);
+
+    // Ratio écran/design : les cartes sont designées à 144-192px (dans game-scaler)
+    // mais à l'écran elles sont plus petites à cause du transform: scale() du game-scaler.
+    // On garde la taille design dans les faces et on scale pour matcher l'écran.
+    const _rs = getComputedStyle(document.documentElement);
+    const designW = parseFloat(_rs.getPropertyValue('--card-w'));
+    const designH = parseFloat(_rs.getPropertyValue('--card-h'));
+    const faceScale = cardWidth / designW;
 
     // Créer un conteneur positionné
+    // Pour le joueur (pioche normale), le wrapper sera redimensionné à la taille reveal
+    // dans animateDrawForMe pour un rendu net. Ici on crée à la taille main par défaut.
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
         position: fixed;
@@ -313,21 +436,51 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                 : createCardElement(card);
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.cssText = `
-                width: 100%; height: 100%;
                 margin: 0; position: relative;
                 border-radius: 6px;
+                transform: scale(${faceScale});
+                transform-origin: top left;
             `;
             if (bgImage) frontFace.style.backgroundImage = bgImage;
             wrapper.appendChild(frontFace);
             document.body.appendChild(wrapper);
 
-            // Auto-fit du nom (les noms longs débordent pendant l'animation)
-            const nameElGrave = frontFace.querySelector('.arena-name');
-            if (nameElGrave && typeof fitArenaName === 'function') fitArenaName(nameElGrave);
+            // Vider le cimetière dans le même frame que la création du wrapper
+            // (le wrapper couvre la position du cimetière, pas de flash visible)
+            const cardUid = card.uid || card.id;
+            const meGraveTop = document.getElementById('me-grave-top');
+            if (meGraveTop && meGraveTop.dataset.topCardUid === cardUid) {
+                const meGrave = state?.me?.graveyard;
+                meGraveTop.innerHTML = '';
+                // Restaurer la vraie carte du dessus depuis le state (le sort retourné n'y est plus)
+                if (meGrave && meGrave.length > 0) {
+                    const actualTop = meGrave[meGrave.length - 1];
+                    meGraveTop.dataset.topCardUid = actualTop.uid || actualTop.id;
+                    meGraveTop.classList.remove('empty');
+                    const graveCardEl = makeCard(actualTop, false);
+                    graveCardEl.classList.remove('just-played', 'can-attack');
+                    graveCardEl.classList.add('grave-card', 'in-graveyard');
+                    meGraveTop.appendChild(graveCardEl);
+                    const nameEl = graveCardEl.querySelector('.arena-name');
+                    if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+                } else {
+                    meGraveTop.classList.add('empty');
+                    delete meGraveTop.dataset.topCardUid;
+                }
+                // Débloquer et mettre à jour les layers du cimetière
+                graveRenderBlocked.delete('me');
+                updateGraveDisplay('me', meGrave || []);
+            }
 
-            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+                if (onComplete) onComplete(resolvedIndex);
+            });
         } else {
             // Pioche normale : flipper 3D, dos visible au départ, face cachée
+            // Le wrapper sera redimensionné à revealW dans animateDrawForMe
+            const revealScale = 1.4;
+            const revealFaceScale = faceScale * revealScale;
+
             const flipper = document.createElement('div');
             flipper.style.cssText = `
                 width: 100%; height: 100%;
@@ -336,7 +489,20 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                 transform: rotateY(0deg);
             `;
 
+            // Scaler : taille design + scale pour matcher le wrapper.
+            // Sépare le scale (top-left) du rotateY (center) pour éviter
+            // les conflits de transform-origin en 3D.
+            const scalerCss = `
+                position: absolute; top: 0; left: 0;
+                width: ${designW}px; height: ${designH}px;
+                transform: scale(${revealFaceScale});
+                transform-origin: top left;
+                transform-style: preserve-3d;
+            `;
+
             // Face arrière (dos de carte)
+            const backScaler = document.createElement('div');
+            backScaler.style.cssText = scalerCss;
             const backFace = createCardBackElement();
             backFace.style.cssText = `
                 position: absolute; top: 0; left: 0;
@@ -345,8 +511,11 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                 transform: rotateY(0deg);
                 border-radius: 6px;
             `;
+            backScaler.appendChild(backFace);
 
-            // Face avant — utiliser makeCard() pour avoir le vrai design (arena-style, faction, etc.)
+            // Face avant (carte) - 100% du scaler = taille design, proportions correctes
+            const frontScaler = document.createElement('div');
+            frontScaler.style.cssText = scalerCss;
             const frontFace = (typeof makeCard === 'function')
                 ? makeCard(card, true)
                 : createCardElement(card);
@@ -360,17 +529,16 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             frontFace.style.backfaceVisibility = 'hidden';
             frontFace.style.transform = 'rotateY(180deg)';
             if (bgImage) frontFace.style.backgroundImage = bgImage;
+            frontScaler.appendChild(frontFace);
 
-            flipper.appendChild(backFace);
-            flipper.appendChild(frontFace);
+            flipper.appendChild(backScaler);
+            flipper.appendChild(frontScaler);
             wrapper.appendChild(flipper);
             document.body.appendChild(wrapper);
 
-            // Auto-fit du nom (les noms longs débordent pendant l'animation)
-            const nameElDraw = frontFace.querySelector('.arena-name');
-            if (nameElDraw && typeof fitArenaName === 'function') fitArenaName(nameElDraw);
-
-            animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+                if (onComplete) onComplete(resolvedIndex);
+            });
         }
     } else {
         if (fromGraveyard) {
@@ -383,40 +551,68 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             frontFace.classList.add('opp-card-back', 'opp-revealed');
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.cssText = `
-                width: 100%; height: 100%;
                 margin: 0; position: relative;
                 border-radius: 6px;
+                transform: scale(${faceScale});
+                transform-origin: top left;
             `;
             if (bgImage) frontFace.style.backgroundImage = bgImage;
             wrapper.appendChild(frontFace);
             document.body.appendChild(wrapper);
 
-            // Auto-fit du nom (les noms longs débordent pendant l'animation)
-            const nameElOppGrave = frontFace.querySelector('.arena-name');
-            if (nameElOppGrave && typeof fitArenaName === 'function') fitArenaName(nameElOppGrave);
+            // Vider le cimetière dans le même frame que la création du wrapper
+            const oppCardUid = card.uid || card.id;
+            const oppGraveTop = document.getElementById('opp-grave-top');
+            if (oppGraveTop && oppGraveTop.dataset.topCardUid === oppCardUid) {
+                const oppGrave = state?.opponent?.graveyard;
+                oppGraveTop.innerHTML = '';
+                // Restaurer la vraie carte du dessus depuis le state
+                if (oppGrave && oppGrave.length > 0) {
+                    const actualTop = oppGrave[oppGrave.length - 1];
+                    oppGraveTop.dataset.topCardUid = actualTop.uid || actualTop.id;
+                    oppGraveTop.classList.remove('empty');
+                    const graveCardEl = makeCard(actualTop, false);
+                    graveCardEl.classList.remove('just-played', 'can-attack');
+                    graveCardEl.classList.add('grave-card', 'in-graveyard');
+                    oppGraveTop.appendChild(graveCardEl);
+                    const nameEl = graveCardEl.querySelector('.arena-name');
+                    if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+                } else {
+                    oppGraveTop.classList.add('empty');
+                    delete oppGraveTop.dataset.topCardUid;
+                }
+                // Débloquer et mettre à jour les layers du cimetière
+                graveRenderBlocked.delete('opp');
+                updateGraveDisplay('opp', oppGrave || []);
+            }
 
-            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+                if (onComplete) onComplete(resolvedIndex);
+            });
         } else {
             // Adversaire pioche normale : dos de carte
             const backCard = createCardBackElement();
             backCard.style.cssText = `
-                width: 100%; height: 100%;
                 margin: 0; position: relative;
                 border-radius: 6px;
+                transform: scale(${faceScale});
+                transform-origin: top left;
             `;
             wrapper.appendChild(backCard);
             document.body.appendChild(wrapper);
 
-            animateDrawForOpp(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, onComplete);
+            animateDrawForOpp(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+                if (onComplete) onComplete(resolvedIndex);
+            });
         }
     }
 }
 
 /**
- * Animation de pioche pour le joueur — flip 3D + reveal au centre
+ * Animation de pioche pour le joueur - flip 3D + reveal au centre
  *
  * Phase 1 - Lift:       Dos de carte se soulève du deck
- * Phase 2 - Fly+Flip:   Vol vers le centre + flip 3D (dos → face)
+ * Phase 2 - Fly+Flip:   Vol vers le centre + flip 3D (dos -  face)
  * Phase 3 - Hold:       Pause au centre, carte face visible
  * Phase 4 - To hand:    Carte glisse dans la main
  */
@@ -424,10 +620,29 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Position de reveal : centre de l'écran, carte agrandie
+    // Rendu à la taille reveal (grande) pour un affichage net au centre.
+    // On scale DOWN vers la main au lieu de scale UP depuis la main.
     const revealScale = 1.4;
+    const handScale = 1 / revealScale; // ~0.714
     const revealW = cardW * revealScale;
     const revealH = cardH * revealScale;
+
+    // Agrandir le wrapper à la taille reveal (le contenu est rendu à cette résolution)
+    const offsetX = (revealW - cardW) / 2;
+    const offsetY = (revealH - cardH) / 2;
+    wrapper.style.width = revealW + 'px';
+    wrapper.style.height = revealH + 'px';
+    wrapper.style.left = (startX - offsetX) + 'px';
+    wrapper.style.top = (startY - offsetY) + 'px';
+    wrapper.style.transform = `scale(${handScale})`;
+
+    // Positions ajustées pour le wrapper agrandi (compense l'offset du scale depuis le centre)
+    const adjStartX = startX - offsetX;
+    const adjStartY = startY - offsetY;
+    const adjEndX = endX - offsetX;
+    const adjEndY = endY - offsetY;
+
+    // Position de reveal : centre de l'écran (wrapper à taille native = pas de scale)
     const revealX = (vw - revealW) / 2;
     const revealY = (vh - revealH) / 2 - 30;
 
@@ -451,45 +666,44 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
         let x, y, scale, opacity, flipDeg;
 
         if (progress <= t1) {
-            // === PHASE 1: LIFT — dos de carte se soulève ===
+            // === PHASE 1: LIFT - dos de carte se soulève (taille main) ===
             const p = progress / t1;
             const ep = easeOutCubic(p);
 
-            x = startX;
-            y = startY - ep * 30;
-            scale = 1 + ep * 0.05;
+            x = adjStartX;
+            y = adjStartY - ep * 30;
+            scale = handScale * (1 + ep * 0.05);
             opacity = 0.3 + ep * 0.7;
-            flipDeg = 0; // encore face cachée
+            flipDeg = 0;
 
         } else if (progress <= t2) {
-            // === PHASE 2: FLY + FLIP — vol vers le centre avec retournement ===
+            // === PHASE 2: FLY + FLIP - vol vers le centre, grandit jusqu'à taille native ===
             const p = (progress - t1) / (t2 - t1);
             const ep = easeInOutCubic(p);
 
-            const liftEndY = startY - 30;
-            x = startX + (revealX - startX) * ep;
+            const liftEndY = adjStartY - 30;
+            x = adjStartX + (revealX - adjStartX) * ep;
             y = liftEndY + (revealY - liftEndY) * ep;
-            scale = 1.05 + (revealScale - 1.05) * ep;
+            scale = handScale * 1.05 + (1.0 - handScale * 1.05) * ep;
             opacity = 1;
-            // Flip de 0° à 180° pendant le vol
             flipDeg = easeInOutCubic(p) * 180;
 
         } else if (progress <= t3) {
-            // === PHASE 3: HOLD — carte face visible au centre ===
+            // === PHASE 3: HOLD - carte face visible, taille native (rendu net) ===
             x = revealX;
             y = revealY;
-            scale = revealScale;
+            scale = 1.0;
             opacity = 1;
             flipDeg = 180;
 
         } else {
-            // === PHASE 4: FLY TO HAND — arc vers la main ===
+            // === PHASE 4: FLY TO HAND - rétrécit vers la main ===
             const p = (progress - t3) / (1 - t3);
             const ep = easeOutCubic(p);
 
-            x = revealX + (endX - revealX) * ep;
-            y = revealY + (endY - revealY) * ep;
-            scale = revealScale + (1 - revealScale) * ep;
+            x = revealX + (adjEndX - revealX) * ep;
+            y = revealY + (adjEndY - revealY) * ep;
+            scale = 1.0 + (handScale - 1.0) * ep;
             opacity = 1;
             flipDeg = 180;
         }
@@ -513,7 +727,7 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
 }
 
 /**
- * Animation de pioche pour l'adversaire — arc simple et rapide
+ * Animation de pioche pour l'adversaire - arc simple et rapide
  */
 function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
     const duration = 450;
@@ -548,7 +762,7 @@ function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, ta
 }
 
 /**
- * Animation de retour du cimetière pour le joueur — arc simple, carte face visible
+ * Animation de retour du cimetière pour le joueur - arc simple, carte face visible
  */
 function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
     const duration = 550;
@@ -556,7 +770,7 @@ function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, c
     const controlX = (startX + endX) / 2;
     const controlY = Math.min(startY, endY) - 80;
 
-    wrapper.style.opacity = '0';
+    wrapper.style.opacity = '1';
 
     function animate() {
         const elapsed = performance.now() - startTime;
@@ -571,7 +785,7 @@ function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, c
 
         wrapper.style.left = x + 'px';
         wrapper.style.top = y + 'px';
-        wrapper.style.opacity = Math.min(1, progress * 3);
+        wrapper.style.opacity = '1';
         wrapper.style.transform = `scale(${scale})`;
 
         if (progress < 1) {
@@ -591,6 +805,11 @@ function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, c
  * Scale-up avec glow + léger bounce
  */
 function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, onComplete) {
+    // Ratio écran/design (même calcul que animateCardDraw)
+    const _rs = getComputedStyle(document.documentElement);
+    const designW = parseFloat(_rs.getPropertyValue('--card-w'));
+    const tokenFaceScale = cardW / designW;
+
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
         position: fixed;
@@ -612,15 +831,13 @@ function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, on
             : createCardElement(card);
         const bgImage = frontFace.style.backgroundImage;
         frontFace.style.cssText = `
-            width: 100%; height: 100%;
             margin: 0; position: relative;
             border-radius: 6px;
+            transform: scale(${tokenFaceScale});
+            transform-origin: top left;
         `;
         if (bgImage) frontFace.style.backgroundImage = bgImage;
         wrapper.appendChild(frontFace);
-
-        const nameEl = frontFace.querySelector('.arena-name');
-        if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
     } else {
         const frontFace = (typeof makeCard === 'function')
             ? makeCard(card, true)
@@ -628,15 +845,13 @@ function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, on
         frontFace.classList.add('opp-card-back', 'opp-revealed');
         const bgImage = frontFace.style.backgroundImage;
         frontFace.style.cssText = `
-            width: 100%; height: 100%;
             margin: 0; position: relative;
             border-radius: 6px;
+            transform: scale(${tokenFaceScale});
+            transform-origin: top left;
         `;
         if (bgImage) frontFace.style.backgroundImage = bgImage;
         wrapper.appendChild(frontFace);
-
-        const nameEl = frontFace.querySelector('.arena-name');
-        if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
     }
 
     document.body.appendChild(wrapper);
@@ -650,18 +865,18 @@ function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, on
 
         let scale, opacity;
         if (progress < 0.4) {
-            // Scale up avec overshoot : 0 → 1.15
+            // Scale up avec overshoot : 0 -  1.15
             const p = progress / 0.4;
             const eased = 1 - Math.pow(1 - p, 3);
             scale = eased * 1.15;
             opacity = Math.min(1, p * 2.5);
         } else if (progress < 0.65) {
-            // Bounce back : 1.15 → 0.95
+            // Bounce back : 1.15 -  0.95
             const p = (progress - 0.4) / 0.25;
             scale = 1.15 - p * 0.2;
             opacity = 1;
         } else {
-            // Settle : 0.95 → 1.0
+            // Settle : 0.95 -  1.0
             const p = (progress - 0.65) / 0.35;
             scale = 0.95 + p * 0.05;
             opacity = 1;
@@ -693,6 +908,7 @@ const GameAnimations = {
     
     // Vérifie si une carte doit être cachée
     shouldHideCard: shouldHideCard,
+    shouldHideCardByUid: shouldHideCardByUid,
 
     // Vérifie si des animations de pioche sont actives
     hasActiveDrawAnimation: hasActiveDrawAnimation,

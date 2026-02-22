@@ -161,12 +161,12 @@ const CustomDrag = (function() {
         tiltX += (targetTiltX - tiltX) * config.tiltSmoothing;
         tiltY += (targetTiltY - tiltY) * config.tiltSmoothing;
 
-        // Appliquer la transformation (18deg = inclinaison du board)
-        const boardTilt = 18;
+        // Appliquer la transformation (10deg = inclinaison du board)
+        const boardTilt = 10;
         ghostEl.style.transform =
             `translate3d(${dx}px, ${dy}px, 0) ` +
             `scale(${config.ghostScale}) ` +
-            `perspective(600px) rotateX(${(boardTilt + tiltX).toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg)`;
+            `perspective(1000px) rotateX(${(boardTilt + tiltX).toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg)`;
     }
 
     function clamp(val, min, max) {
@@ -266,41 +266,14 @@ const CustomDrag = (function() {
      * Animation de snap vers la cible (drop réussi)
      */
     function animateSnap(targetEl, callback) {
-        if (!ghostEl || !dragState) {
-            if (callback) callback();
-            return;
+        // Drop instantané : le ghost disparaît, la carte apparaît dans le slot via render()
+        // Ne pas restaurer la visibilité de la carte source — évite un flash dans la main
+        if (dragState && dragState.sourceEl) {
+            dragState.sourceEl.classList.remove('custom-dragging', 'arrow-dragging');
+            dragState.sourceEl = null; // cleanup() ne restaurera pas visibility
         }
-
-        stopRenderLoop();
-
-        const ghostRect = ghostEl.getBoundingClientRect();
-        const targetRect = targetEl.getBoundingClientRect();
-
-        // Calculer le déplacement pour aller au centre de la cible
-        const currentDx = mouseX - dragState.offsetX - dragState.originRect.left;
-        const currentDy = mouseY - dragState.offsetY - dragState.originRect.top;
-
-        const targetCenterX = targetRect.left + targetRect.width / 2;
-        const targetCenterY = targetRect.top + targetRect.height / 2;
-        const ghostCenterX = dragState.originRect.left + dragState.originRect.width / 2;
-        const ghostCenterY = dragState.originRect.top + dragState.originRect.height / 2;
-
-        const snapDx = targetCenterX - ghostCenterX;
-        const snapDy = targetCenterY - ghostCenterY;
-
-        ghostEl.classList.add('snapping');
-
-        requestAnimationFrame(() => {
-            if (!ghostEl) return;
-            ghostEl.style.transform =
-                `translate3d(${snapDx}px, ${snapDy}px, 0) scale(0.95) perspective(600px) rotateX(18deg)`;
-            ghostEl.style.opacity = '0';
-        });
-
-        setTimeout(() => {
-            cleanup();
-            if (callback) callback();
-        }, config.dropDuration);
+        cleanup();
+        if (callback) callback();
     }
 
     /**

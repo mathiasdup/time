@@ -2,7 +2,8 @@
   "name": "bataille-des-heros",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check:encoding": "powershell -ExecutionPolicy Bypass -File tools/check-mojibake.ps1"
   },
   "dependencies": {
     "express": "^4.18.2",

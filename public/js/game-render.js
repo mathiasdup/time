@@ -1,109 +1,129 @@
 // ==================== RENDU DU JEU ====================
-// Render principal, champ de bataille, main, cartes, preview, cimetière
+// Render principal, champ de bataille, main, cartes, preview, cimetiÃ¨re
 
-// ── Performance Monitor ──
-const PerfMonitor = (() => {
-    let renderCount = 0;
-    let renderTotalMs = 0;
-    let renderMaxMs = 0;
-    let lastReport = performance.now();
-    const REPORT_INTERVAL = 5000; // rapport toutes les 5s
-
-    function startRender() {
-        return performance.now();
-    }
-
-    function endRender(startTime) {
-        const elapsed = performance.now() - startTime;
-        renderCount++;
-        renderTotalMs += elapsed;
-        if (elapsed > renderMaxMs) renderMaxMs = elapsed;
-
-        const now = performance.now();
-        if (now - lastReport >= REPORT_INTERVAL) {
-            report();
-            lastReport = now;
-        }
-    }
-
-    function report() {
-        // Safety cleanup uniquement : retirer les wrappers d'animation DIV orphelins (> 10s)
-        // Exclure les CANVAS (PixiJS CombatVFX permanent) qui ont aussi fixed+z-index élevé
-        const now = Date.now();
-        for (const child of Array.from(document.body.children)) {
-            if (child.tagName === 'CANVAS') continue;
-            if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) {
-                const born = parseInt(child.dataset.animBorn) || 0;
-                if (!born) {
-                    child.dataset.animBorn = now;
-                } else if (now - born > 10000) {
-                    child.remove();
-                }
+// Safety cleanup : retirer les wrappers d'animation DIV orphelins (> 10s)
+// Exclure les CANVAS (PixiJS CombatVFX permanent) qui ont aussi fixed+z-index Ã©levÃ©
+setInterval(() => {
+    const now = Date.now();
+    for (const child of Array.from(document.body.children)) {
+        if (child.tagName === 'CANVAS') continue;
+        if (child.style.position === 'fixed' && parseInt(child.style.zIndex) >= 9000) {
+            const born = parseInt(child.dataset.animBorn) || 0;
+            if (!born) {
+                child.dataset.animBorn = now;
+            } else if (now - born > 10000) {
+                child.remove();
             }
         }
-
-        // Reset
-        renderCount = 0;
-        renderTotalMs = 0;
-        renderMaxMs = 0;
     }
+}, 5000);
 
-    return { startRender, endRender };
-})();
+// Slots dont le slow path (makeCard) a Ã©tÃ© diffÃ©rÃ© pendant les animations de combat
+var deferredSlots = new Set();
+
+// Cache des Ã©lÃ©ments DOM statiques (initialisÃ© au premier render)
+let _cachedDomEls = null;
+function _getDomEls() {
+    if (!_cachedDomEls) {
+        _cachedDomEls = {
+            meHpNum: document.querySelector('#me-hp .hero-hp-number'),
+            oppHpNum: document.querySelector('#opp-hp .hero-hp-number'),
+            meManaNum: document.querySelector('#me-energy .hero-mana-number'),
+            oppManaNum: document.querySelector('#opp-energy .hero-mana-number'),
+            meDeckTooltip: document.getElementById('me-deck-tooltip'),
+            oppDeckTooltip: document.getElementById('opp-deck-tooltip'),
+            meGraveTooltip: document.getElementById('me-grave-tooltip'),
+            oppGraveTooltip: document.getElementById('opp-grave-tooltip'),
+            endTurnBtn: document.getElementById('end-turn-btn'),
+        };
+    }
+    return _cachedDomEls;
+}
 
 function render() {
     if (!state) return;
-    const _perfStart = PerfMonitor.startRender();
+    const __perfRenderStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
     const me = state.me, opp = state.opponent;
+    const dom = _getDomEls();
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('render:start', {
+            state: typeof window.visBuildStateSig === 'function' ? window.visBuildStateSig(state) : null,
+            dom: typeof window.visBuildDomSig === 'function' ? window.visBuildDomSig() : null,
+        });
+    }
 
-    // Ne pas mettre à jour les HP si une animation zdejebel/trample est en cours ou en attente
-    // Ces animations gèrent elles-mêmes l'affichage des HP
-    const hasHpAnimPending = lifestealHeroHealInProgress || animationQueue.some(a => a.type === 'zdejebel' || a.type === 'trampleHeroHit' || a.type === 'heroHit' || (a.type === 'onDeathDamage' && a.data?.targetRow === undefined)) || zdejebelAnimationInProgress;
-    if (!hasHpAnimPending) {
-        const meHpNum = document.querySelector('#me-hp .hero-hp-number');
-        const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
-        const meOld = meHpNum?.textContent, oppOld = oppHpNum?.textContent;
-        if (meHpNum) meHpNum.textContent = me.hp;
-        if (oppHpNum) oppHpNum.textContent = opp.hp;
-        if (meOld !== String(me.hp) || oppOld !== String(opp.hp)) {
+    // Ne pas mettre Ã  jour les HP si une animation zdejebel/trample est en cours ou en attente
+    const mePlayerNum = Number(myNum || state?.myPlayer || 1);
+    const oppPlayerNum = mePlayerNum === 1 ? 2 : 1;
+    const hpBlockedByQueueHead = { me: false, opp: false };
+    const hpBlockedByActiveAnim = { me: false, opp: false };
+    const _markHeroHpBlock = (t, d, out) => {
+        if (!t || !out) return;
+        const data = d || {};
+        if (t === 'heroHit' || t === 'trampleHeroHit') {
+            if (data.defender === mePlayerNum) out.me = true;
+            if (data.defender === oppPlayerNum) out.opp = true;
+            return;
         }
-    } else {
-        const meHpNum = document.querySelector('#me-hp .hero-hp-number');
-        const oppHpNum = document.querySelector('#opp-hp .hero-hp-number');
+        if (t === 'zdejebel') {
+            if (data.targetPlayer === mePlayerNum) out.me = true;
+            if (data.targetPlayer === oppPlayerNum) out.opp = true;
+            return;
+        }
+        if (t === 'heroHeal') {
+            if (data.player === mePlayerNum) out.me = true;
+            if (data.player === oppPlayerNum) out.opp = true;
+            return;
+        }
+        if (t === 'onDeathDamage' && data.targetRow === undefined) {
+            if (data.targetPlayer === mePlayerNum) out.me = true;
+            if (data.targetPlayer === oppPlayerNum) out.opp = true;
+        }
+    };
+    // Ne bloquer sur la queue que pour les prochains items immediats.
+    // Evite un freeze long des HP quand un heroHit est enfoui loin dans la queue.
+    const queueHead = (Array.isArray(animationQueue) ? animationQueue : []).slice(0, 2);
+    for (const item of queueHead) {
+        _markHeroHpBlock(item?.type, item?.data, hpBlockedByQueueHead);
     }
-    const meManaNum = document.querySelector('#me-energy .hero-mana-number');
-    const oppManaNum = document.querySelector('#opp-energy .hero-mana-number');
-    if (meManaNum) {
-        meManaNum.textContent = `${me.energy}/${me.maxEnergy}`;
-        meManaNum.style.fontSize = (me.energy >= 10 || me.maxEnergy >= 10) ? '1em' : '';
+    _markHeroHpBlock(window.__activeAnimType, window.__activeAnimData, hpBlockedByActiveAnim);
+    const hpBlockedGlobal = !!(lifestealHeroHealInProgress || zdejebelAnimationInProgress);
+    const hpBlockedMe = hpBlockedGlobal || hpBlockedByQueueHead.me || hpBlockedByActiveAnim.me;
+    const hpBlockedOpp = hpBlockedGlobal || hpBlockedByQueueHead.opp || hpBlockedByActiveAnim.opp;
+    const hasHpAnimPending = hpBlockedMe || hpBlockedOpp;
+    if (!hpBlockedMe) {
+        if (dom.meHpNum) dom.meHpNum.textContent = me.hp;
     }
-    if (oppManaNum) {
-        oppManaNum.textContent = `${opp.energy}/${opp.maxEnergy}`;
-        oppManaNum.style.fontSize = (opp.energy >= 10 || opp.maxEnergy >= 10) ? '1em' : '';
+    if (!hpBlockedOpp) {
+        if (dom.oppHpNum) dom.oppHpNum.textContent = opp.hp;
     }
-    // Mettre à jour les tooltips du deck
-    const meDeckTooltip = document.getElementById('me-deck-tooltip');
-    const oppDeckTooltip = document.getElementById('opp-deck-tooltip');
-    if (meDeckTooltip) meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
-    if (oppDeckTooltip) oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
-    // Mettre à jour les tooltips du cimetière
+    if (dom.meManaNum) {
+        dom.meManaNum.textContent = `${me.energy}/${me.maxEnergy}`;
+        dom.meManaNum.style.fontSize = (me.energy >= 10 || me.maxEnergy >= 10) ? '1em' : '';
+    }
+    if (dom.oppManaNum) {
+        dom.oppManaNum.textContent = `${opp.energy}/${opp.maxEnergy}`;
+        dom.oppManaNum.style.fontSize = (opp.energy >= 10 || opp.maxEnergy >= 10) ? '1em' : '';
+    }
+    // Mettre Ã  jour les tooltips du deck
+    if (dom.meDeckTooltip) dom.meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
+    if (dom.oppDeckTooltip) dom.oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
+    // Mettre Ã  jour les tooltips du cimetiÃ¨re
     const meGraveCount = me.graveyardCount || 0;
     const oppGraveCount = opp.graveyardCount || 0;
-    const meGraveTooltip = document.getElementById('me-grave-tooltip');
-    const oppGraveTooltip = document.getElementById('opp-grave-tooltip');
-    if (meGraveTooltip) meGraveTooltip.textContent = meGraveCount + (meGraveCount > 1 ? ' cartes' : ' carte');
-    if (oppGraveTooltip) oppGraveTooltip.textContent = oppGraveCount + (oppGraveCount > 1 ? ' cartes' : ' carte');
+    if (dom.meGraveTooltip) dom.meGraveTooltip.textContent = meGraveCount + (meGraveCount > 1 ? ' cartes' : ' carte');
+    if (dom.oppGraveTooltip) dom.oppGraveTooltip.textContent = oppGraveCount + (oppGraveCount > 1 ? ' cartes' : ' carte');
     
     // Afficher/cacher le contenu du deck selon le nombre de cartes
     updateDeckDisplay('me', me.deckCount);
     updateDeckDisplay('opp', opp.deckCount);
     
-    // Afficher la dernière carte du cimetière
+    // Afficher la derniÃ¨re carte du cimetiÃ¨re
     updateGraveTopCard('me', me.graveyard);
     updateGraveTopCard('opp', opp.graveyard);
     
-    // Mettre à jour l'affichage de la pile du cimetière
+    // Mettre Ã  jour l'affichage de la pile du cimetiÃ¨re
     updateGraveDisplay('me', me.graveyard);
     updateGraveDisplay('opp', opp.graveyard);
     
@@ -118,22 +138,41 @@ function render() {
 
     renderOppHand(opp.handCount, opp.oppHand);
 
-    // Lancer les animations de pioche après les renders
+    // Lancer les animations de pioche aprÃ¨s les renders
     if (typeof GameAnimations !== 'undefined') {
         GameAnimations.startPendingDrawAnimations();
     }
     
-    if (me.ready && state.phase === 'planning') {
-        document.getElementById('end-turn-btn').classList.add('waiting');
+    if (me.ready && state.phase === 'planning' && dom.endTurnBtn) {
+        dom.endTurnBtn.classList.add('waiting');
     }
-    PerfMonitor.endRender(_perfStart);
+    if (typeof window.visTrace === 'function') {
+        const __renderEnd = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        window.visTrace('render:end', {
+            durationMs: Math.round((__renderEnd - __perfRenderStart) * 100) / 100,
+            hpBlocked: !!hasHpAnimPending,
+            hpBlockedMe: !!hpBlockedMe,
+            hpBlockedOpp: !!hpBlockedOpp,
+            state: typeof window.visBuildStateSig === 'function' ? window.visBuildStateSig(state) : null,
+            dom: typeof window.visBuildDomSig === 'function' ? window.visBuildDomSig() : null,
+        });
+    }
+    if (window.PerfMon) {
+        const __perfNow = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        window.PerfMon.recordRender(
+            __perfNow - __perfRenderStart,
+            (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0
+        );
+    }
 }
+
+// _monitorBattlefield supprimÃ©  boucle RAF inutile (branches vides) qui forÃ§ait getBoundingClientRect Ã  60fps
 
 function updateDeckDisplay(owner, deckCount) {
     const stack = document.getElementById(`${owner}-deck-stack`);
     if (!stack) return;
     
-    // Gérer l'état vide
+    // GÃ©rer l'Ã©tat vide
     if (deckCount <= 0) {
         stack.classList.add('empty');
     } else {
@@ -141,8 +180,8 @@ function updateDeckDisplay(owner, deckCount) {
     }
     
     // Ajuster le nombre de couches visibles selon le nombre de cartes
-    // CSS inversé : nth-child(1) = fond (décalé), nth-child(5) = dessus (pas de décalage)
-    // Quand le deck diminue, on masque les couches du DESSUS (index élevés dans le DOM)
+    // CSS inversÃ© : nth-child(1) = fond (dÃ©calÃ©), nth-child(5) = dessus (pas de dÃ©calage)
+    // Quand le deck diminue, on masque les couches du DESSUS (index Ã©levÃ©s dans le DOM)
     const layers = stack.querySelectorAll('.deck-card-layer');
     const totalLayers = layers.length;
     const visibleLayers = Math.min(totalLayers, Math.ceil(deckCount / 8)); // 1 couche par 8 cartes
@@ -150,7 +189,7 @@ function updateDeckDisplay(owner, deckCount) {
     // Variable CSS pour l'ombre proportionnelle au nombre de couches
     stack.style.setProperty('--stack-layers', visibleLayers);
 
-    // Garder les premières couches (fond), masquer les dernières (dessus)
+    // Garder les premiÃ¨res couches (fond), masquer les derniÃ¨res (dessus)
     layers.forEach((layer, i) => {
         if (i < visibleLayers) {
             layer.style.display = 'block';
@@ -160,7 +199,7 @@ function updateDeckDisplay(owner, deckCount) {
     });
 }
 
-// Bloquer le render du cimetière pendant les animations (compteur pour supporter plusieurs animations simultanées)
+// Bloquer le render du cimetiÃ¨re pendant les animations (compteur pour supporter plusieurs animations simultanÃ©es)
 const _graveBlockCount = { me: 0, opp: 0 };
 const graveRenderBlocked = {
     add(owner) { _graveBlockCount[owner] = (_graveBlockCount[owner] || 0) + 1; },
@@ -168,7 +207,7 @@ const graveRenderBlocked = {
     has(owner) { return (_graveBlockCount[owner] || 0) > 0; },
     clear() { _graveBlockCount.me = 0; _graveBlockCount.opp = 0; }
 };
-const pendingSpellReturns = new Set(); // UIDs de sorts qui retournent en main (pas au cimetière)
+const pendingSpellReturns = new Map(); // spellId   { handIndex, player } pour sorts qui retournent en main
 
 function updateGraveDisplay(owner, graveyard) {
     if (graveRenderBlocked.has(owner)) return;
@@ -188,7 +227,7 @@ function updateGraveDisplay(owner, graveyard) {
     stack.style.setProperty('--stack-layers', visibleLayers);
 
     // Remplir les layers avec de vraies cartes, afficher/masquer selon le count
-    // Les dernières couches (proches du dessus) sont affichées en premier
+    // Les derniÃ¨res couches (proches du dessus) sont affichÃ©es en premier
     layers.forEach((layer, i) => {
         const show = i >= layers.length - visibleLayers;
         layer.style.display = show ? 'block' : 'none';
@@ -200,7 +239,7 @@ function updateGraveDisplay(owner, graveyard) {
         const card = (cardIndex >= 0 && graveyard) ? graveyard[cardIndex] : null;
         const cardId = card ? (card.uid || card.id) : '';
 
-        // Cache: ne re-render que si la carte a changé
+        // Cache: ne re-render que si la carte a changÃ©
         if (layer.dataset.cardUid === cardId) return;
         layer.dataset.cardUid = cardId;
         layer.innerHTML = '';
@@ -231,8 +270,6 @@ function updateGraveTopCard(owner, graveyard) {
         cardEl.classList.remove('just-played', 'can-attack');
         cardEl.classList.add('grave-card', 'in-graveyard');
         container.appendChild(cardEl);
-        const nameEl = cardEl.querySelector('.arena-name');
-        if (nameEl) fitArenaName(nameEl);
     } else {
         if (container.classList.contains('empty') && container.children.length === 0) return;
         delete container.dataset.topCardUid;
@@ -252,38 +289,93 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
             if (animatingSlots.has(slotKey)) {
                 continue;
             }
-
             const card = field[r][c];
+            // Purge des overrides poison stale quand le contenu du slot change.
+            if (typeof poisonHpOverrides !== 'undefined') {
+                const poisonOvPre = poisonHpOverrides.get(slotKey);
+                if (poisonOvPre) {
+                    const cardUid = card?.uid || null;
+                    const ovAge = typeof poisonOvPre.updatedAt === 'number' ? (Date.now() - poisonOvPre.updatedAt) : 0;
+                    const staleByUid = !!(poisonOvPre.uid && cardUid && poisonOvPre.uid !== cardUid);
+                    const staleByMissingCard = !card;
+                    const staleByTimeout = ovAge > 6000;
+                    if (staleByUid || staleByMissingCard || staleByTimeout) {
+                        poisonHpOverrides.delete(slotKey);
+                    }
+                }
+            }
             const existingCardEl = slot.querySelector('.card');
             const existingUid = existingCardEl?.dataset?.uid;
             const existingName = existingCardEl?.querySelector('.arena-name')?.textContent || existingCardEl?.querySelector('.img-name')?.textContent || '?';
 
-            // LOG: détecter les changements de slot
-            if (!existingCardEl && card) {
-            } else if (existingCardEl && !card) {
-            } else if (existingCardEl && card && existingUid !== card.uid) {
-            }
-
-            // Fast path : même carte (uid identique), mettre à jour seulement les stats et états
+            // Fast path : mÃªme carte (uid identique), mettre Ã  jour seulement les stats et Ã©tats
             if (card && existingCardEl && existingUid && existingUid === card.uid) {
+                const isRadjawak = typeof card.name === 'string' && card.name.toLowerCase().includes('radjawak');
 
                 // Debug: log pour Vampire sordide
 
-                // Mettre à jour HP
-                const hpVal = card.currentHp ?? card.hp;
+                // Mettre Ã  jour HP
+                let hpVal = card.currentHp ?? card.hp;
                 const hpEl = existingCardEl.querySelector('.arena-armor') || existingCardEl.querySelector('.arena-hp') || existingCardEl.querySelector('.img-hp');
-                if (hpEl) {
-                    const hpStr = String(hpVal);
-                    if (hpEl.textContent !== hpStr) hpEl.textContent = hpStr;
-                    // Classes boosted/reduced (même noms que makeCard) — pas pour les bâtiments
-                    if (!card.isBuilding) {
-                        const baseHp = card.baseHp ?? card.hp;
-                        hpEl.classList.toggle('boosted', hpVal > baseHp);
-                        hpEl.classList.toggle('reduced', hpVal < baseHp);
+                // Skip si poisonDamage anime ce slot (geler le HP prÃ©-poison)
+                const poisonOv = typeof poisonHpOverrides !== 'undefined' && poisonHpOverrides.get(slotKey);
+                if (poisonOv) {
+                    const ovUidMismatch = !!(poisonOv.uid && card.uid && poisonOv.uid !== card.uid);
+                    const ovAge = typeof poisonOv.updatedAt === 'number' ? (Date.now() - poisonOv.updatedAt) : 0;
+                    const staleConsumed = poisonOv.consumed && ovAge > 2600;
+                    if (ovUidMismatch || (poisonOv.consumed && hpVal <= poisonOv.hp) || staleConsumed) {
+                        poisonHpOverrides.delete(slotKey);
+                    } else {
+                        hpVal = poisonOv.hp;
                     }
                 }
-                // Mettre à jour ATK (pas pour les bâtiments)
-                if (!card.isBuilding) {
+                if (hpEl) {
+                    // Avoid showing "0 HP" on-board just before a queued death/deathTransform animation.
+                    if (state?.phase === 'resolution' && hpVal <= 0) {
+                        const domHpPrev = parseInt(hpEl.textContent || '', 10);
+                        hpVal = (Number.isFinite(domHpPrev) && domHpPrev > 0) ? domHpPrev : 1;
+                    }
+                    const hpStr = String(hpVal);
+                    existingCardEl.dataset.stateHp = hpStr;
+                    existingCardEl.dataset.stateHpSyncAt = String(Date.now());
+                    const domHpNow = parseInt(hpEl.textContent || '', 10);
+                    if (Number.isFinite(domHpNow) && domHpNow <= 0 && hpVal > 0) {
+                        if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] render-dom-zero uid=${card.uid || '-'} card=${card.name || '?'} slot=${slotKey} domHp=${domHpNow} stateHp=${hpVal} visualDmgHp=${existingCardEl.dataset.visualDmgHp ?? 'none'}`);
+                    }
+                    // Anti-flicker : si _applyVisualDamage a posÃ© un marqueur, ne pas Ã©craser
+                    // avec un state stale (HP plus Ã©levÃ© = dÃ©gÃ¢ts pas encore dans le state)
+                    const visualDmgHp = existingCardEl.dataset.visualDmgHp;
+                    const visualDmgSetAt = parseInt(existingCardEl.dataset.visualDmgSetAt || '0', 10);
+                    const visualDmgExpired = visualDmgHp !== undefined && visualDmgSetAt > 0 && (Date.now() - visualDmgSetAt > 1800);
+                    if (visualDmgHp !== undefined && hpVal > parseInt(visualDmgHp) && !visualDmgExpired) {
+                        // State stale  garder le visual damage
+                        if (parseInt(visualDmgHp, 10) <= 0 && hpVal > 0) {
+                            if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] render-stale-keep uid=${card.uid || '-'} card=${card.name || '?'} slot=${slotKey} stateHp=${hpVal} visualDmgHp=${visualDmgHp} domHp=${hpEl.textContent}`);
+                        }
+                        if (isRadjawak) {
+                            if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] render-skip-stale card=${card.name} uid=${card.uid} slot=${slotKey} stateHp=${hpVal} visualDmgHp=${visualDmgHp} domHp=${hpEl.textContent}`);
+                        }
+                    } else {
+                        // State a rattrapÃ© le visual damage (ou pas de marqueur)  appliquer
+                        if (visualDmgHp !== undefined) delete existingCardEl.dataset.visualDmgHp;
+                        if (existingCardEl.dataset.visualDmgSetAt !== undefined) delete existingCardEl.dataset.visualDmgSetAt;
+                        if (isRadjawak) {
+                            if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] render-apply-hp card=${card.name} uid=${card.uid} slot=${slotKey} stateHp=${hpVal} visualDmgHp=${visualDmgHp ?? 'none'} domHpBefore=${hpEl.textContent} expired=${visualDmgExpired}`);
+                        }
+                        if (hpEl.textContent !== hpStr) {
+                            hpEl.textContent = hpStr;
+                        }
+                        // Classes boosted/reduced (mÃªme noms que makeCard)  pas pour les bÃ¢timents
+                        if (!card.isBuilding) {
+                            const baseHp = card.baseHp ?? card.hp;
+                            hpEl.classList.toggle('boosted', hpVal > baseHp);
+                            hpEl.classList.toggle('reduced', hpVal < baseHp);
+                        }
+                    }
+                }
+                // Mettre Ã  jour ATK (pas pour les bÃ¢timents)
+                // Skip si powerBuff anime ce slot (mise Ã  jour graduelle en cours)
+                if (!card.isBuilding && !(typeof powerBuffAtkOverrides !== 'undefined' && powerBuffAtkOverrides.has(slotKey))) {
                     const atkEl = existingCardEl.querySelector('.arena-atk') || existingCardEl.querySelector('.img-atk');
                     if (atkEl) {
                         const atkStr = String(card.atk);
@@ -293,7 +385,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                         atkEl.classList.toggle('reduced', card.atk < baseAtk);
                     }
                 }
-                // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
+                // Mettre Ã  jour le texte Poison dynamique (poisonPerGraveyard)
                 if (card.poisonPerGraveyard) {
                     const abilitiesEl = existingCardEl.querySelector('.arena-abilities');
                     if (abilitiesEl) {
@@ -306,16 +398,16 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                         );
                     }
                 }
-                // Rebind hover/click avec les données fraîches de la carte
+                // Rebind hover/click avec les donnÃ©es fraÃ®ches de la carte
                 existingCardEl.onmouseenter = (e) => showCardPreview(card, e);
                 existingCardEl.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
-                // Mettre à jour les classes d'état sur la carte
+                // Mettre Ã  jour les classes d'Ã©tat sur la carte
                 const isJustPlayed = card.turnsOnField === 0 && !card.canAttack;
                 existingCardEl.classList.toggle('just-played', isJustPlayed);
                 existingCardEl.classList.toggle('can-attack', !!card.canAttack);
                 existingCardEl.classList.toggle('petrified', !!card.petrified);
                 existingCardEl.classList.toggle('melody-locked', !!card.melodyLocked);
-                // Gaze marker (Medusa) — propriété serveur : medusaGazeMarker
+                // Gaze marker (Medusa)  propriÃ©tÃ© serveur : medusaGazeMarker
                 const gazeCount = card.medusaGazeMarker || 0;
                 let gazeMarker = existingCardEl.querySelector('.gaze-marker');
                 if (gazeCount > 0 && !gazeMarker) {
@@ -334,7 +426,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 } else if (gazeCount === 0 && gazeMarker) {
                     gazeMarker.remove();
                 }
-                // Poison marker — propriété serveur : poisonCounters
+                // Poison marker  propriÃ©tÃ© serveur : poisonCounters
                 const poisonCount = card.poisonCounters || 0;
                 let poisonMarker = existingCardEl.querySelector('.poison-marker');
                 if (poisonCount > 0 && !poisonMarker) {
@@ -353,7 +445,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 } else if (poisonCount === 0 && poisonMarker) {
                     poisonMarker.remove();
                 }
-                // Entrave marker — propriété serveur : entraveCounters
+                // Entrave marker  propriÃ©tÃ© serveur : entraveCounters
                 const entraveCount = card.entraveCounters || 0;
                 let entraveMarker = existingCardEl.querySelector('.entrave-marker');
                 if (entraveCount > 0 && !entraveMarker) {
@@ -372,7 +464,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 } else if (entraveCount === 0 && entraveMarker) {
                     entraveMarker.remove();
                 }
-                // Buff marker (+1/+1) — propriété serveur : buffCounters
+                // Buff marker (+1/+1)  propriÃ©tÃ© serveur : buffCounters
                 const buffCount = card.buffCounters || 0;
                 let buffMarker = existingCardEl.querySelector('.buff-marker');
                 if (buffCount > 0 && !buffMarker) {
@@ -391,14 +483,14 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 } else if (buffCount === 0 && buffMarker) {
                     buffMarker.remove();
                 }
-                // Positionner les marqueurs verticalement (empilés sur le côté droit)
+                // Positionner les marqueurs verticalement (empilÃ©s sur le cÃ´tÃ© droit)
                 const markerBase = card.isBuilding ? 40 : 2;
                 let markerIdx = 0;
                 if (gazeMarker && gazeCount > 0) gazeMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
                 if (poisonMarker && poisonCount > 0) poisonMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
                 if (entraveMarker && entraveCount > 0) entraveMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
                 if (buffMarker && buffCount > 0) buffMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
-                // Flying animation (sécurité)
+                // Flying animation (sÃ©curitÃ©)
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     if (!existingCardEl.classList.contains('flying-creature')) {
                         existingCardEl.classList.add('flying-creature');
@@ -415,7 +507,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     CombatVFX.registerCamouflage(slotKey, existingCardEl);
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
                 }
-                // Custom drag pour redéploiement (fast path — réattacher si conditions remplies)
+                // Custom drag pour redÃ©ploiement (fast path  rÃ©attacher si conditions remplies)
                 if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     if (!existingCardEl.dataset.draggable) {
                         existingCardEl.dataset.draggable = '1';
@@ -433,7 +525,13 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 continue;
             }
 
-            // Slow path : carte différente ou nouveau slot → recréer
+            // Slow path : carte diffÃ©rente ou nouveau slot   recrÃ©er
+            // DiffÃ©rer si la queue d'animation combat est active (makeCard DOM + PIXI GPU = lag)
+            if (typeof isAnimating !== 'undefined' && isAnimating) {
+                deferredSlots.add(slotKey);
+                continue;
+            }
+            deferredSlots.delete(slotKey);
             const label = slot.querySelector('.slot-label');
             slot.innerHTML = '';
             if (label) slot.appendChild(label.cloneNode(true));
@@ -447,7 +545,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 // Stocker le uid pour le fast path
                 cardEl.dataset.uid = card.uid || '';
 
-                // Ajouter l'effet de lévitation pour les créatures volantes
+                // Ajouter l'effet de lÃ©vitation pour les crÃ©atures volantes
                 if (card.type === 'creature' && card.abilities?.includes('fly')) {
                     cardEl.classList.add('flying-creature');
                     slot.classList.add('has-flying');
@@ -456,13 +554,13 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     slot.classList.remove('has-flying');
                 }
 
-                // Indicateur de bouclier (Protection) — PixiJS honeycomb
+                // Indicateur de bouclier (Protection)  PixiJS honeycomb
                 if (card.hasProtection) {
                     CombatVFX.registerShield(slotKey, cardEl);
                     if (activeShieldKeys) activeShieldKeys.add(slotKey);
                 }
 
-                // Effet de camouflage (fumée PixiJS) — même z-index que Protection
+                // Effet de camouflage (fumÃ©e PixiJS)  mÃªme z-index que Protection
                 if (card.hasCamouflage) {
                     CombatVFX.registerCamouflage(slotKey, cardEl);
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
@@ -473,7 +571,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 cardEl.onmouseleave = hideCardPreview;
                 cardEl.onmousemove = (e) => moveCardPreview(e);
 
-                // Custom drag pour redéploiement (seulement mes cartes)
+                // Custom drag pour redÃ©ploiement (seulement mes cartes)
                 if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     CustomDrag.makeDraggable(cardEl, {
                         source: 'field',
@@ -490,57 +588,51 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     showCardZoom(card);
                 };
                 slot.appendChild(cardEl);
-
-                // Auto-fit du nom : réduire le font-size si le texte déborde
-                const nameEl = cardEl.querySelector('.arena-name');
-                if (nameEl) fitArenaName(nameEl);
             }
         }
     }
 }
 
-// Auto-fit : réduit le font-size d'un .arena-name jusqu'à ce que le texte tienne
+// Auto-fit : rÃ©duit le font-size d'un .arena-name jusqu'Ã  ce que le texte tienne
 function fitArenaName(el, _retries) {
     const parent = el.parentElement; // .arena-title
     if (!parent) return;
-    const maxW = parent.clientWidth;
-    if (maxW === 0) {
-        // Parent pas encore layouté (ex: display:none) → réessayer (max 5 tentatives)
+    const maxW = parent.clientWidth - 4; // marge pour -webkit-text-stroke 2px
+    if (maxW <= 0) {
+        // Parent pas encore layoutÃ© (ex: display:none)   rÃ©essayer (max 5 tentatives)
         const retryCount = (_retries || 0) + 1;
         if (retryCount > 5 || !el.isConnected) return;
         requestAnimationFrame(() => fitArenaName(el, retryCount));
         return;
     }
-    // Reset
-    el.style.fontSize = '';
-    // Forcer overflow visible + largeur naturelle pour mesurer le vrai texte
+    // Si le nom a dÃ©jÃ  un inline fontSize (prÃ©-calculÃ©), ne pas toucher
+    if (el.style.fontSize) return;
+    // Mesurer la largeur naturelle
     el.style.overflow = 'visible';
     el.style.width = 'max-content';
     const textW = el.offsetWidth;
-    if (textW <= maxW) {
-        el.style.overflow = '';
-        el.style.width = '';
-        return;
-    }
-    // Calculer le ratio puis ajuster en une passe + vérification
+    el.style.overflow = '';
+    el.style.width = '';
+    if (textW <= maxW) return;
+    // Calculer le ratio puis ajuster en une passe + vÃ©rification
     const originalSize = parseFloat(getComputedStyle(el).fontSize);
     const ratio = maxW / textW;
-    let size = Math.floor(originalSize * ratio * 10) / 10; // Arrondi vers le bas au 0.1px
+    let size = Math.floor(originalSize * ratio * 10) / 10;
     const minSize = originalSize * 0.35;
     if (size < minSize) size = minSize;
     el.style.fontSize = size + 'px';
-    // Vérification : si ça déborde encore, réduire pas à pas
+    el.style.overflow = 'visible';
+    el.style.width = 'max-content';
     while (el.offsetWidth > maxW && size > minSize) {
         size -= 0.3;
         el.style.fontSize = size + 'px';
     }
-    // Restaurer le CSS normal
     el.style.overflow = '';
     el.style.width = '';
 }
 
-// Auto-fit : planifie un fitArenaName sur le nom d'un élément carte
-// Utilise requestAnimationFrame pour que ça marche même si l'élément n'est pas encore dans le DOM
+// Auto-fit : planifie un fitArenaName sur le nom d'un Ã©lÃ©ment carte
+// Utilise requestAnimationFrame pour que Ã§a marche mÃªme si l'Ã©lÃ©ment n'est pas encore dans le DOM
 function autoFitCardName(el) {
     requestAnimationFrame(() => {
         const nameEl = el.querySelector('.arena-name') || el.querySelector('.fa-name') || el.querySelector('.img-name') || el.querySelector('.card-name');
@@ -548,54 +640,107 @@ function autoFitCardName(el) {
     });
 }
 
+//  PrÃ©-calcul des tailles de nom de carte (Canvas 2D) 
+// Mesure le texte via Canvas, indÃ©pendant du DOM/layout. Cache le rÃ©sultat.
+const _nameFitCache = new Map();
+let _measureCtx = null;
+
+function getNameFitSize(name, hasFaction) {
+    const key = hasFaction ? `F|${name}` : `N|${name}`;
+    if (_nameFitCache.has(key)) return _nameFitCache.get(key);
+
+    // VÃ©rifier que Bree Serif est chargÃ©e (sinon la mesure serait fausse)
+    if (!document.fonts.check('9.6px "Bree Serif"')) return null;
+
+    if (!_measureCtx) {
+        _measureCtx = document.createElement('canvas').getContext('2d');
+    }
+
+    // Taille de base : 0.6em  16px (hÃ©ritÃ© body) = 9.6px
+    const baseSize = 9.6;
+    // Largeur dispo dans arena-title pour le texte :
+    // Card: var(--card-w) = 144px, arena-title: left:2+right:2   140px
+    // Faction : border 2px   136px inner, padding 6px2   124px texte
+    // Sans faction : 140px, pas de padding
+    // Marge pour -webkit-text-stroke 2px (dÃ©borde ~1px de chaque cÃ´tÃ©)
+    const maxW = (hasFaction ? 124 : 140) - 4;
+
+    _measureCtx.font = `${baseSize}px "Bree Serif", serif`;
+    // letter-spacing: 0.2px n'est pas capturÃ© par Canvas   l'ajouter manuellement
+    const textW = _measureCtx.measureText(name).width + (name.length - 1) * 0.2;
+
+    if (textW <= maxW) {
+        _nameFitCache.set(key, null);
+        return null;
+    }
+
+    // RÃ©duire proportionnellement
+    const ratio = maxW / textW;
+    let size = Math.floor(baseSize * ratio * 10) / 10;
+    const minSize = baseSize * 0.35;
+    if (size < minSize) size = minSize;
+
+    // VÃ©rifier avec la taille rÃ©duite (le ratio n'est pas parfaitement linÃ©aire)
+    _measureCtx.font = `${size}px "Bree Serif", serif`;
+    while (_measureCtx.measureText(name).width + (name.length - 1) * 0.2 > maxW && size > minSize) {
+        size -= 0.3;
+        _measureCtx.font = `${size}px "Bree Serif", serif`;
+    }
+
+    const result = size + 'px';
+    _nameFitCache.set(key, result);
+    return result;
+}
+
 // Preview flottante d'une carte
 let previewEl = null;
-// Descriptions des capacités
+// Descriptions des capacitÃ©s
 const ABILITY_DESCRIPTIONS = {
-    fly: { name: 'Vol', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
-    shooter: { name: 'Tireur', desc: 'Cette créature peut attaquer à distance sans recevoir de riposte.' },
-    haste: { name: 'Célérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée.' },
-    superhaste: { name: 'Supercélérité', desc: 'Cette créature peut attaquer dès le tour où elle est invoquée et peut se déplacer et attaquer dans le même tour.' },
-    intangible: { name: 'Intangible', desc: 'Cette créature ne peut pas être ciblée par les sorts ou les pièges.' },
-    trample: { name: 'Piétinement', desc: 'Les dégâts excédentaires sont infligés au héros adverse.' },
+    fly: { name: 'Vol', desc: 'Cette crÃ©ature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
+    shooter: { name: 'Tireur', desc: 'Cette crÃ©ature peut attaquer Ã  distance sans recevoir de riposte.' },
+    haste: { name: 'CÃ©lÃ©ritÃ©', desc: 'Cette crÃ©ature peut attaquer dÃ¨s le tour oÃ¹ elle est invoquÃ©e.' },
+    superhaste: { name: 'SupercÃ©lÃ©ritÃ©', desc: 'Cette crÃ©ature peut attaquer dÃ¨s le tour oÃ¹ elle est invoquÃ©e et peut se dÃ©placer et attaquer dans le mÃªme tour.' },
+    intangible: { name: 'Intangible', desc: 'Cette crÃ©ature ne peut pas Ãªtre ciblÃ©e par les sorts ou les piÃ¨ges.' },
+    trample: { name: 'PiÃ©tinement', desc: 'Les dÃ©gÃ¢ts excÃ©dentaires sont infligÃ©s au hÃ©ros adverse.' },
 
-    power: { name: 'Puissance', desc: 'Quand cette créature subit des dégâts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
-    cleave: { name: 'Clivant', desc: 'Quand cette créature attaque, elle inflige X dégâts aux créatures sur les lignes adjacentes. Ces créatures ne ripostent pas.' },
-    immovable: { name: 'Immobile', desc: 'Cette créature ne peut pas se déplacer.' },
-    wall: { name: 'Mur', desc: 'Cette créature ne peut pas attaquer.' },
-    regeneration: { name: 'Régénération', desc: 'En fin de tour, cette créature récupère X PV (sans dépasser ses PV max).' },
-    protection: { name: 'Protection', desc: 'Cette créature est protégée contre la prochaine source de dégâts qu\'elle subirait. Le bouclier est consommé après avoir bloqué une source.' },
-    spellBoost: { name: 'Sort renforcé', desc: 'Tant que cette créature est en jeu, vos sorts infligent +X dégâts supplémentaires.' },
-    enhance: { name: 'Amélioration', desc: 'Les créatures adjacentes (haut, bas, côté) gagnent +X en attaque tant que cette créature est en jeu.' },
-    bloodthirst: { name: 'Soif de sang', desc: 'Chaque fois qu\'une créature ennemie meurt, cette créature gagne +X ATK de façon permanente.' },
-    melody: { name: 'Mélodie', desc: 'La première créature ennemie en face ne peut ni attaquer ni se déplacer. Après 2 tours, elle se transforme en pierre.' },
-    sacrifice: { name: 'Sacrifice', desc: 'À l\'invocation, sacrifie une créature adjacente pouvant attaquer.' },
-    camouflage: { name: 'Camouflage', desc: 'Cette créature ne peut pas être ciblée par les attaques ni les sorts. Les attaquants l\'ignorent et frappent derrière. Se dissipe au début du prochain tour.' },
-    lethal: { name: 'Toucher mortel', desc: 'Si cette créature inflige des dégâts à une créature, elle la tue instantanément.' },
-    entrave: { name: 'Entrave', desc: 'Quand cette créature inflige des blessures de combat, elle met X marqueur(s) Entrave sur la cible. −1 ATK par marqueur (plancher 0).' },
-    lifelink: { name: 'Lien vital', desc: 'Quand cette créature inflige des blessures de combat, votre héros se soigne de X PV (plafonné à 20 PV).' },
-    lifedrain: { name: 'Drain de vie', desc: 'Quand cette créature inflige des blessures de combat, elle se soigne de X PV (plafonné aux PV max).' },
-    antitoxin: { name: 'Antitoxine', desc: 'Cette créature ne subit pas de dégâts de poison.' },
-    unsacrificable: { name: 'Non sacrifiable', desc: 'Cette créature ne peut pas être sacrifiée.' }
+    power: { name: 'Puissance', desc: 'Quand cette crÃ©ature subit des dÃ©gÃ¢ts sans mourir, elle gagne +X ATK (X = valeur de Puissance).' },
+    cleave: { name: 'Clivant', desc: 'Quand cette crÃ©ature attaque, elle inflige X dÃ©gÃ¢ts aux crÃ©atures sur les lignes adjacentes. Ces crÃ©atures ne ripostent pas.' },
+    immovable: { name: 'Immobile', desc: 'Cette crÃ©ature ne peut pas se dÃ©placer.' },
+    provocation: { name: 'Provocation', desc: 'Tant qu\'une crÃ©ature adverse avec Provocation est en jeu, vos crÃ©atures mÃªlÃ©e et tireur doivent Ãªtre posÃ©es en prioritÃ© en face d\'elle.' },
+    wall: { name: 'Mur', desc: 'Cette crÃ©ature ne peut pas attaquer.' },
+    regeneration: { name: 'RÃ©gÃ©nÃ©ration', desc: 'En fin de tour, cette crÃ©ature rÃ©cupÃ¨re X PV (sans dÃ©passer ses PV max).' },
+    protection: { name: 'Protection', desc: 'Cette crÃ©ature est protÃ©gÃ©e contre la prochaine source de dÃ©gÃ¢ts qu\'elle subirait. Le bouclier est consommÃ© aprÃ¨s avoir bloquÃ© une source.' },
+    spellBoost: { name: 'Sort renforcÃ©', desc: 'Tant que cette crÃ©ature est en jeu, vos sorts infligent +X dÃ©gÃ¢ts supplÃ©mentaires.' },
+    enhance: { name: 'AmÃ©lioration', desc: 'Les crÃ©atures adjacentes (haut, bas, cÃ´tÃ©) gagnent +X en attaque tant que cette crÃ©ature est en jeu.' },
+    bloodthirst: { name: 'Soif de sang', desc: 'Chaque fois qu\'une crÃ©ature ennemie meurt, cette crÃ©ature gagne +X ATK de faÃ§on permanente.' },
+    melody: { name: 'MÃ©lodie', desc: 'La premiÃ¨re crÃ©ature ennemie en face ne peut ni attaquer ni se dÃ©placer. AprÃ¨s 2 tours, elle se transforme en pierre.' },
+    sacrifice: { name: 'Sacrifice', desc: 'Ã€ l\'invocation, sacrifie une crÃ©ature adjacente pouvant attaquer.' },
+    camouflage: { name: 'Camouflage', desc: 'Cette crÃ©ature ne peut pas Ãªtre ciblÃ©e par les attaques ni les sorts. Les attaquants l\'ignorent et frappent derriÃ¨re. Se dissipe au dÃ©but du prochain tour.' },
+    lethal: { name: 'Toucher mortel', desc: 'Si cette crÃ©ature inflige des dÃ©gÃ¢ts Ã  une crÃ©ature, elle la tue instantanÃ©ment.' },
+    entrave: { name: 'Entrave', desc: 'Quand cette crÃ©ature inflige des blessures de combat, elle met X marqueur(s) Entrave sur la cible. -1 ATK par marqueur (plancher 0).' },
+    lifelink: { name: 'Lien vital', desc: 'Quand cette crÃ©ature inflige des blessures de combat, votre hÃ©ros se soigne de X PV (plafonnÃ© Ã  20 PV).' },
+    lifedrain: { name: 'Drain de vie', desc: 'Quand cette crÃ©ature inflige des blessures de combat, elle se soigne de X PV (plafonnÃ© aux PV max).' },
+    antitoxin: { name: 'Antitoxine', desc: 'Cette crÃ©ature ne subit pas de dÃ©gÃ¢ts de poison.' },
+    unsacrificable: { name: 'Non sacrifiable', desc: 'Cette crÃ©ature ne peut pas Ãªtre sacrifiÃ©e.' }
 };
 
 function showCardPreview(card, e) {
     hideCardPreview();
     
-    // Créer le container
+    // CrÃ©er le container
     previewEl = document.createElement('div');
     previewEl.className = 'preview-container card-preview';
     
-    // Ajouter la carte (version complète avec tous les détails)
+    // Ajouter la carte (version complÃ¨te avec tous les dÃ©tails)
     const cardEl = makeCard(card, true);
     cardEl.classList.add('preview-card');
     previewEl.appendChild(cardEl);
 
-    // Container pour capacités + effets
+    // Container pour capacitÃ©s + effets
     const infoContainer = document.createElement('div');
     infoContainer.className = 'preview-info-container';
     
-    // Ajouter les capacités si c'est une créature avec des abilities ou sacrifice
+    // Ajouter les capacitÃ©s si c'est une crÃ©ature avec des abilities ou sacrifice
     const hasAbilities = card.type === 'creature' && ((card.abilities && card.abilities.length > 0) || card.sacrifice);
     if (hasAbilities) {
         const abilitiesContainer = document.createElement('div');
@@ -606,7 +751,7 @@ function showCardPreview(card, e) {
             if (abilityInfo) {
                 const abilityEl = document.createElement('div');
                 abilityEl.className = 'preview-ability';
-                // Type de combat (shooter/fly) en blanc, capacités communes en jaune
+                // Type de combat (shooter/fly) en blanc, capacitÃ©s communes en jaune
                 const isTypeAbility = ability === 'shooter' || ability === 'fly';
                 abilityEl.innerHTML = `
                     <div class="ability-name ${isTypeAbility ? 'type-ability' : ''}">${abilityInfo.name}</div>
@@ -630,7 +775,7 @@ function showCardPreview(card, e) {
         infoContainer.appendChild(abilitiesContainer);
     }
     
-    // Ajouter les effets appliqués (sorts) si présents
+    // Ajouter les effets appliquÃ©s (sorts) si prÃ©sents
     if (card.appliedEffects && card.appliedEffects.length > 0) {
         const effectsContainer = document.createElement('div');
         effectsContainer.className = 'preview-effects';
@@ -654,11 +799,11 @@ function showCardPreview(card, e) {
 
     document.body.appendChild(previewEl);
 
-    // Auto-fit du nom (après insertion dans le DOM pour mesurer)
+    // Auto-fit du nom (aprÃ¨s insertion dans le DOM pour mesurer)
     const previewNameEl = cardEl.querySelector('.arena-name');
     if (previewNameEl) fitArenaName(previewNameEl);
 
-    const el = previewEl; // Garder une référence locale
+    const el = previewEl; // Garder une rÃ©fÃ©rence locale
     requestAnimationFrame(() => {
         if (el && el.parentNode) el.classList.add('visible');
     });
@@ -669,7 +814,7 @@ function showCardBackPreview() {
     previewEl = document.createElement('div');
     previewEl.className = 'card-back-preview card-preview';
     document.body.appendChild(previewEl);
-    const el = previewEl; // Garder une référence locale
+    const el = previewEl; // Garder une rÃ©fÃ©rence locale
     requestAnimationFrame(() => {
         if (el && el.parentNode) el.classList.add('visible');
     });
@@ -696,7 +841,7 @@ function makeHeroCard(hero, hp) {
             </div>
         </div>
         <div class="arena-text-zone">
-            <div class="arena-type">Héros</div>
+            <div class="arena-type">HÃ©ros</div>
             <div class="arena-special">${hero.ability}</div>
         </div>
         ${rarityDiamond}`;
@@ -721,7 +866,7 @@ function showHeroPreview(hero, hp) {
         const cardEl = makeHeroCard(hero, hp);
         previewEl.appendChild(cardEl);
     } else {
-        previewEl.innerHTML = `<div class="hero-preview-name">${hero ? hero.name : 'Héros'}</div>`;
+        previewEl.innerHTML = `<div class="hero-preview-name">${hero ? hero.name : 'HÃ©ros'}</div>`;
     }
     document.body.appendChild(previewEl);
     const el = previewEl;
@@ -748,7 +893,7 @@ function showHeroDetail(hero, hp) {
     const cardEl = makeHeroCard(hero, hp);
     container.appendChild(cardEl);
 
-    // Bouton oeil pour toggle art-only (comme les créatures)
+    // Bouton oeil pour toggle art-only (comme les crÃ©atures)
     if (hero.image) {
         const eyeBtn = document.createElement('div');
         eyeBtn.className = 'zoom-art-toggle';
@@ -792,7 +937,7 @@ function renderTraps() {
                     return;
                 }
             }
-            // Fast path : si l'état du trap n'a pas changé, ne rien faire
+            // Fast path : si l'Ã©tat du trap n'a pas changÃ©, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
             const hasTrap = !!trap;
             if (hadTrap === hasTrap) return;
@@ -830,7 +975,7 @@ function renderTraps() {
                     return;
                 }
             }
-            // Fast path : si l'état du trap n'a pas changé, ne rien faire
+            // Fast path : si l'Ã©tat du trap n'a pas changÃ©, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
             const hasTrap = !!trap;
             if (hadTrap === hasTrap) return;
@@ -848,7 +993,7 @@ function renderTraps() {
     });
 }
 
-// Signature de la dernière main rendue (pour le fast path)
+// Signature de la derniÃ¨re main rendue (pour le fast path)
 let _lastHandSig = '';
 let _lastCommittedSig = '';
 let _lastHandPhase = '';
@@ -860,11 +1005,11 @@ function _computeCommittedSig() {
     return committedSpells.map(cs => cs.commitId).join(',');
 }
 
-// Fast path : met à jour les classes playable/coût sur les cartes existantes sans recréer le DOM
+// Fast path : met Ã  jour les classes playable/coÃ»t sur les cartes existantes sans recrÃ©er le DOM
 function _updateHandInPlace(panel, hand, energy) {
     const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
     const spellsCast = state.me.spellsCastThisTurn || 0;
-    const hasHyruleDiscount = isHyrule && spellsCast === 1;
+    const hasHyruleDiscount = isHyrule && spellsCast === 1 && state.phase === 'planning';
     const totalPoisonCounters = state.me.totalPoisonCounters || 0;
     const canPlayNow = canPlay();
     const existingCards = panel.querySelectorAll('.card:not(.committed-spell)');
@@ -873,7 +1018,7 @@ function _updateHandInPlace(panel, hand, energy) {
         const card = hand[i];
         const el = existingCards[i];
 
-        // Recalculer le coût effectif
+        // Recalculer le coÃ»t effectif
         let effectiveCost = card.cost;
         if (hasHyruleDiscount && card.type === 'spell') {
             effectiveCost = Math.max(0, card.cost - 1);
@@ -882,15 +1027,16 @@ function _updateHandInPlace(panel, hand, energy) {
             effectiveCost = Math.max(0, effectiveCost - totalPoisonCounters);
         }
 
-        // Mettre à jour le coût affiché si changé
-        const oldCost = parseInt(el.dataset.cost);
-        if (oldCost !== effectiveCost) {
-            el.dataset.cost = effectiveCost;
-            const costEl = el.querySelector('.arena-cost') || el.querySelector('.img-cost');
-            if (costEl) costEl.textContent = effectiveCost;
+        // Mettre Ã  jour le coÃ»t affichÃ© et la classe discounted
+        const isDiscounted = effectiveCost < card.cost;
+        const costEl = el.querySelector('.arena-mana') || el.querySelector('.img-cost');
+        if (costEl) {
+            if (parseInt(el.dataset.cost) !== effectiveCost) costEl.textContent = effectiveCost;
+            costEl.classList.toggle('discounted', isDiscounted);
         }
+        el.dataset.cost = effectiveCost;
 
-        // Déterminer playable
+        // DÃ©terminer playable
         let playable = effectiveCost <= energy && canPlayNow;
         if (playable && (card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) {
             playable = false;
@@ -913,13 +1059,13 @@ function _updateHandInPlace(panel, hand, energy) {
 
         el.classList.toggle('playable', playable);
 
-        // Mettre à jour les données de drag (tooExpensive / effectiveCost)
+        // Mettre Ã  jour les donnÃ©es de drag (tooExpensive / effectiveCost)
         if (el._dragData) {
             el._dragData.tooExpensive = !playable;
             el._dragData.effectiveCost = effectiveCost;
         }
 
-        // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
+        // Mettre Ã  jour le texte Poison dynamique (poisonPerGraveyard)
         if (card.poisonPerGraveyard) {
             const abilitiesEl = el.querySelector('.arena-abilities');
             if (abilitiesEl) {
@@ -933,14 +1079,18 @@ function _updateHandInPlace(panel, hand, energy) {
             }
         }
 
-        // Visibility pour animations de pioche
-        if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i)) {
+        // Visibility pour animations de pioche (fallback UID si index dÃ©calÃ©)
+        const shouldHideByIndex = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i);
+        const shouldHideByUid = typeof GameAnimations !== 'undefined'
+            && typeof GameAnimations.shouldHideCardByUid === 'function'
+            && GameAnimations.shouldHideCardByUid('me', card.uid || card.id);
+        if (shouldHideByIndex || shouldHideByUid) {
             el.style.visibility = 'hidden';
         } else {
             el.style.visibility = '';
         }
 
-        // Rebind hover/click avec les données fraîches
+        // Rebind hover/click avec les donnÃ©es fraÃ®ches
         el.onmouseenter = (e) => showCardPreview(card, e);
         el.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
     }
@@ -949,7 +1099,7 @@ function _updateHandInPlace(panel, hand, energy) {
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
 
-    // ── Fast path : même main, mêmes committed spells, même phase → mise à jour in-place ──
+    //  Fast path : mÃªme main, mÃªmes committed spells, mÃªme phase   mise Ã  jour in-place 
     const handSig = _computeHandSig(hand);
     const committedSig = _computeCommittedSig();
     const currentPhase = state?.phase || '';
@@ -961,10 +1111,10 @@ function renderHand(hand, energy) {
     _lastCommittedSig = committedSig;
     _lastHandPhase = currentPhase;
 
-    // ── Slow path : rebuild complet ──
+    //  Slow path : rÃ©conciliation (rÃ©utilise les Ã©lÃ©ments existants pour prÃ©server les glow) 
 
-    // FLIP step 1 : snapshot des positions par UID avant de vider le DOM
-    // Fonctionne pour les retraits joueur (drag) ET serveur (résolution de sorts)
+    // FLIP step 1 : snapshot des positions par UID avant de modifier le DOM
+    // Fonctionne pour les retraits joueur (drag) ET serveur (rÃ©solution de sorts)
     const oldPosByUid = {};
     const oldCommittedPositions = {};
     const oldCards = panel.querySelectorAll('.card:not(.committed-spell)');
@@ -979,57 +1129,95 @@ function renderHand(hand, energy) {
         const commitId = card.dataset.commitId;
         oldCommittedPositions[commitId] = card.getBoundingClientRect().left;
     });
-    // Reset le flag de retrait (utilisé uniquement pour le tracking, pas pour le FLIP)
+    // Reset le flag de retrait (utilisÃ© uniquement pour le tracking, pas pour le FLIP)
     if (handCardRemovedIndex >= 0) handCardRemovedIndex = -1;
 
-    panel.innerHTML = '';
+    // Indexer les Ã©lÃ©ments existants par UID pour rÃ©utilisation
+    const existingByUid = new Map();
+    oldCards.forEach(el => {
+        const uid = el.dataset.uid;
+        if (uid) existingByUid.set(uid, el);
+    });
 
-    // Vérifier si Hyrule peut réduire le coût du 2ème sort
+    // Retirer les committed spells (seront re-insÃ©rÃ©s aprÃ¨s)
+    oldCommitted.forEach(el => el.remove());
+
+    // VÃ©rifier si Hyrule peut rÃ©duire le coÃ»t du 2Ã¨me sort (uniquement en phase planning)
     const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
     const spellsCast = state.me.spellsCastThisTurn || 0;
-    const hasHyruleDiscount = isHyrule && spellsCast === 1;
+    const hasHyruleDiscount = isHyrule && spellsCast === 1 && state.phase === 'planning';
 
-    // Compter les marqueurs poison en jeu pour la réduction de coût (Reine toxique)
+    // Compter les marqueurs poison en jeu pour la rÃ©duction de coÃ»t (Reine toxique)
     const totalPoisonCounters = state.me.totalPoisonCounters || 0;
 
+    // UIDs qu'on va garder (pour savoir quoi supprimer aprÃ¨s)
+    const keptUids = new Set();
+
     hand.forEach((card, i) => {
-        // Calculer le coût effectif pour les sorts avec Hyrule
+        // Calculer le coÃ»t effectif pour les sorts avec Hyrule
         let effectiveCost = card.cost;
         let hasDiscount = false;
         if (hasHyruleDiscount && card.type === 'spell') {
             effectiveCost = Math.max(0, card.cost - 1);
             hasDiscount = true;
         }
-        // Réduction de coût par marqueurs poison (Reine toxique)
+        // RÃ©duction de coÃ»t par marqueurs poison (Reine toxique)
         if (card.poisonCostReduction && totalPoisonCounters > 0) {
             effectiveCost = Math.max(0, effectiveCost - totalPoisonCounters);
             hasDiscount = true;
         }
 
-        const el = makeCard(card, true, hasDiscount ? effectiveCost : null);
+        const uid = card.uid || card.id || '';
+        let el = existingByUid.get(uid);
+        let isNew = false;
+
+        if (el) {
+            // RÃ©utiliser l'Ã©lÃ©ment existant (prÃ©serve le glow canvas)
+            keptUids.add(uid);
+            // Mettre Ã  jour le coÃ»t affichÃ© et la classe discounted
+            const isDiscounted = effectiveCost < card.cost;
+            const costEl = el.querySelector('.arena-mana') || el.querySelector('.img-cost');
+            if (costEl) {
+                costEl.textContent = effectiveCost;
+                costEl.classList.toggle('discounted', isDiscounted);
+            }
+        } else {
+            // Nouvelle carte : crÃ©er depuis zÃ©ro
+            el = makeCard(card, true, effectiveCost < card.cost ? effectiveCost : null);
+            isNew = true;
+        }
+
         el.dataset.idx = i;
-        el.dataset.uid = card.uid || card.id || '';
+        el.dataset.uid = uid;
         el.dataset.cost = effectiveCost;
 
-        // Marquer comme jouable si : assez de mana + phase planning + pas encore validé le tour
+        // Marquer comme jouable si : assez de mana + phase planning + pas encore validÃ© le tour
+        el.classList.remove('playable');
         if (effectiveCost <= energy && canPlay()) {
             el.classList.add('playable');
         }
 
-        // Retirer playable si aucun slot libre sur le board (créatures et pièges)
+        // Retirer playable si aucun slot libre sur le board (crÃ©atures et piÃ¨ges)
         if ((card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) {
             el.classList.remove('playable');
         }
 
-        // Z-index incrémental pour éviter les saccades au hover
+        // Z-index incrÃ©mental pour Ã©viter les saccades au hover
         el.style.zIndex = i + 1;
 
-        // Cacher si animation de pioche en attente
-        if (typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i)) {
+        // Cacher si animation de pioche en attente (index/uid) OU pendingBounce sur la derniÃ¨re carte
+        const isPBTarget = pendingBounce && pendingBounce.owner === 'me' && i === hand.length - 1;
+        const shouldHideByIndex = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i);
+        const shouldHideByUid = typeof GameAnimations !== 'undefined'
+            && typeof GameAnimations.shouldHideCardByUid === 'function'
+            && GameAnimations.shouldHideCardByUid('me', uid);
+        if (shouldHideByIndex || shouldHideByUid || isPBTarget) {
             el.style.visibility = 'hidden';
+        } else {
+            el.style.visibility = '';
         }
 
-        // Vérifier les conditions d'invocation spéciales (ex: Kraken Colossal)
+        // VÃ©rifier les conditions d'invocation spÃ©ciales (ex: Kraken Colossal)
         let cantSummon = false;
         if (card.requiresGraveyardCreatures) {
             const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
@@ -1038,7 +1226,7 @@ function renderHand(hand, energy) {
                 el.classList.remove('playable');
             }
         }
-        // Réanimation : nécessite au moins 1 créature non-engagée au cimetière
+        // RÃ©animation : nÃ©cessite au moins 1 crÃ©ature non-engagÃ©e au cimetiÃ¨re
         if (card.requiresGraveyardCreature) {
             const availableCreatures = (state.me.graveyard || []).filter(c =>
                 c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
@@ -1048,7 +1236,7 @@ function renderHand(hand, energy) {
                 el.classList.remove('playable');
             }
         }
-        // Sacrifice : nécessite au moins 1 slot vide adjacent à une créature sacrifiable
+        // Sacrifice : nÃ©cessite au moins 1 slot vide adjacent Ã  une crÃ©ature sacrifiable
         if (card.sacrifice) {
             const validSlots = getValidSlots(card);
             if (validSlots.length === 0) {
@@ -1056,7 +1244,7 @@ function renderHand(hand, energy) {
                 el.classList.remove('playable');
             }
         }
-        // Sort ciblant une créature alliée : nécessite au moins 1 créature sur le terrain
+        // Sort ciblant une crÃ©ature alliÃ©e : nÃ©cessite au moins 1 crÃ©ature sur le terrain
         if (card.targetSelfCreature) {
             const hasCreature = state.me.field.some(row => row.some(c => c !== null));
             if (!hasCreature) {
@@ -1085,30 +1273,39 @@ function renderHand(hand, energy) {
             showCardZoom(card);
         };
 
+        // appendChild dÃ©place un Ã©lÃ©ment existant ou ajoute un nouveau
         panel.appendChild(el);
 
-        // Auto-fit du nom après insertion DOM
-        const nameEl = el.querySelector('.arena-name');
-        if (nameEl) fitArenaName(nameEl);
     });
 
-    // Sorts engagés : toujours afficher à leur position d'origine dans la main.
-    // animateSpell les retire un par un du DOM quand ils sont joués.
-    // L'insertion par insertBefore garantit qu'ils restent en place même quand des tokens arrivent.
+    // Supprimer les cartes qui ne sont plus dans la main
+    existingByUid.forEach((el, uid) => {
+        if (!keptUids.has(uid)) {
+            el.remove();
+        }
+    });
+
+    // Sorts engagÃ©s : toujours afficher Ã  leur position d'origine dans la main.
+    // animateSpell les retire un par un du DOM quand ils sont jouÃ©s.
+    // L'insertion par insertBefore garantit qu'ils restent en place mÃªme quand des tokens arrivent.
     if (committedSpells.length > 0) {
-        // Calculer les indices d'origine (les sorts sont retirés de la main un par un,
-        // donc chaque handIndex est relatif à la main réduite — on reconstruit la position absolue)
+        // Calculer les indices d'origine (les sorts sont retirÃ©s de la main un par un,
+        // donc chaque handIndex est relatif Ã  la main rÃ©duite  on reconstruit la position absolue)
         const origIndices = [];
         for (let i = 0; i < committedSpells.length; i++) {
             let origIdx = committedSpells[i].handIndex;
             if (origIdx < 0) { origIdx = hand.length + i; } // fallback : fin de main
-            for (let j = 0; j < i; j++) {
-                if (origIndices[j] <= origIdx) origIdx++;
+            // Trier les positions absolues prÃ©cÃ©dentes en ordre croissant
+            // pour que chaque incrÃ©ment soit vÃ©rifiÃ© contre les suivants
+            const sorted = origIndices.slice().sort((a, b) => a - b);
+            for (const prev of sorted) {
+                if (prev <= origIdx) origIdx++;
+                else break;
             }
             origIndices.push(origIdx);
         }
 
-        // Trier par position d'origine pour insérer dans l'ordre
+        // Trier par position d'origine pour insÃ©rer dans l'ordre
         const indexed = committedSpells.map((cs, i) => ({ cs, csIdx: i, origIdx: origIndices[i] }));
         indexed.sort((a, b) => a.origIdx - b.origIdx);
 
@@ -1132,7 +1329,7 @@ function renderHand(hand, energy) {
                 showCardZoom(cs.card);
             };
 
-            // Insérer à la position d'origine (pas à la fin)
+            // InsÃ©rer Ã  la position d'origine (pas Ã  la fin)
             const children = panel.children;
             if (origIdx < children.length) {
                 panel.insertBefore(el, children[origIdx]);
@@ -1142,10 +1339,30 @@ function renderHand(hand, energy) {
         }
     }
 
-    // Bounce : cacher la dernière carte si un bounce est en attente
+    // RÃ©indexer toute la main aprÃ¨s insertion des committed spells.
+    // Sans Ã§a, les committed gardent un z-index bas et passent derriÃ¨re les cartes voisines.
+    const handChildren = panel.querySelectorAll('.card');
+    handChildren.forEach((el, i) => {
+        el.style.zIndex = i + 1;
+    });
+
+    // Bounce : cacher la derniÃ¨re carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'me') {
-        const allCards = panel.querySelectorAll('.card');
-        checkPendingBounce('me', allCards);
+        if (pendingBounce.completed) {
+            // Animation terminÃ©e  rÃ©vÃ©ler la derniÃ¨re carte et cleanup
+            const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
+            const last = allCards[allCards.length - 1];
+            if (last) {
+                last.style.visibility = '';
+                last.style.transition = 'none';
+            }
+            const wrapper = pendingBounce.wrapper;
+            pendingBounce = null;
+            revealBounceTargetWithBridge(panel, '.card:not(.committed-spell)', wrapper);
+        } else {
+            const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
+            checkPendingBounce('me', allCards);
+        }
     }
 
     // FLIP step 2 : animer les cartes restantes de l'ancienne position vers la nouvelle
@@ -1154,9 +1371,8 @@ function renderHand(hand, energy) {
         const newCards = panel.querySelectorAll('.card:not(.committed-spell)');
         const newCommitted = panel.querySelectorAll('.committed-spell');
         const toAnimate = [];
-
         // Batch : poser tous les transforms d'un coup (sans transition)
-        // Cartes normales — matching par UID
+        // Cartes normales  matching par UID
         newCards.forEach(card => {
             const uid = card.dataset.uid;
             if (uid && oldPosByUid[uid] !== undefined) {
@@ -1168,7 +1384,7 @@ function renderHand(hand, energy) {
                 }
             }
         });
-        // Sorts engagés (par commitId)
+        // Sorts engagÃ©s (par commitId)
         newCommitted.forEach(card => {
             const commitId = card.dataset.commitId;
             if (oldCommittedPositions[commitId] !== undefined) {
@@ -1244,7 +1460,7 @@ function clearCommittedSpellHighlights() {
 
 function createOppHandCard(revealedCard) {
     if (revealedCard) {
-        // Carte révélée : utiliser makeCard pour le design complet
+        // Carte rÃ©vÃ©lÃ©e : utiliser makeCard pour le design complet
         const el = makeCard(revealedCard, true);
         el.classList.add('opp-card-back', 'opp-revealed');
         if (revealedCard.uid) el.dataset.uid = revealedCard.uid;
@@ -1253,7 +1469,7 @@ function createOppHandCard(revealedCard) {
         el.onclick = (e) => { e.stopPropagation(); showCardZoom(revealedCard); };
         return el;
     } else {
-        // Carte cachée : dos de carte standard
+        // Carte cachÃ©e : dos de carte standard
         const el = document.createElement('div');
         el.className = 'opp-card-back';
         el.onmouseenter = () => showCardBackPreview();
@@ -1262,23 +1478,109 @@ function createOppHandCard(revealedCard) {
     }
 }
 
-function renderOppHand(count, oppHand) {
-    const panel = document.getElementById('opp-hand');
-    const oldCards = panel.querySelectorAll('.opp-card-back');
-    const oldCount = oldCards.length;
-    const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
-    const revealedIndices = oppHand ? oppHand.map((c, i) => c ? i : null).filter(x => x !== null) : [];
-
-    const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
-
-    // --- Mode freeze : ne PAS toucher au DOM pendant la transition de révélation ---
-    // Tant que des cartes revealed sont en attente d'animation et que le count n'a pas changé,
-    // on garde la main telle quelle (la carte revealed reste à sa place visuelle)
-    if (cacheSize > 0 && count === oldCount) {
+function revealBounceTargetWithBridge(panel, selector, wrapper) {
+    if (!panel) {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
         return;
     }
 
-    // --- Mode incrémental : ne PAS détruire le DOM pendant une animation de pioche ---
+    const cards = panel.querySelectorAll(selector);
+    const last = cards[cards.length - 1];
+    let cover = null;
+
+    if (last) {
+        const rect = last.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            cover = last.cloneNode(true);
+            cover.style.position = 'fixed';
+            cover.style.left = rect.left + 'px';
+            cover.style.top = rect.top + 'px';
+            cover.style.width = rect.width + 'px';
+            cover.style.height = rect.height + 'px';
+            cover.style.margin = '0';
+            cover.style.pointerEvents = 'none';
+            cover.style.zIndex = '10001';
+            cover.style.transition = 'none';
+            cover.style.transform = 'none';
+            cover.style.visibility = 'visible';
+            document.body.appendChild(cover);
+        }
+        last.style.visibility = '';
+        last.style.transition = 'none';
+    }
+
+    requestAnimationFrame(() => {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
+        requestAnimationFrame(() => {
+            if (cover && cover.isConnected) cover.remove();
+        });
+    });
+}
+
+function renderOppHand(count, oppHand) {
+    const panel = document.getElementById('opp-hand');
+
+    // Purger les cartes collapsed Ã  width:0 (jouÃ©es pendant la rÃ©solution)
+    // Pendant pendingBounce, on garde UNIQUEMENT le tout premier stale slot (index 0)
+    // pour Ã©viter le flash historique de la carte la plus Ã  gauche.
+    // Les stale slots non-premiers sont purgÃ©s immÃ©diatement pour stabiliser la gÃ©omÃ©trie
+    // de la main avant la fin du fly (Ã©vite "arrive sur une carte puis dÃ©cale aprÃ¨s").
+    const hasPendingBounce = pendingBounce && pendingBounce.owner === 'opp';
+    let purgedCount = 0;
+    {
+        const staleCards = panel.querySelectorAll('.opp-card-back');
+        for (let i = staleCards.length - 1; i >= 0; i--) {
+            if (staleCards[i].style.width !== '0px') continue;
+            if (hasPendingBounce && i === 0) continue;
+            staleCards[i].remove();
+            purgedCount++;
+        }
+        // RÃ©assigner les z-index sÃ©quentiels aprÃ¨s purge (les anciens z-index sont dÃ©sordonnÃ©s)
+        if (purgedCount > 0) {
+            const remaining = panel.querySelectorAll('.opp-card-back');
+            for (let i = 0; i < remaining.length; i++) {
+                remaining[i].style.zIndex = i + 1;
+            }
+        }
+    }
+
+    const oldCards = panel.querySelectorAll('.opp-card-back');
+    const oldCount = oldCards.length;
+    const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
+
+    const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('oppHand:render:start', {
+            statePhase: state?.phase || '?',
+            count,
+            oldCount,
+            drawActive,
+            cacheSize,
+            purgedCount,
+            pendingBounce: !!hasPendingBounce,
+            pendingBounceResolved: !!(pendingBounce && pendingBounce.resolved),
+            pendingBounceCompleted: !!(pendingBounce && pendingBounce.completed),
+        });
+    }
+
+    // --- Mode freeze : ne PAS toucher au DOM pendant la transition de rÃ©vÃ©lation ---
+    // Tant que des cartes revealed sont en attente d'animation et que le count n'a pas changÃ©,
+    // on garde la main telle quelle (la carte revealed reste Ã  sa place visuelle)
+    // Ne pas freezer pendant un pendingBounce adverse (graveyardReturn/bounce),
+    // sinon la carte revealed peut ne jamais Ãªtre injectÃ©e au bon index et
+    // checkPendingBounce ne trouve pas sa cible (timeout -> animation cassÃ©e).
+    if (cacheSize > 0 && count === oldCount && !(pendingBounce && pendingBounce.owner === 'opp')) {
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:skip-freeze-reveal', {
+                count,
+                oldCount,
+                cacheSize,
+            });
+        }
+        return;
+    }
+
+    // --- Mode incrÃ©mental : ne PAS dÃ©truire le DOM pendant une animation de pioche ---
     if (drawActive && count >= oldCount) {
         if (count > oldCount) {
             GameAnimations.remapOppDrawIndices(oldCount);
@@ -1289,9 +1591,18 @@ function renderOppHand(count, oppHand) {
             ? Array.from(oldCards).map(c => c.getBoundingClientRect().left) : null;
 
         for (let i = 0; i < oldCount; i++) {
-            // Si une carte anciennement cachée est maintenant revealed, la remplacer
+            // Si une carte anciennement cachÃ©e est maintenant revealed, la remplacer
             const revealedCard = oppHand && oppHand[i];
-            if (revealedCard && !oldCards[i].classList.contains('opp-revealed')) {
+            const isRevealedEl = oldCards[i].classList.contains('opp-revealed');
+            const elUid = oldCards[i].dataset?.uid || '';
+            const shouldBeRevealed = !!revealedCard;
+            const wrongRevealedUid = shouldBeRevealed && isRevealedEl && revealedCard.uid && elUid !== revealedCard.uid;
+            const shouldReplace =
+                (shouldBeRevealed && !isRevealedEl) ||
+                (!shouldBeRevealed && isRevealedEl) ||
+                wrongRevealedUid;
+
+            if (shouldReplace) {
                 const newEl = createOppHandCard(revealedCard);
                 newEl.style.zIndex = i + 1;
                 const shouldHide = GameAnimations.shouldHideCard('opp', i);
@@ -1299,9 +1610,11 @@ function renderOppHand(count, oppHand) {
                 oldCards[i].replaceWith(newEl);
             } else if (count === oldCount) {
                 const shouldHide = GameAnimations.shouldHideCard('opp', i);
-                oldCards[i].style.visibility = shouldHide ? 'hidden' : '';
+                const isCollapsed = oldCards[i].style.width === '0px';
+                oldCards[i].style.visibility = (shouldHide || isCollapsed) ? 'hidden' : '';
             } else {
-                oldCards[i].style.visibility = '';
+                const isCollapsed = oldCards[i].style.width === '0px';
+                oldCards[i].style.visibility = isCollapsed ? 'hidden' : '';
             }
         }
         for (let i = oldCount; i < Math.min(count, 12); i++) {
@@ -1315,8 +1628,12 @@ function renderOppHand(count, oppHand) {
             panel.appendChild(el);
         }
 
-        // FLIP : animer le glissement des cartes existantes vers leurs nouvelles positions
-        if (oldPositions) {
+        const completedOppBounce = pendingBounce && pendingBounce.owner === 'opp' && pendingBounce.completed;
+
+        // FLIP : animer le glissement des cartes existantes vers leurs nouvelles positions.
+        // Si graveyardReturn vient de finir, on skip ce FLIP pour Ã©viter un effet de dÃ©doublement
+        // (overlay volant + carte rÃ©elle visibles pendant le slide).
+        if (oldPositions && !completedOppBounce) {
             const currentCards = panel.querySelectorAll('.opp-card-back');
             const toAnimate = [];
             for (let i = 0; i < oldPositions.length; i++) {
@@ -1344,67 +1661,164 @@ function renderOppHand(count, oppHand) {
         }
 
         if (pendingBounce && pendingBounce.owner === 'opp') {
-            const allCards = panel.querySelectorAll('.opp-card-back');
-            checkPendingBounce('opp', allCards);
+            if (pendingBounce.completed) {
+                // Animation terminÃ©e  rÃ©vÃ©ler la derniÃ¨re carte et cleanup
+                const wrapper = pendingBounce.wrapper;
+                pendingBounce = null;
+                revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper);
+            } else {
+                const allCards = panel.querySelectorAll('.opp-card-back');
+                checkPendingBounce('opp', allCards);
+            }
+        }
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:end-draw-mode', {
+                count,
+                oldCount,
+                domCount: panel.querySelectorAll('.opp-card-back').length,
+                hidden: Array.from(panel.querySelectorAll('.opp-card-back')).filter((el) => el.style.visibility === 'hidden').length,
+                revealed: panel.querySelectorAll('.opp-revealed').length,
+            });
         }
         return;
     }
 
-    // --- Mode normal : rebuild complet ---
-    // FLIP : sauvegarder les positions avant de reconstruire
-    const oldRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
-
-    // Sauvegarder les rects pour flyFromOppHand (animation de sort adverse)
+    // --- Mode freeze rÃ©solution : pendant la rÃ©solution, NE JAMAIS rÃ©duire la main opp ---
+    // Les animations (summon, spell, trap) retirent elles-mÃªmes les dos de cartes du DOM.
+    // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
+    // donc on ne peut pas se fier Ã  animatingSlots ici.
     if (count < oldCount && state?.phase === 'resolution') {
-        savedOppHandRects = oldRects.slice();
+        if (!savedOppHandRects) {
+            savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
+        }
+        for (let i = oldCount - 1; i >= count; i--) {
+            const stale = oldCards[i];
+            if (!stale) continue;
+            stale.style.visibility = 'hidden';
+            if (stale.style.width !== '0px') smoothCloseOppHandGap(stale);
+        }
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:skip-resolution-shrink', {
+                count,
+                oldCount,
+                savedRectCount: savedOppHandRects ? savedOppHandRects.length : 0,
+            });
+        }
+        return;
     }
 
-    panel.innerHTML = '';
+    const target = Math.min(count, 12);
+    const oldDomCount = panel.children.length;
+    const preservedCount = Math.min(oldDomCount, target);
 
-    for (let i = 0; i < Math.min(count, 12); i++) {
+    // FLIP step 1 : snapshot positions avant modification du DOM
+    // Animer Ã  la fois les retraits et les ajouts (bounce -> +1 carte).
+    let oldPositions = null;
+    if (target !== oldDomCount && preservedCount > 0) {
+        oldPositions = Array.from(panel.children)
+            .slice(0, preservedCount)
+            .map(c => c.getBoundingClientRect().left);
+    }
+
+    // Supprimer les Ã©lÃ©ments en trop
+    while (panel.children.length > target) {
+        panel.lastElementChild.remove();
+    }
+
+    // Mettre Ã  jour ou ajouter les Ã©lÃ©ments manquants
+    for (let i = 0; i < target; i++) {
         const revealedCard = oppHand && oppHand[i];
-        const el = createOppHandCard(revealedCard);
-        el.style.zIndex = i + 1;
+        let el = panel.children[i];
 
-        const shouldHide = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('opp', i);
-        if (shouldHide) {
-            el.style.visibility = 'hidden';
+        if (!el) {
+            // Ajouter un nouvel Ã©lÃ©ment
+            el = createOppHandCard(revealedCard);
+            el.style.zIndex = i + 1;
+            panel.appendChild(el);
+        } else {
+            const isRevealedEl = el.classList.contains('opp-revealed');
+            const elUid = el.dataset?.uid || '';
+            const shouldBeRevealed = !!revealedCard;
+            const wrongRevealedUid = shouldBeRevealed && isRevealedEl && revealedCard.uid && elUid !== revealedCard.uid;
+            const shouldReplace =
+                (shouldBeRevealed && !isRevealedEl) ||
+                (!shouldBeRevealed && isRevealedEl) ||
+                wrongRevealedUid;
+
+            if (!shouldReplace) {
+                // rien Ã  faire
+            } else {
+                // Remplacer carte cachÃ©e/revealed selon l'Ã©tat attendu
+                const newEl = createOppHandCard(revealedCard);
+                newEl.style.zIndex = i + 1;
+                el.replaceWith(newEl);
+            }
         }
 
-        panel.appendChild(el);
+        const shouldHide = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('opp', i);
+        if (panel.children[i]) {
+            const isCollapsed = panel.children[i].style.width === '0px';
+            panel.children[i].style.visibility = (shouldHide || isCollapsed) ? 'hidden' : '';
+        }
     }
 
-    // Animation glissante quand la main change de taille (ajout ou retrait de cartes)
-    if (count !== oldCount && oldCount > 0) {
-        const newCards = panel.querySelectorAll('.opp-card-back');
-        newCards.forEach((card, i) => {
-            if (i < oldRects.length) {
-                const newRect = card.getBoundingClientRect();
-                const dx = oldRects[i].left - newRect.left;
-                if (Math.abs(dx) > 1) {
-                    card.style.transition = 'none';
-                    card.style.transform = `translateX(${dx}px)`;
-                    requestAnimationFrame(() => {
-                        card.style.transition = 'transform 0.3s ease-out';
-                        card.style.transform = '';
-                        setTimeout(() => { card.style.transition = ''; }, 350);
-                    });
-                }
+    const completedOppBounce = pendingBounce && pendingBounce.owner === 'opp' && pendingBounce.completed;
+
+    // FLIP step 2 : animer le glissement des cartes restantes vers leurs nouvelles positions.
+    // Si graveyardReturn vient de finir, on skip ce FLIP pour Ã©viter le dÃ©doublement.
+    if (oldPositions && !completedOppBounce) {
+        const currentCards = panel.querySelectorAll('.opp-card-back');
+        const toAnimate = [];
+        for (let i = 0; i < oldPositions.length && i < currentCards.length; i++) {
+            const newLeft = currentCards[i].getBoundingClientRect().left;
+            const dx = oldPositions[i] - newLeft;
+            if (Math.abs(dx) > 1) {
+                currentCards[i].style.transition = 'none';
+                currentCards[i].style.transform = `translateX(${dx}px)`;
+                toAnimate.push(currentCards[i]);
             }
-        });
+        }
+        if (toAnimate.length > 0) {
+            panel.getBoundingClientRect(); // force reflow
+            requestAnimationFrame(() => {
+                for (const card of toAnimate) {
+                    card.style.transition = 'transform 0.3s ease-out';
+                    card.style.transform = '';
+                }
+                setTimeout(() => {
+                    for (const card of toAnimate) { card.style.transition = ''; }
+                }, 350);
+            });
+        }
     }
 
-    // Bounce : cacher la dernière carte si un bounce est en attente
+    // Bounce : cacher la derniÃ¨re carte si un bounce est en attente
     if (pendingBounce && pendingBounce.owner === 'opp') {
-        const allCards = panel.querySelectorAll('.opp-card-back');
-        checkPendingBounce('opp', allCards);
+        if (pendingBounce.completed) {
+            // Animation terminÃ©e  rÃ©vÃ©ler la derniÃ¨re carte et cleanup
+            const wrapper = pendingBounce.wrapper;
+                pendingBounce = null;
+                revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper);
+        } else {
+            const allCards = panel.querySelectorAll('.opp-card-back');
+            checkPendingBounce('opp', allCards);
+        }
+    }
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('oppHand:render:end', {
+            count,
+            oldCount,
+            domCount: panel.querySelectorAll('.opp-card-back').length,
+            hidden: Array.from(panel.querySelectorAll('.opp-card-back')).filter((el) => el.style.visibility === 'hidden').length,
+            revealed: panel.querySelectorAll('.opp-revealed').length,
+        });
     }
 }
 
 function makeCard(card, inHand, discountedCost = null) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
-    // Synchroniser l'animation de bordure rotative (évite le redémarrage au re-render)
+    // Synchroniser l'animation de bordure rotative (Ã©vite le redÃ©marrage au re-render)
     el.style.setProperty('--anim-offset', `${(performance.now() / 1000) % 6}s`);
 
     if (!inHand && card.type === 'creature') {
@@ -1420,12 +1834,12 @@ function makeCard(card, inHand, discountedCost = null) {
 
     const hp = card.currentHp ?? card.hp;
 
-    // Coût affiché (réduit si Hyrule actif)
+    // CoÃ»t affichÃ© (rÃ©duit si Hyrule actif)
     const displayCost = discountedCost !== null ? discountedCost : card.cost;
     const costClass = discountedCost !== null ? 'discounted' : '';
 
     // Classes pour les stats (comparaison avec les stats de BASE)
-    // boosted = supérieur à la base (vert), reduced = inférieur à la base (rouge)
+    // boosted = supÃ©rieur Ã  la base (vert), reduced = infÃ©rieur Ã  la base (rouge)
     let hpClass = '';
     let atkClass = '';
     if (card.type === 'creature') {
@@ -1436,7 +1850,7 @@ function makeCard(card, inHand, discountedCost = null) {
             hpClass = 'reduced';
         }
 
-        // ATK: comparer atk avec baseAtk (pas pour les bâtiments)
+        // ATK: comparer atk avec baseAtk (pas pour les bÃ¢timents)
         if (!card.isBuilding) {
             const baseAtk = card.baseAtk ?? card.atk;
             if (card.atk > baseAtk) {
@@ -1447,7 +1861,7 @@ function makeCard(card, inHand, discountedCost = null) {
         }
     }
 
-    // Carte style Arena (Magic Arena) : pilule stats en bas à droite, mana en rond bleu
+    // Carte style Arena (Magic Arena) : pilule stats en bas Ã  droite, mana en rond bleu
     if (card.arenaStyle && card.image) {
         el.classList.add('arena-style');
         if (card.faction) {
@@ -1455,33 +1869,38 @@ function makeCard(card, inHand, discountedCost = null) {
         }
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
-        // Capacités communes (sans shooter/fly car déjà dans le type)
+        // Taille de nom prÃ©-calculÃ©e (Ã©vite le recalcul runtime)
+        const fitSize = getNameFitSize(card.name, !!card.faction);
+        const nameStyle = fitSize ? ` style="font-size:${fitSize}"` : '';
+
+        // CapacitÃ©s communes (sans shooter/fly car dÃ©jÃ  dans le type)
         const commonAbilityNames = {
-            haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', unsacrificable: 'Non sacrifiable'
+            haste: 'CÃ©lÃ©ritÃ©', superhaste: 'SupercÃ©lÃ©ritÃ©', intangible: 'Intangible',
+            trample: 'PiÃ©tinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'RÃ©gÃ©nÃ©ration',
+            protection: 'Protection', spellBoost: 'Sort renforcÃ©', enhance: 'AmÃ©lioration', bloodthirst: 'Soif de sang', melody: 'MÃ©lodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', unsacrificable: 'Non sacrifiable', provocation: 'Provocation'
         };
-        // Filtrer shooter et fly des capacités affichées
+        // Filtrer shooter et fly des capacitÃ©s affichÃ©es
         const addedAbils = card.addedAbilities || [];
         const commonAbilities = (card.abilities || [])
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 const isAdded = addedAbils.includes(a);
-                if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
-                if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-                if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
-                if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
-                if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
-                if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
+                if (a === 'cleave') { const t = `Clivant ${card.cleaveX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'power') { const t = `Puissance ${card.powerX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'regeneration') { const t = `RÃ©gÃ©nÃ©ration ${card.regenerationX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'spellBoost') { const t = `Sort renforcÃ© ${card.spellBoostAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'enhance') { const t = `AmÃ©lioration ${card.enhanceAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'bloodthirst') { const t = `Soif de sang ${card.bloodthirstAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
                 if (a === 'poison') {
                     const basePoison = card.basePoisonX ?? card.poisonX ?? 1;
                     const effectivePoison = card.poisonX || 1;
-                    const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
-                    return `Poison <span${poisonClass}>${effectivePoison}</span>`;
+                    const poisonBoosted = isAdded || effectivePoison > basePoison;
+                    const poisonClass = poisonBoosted ? ' class="boosted"' : '';
+                    return isAdded ? `<span class="boosted">Poison</span> <span${poisonClass}>${effectivePoison}</span>` : `Poison <span${poisonClass}>${effectivePoison}</span>`;
                 }
-                if (a === 'entrave') return `Entrave ${card.entraveX || ''}`.trim();
-                if (a === 'lifedrain') return `Drain de vie ${card.lifedrainX || ''}`.trim();
-                if (a === 'lifelink') return `Lien vital ${card.lifelinkX || ''}`.trim();
+                if (a === 'entrave') { const t = `Entrave ${card.entraveX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'lifedrain') { const t = `Drain de vie ${card.lifedrainX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'lifelink') { const t = `Lien vital ${card.lifelinkX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
                 const name = commonAbilityNames[a] || a;
                 if (isAdded) return `<span class="boosted">${name}</span>`;
                 return name;
@@ -1491,24 +1910,24 @@ function makeCard(card, inHand, discountedCost = null) {
         }
         const abilitiesText = commonAbilities.join(', ');
 
-        let combatTypeText = 'Mêlée';
+        let combatTypeText = 'MÃªlÃ©e';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
-        // Type de créature (mort-vivant, humain, dragon...)
+        // Type de crÃ©ature (mort-vivant, humain, dragon...)
         const creatureTypeNames = {
             undead: 'Mort-vivant',
             human: 'Humain',
             goblin: 'Gobelin',
-            demon: 'Démon',
-            elemental: 'Élémentaire',
-            beast: 'Bête',
+            demon: 'DÃ©mon',
+            elemental: 'Ã‰lÃ©mentaire',
+            beast: 'BÃªte',
             spirit: 'Esprit',
             dragon: 'Dragon',
             serpent: 'Serpent',
-            monstrosity: 'Monstruosité',
+            monstrosity: 'MonstruositÃ©',
             ogre: 'Ogre',
-            spider: 'Araignée',
+            spider: 'AraignÃ©e',
             parasite: 'Parasite',
             plant: 'Plante',
             vampire: 'Vampire',
@@ -1516,50 +1935,50 @@ function makeCard(card, inHand, discountedCost = null) {
         };
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 
-        // Capacité spéciale/unique si présente
+        // CapacitÃ© spÃ©ciale/unique si prÃ©sente
         let specialAbility = '';
         if (card.description) {
             specialAbility = card.description;
         } else {
             if (card.onHeroHit === 'draw') {
-                specialAbility = 'Quand cette créature attaque le héros adverse, piochez une carte.';
+                specialAbility = 'Quand cette crÃ©ature attaque le hÃ©ros adverse, piochez une carte.';
             }
             if (card.onDeath?.damageHero) {
-                specialAbility = `À la mort de cette créature, le héros adverse subit ${card.onDeath.damageHero} blessures.`;
+                specialAbility = `Ã€ la mort de cette crÃ©ature, le hÃ©ros adverse subit ${card.onDeath.damageHero} blessures.`;
             }
         }
 
-        // Diamant de rareté basé sur l'édition
+        // Diamant de raretÃ© basÃ© sur l'Ã©dition
         const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
         const rarityClass = rarityMap[card.edition] || 'common';
         const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
 
-        // Ligne de type complète
+        // Ligne de type complÃ¨te
         let typeLineText;
         if (card.isBuilding) {
-            typeLineText = 'Bâtiment';
+            typeLineText = 'BÃ¢timent';
             if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
         } else {
-            typeLineText = `Créature - ${combatTypeText}`;
+            typeLineText = `CrÃ©ature - ${combatTypeText}`;
             if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
         }
 
-        // Style du titre (couleur personnalisée si définie)
+        // Style du titre (couleur personnalisÃ©e si dÃ©finie)
         const titleStyle = card.titleColor ? `style="background: ${card.titleColor}"` : '';
 
-        // Les sorts et pièges n'ont pas de stats
+        // Les sorts et piÃ¨ges n'ont pas de stats
         const isSpell = card.type === 'spell';
         const isTrap = card.type === 'trap';
         const noStats = isSpell || isTrap;
         if (noStats) el.classList.add('card-spell');
         if (card.isBuilding) el.classList.add('card-building');
 
-        // Version allégée sur le terrain
+        // Version allÃ©gÃ©e sur le terrain
         if (!inHand) {
             el.classList.add('on-field');
-            // Jetons compteurs — empilés verticalement sur le côté droit
+            // Jetons compteurs  empilÃ©s verticalement sur le cÃ´tÃ© droit
             let mkIdx = 0;
-            const mkBase = card.isBuilding ? 40 : 2;
+            const mkBase = 2;
             const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${mkBase + mkIdx++ * 28}px">${card.medusaGazeMarker}</div>` : '';
             const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
             const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
@@ -1567,12 +1986,12 @@ function makeCard(card, inHand, discountedCost = null) {
             const melodyIcon = '';
             if (noStats) {
                 el.innerHTML = `
-                    <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                    <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
                     ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
             } else {
                 el.innerHTML = `
-                    <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                    <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                     <div class="arena-mana">${card.cost}</div>
                     <div class="arena-stats">${card.isBuilding ? `<span class="arena-armor">${hp}</span>` : `<span class="arena-atk ${atkClass}">${card.atk}</span><span class="arena-hp ${hpClass}">${hp}</span>`}</div>
                     ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
@@ -1581,29 +2000,29 @@ function makeCard(card, inHand, discountedCost = null) {
             return el;
         }
 
-        // Version complète (main, hover, cimetière)
+        // Version complÃ¨te (main, hover, cimetiÃ¨re)
         if (noStats) {
             let typeName = 'Sort';
             if (isTrap) {
-                typeName = 'Piège';
+                typeName = 'PiÃ¨ge';
             } else if (card.spellSpeed !== undefined) {
                 typeName = `Sort - Vitesse ${card.spellSpeed}`;
             } else if (card.spellType) {
-                const spellTypeMap = { offensif: 'Offensif', 'défensif': 'Défensif', hybride: 'Hybride' };
+                const spellTypeMap = { offensif: 'Offensif', 'dÃ©fensif': 'DÃ©fensif', hybride: 'Hybride' };
                 typeName = `Sort - ${spellTypeMap[card.spellType] || card.spellType}`;
             }
-            // Boost des dégâts de sorts si spellBoost actif
+            // Boost des dÃ©gÃ¢ts de sorts si spellBoost actif
             let spellDescription = card.description || '';
             const spellBoost = (isSpell && card.offensive && card.damage && state?.me?.spellBoost) ? state.me.spellBoost : 0;
             if (spellBoost > 0 && card.damage) {
                 const boostedDmg = card.damage + spellBoost;
                 spellDescription = spellDescription.replace(
-                    new RegExp(`${card.damage}(\\s*(?:blessures?|dégâts?))`, 'g'),
+                    new RegExp(`${card.damage}(\\s*(?:blessures?|dÃ©gÃ¢ts?))`, 'g'),
                     `<span class="boosted">${boostedDmg}</span>$1`
                 );
             }
             el.innerHTML = `
-                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeName}</div>
                     ${spellDescription ? `<div class="arena-special">${spellDescription}</div>` : ''}
@@ -1611,11 +2030,11 @@ function makeCard(card, inHand, discountedCost = null) {
                 ${rarityDiamond}
                 <div class="arena-mana ${costClass}">${displayCost}</div>`;
         } else {
-            // Si pétrifié, remplacer capacités et description
+            // Si pÃ©trifiÃ©, remplacer capacitÃ©s et description
             const displayAbilities = card.petrified ? '' : abilitiesText;
-            const displaySpecial = card.petrified ? (card.petrifiedDescription || 'Pétrifié — ne peut ni attaquer ni bloquer.') : specialAbility;
+            const displaySpecial = card.petrified ? (card.petrifiedDescription || 'PÃ©trifiÃ© - ne peut ni attaquer ni bloquer.') : specialAbility;
             el.innerHTML = `
-                <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+                <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeLineText}</div>
                     ${displayAbilities ? `<div class="arena-abilities">${displayAbilities}</div>` : ''}
@@ -1634,4 +2053,5 @@ function makeCard(card, inHand, discountedCost = null) {
     autoFitCardName(el);
     return el;
 }
-
+
+

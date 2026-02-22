@@ -261,6 +261,7 @@ const CardDB = {
         { id: 'cavalier_pegase', name: 'Cavalier de pégase', atk: 5, hp: 2, cost: 5, type: 'creature', abilities: ['fly', 'protection', 'trample'], combatType: 'fly', creatureType: 'human', faction: 'red', edition: 4, image: 'red/cavalier_de_pegase.png', arenaStyle: true, spellMagnet: true, description: 'Les sorts offensifs ciblés de l\'adversaire doivent cibler cette créature si possible.' },
         { id: 'dragon_squelette', name: 'Dragon squelette', atk: 0, hp: 7, cost: 6, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'undead', faction: 'black', edition: 3, image: 'black/dragon_squelette.png', arenaStyle: true, atkPerGraveyard: true, description: 'Pour chaque créature dans votre cimetière, le Dragon squelette gagne +1 ATK.' },
         { id: 'araignee_tireuse', name: 'Araignée tireuse', atk: 2, hp: 5, cost: 4, type: 'creature', abilities: ['shooter', 'entrave'], entraveX: 1, combatType: 'shooter', creatureType: 'spider', faction: 'black', edition: 1, image: 'black/araignee_tireuse.png', arenaStyle: true },
+        { id: 'gueule_geante', name: 'Gueule géante', atk: 1, hp: 7, cost: 4, type: 'creature', abilities: ['provocation', 'immovable'], combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 2, image: 'black/gueule_geante.png', arenaStyle: true },
         { id: 'protecteur_divin', name: 'Protecteur divin', atk: 3, hp: 4, cost: 0, type: 'creature', abilities: ['lifelink'], lifelinkX: 2, combatType: 'melee', creatureType: 'undead', faction: 'white', edition: 2, image: 'white/protecteur_divin.png', arenaStyle: true },
         {
             id: 'banshee_sauvage',
@@ -315,6 +316,25 @@ const CardDB = {
             description: 'Pour chaque marqueur poison en jeu, gagne +1 ATK.'
         },
         {
+            id: 'roi_des_cendres',
+            name: 'Roi des Cendres',
+            atk: 3,
+            hp: 5,
+            cost: 5,
+            abilities: ['fly'],
+            type: 'creature',
+            image: 'black/roi_des_cendres.png',
+            arenaStyle: true,
+            faction: 'black',
+            creatureType: 'undead',
+            combatType: 'fly',
+            edition: 2,
+            rarity: 2,
+            uniquePassive: true,
+            enemyPoisonedAtkDebuff: 1,
+            description: 'Passif unique : les créatures ennemies empoisonnées ont -1 ATK.'
+        },
+        {
             id: 'chasseresse_masquee',
             name: 'Chasseresse masquée',
             atk: 2,
@@ -363,9 +383,10 @@ const CardDB = {
         { id: 'nourrisseur_de_chair', name: 'Nourrisseur de chair', atk: 1, hp: 1, cost: 2, type: 'creature', abilities: ['haste'], combatType: 'melee', creatureType: 'parasite', faction: 'black', edition: 3, image: 'black/nourriseur_de_chair.png', arenaStyle: true, endOfCombat: { absorbAdjacent: true }, description: 'Fin du combat : sacrifie une créature alliée adjacente, absorbe ses stats de base et ses capacités communes.' },
         { id: 'boucher_des_abysses', name: 'Boucher des abysses', atk: 3, hp: 2, cost: 2, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, image: 'black/boucher_des_abysses.png', arenaStyle: true, onAdjacentAllyDeath: { atk: 1, hp: 1 }, description: 'Quand une créature alliée adjacente meurt, gagne +1/+1 permanent.' },
         { id: 'possede_ephemere', name: 'Possédé éphémère', atk: 3, hp: 3, cost: 2, type: 'creature', abilities: ['haste'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 3, image: 'black/possede_ephemere.png', arenaStyle: true, endOfCombat: { selfSacrifice: true }, description: 'Fin du combat : le Possédé éphémère se sacrifie.' },
+        { id: 'pion_funeraire', name: 'Pion Funéraire', atk: 3, hp: 2, cost: 3, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, rarity: 3, image: 'black/pion_funeraire.png', arenaStyle: true, onDeath: { reanimateMeleeCost2OrLessBottom: true }, description: 'Mort : réanime la créature de mêlée alliée de coût 2 ou moins la plus basse dans votre cimetière sur son emplacement.' },
         { id: 'fossoyeur_methodique', name: 'Fossoyeur méthodique', atk: 2, hp: 2, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/fossoyeur_methodique.png', arenaStyle: true, onDeath: { millFirstCreature: true }, description: 'Quand le Fossoyeur méthodique meurt, mettez la première carte de créature du dessus de votre bibliothèque au cimetière.' },
-        { id: 'rosalia_demonicus', name: 'Rosalia démonicus', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], creatureType: 'plant', faction: 'black', edition: 2, image: 'black/rosalia_demonicus.png', arenaStyle: true, activeAbility: 'poisonAll', description: 'Active : inflige 1 marqueur poison à toutes les créatures.' },
-        { id: 'pustule_vivante', name: 'Pustule vivante', hp: 2, cost: 2, type: 'creature', isBuilding: true, abilities: [], creatureType: 'parasite', faction: 'black', edition: 2, image: 'black/pustule_vivante.png', arenaStyle: true, activeAbility: 'selfPoison', onDeath: { poisonExplosion: true }, description: 'Active : gagne 1 marqueur poison. À sa mort, inflige des dégâts égaux à ses marqueurs poison à toutes les créatures ennemies.' },
+        { id: 'rosalia_demonicus', name: 'Rosalia démonicus', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/rosalia_demonicus.png', arenaStyle: true, activeAbility: 'poisonAll', description: 'Active : inflige 1 marqueur poison à toutes les créatures.' },
+        { id: 'pustule_vivante', name: 'Pustule vivante', hp: 2, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/pustule_vivante.png', arenaStyle: true, activeAbility: 'selfPoison', onDeath: { poisonExplosion: true }, description: 'Active : gagne 1 marqueur poison. À sa mort, inflige des dégâts égaux à ses marqueurs poison à toutes les créatures ennemies.' },
         { id: 'serpent_emeraude', name: 'Serpent d\'émeraude', atk: 2, hp: 2, cost: 2, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'serpent', faction: 'black', edition: 3, image: 'black/serpent_demeraude.png', arenaStyle: true, buffOnEnemyPoisonDeath: true, trampleAtBuffCounters: 3, description: 'Quand une créature ennemie meurt du poison, le Serpent d\'émeraude gagne +1/+1. Acquiert Piétinement avec 3 marqueurs +1/+1 ou plus.' },
         { id: 'porteur_de_peste', name: 'Porteur de peste', atk: 1, hp: 5, cost: 3, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, image: 'black/porteur_peste.png', arenaStyle: true, onEnemyDamage: { poisonRow: 1 }, description: 'Chaque fois que cette créature subit des blessures d\'une source ennemie, inflige 1 marqueur poison à toutes les autres créatures sur la même ligne.' },
         { id: 'spectre_recurrent', name: 'Spectre récurrent', atk: 2, hp: 1, cost: 2, type: 'creature', abilities: ['fly', 'dissipation'], combatType: 'fly', creatureType: 'spirit', faction: 'black', edition: 2, image: 'black/spectre_recurrent.png', arenaStyle: true, graveyardTrigger: 'reanimateOnAllyDeath', description: 'Quand une créature alliée va au cimetière, si le Spectre est dans votre cimetière, il se réanime sur l\'emplacement de la créature morte.' }
@@ -377,13 +398,13 @@ const CardDB = {
         { id: 'blast', name: 'Blast', cost: 0, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'single', damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 2, returnOnMiss: true, description: 'Inflige 2 blessures à la créature ciblée. Si Blast ne touche pas de créature, il retourne dans votre main.' },
         { id: 'coup_de_poing', name: 'Coup de poing', cost: 0, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'hero', targetEnemy: true, damage: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Inflige 2 dégâts au héros adverse.' },
         { id: 'tremblement_de_terre', name: 'Tremblement de terre', cost: 0, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'all', damage: 3, image: 'unknown/spell.png', arenaStyle: true, faction: 'green', edition: 3, description: 'Inflige 3 dégâts à toutes les créatures.' },
-        { id: 'vitesse_superieure', name: 'Vitesse supérieure', cost: 0, type: 'spell', spellSpeed: 1, offensive: false, spellType: 'défensif', pattern: 'hero', effect: 'draw', amount: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Le joueur ciblé pioche deux cartes.' },
+        { id: 'vitesse_superieure', name: 'Vitesse supérieure', cost: 0, type: 'spell', spellSpeed: 1, offensive: false, spellType: 'défensif', pattern: 'hero', targetSelf: true, targetEnemy: true, effect: 'draw', amount: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'Le joueur ciblé pioche deux cartes.' },
         { id: 'reanimation', name: 'Réanimation', cost: 3, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'self', effect: 'reanimate', image: 'black/reanimation.png', arenaStyle: true, faction: 'black', edition: 2, targetSelfEmptySlot: true, requiresGraveyardCreature: true, description: 'Placez une créature de votre cimetière sur cet emplacement vide.' },
         { id: 'reanimation_defectueuse', name: 'Réanimation défectueuse', cost: 2, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'self', effect: 'reanimateWeakened', image: 'black/reanimation_defectueuse.png', arenaStyle: true, faction: 'black', edition: 2, targetSelfEmptySlot: true, requiresGraveyardCreature: true, description: 'Réanime une créature de votre cimetière sur cet emplacement vide. La créature réanimée a ses PV mis à 1.' },
         { id: 'alteration_musculaire', name: 'Altération musculaire', cost: 0, type: 'spell', spellSpeed: 1, offensive: false, spellType: 'défensif', pattern: 'single', targetSelfCreature: true, effect: 'atkBuff', atkBuff: 2, image: 'unknown/spell.png', arenaStyle: true, faction: 'red', edition: 1, description: 'La créature alliée ciblée gagne +2 ATK.' },
         { id: 'armes_magiques', name: 'Armes magiques', cost: 0, type: 'spell', spellSpeed: 1, offensive: false, spellType: 'défensif', pattern: 'all', effect: 'buffAll', buffAtk: 1, buffHp: 1, image: 'white/armes_magiques.png', arenaStyle: true, faction: 'white', edition: 2, description: 'Mettez un marqueur +1 ATK / +1 HP sur toutes vos créatures.' },
         { id: 'besoins', name: 'Besoins', cost: 2, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'hero', targetSelf: true, effect: 'selfDamageAndDraw', selfDamage: 2, drawAmount: 2, image: 'black/besoins.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Perdez 2 PV, piochez 2 cartes.' },
-        { id: 'cruel_destin', name: 'Cruel destin', cost: 3, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'sacrificeLastAndDamage', heroDamage: 2, image: 'black/cruel_destin.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Chaque joueur sacrifie la dernière créature qu\'il a jouée. Chaque joueur perd 2 PV.' },
+        { id: 'cruel_destin', name: 'Cruel destin', cost: 3, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'sacrificeLastAndDamage', image: 'black/cruel_destin.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Chaque joueur sacrifie la dernière créature qu\'il a jouée.' },
         { id: 'coup_de_poignard', name: 'Coup de poignard', cost: 4, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'single', effect: 'destroy', image: 'black/coup_de_poignard.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Détruit la créature ciblée.' },
         { id: 'ensevelissement', name: 'Ensevelissement', cost: 1, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'hybride', pattern: 'hero', targetSelf: true, targetEnemy: true, effect: 'mill', millCount: 3, image: 'black/ensevelissement.png', arenaStyle: true, faction: 'black', edition: 1, description: 'Mettez les 3 cartes du dessus de la bibliothèque du héros ciblé dans son cimetière.' },
         { id: 'mon_precieux', name: 'Mon précieux', cost: 2, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'all', effect: 'graveyardToHand', requiresGraveyardCreature: true, image: 'black/mon_precieux.png', arenaStyle: true, faction: 'black', edition: 1, description: 'Renvoyez une carte de créature de votre cimetière dans votre main.' },
@@ -394,15 +415,15 @@ const CardDB = {
         { id: 'cycle_eternel', name: 'Cycle éternel', cost: 3, type: 'spell', spellSpeed: 2, offensive: false, spellType: 'defensif', pattern: 'self', effect: 'reanimateSacrifice', image: 'black/cycle_eternel.png', arenaStyle: true, faction: 'black', edition: 3, targetSelfEmptySlot: true, requiresGraveyardCreature: true, description: 'Réanime une créature avec Célérité. Fin du combat : sacrifier cette créature.' },
         { id: 'cri_outre_tombe', name: 'Cri d\'outre tombe', cost: 3, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'debuffAll', atkDebuff: 2, hpDebuff: 2, image: 'black/cri_doutre_tombe.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Toutes les créatures gagnent -2 ATK et -2 HP.' },
         { id: 'drain_vital', name: 'Drain vital', cost: 2, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'single', damage: 2, onKill: { healHero: 2 }, excludeBuildings: true, image: 'black/drain_vital.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Inflige 2 dégâts à une créature. Si elle meurt, soignez votre héros de 2 PV.' },
-        { id: 'pacte_benefique', name: 'Pacte bénéfique', cost: 3, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'défensif', pattern: 'single', targetSelfCreature: true, effect: 'sacrificeAndDraw', drawAmount: 3, image: 'black/pacte_benefique.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Sacrifiez une créature alliée ciblée, piochez 3 cartes.' },
+        { id: 'pacte_benefique', name: 'Pacte bénéfique', cost: 3, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'défensif', pattern: 'single', targetSelfCreature: true, effect: 'sacrificeAndDraw', drawAmount: 3, excludeBuildings: true, image: 'black/pacte_benefique.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Sacrifiez une créature alliée ciblée, piochez 3 cartes.' },
         { id: 'expurger_le_poison', name: 'Expurger le poison', cost: 2, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'single', effect: 'destroyIfPoisoned', image: 'black/expurger_poison.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Détruit la créature ciblée si elle possède au moins un marqueur poison.' },
         { id: 'invoquer_les_damnes', name: 'Invoquer les damnés', cost: 2, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'hero', targetSelf: true, effect: 'addTokensToHand', tokenId: 'damne', tokenCount: 3, image: 'black/invoquer_les_damnes.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Ajoutez 3 Damnés dans votre main.' }
     ],
     traps: [
-        { id: 'troubeant', name: 'Trou béant', damage: 5, cost: 0, type: 'trap', image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 5 dégâts à la première créature adverse qui attaque sur la ligne.' },
-        { id: 'trappe_secrete', name: 'Trappe secrète', damage: 3, cost: 0, type: 'trap', pattern: 'line', image: 'neutral/trappe_secrete.png', arenaStyle: true, faction: 'neutral', edition: 2, description: 'Inflige 3 blessures à toutes les créatures adverses sur cette ligne.' },
-        { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 0, type: 'trap', effect: 'bounce', image: 'neutral/voyage_inattendu.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
-        { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 0, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' }
+        { id: 'troubeant', name: 'Trou béant', damage: 6, cost: 2, type: 'trap', meleeOnly: true, image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 6 dégâts à la première créature de mêlée adverse qui attaque sur la ligne.' },
+        { id: 'trappe_secrete', name: 'Trappe secrète', damage: 3, cost: 3, type: 'trap', pattern: 'line', image: 'neutral/trappe_secrete.png', arenaStyle: true, faction: 'neutral', edition: 2, description: 'Inflige 3 blessures à toutes les créatures adverses sur cette ligne.' },
+        { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 3, type: 'trap', effect: 'bounce', image: 'neutral/voyage_inattendu.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
+        { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' }
     ]
 };
 
@@ -561,9 +582,219 @@ CardDB.creatures.forEach(c => CardByIdMap.set(c.id, c));
 CardDB.spells.forEach(c => CardByIdMap.set(c.id, c));
 CardDB.traps.forEach(c => CardByIdMap.set(c.id, c));
 
+// Guardrail: every new gameplay ability/hook must be mapped to a resolution phase.
+// If a new key appears and is not mapped here, startup fails with an actionable message.
+const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
+    commonAbilities: Object.freeze({
+        antitoxin: 'pre-hit validation',
+        bloodthirst: 'post-death buff window',
+        camouflage: 'targeting gate',
+        cleave: 'on-hit attacker',
+        dissipation: 'death handling',
+        enhance: 'aura recompute',
+        entrave: 'on-hit marker apply',
+        fly: 'targeting gate',
+        haste: 'deploy readiness',
+        immovable: 'board movement lock',
+        intangible: 'targeting gate',
+        lethal: 'on-hit attacker',
+        lifedrain: 'life effects',
+        lifelink: 'life effects',
+        melody: 'aura recompute',
+        poison: 'on-hit marker apply',
+        power: 'post-hit/post-poison/post-endOfCombat buff windows',
+        protection: 'pre-hit mitigation',
+        provocation: 'deploy placement gate',
+        regeneration: 'post-hit sustain',
+        shooter: 'targeting gate',
+        spectral: 'pre-hit mitigation',
+        spellBoost: 'spell damage pipeline',
+        superhaste: 'deploy readiness',
+        trample: 'on-hit attacker',
+        unsacrificable: 'sacrifice gate',
+        untargetable: 'targeting gate',
+        wall: 'attack eligibility gate'
+    }),
+    creatureHooks: Object.freeze({
+        activeAbility: 'building active phase',
+        buffOnEnemyPoisonDeath: 'post-poison death effects',
+        drawOnEnemyPoisonDeath: 'post-poison death effects',
+        endOfCombat: 'endOfCombat phase',
+        graveyardTrigger: 'post-death graveyard trigger',
+        healOnEnemyPoisonDeath: 'post-poison death effects',
+        onAdjacentAllyDeath: 'post-death effects',
+        onAllyCreatureToGraveyardTransform: 'post-death transform',
+        onAllyMillToGraveyard: 'post-mill trigger',
+        onAnySacrifice: 'post-sacrifice trigger',
+        onDeath: 'death handling',
+        onEnemyDamage: 'on-hit defender trigger',
+        onHeroAttack: 'post-hit trigger',
+        onHeroHit: 'post-hit trigger',
+        onPoisonDeath: 'post-poison death effects',
+        onReanimate: 'post-reanimate trigger'
+    }),
+    onDeathKeys: Object.freeze({
+        damageHero: 'death handling',
+        damageKiller: 'death handling',
+        damageRow: 'death handling',
+        destroyAll: 'death handling',
+        healHero: 'death handling',
+        millFirstCreature: 'death handling',
+        poisonExplosion: 'death handling',
+        poisonRow: 'death handling',
+        reanimateMeleeCost2OrLessBottom: 'death handling',
+        transformInto: 'death handling'
+    }),
+    endOfCombatKeys: Object.freeze({
+        absorbAdjacent: 'endOfCombat',
+        selfMill: 'endOfCombat',
+        selfSacrifice: 'endOfCombat (last)',
+        spawnAdjacentMelee: 'endOfCombat'
+    }),
+    activeAbilityKeys: Object.freeze({
+        poisonAll: 'building active ability',
+        selfPoison: 'building active ability'
+    }),
+    onEnemyDamageKeys: Object.freeze({
+        poisonRow: 'on-hit defender trigger'
+    }),
+    onReanimateKeys: Object.freeze({
+        addAbility: 'post-reanimate',
+        atkBuff: 'post-reanimate',
+        hpBuff: 'post-reanimate'
+    }),
+    onAnySacrificeKeys: Object.freeze({
+        atkBuff: 'post-sacrifice',
+        hpBuff: 'post-sacrifice'
+    }),
+    onAdjacentAllyDeathKeys: Object.freeze({
+        atk: 'post-death',
+        hp: 'post-death'
+    }),
+    onHeroAttackKeys: Object.freeze({
+        atkBoost: 'post-hit'
+    }),
+    spellEffectKeys: Object.freeze({
+        addTokensToHand: 'spell resolution',
+        atkBuff: 'spell resolution',
+        buffAll: 'spell resolution',
+        debuffAll: 'spell resolution',
+        destroy: 'spell resolution',
+        destroyIfPoisoned: 'spell resolution',
+        draw: 'spell resolution',
+        graveyardToHand: 'spell resolution',
+        mill: 'spell resolution',
+        millHighestCostCreature: 'spell resolution',
+        poisonAllEnemies: 'spell resolution',
+        reanimate: 'spell resolution',
+        reanimateSacrifice: 'spell resolution',
+        reanimateWeakened: 'spell resolution',
+        sacrificeAndDraw: 'spell resolution',
+        sacrificeLastAndDamage: 'spell resolution',
+        selfDamageAndDraw: 'spell resolution',
+        summonZombieWall: 'spell resolution',
+        triggerPoison: 'spell resolution'
+    }),
+    spellHooks: Object.freeze({
+        effect: 'spell resolution',
+        onKill: 'post-damage',
+        returnOnMiss: 'post-spell resolution'
+    }),
+    onKillKeys: Object.freeze({
+        draw: 'post-kill trigger',
+        healHero: 'post-kill trigger'
+    }),
+    trapEffectKeys: Object.freeze({
+        bounce: 'trap resolution',
+        summon: 'trap resolution'
+    })
+});
+
+function validateCardAbilityResolutionContract() {
+    const errors = [];
+    const remind = 'Map it in ABILITY_RESOLUTION_CONTRACT with a resolution phase. If unclear, ask where it belongs in the combat pipeline before implementation.';
+
+    const pushErr = (cardId, field, value) => {
+        errors.push(`[ABILITY-CONTRACT] card=${cardId} field=${field} value=${String(value)} is not classified. ${remind}`);
+    };
+
+    const validateMappedObjectKeys = (cardId, field, obj, map) => {
+        if (!obj || typeof obj !== 'object') return;
+        for (const key of Object.keys(obj)) {
+            if (!Object.prototype.hasOwnProperty.call(map, key)) {
+                pushErr(cardId, `${field}.${key}`, key);
+            }
+        }
+    };
+
+    for (const card of CardDB.creatures) {
+        for (const ability of (card.abilities || [])) {
+            if (!Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.commonAbilities, ability)) {
+                pushErr(card.id, 'abilities[]', ability);
+            }
+        }
+
+        const creatureHookKeys = Object.keys(card).filter((k) =>
+            k === 'activeAbility' ||
+            k === 'endOfCombat' ||
+            k === 'graveyardTrigger' ||
+            k === 'drawOnEnemyPoisonDeath' ||
+            k === 'healOnEnemyPoisonDeath' ||
+            k === 'buffOnEnemyPoisonDeath' ||
+            k.startsWith('on')
+        );
+        for (const hookKey of creatureHookKeys) {
+            if (!Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.creatureHooks, hookKey)) {
+                pushErr(card.id, 'creatureHook', hookKey);
+            }
+        }
+
+        if (card.activeAbility && !Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.activeAbilityKeys, card.activeAbility)) {
+            pushErr(card.id, 'activeAbility', card.activeAbility);
+        }
+
+        validateMappedObjectKeys(card.id, 'onDeath', card.onDeath, ABILITY_RESOLUTION_CONTRACT.onDeathKeys);
+        validateMappedObjectKeys(card.id, 'endOfCombat', card.endOfCombat, ABILITY_RESOLUTION_CONTRACT.endOfCombatKeys);
+        validateMappedObjectKeys(card.id, 'onEnemyDamage', card.onEnemyDamage, ABILITY_RESOLUTION_CONTRACT.onEnemyDamageKeys);
+        validateMappedObjectKeys(card.id, 'onReanimate', card.onReanimate, ABILITY_RESOLUTION_CONTRACT.onReanimateKeys);
+        validateMappedObjectKeys(card.id, 'onAnySacrifice', card.onAnySacrifice, ABILITY_RESOLUTION_CONTRACT.onAnySacrificeKeys);
+        validateMappedObjectKeys(card.id, 'onAdjacentAllyDeath', card.onAdjacentAllyDeath, ABILITY_RESOLUTION_CONTRACT.onAdjacentAllyDeathKeys);
+        validateMappedObjectKeys(card.id, 'onHeroAttack', card.onHeroAttack, ABILITY_RESOLUTION_CONTRACT.onHeroAttackKeys);
+    }
+
+    for (const card of CardDB.spells) {
+        const spellHookKeys = Object.keys(card).filter((k) => k === 'effect' || k === 'onKill' || k === 'returnOnMiss');
+        for (const hookKey of spellHookKeys) {
+            if (!Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.spellHooks, hookKey)) {
+                pushErr(card.id, 'spellHook', hookKey);
+            }
+        }
+        if (card.effect && !Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.spellEffectKeys, card.effect)) {
+            pushErr(card.id, 'effect', card.effect);
+        }
+        validateMappedObjectKeys(card.id, 'onKill', card.onKill, ABILITY_RESOLUTION_CONTRACT.onKillKeys);
+    }
+
+    for (const card of CardDB.traps) {
+        if (card.effect && !Object.prototype.hasOwnProperty.call(ABILITY_RESOLUTION_CONTRACT.trapEffectKeys, card.effect)) {
+            pushErr(card.id, 'effect', card.effect);
+        }
+    }
+
+    if (errors.length > 0) {
+        throw new Error(
+            `Ability resolution contract validation failed (${errors.length} issue(s)).\n${errors.join('\n')}`
+        );
+    }
+}
+
+validateCardAbilityResolutionContract();
+
 module.exports = {
     CardDB,
     CardByIdMap,
+    ABILITY_RESOLUTION_CONTRACT,
+    validateCardAbilityResolutionContract,
     HERO_NAMES,
     HEROES,
     getRandomHero,

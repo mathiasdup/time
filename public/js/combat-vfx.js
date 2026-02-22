@@ -23,13 +23,14 @@ class GameVFXSystem {
 
         try {
             // Canvas principal pour les VFX de combat (z-index élevé)
+            const pixiRes = Math.min(window.devicePixelRatio || 1, 1.5);
             this.app = new PIXI.Application();
             await this.app.init({
                 width: window.innerWidth,
                 height: window.innerHeight,
                 backgroundAlpha: 0,
                 antialias: true,
-                resolution: window.devicePixelRatio || 1,
+                resolution: pixiRes,
                 autoDensity: true,
             });
 
@@ -50,7 +51,7 @@ class GameVFXSystem {
                 height: window.innerHeight,
                 backgroundAlpha: 0,
                 antialias: true,
-                resolution: window.devicePixelRatio || 1,
+                resolution: pixiRes,
                 autoDensity: true,
             });
 
@@ -64,9 +65,13 @@ class GameVFXSystem {
             this.shieldLayer = new PIXI.Container();
             this.shieldApp.stage.addChild(this.shieldLayer);
 
+            // Stop shieldApp auto-rendering — we render manually only when shields/camo exist
+            this.shieldApp.ticker.stop();
+
             window.addEventListener('resize', () => this.handleResize());
             this.app.ticker.add(() => this.update());
 
+            this._syncStageTransform();
             this.initialized = true;
 
         } catch (e) {
@@ -81,13 +86,60 @@ class GameVFXSystem {
         if (this.shieldApp) {
             this.shieldApp.renderer.resize(window.innerWidth, window.innerHeight);
         }
+        this._syncStageTransform();
+    }
+
+    /** Synchronise les stages PIXI avec le zoom/position du game-scaler
+     *  Le main app utilise directement les coordonnées viewport (pas de transform sur le stage).
+     *  Le shieldApp utilise un transform pour que les boucliers/camo se positionnent en espace scaler. */
+    _syncStageTransform() {
+        const { rect: sRect, zoom } = this._getScalerInfo();
+        // Main app : PAS de transform — les effets reçoivent des coords viewport directement
+        if (this.shieldApp) {
+            this.shieldApp.stage.scale.set(zoom);
+            this.shieldApp.stage.position.set(sRect.left, sRect.top);
+        }
+    }
+
+    /** Returns cached scaler info {rect, zoom} — refreshed once per frame or uses
+     *  pre-shake rect during screen shake to avoid layout thrashing */
+    _getScalerInfo() {
+        const now = this._frameId || 0;
+        if (this._cachedScalerFrame === now && this._cachedScalerInfo) {
+            return this._cachedScalerInfo;
+        }
+        const scaler = document.getElementById('game-scaler');
+        if (!scaler) return { rect: { left: 0, top: 0 }, zoom: 1 };
+        const zoom = parseFloat(scaler.style.zoom) || 1;
+        // During screen shake, use the stored pre-shake rect to avoid
+        // getBoundingClientRect forcing a layout recalc after transform writes
+        const rect = (this._shakeActive && this._preShakeRect)
+            ? this._preShakeRect
+            : scaler.getBoundingClientRect();
+        this._cachedScalerInfo = { rect, zoom };
+        this._cachedScalerFrame = now;
+        return this._cachedScalerInfo;
+    }
+
+    /** Convertit des coordonnées viewport en coordonnées scaler (espace design 1920×1080) */
+    _toScaler(vx, vy) {
+        const { rect, zoom } = this._getScalerInfo();
+        return { x: (vx - rect.left) / zoom, y: (vy - rect.top) / zoom };
+    }
+
+    /** Push effect into activeEffects */
+    _pushEffect(effect) {
+        this.activeEffects.push(effect);
     }
 
     update() {
-        // Nettoyer les effets ponctuels terminés
+        // Increment frame ID to invalidate per-frame caches (_getScalerInfo)
+        this._frameId = (this._frameId || 0) + 1;
+
         this.activeEffects = this.activeEffects.filter(effect => {
             if (effect.finished) {
-                if (effect.container) {
+                if (effect._rafId) cancelAnimationFrame(effect._rafId);
+                if (effect.container && !effect.container.destroyed) {
                     if (effect.container.parent) {
                         effect.container.parent.removeChild(effect.container);
                     }
@@ -98,11 +150,13 @@ class GameVFXSystem {
             return true;
         });
 
-        // Mettre à jour les boucliers persistants
         this.updateShields();
-
-        // Mettre à jour les effets de camouflage
         this.updateCamouflages();
+
+        // Render shieldApp manually only when there are shields or camouflages
+        if (this.shieldApp && (this.activeShields.size > 0 || this.activeCamouflages.size > 0)) {
+            this.shieldApp.render();
+        }
     }
 
     // ==================== MÉTHODES UTILITAIRES VFX ====================
@@ -129,10 +183,10 @@ class GameVFXSystem {
             flash.clear();
             flash.circle(0, 0, r);
             flash.fill({ color, alpha: a * 0.6 });
-            requestAnimationFrame(animate);
+            effect._rafId = requestAnimationFrame(animate);
         };
-        this.activeEffects.push(effect);
-        requestAnimationFrame(animate);
+        this._pushEffect(effect);
+        effect._rafId = requestAnimationFrame(animate);
     }
 
     /**
@@ -158,10 +212,10 @@ class GameVFXSystem {
             ring.clear();
             ring.circle(0, 0, r);
             ring.stroke({ color, width: lineWidth, alpha: a });
-            requestAnimationFrame(animate);
+            effect._rafId = requestAnimationFrame(animate);
         };
-        this.activeEffects.push(effect);
-        requestAnimationFrame(animate);
+        this._pushEffect(effect);
+        effect._rafId = requestAnimationFrame(animate);
     }
 
     // ==================== CURSOR TRAIL ====================
@@ -193,7 +247,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -240,7 +294,7 @@ class GameVFXSystem {
             }
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -344,7 +398,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -445,7 +499,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -570,7 +624,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -606,25 +660,6 @@ class GameVFXSystem {
         const ring2 = new PIXI.Graphics();
         effectContainer.addChild(ring2);
 
-        // Particules d'explosion
-        const particles = [];
-        for (let i = 0; i < 8; i++) {
-            const particle = new PIXI.Graphics();
-            const size = 4 + Math.random() * 6;
-            particle.circle(0, 0, size);
-            particle.fill({ color: i % 2 === 0 ? 0xFFFFFF : color });
-            particle.particleData = {
-                angle: (i / 8) * Math.PI * 2 + Math.random() * 0.4,
-                speed: 80 + Math.random() * 100,
-            };
-            effectContainer.addChild(particle);
-            particles.push(particle);
-        }
-
-        // Étoile d'impact
-        const star = new PIXI.Graphics();
-        effectContainer.addChild(star);
-
         const animate = () => {
             const elapsed = performance.now() - effect.startTime;
             const progress = Math.min(elapsed / effect.duration, 1);
@@ -652,51 +687,20 @@ class GameVFXSystem {
                 ring2.stroke({ width: 3 * (1 - ring2Progress), color: 0xFFFFFF, alpha: (1 - ring2Progress) * 0.6 });
             }
 
-            // Étoile
-            star.clear();
-            if (progress < 0.4) {
-                const starProgress = progress / 0.4;
-                const starSize = 50 * (1 - starProgress * 0.5);
-                const points = 6;
-
-                star.moveTo(0, -starSize);
-                for (let i = 1; i <= points * 2; i++) {
-                    const angle = (i * Math.PI) / points - Math.PI / 2;
-                    const radius = i % 2 === 0 ? starSize : starSize * 0.4;
-                    star.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-                }
-                star.closePath();
-                star.fill({ color: 0xFFFFFF, alpha: (1 - starProgress) * 0.8 });
-                star.rotation = starProgress * Math.PI * 0.5;
-            }
-
-            // Particules
-            particles.forEach(p => {
-                const data = p.particleData;
-                const dist = data.speed * progress;
-                p.x = Math.cos(data.angle) * dist;
-                p.y = Math.sin(data.angle) * dist;
-                p.alpha = 1 - progress;
-                p.scale.set(1 - progress * 0.6);
-            });
-
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         // Afficher les dégâts
         if (damage !== undefined && damage > 0) {
             this.showDamageNumber(x, y, damage);
         }
-
-        // Screen shake
-        this.screenShake(6, 120);
 
         return effect;
     }
@@ -773,12 +777,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         return effect;
     }
@@ -855,12 +859,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         return effect;
     }
@@ -1073,12 +1077,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         return effect;
     }
@@ -1163,7 +1167,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -1249,7 +1253,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -1444,7 +1448,7 @@ class GameVFXSystem {
         text.scale.set(0);
         effectContainer.addChild(text);
 
-        this.screenShake(6, 150);
+        this.screenShake(6, 0.88, 150);
 
         // ===== Animation loop =====
         const animate = () => {
@@ -1585,12 +1589,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         return effect;
     }
@@ -1913,13 +1917,13 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
-        this.screenShake(5, 150);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
+        this.screenShake(5, 0.88, 150);
 
         return effect;
     }
@@ -2284,17 +2288,17 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         // Screen shake INTENSE en 2 phases
-        this.screenShake(22, 350);
+        this.screenShake(22, 0.84, 350);
         // Deuxième secousse plus lourde et sourde après 150ms
-        setTimeout(() => this.screenShake(10, 200), 150);
+        setTimeout(() => this.screenShake(10, 0.86, 200), 150);
 
         return effect;
     }
@@ -2448,12 +2452,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         // Afficher les dégâts si spécifié
         if (damage !== undefined && damage > 0) {
@@ -2462,7 +2466,7 @@ class GameVFXSystem {
             }, 150);
         }
 
-        this.screenShake(4 * intensity, 100);
+        this.screenShake(4 * intensity, 0.88, 100);
 
         return effect;
     }
@@ -2677,12 +2681,12 @@ class GameVFXSystem {
                 if (arrived && trail.length === 0 && particles.length === 0) {
                     effect.finished = true;
                 } else {
-                    requestAnimationFrame(animate);
+                    effect._rafId = requestAnimationFrame(animate);
                 }
             };
 
-            this.activeEffects.push(effect);
-            requestAnimationFrame(animate);
+            this._pushEffect(effect);
+            effect._rafId = requestAnimationFrame(animate);
         });
     }
 
@@ -2751,19 +2755,19 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         // Afficher les dégâts
         if (damage !== undefined && damage > 0) {
             this.showDamageNumber(x, y, damage);
         }
 
-        this.screenShake(4, 80);
+        this.screenShake(4, 0.90, 80);
 
         return effect;
     }
@@ -2910,12 +2914,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         // Afficher les dégâts
         if (damage !== undefined && damage > 0) {
@@ -2925,265 +2929,12 @@ class GameVFXSystem {
         }
 
         // Screen shake intense
-        this.screenShake(8, 200);
+        this.screenShake(8, 0.86, 200);
 
         return effect;
     }
 
-    // ==================== SACRIFICE BLOOD SLASH ====================
-
-    createSacrificeSlashEffect(x, y, w, h) {
-        if (!this.initialized) return;
-
-        const effectContainer = new PIXI.Container();
-        effectContainer.position.set(x, y);
-        this.container.addChild(effectContainer);
-
-        const effect = {
-            container: effectContainer,
-            finished: false,
-            startTime: performance.now(),
-            duration: 900,
-        };
-
-        const bloodRed = 0xCC0000;
-        const darkRed = 0x880000;
-        const crimson = 0xFF1A1A;
-        const shadowPurple = 0x3D0022;
-        const cardW = w * 0.5;
-        const cardH = h * 0.5;
-
-        // Fond sombre — assombrit la zone de la carte
-        const darkOverlay = new PIXI.Graphics();
-        darkOverlay.rect(-cardW, -cardH, cardW * 2, cardH * 2);
-        darkOverlay.fill({ color: 0x000000, alpha: 0.0 });
-        effectContainer.addChild(darkOverlay);
-
-        // Grand X slash — deux traits croisés
-        const slash1 = new PIXI.Graphics();
-        const slash2 = new PIXI.Graphics();
-        effectContainer.addChild(slash1);
-        effectContainer.addChild(slash2);
-
-        // Éclats de sang (particules)
-        const bloodParticles = [];
-        for (let i = 0; i < 24; i++) {
-            const p = new PIXI.Graphics();
-            const size = 1.5 + Math.random() * 4;
-            p.circle(0, 0, size);
-            const colors = [bloodRed, darkRed, crimson, 0xAA0000];
-            p.fill({ color: colors[i % colors.length] });
-            p.alpha = 0;
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 60 + Math.random() * 140;
-            p.bloodData = {
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                gravity: 180 + Math.random() * 100,
-                delay: 0.15 + Math.random() * 0.15,
-                size: size,
-            };
-            effectContainer.addChild(p);
-            bloodParticles.push(p);
-        }
-
-        // Gouttelettes qui tombent (post-slash)
-        const drips = [];
-        for (let i = 0; i < 8; i++) {
-            const drip = new PIXI.Graphics();
-            drip.rect(-1.5, 0, 3, 6 + Math.random() * 10);
-            drip.fill({ color: bloodRed, alpha: 0.8 });
-            drip.alpha = 0;
-            drip.dripData = {
-                startX: (Math.random() - 0.5) * cardW * 1.4,
-                startY: (Math.random() - 0.3) * cardH * 0.8,
-                speed: 40 + Math.random() * 80,
-                delay: 0.3 + Math.random() * 0.2,
-            };
-            effectContainer.addChild(drip);
-            drips.push(drip);
-        }
-
-        // Aura démoniaque sombre (derrière tout)
-        const demonAura = new PIXI.Graphics();
-        effectContainer.addChildAt(demonAura, 0);
-
-        // Flash d'impact central
-        const impactFlash = new PIXI.Graphics();
-        impactFlash.alpha = 0;
-        effectContainer.addChild(impactFlash);
-
-        const animate = () => {
-            const elapsed = performance.now() - effect.startTime;
-            const progress = Math.min(elapsed / effect.duration, 1);
-
-            // === Phase 1 : Aura sombre (0→0.3) ===
-            demonAura.clear();
-            if (progress < 0.5) {
-                const ap = Math.min(progress / 0.2, 1);
-                const auraR = cardW * 1.2 + ap * 20;
-                const auraAlpha = ap * 0.35 * (progress < 0.35 ? 1 : (1 - (progress - 0.35) / 0.15));
-                demonAura.circle(0, 0, auraR);
-                demonAura.fill({ color: shadowPurple, alpha: Math.max(0, auraAlpha) });
-            }
-
-            // === Fond sombre (flash) ===
-            darkOverlay.clear();
-            if (progress > 0.1 && progress < 0.5) {
-                const dp = (progress - 0.1) / 0.15;
-                const darkAlpha = dp < 1 ? dp * 0.4 : 0.4 * (1 - (progress - 0.25) / 0.25);
-                darkOverlay.rect(-cardW, -cardH, cardW * 2, cardH * 2);
-                darkOverlay.fill({ color: 0x000000, alpha: Math.max(0, darkAlpha) });
-            }
-
-            // === Phase 2 : Les deux slashs en X (0.12→0.5) ===
-            // Slash 1 : haut-gauche → bas-droite
-            slash1.clear();
-            const s1Start = 0.12;
-            const s1End = 0.35;
-            if (progress > s1Start) {
-                const sp = Math.min((progress - s1Start) / (s1End - s1Start), 1);
-                const drawLen = sp;
-                const fadeAlpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.3);
-
-                // Trait principal (large, doux)
-                const x1 = -cardW * 0.7, y1 = -cardH * 0.7;
-                const x2 = cardW * 0.7, y2 = cardH * 0.7;
-                const mx = x1 + (x2 - x1) * drawLen;
-                const my = y1 + (y2 - y1) * drawLen;
-
-                slash1.moveTo(x1, y1);
-                slash1.lineTo(mx, my);
-                slash1.stroke({ color: crimson, width: 10, alpha: fadeAlpha * 0.4 });
-
-                slash1.moveTo(x1, y1);
-                slash1.lineTo(mx, my);
-                slash1.stroke({ color: 0xFF3333, width: 5, alpha: fadeAlpha * 0.8 });
-
-                slash1.moveTo(x1, y1);
-                slash1.lineTo(mx, my);
-                slash1.stroke({ color: 0xFFAAAA, width: 2, alpha: fadeAlpha });
-            }
-
-            // Slash 2 : haut-droite → bas-gauche (léger décalage)
-            slash2.clear();
-            const s2Start = 0.18;
-            const s2End = 0.40;
-            if (progress > s2Start) {
-                const sp = Math.min((progress - s2Start) / (s2End - s2Start), 1);
-                const drawLen = sp;
-                const fadeAlpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.3);
-
-                const x1 = cardW * 0.7, y1 = -cardH * 0.7;
-                const x2 = -cardW * 0.7, y2 = cardH * 0.7;
-                const mx = x1 + (x2 - x1) * drawLen;
-                const my = y1 + (y2 - y1) * drawLen;
-
-                slash2.moveTo(x1, y1);
-                slash2.lineTo(mx, my);
-                slash2.stroke({ color: crimson, width: 10, alpha: fadeAlpha * 0.4 });
-
-                slash2.moveTo(x1, y1);
-                slash2.lineTo(mx, my);
-                slash2.stroke({ color: 0xFF3333, width: 5, alpha: fadeAlpha * 0.8 });
-
-                slash2.moveTo(x1, y1);
-                slash2.lineTo(mx, my);
-                slash2.stroke({ color: 0xFFAAAA, width: 2, alpha: fadeAlpha });
-            }
-
-            // === Flash d'impact au croisement des slashs (0.25→0.45) ===
-            impactFlash.clear();
-            if (progress > 0.22 && progress < 0.50) {
-                const fp = (progress - 0.22) / 0.28;
-                const flashAlpha = fp < 0.3 ? fp / 0.3 : (1 - (fp - 0.3) / 0.7);
-                const flashR = 15 + fp * 25;
-                impactFlash.circle(0, 0, flashR);
-                impactFlash.fill({ color: 0xFFCCCC, alpha: Math.max(0, flashAlpha * 0.7) });
-                impactFlash.circle(0, 0, flashR * 0.5);
-                impactFlash.fill({ color: 0xFFFFFF, alpha: Math.max(0, flashAlpha * 0.5) });
-            }
-
-            // === Particules de sang (0.15→fin) ===
-            bloodParticles.forEach(p => {
-                const d = p.bloodData;
-                const pp = Math.max(0, (progress - d.delay) / (1 - d.delay));
-                if (pp > 0 && pp < 1) {
-                    const t = pp;
-                    p.x = d.vx * t;
-                    p.y = d.vy * t + 0.5 * d.gravity * t * t;
-                    p.alpha = (1 - pp) * 0.85;
-                    p.scale.set(1 - pp * 0.6);
-                } else {
-                    p.alpha = 0;
-                }
-            });
-
-            // === Gouttelettes tombantes (0.3→fin) ===
-            drips.forEach(drip => {
-                const d = drip.dripData;
-                const dp = Math.max(0, (progress - d.delay) / (1 - d.delay));
-                if (dp > 0 && dp < 1) {
-                    drip.x = d.startX;
-                    drip.y = d.startY + d.speed * dp;
-                    drip.alpha = (1 - dp) * 0.7;
-                    drip.scale.y = 1 + dp * 0.5;
-                } else {
-                    drip.alpha = 0;
-                }
-            });
-
-            if (progress >= 1) {
-                effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
-            }
-        };
-
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
-
-        // Screen shake
-        this.screenShake(6, 180);
-
-        return effect;
-    }
-
-    // ==================== SCREEN SHAKE ====================
-
-    screenShake(intensity = 5, duration = 100) {
-        const gameContainer = document.getElementById('game-container');
-        if (!gameContainer) return;
-
-        // Annuler le shake précédent s'il existe
-        if (this._shakeRafId) {
-            cancelAnimationFrame(this._shakeRafId);
-            this._shakeRafId = null;
-        }
-
-        const startTime = performance.now();
-        const originalTransform = this._shakeOriginalTransform || gameContainer.style.transform;
-        if (!this._shakeOriginalTransform) this._shakeOriginalTransform = originalTransform;
-
-        const shake = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = elapsed / duration;
-
-            if (progress < 1) {
-                const currentIntensity = intensity * (1 - progress);
-                const offsetX = (Math.random() - 0.5) * 2 * currentIntensity;
-                const offsetY = (Math.random() - 0.5) * 2 * currentIntensity;
-                gameContainer.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
-                this._shakeRafId = requestAnimationFrame(shake);
-            } else {
-                gameContainer.style.transform = this._shakeOriginalTransform || '';
-                this._shakeRafId = null;
-                this._shakeOriginalTransform = null;
-            }
-        };
-
-        this._shakeRafId = requestAnimationFrame(shake);
-    }
+    // (ancienne screenShake supprimée — remplacée par la version game-scaler en fin de classe)
 
     // ==================== HERO HIT EFFECT (FLASH ROUGE + ÉTINCELLES) ====================
 
@@ -3207,22 +2958,6 @@ class GameVFXSystem {
         const ring = new PIXI.Graphics();
         effectContainer.addChild(ring);
 
-        // 7 étincelles cramoisies
-        const sparks = [];
-        for (let i = 0; i < 7; i++) {
-            const angle = (Math.PI * 2 * i / 7) + (Math.random() - 0.5) * 0.5;
-            const speed = 80 + Math.random() * 60;
-            const spark = new PIXI.Graphics();
-            effectContainer.addChild(spark);
-            sparks.push({
-                gfx: spark,
-                angle,
-                speed,
-                len: 4 + Math.random() * 4,
-                color: Math.random() > 0.4 ? 0xFF1a1a : 0xFF6633,
-            });
-        }
-
         const animate = () => {
             if (effect.finished) return;
             const elapsed = performance.now() - effect.startTime;
@@ -3230,8 +2965,6 @@ class GameVFXSystem {
 
             if (progress >= 1) {
                 effect.finished = true;
-                effectContainer.parent?.removeChild(effectContainer);
-                effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3245,29 +2978,11 @@ class GameVFXSystem {
                 ring.stroke({ color: 0xFF2200, width: 1.5 * (1 - rp), alpha: ringAlpha });
             }
 
-            // Étincelles
-            sparks.forEach(s => {
-                s.gfx.clear();
-                if (progress < 0.7) {
-                    const sp = progress / 0.7;
-                    const dist = sp * s.speed;
-                    const sx = Math.cos(s.angle) * dist;
-                    const sy = Math.sin(s.angle) * dist;
-                    const alpha = (1 - sp) * 0.9;
-                    const len = s.len * (1 - sp * 0.5);
-                    const dx = Math.cos(s.angle) * len;
-                    const dy = Math.sin(s.angle) * len;
-                    s.gfx.moveTo(sx - dx, sy - dy);
-                    s.gfx.lineTo(sx + dx, sy + dy);
-                    s.gfx.stroke({ color: s.color, width: 2 * (1 - sp), alpha });
-                }
-            });
-
-            requestAnimationFrame(animate);
+            effect._rafId = requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
-        requestAnimationFrame(animate);
+        this._pushEffect(effect);
+        effect._rafId = requestAnimationFrame(animate);
     }
 
     // ==================== SLOT HIT EFFECT (FLASH ORANGE + ONDE DE CHOC) ====================
@@ -3345,7 +3060,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -3421,7 +3136,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -3556,7 +3271,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -3630,12 +3345,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                requestAnimationFrame(animate);
+                effect._rafId = requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
-        this.activeEffects.push(effect);
+        effect._rafId = requestAnimationFrame(animate);
+        this._pushEffect(effect);
 
         return effect;
     }
@@ -3701,7 +3416,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -3786,7 +3501,9 @@ class GameVFXSystem {
     }
 
     updateShields() {
+        if (this.activeShields.size === 0) return;
         const now = performance.now();
+        const { zoom } = this._getScalerInfo();
 
         for (const [slotKey, shield] of this.activeShields) {
             const { container, element, startTime, hexGfx, sweepGfx, runeText } = shield;
@@ -3798,22 +3515,29 @@ class GameVFXSystem {
             }
             container.visible = true;
 
-            const rect = element.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
+            // During screen shake, reuse cached element rect to avoid
+            // forced layout recalcs (transform write invalidates all children)
+            let rect;
+            if (this._shakeActive && shield._cachedRect) {
+                rect = shield._cachedRect;
+            } else {
+                rect = element.getBoundingClientRect();
+                shield._cachedRect = rect;
+            }
+            const p = this._toScaler(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
             // Bob vertical subtil (3s cycle, ±3px)
             const elapsed = (now - startTime) / 1000;
             const bobY = Math.sin(elapsed * 2.094) * 3; // 2π/3 ≈ 2.094 → 3s
 
-            container.position.set(cx, cy + bobY);
+            container.position.set(p.x, p.y + bobY);
 
             // Tilt subtil via skew (approxime la rotation 3D)
             const tiltX = Math.sin(elapsed * 1.047) * 0.02; // 6s cycle
             container.skew.set(tiltX, 0);
 
             // Dimensions de la grille hex
-            const hexR = Math.min(rect.width, rect.height) * 0.15;
+            const hexR = Math.min(rect.width / zoom, rect.height / zoom) * 0.15;
             const hexW = hexR * Math.sqrt(3);
             const hexH = hexR * 2;
 
@@ -4028,7 +3752,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
 
         // --- Géométrie ---
         const eyeX = srcX;
@@ -4511,7 +4235,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -4597,6 +4321,8 @@ class GameVFXSystem {
             ];
         }
         const smokeTex = this._smokeTexCache;
+        const smokeTexS = smokeTex[0]; // 32px - petites particules
+        const smokeTexL = smokeTex[2]; // 96px - grand brouillard
 
         // Dark overlay en DOM (enfant de la carte — suit naturellement la perspective du board)
         const domOverlay = document.createElement('div');
@@ -4716,22 +4442,31 @@ class GameVFXSystem {
             container.visible = true;
             if (domOverlay) domOverlay.style.display = '';
 
-            const rect = element.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const hw = rect.width / 2;
-            const hh = rect.height / 2;
+            // During screen shake, reuse cached element rect to avoid forced layout recalcs
+            let rect;
+            if (this._shakeActive && camo._cachedRect) {
+                rect = camo._cachedRect;
+            } else {
+                rect = element.getBoundingClientRect();
+                camo._cachedRect = rect;
+            }
+            const { zoom } = this._getScalerInfo();
+            const pp = this._toScaler(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            const sw = rect.width / zoom;
+            const sh = rect.height / zoom;
+            const hw = sw / 2;
+            const hh = sh / 2;
             const inset = 4; // retrait pour la fumée PixiJS (compense la perspective du board)
 
-            container.position.set(cx, cy);
+            container.position.set(pp.x, pp.y);
 
             // Reconstruire le smoke mask si les dimensions changent
-            if (Math.abs(rect.width - camo.lastW) > 2 || Math.abs(rect.height - camo.lastH) > 2) {
-                camo.lastW = rect.width;
-                camo.lastH = rect.height;
+            if (Math.abs(sw - camo.lastW) > 2 || Math.abs(sh - camo.lastH) > 2) {
+                camo.lastW = sw;
+                camo.lastH = sh;
 
                 smokeMask.clear();
-                smokeMask.roundRect(-hw + inset, -hh + inset, rect.width - inset * 2, rect.height - inset * 2, 4);
+                smokeMask.roundRect(-hw + inset, -hh + inset, sw - inset * 2, sh - inset * 2, 4);
                 smokeMask.fill({ color: 0xffffff });
             }
 
@@ -4746,8 +4481,8 @@ class GameVFXSystem {
                 if (t >= 1) {
                     // Reset
                     p.life = 0;
-                    p.ox = (Math.random() - 0.5) * rect.width * 0.9;
-                    p.oy = (Math.random() - 0.5) * rect.height * 0.8 + rect.height * 0.08;
+                    p.ox = (Math.random() - 0.5) * sw * 0.9;
+                    p.oy = (Math.random() - 0.5) * sh * 0.8 + sh * 0.08;
                     p.sprite.rotation = Math.random() * Math.PI * 2;
                     p.sprite.alpha = 0;
                     continue;
@@ -4755,8 +4490,8 @@ class GameVFXSystem {
 
                 // Init position if first frame
                 if (p.ox === 0 && p.oy === 0) {
-                    p.ox = (Math.random() - 0.5) * rect.width * 0.9;
-                    p.oy = (Math.random() - 0.5) * rect.height * 0.8 + rect.height * 0.08;
+                    p.ox = (Math.random() - 0.5) * sw * 0.9;
+                    p.oy = (Math.random() - 0.5) * sh * 0.8 + sh * 0.08;
                 }
 
                 // Noise-driven drift
@@ -4805,7 +4540,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
         const randInt = (a, b) => Math.floor(rand(a, b + 1));
@@ -4866,7 +4601,7 @@ class GameVFXSystem {
         function makeBlister() {
             const cx = rand(cardLeft + margin, cardLeft + cardW - margin);
             const cy = rand(cardTop + margin, cardTop + cardH - margin);
-            const maxSize = rand(cardW * 0.06, cardW * 0.18);
+            const maxSize = rand(cardW * 0.1, cardW * 0.25);
             return {
                 cx, cy, maxSize,
                 blobPts: blobPoints(0, 0, maxSize, maxSize * 0.25, 16),
@@ -4893,17 +4628,17 @@ class GameVFXSystem {
             };
         }
 
-        // ═══════ CREATE BLISTERS ═══════
+        // ═══════ CREATE BLISTERS (optimisé : moins d'objets) ═══════
         const blisters = [];
-        const bigCount = 5 + Math.min(damage * 2, 6);
+        const bigCount = 3 + Math.min(damage, 3);
         for (let i = 0; i < bigCount; i++) blisters.push(makeBlister());
-        const smallCount = 3 + Math.min(damage, 4);
+        const smallCount = 2 + Math.min(damage, 2);
         for (let i = 0; i < smallCount; i++) {
             const b = makeBlister();
             b.maxSize = rand(cardW * 0.03, cardW * 0.07);
-            b.blobPts = blobPoints(0, 0, b.maxSize, b.maxSize * 0.2, 12);
-            b.innerPts = blobPoints(0, 0, b.maxSize * 0.6, b.maxSize * 0.12, 10);
-            b.corePts = blobPoints(0, 0, b.maxSize * 0.3, b.maxSize * 0.08, 8);
+            b.blobPts = blobPoints(0, 0, b.maxSize, b.maxSize * 0.2, 8);
+            b.innerPts = blobPoints(0, 0, b.maxSize * 0.6, b.maxSize * 0.12, 6);
+            b.corePts = blobPoints(0, 0, b.maxSize * 0.3, b.maxSize * 0.08, 6);
             b.growStart = rand(0.05, 0.3);
             blisters.push(b);
         }
@@ -4930,49 +4665,31 @@ class GameVFXSystem {
             const swell = b.phase === 'swelling' ? 1 + (b.swellProgress || 0) * 0.2 : 1;
             const sz = s * pulse * swell;
             const a = b.alpha;
-            const yw = b.yellowAmount;
-
-            // Ombre douce
-            g.circle(b.cx, b.cy + 2, b.maxSize * sz * 1.05);
-            g.fill({ color: 0x000000, alpha: a * 0.04 });
 
             // Couche externe
             const outer = b.blobPts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
-            drawBlobFill(g, outer, b.outerColor, a * 0.08);
-            if (yw > 0.3) drawBlobFill(g, outer, C_YELLOW, a * 0.03 * yw);
+            drawBlobFill(g, outer, b.outerColor, a * 0.35);
 
             // Couche interne
             const inner = b.innerPts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
-            drawBlobFill(g, inner, b.innerColor, a * 0.07);
-            if (yw > 0.2) drawBlobFill(g, inner, C_YELLOW, a * 0.025 * yw);
+            drawBlobFill(g, inner, b.innerColor, a * 0.28);
 
             // Noyau
             const core = b.corePts.map(p => ({ x: b.cx + p.x * sz, y: b.cy + p.y * sz }));
-            drawBlobFill(g, core, b.coreColor, a * 0.06);
-            if (yw > 0.5) drawBlobFill(g, core, C_YELLOW_W, a * 0.04 * yw);
+            drawBlobFill(g, core, b.coreColor, a * 0.22);
 
-            // Reflet spéculaire
+            // Reflet spéculaire unique
             const hlX = b.cx + Math.cos(b.hlAngle) * b.maxSize * sz * 0.25;
             const hlY = b.cy + Math.sin(b.hlAngle) * b.maxSize * sz * 0.25;
             const hlR = b.maxSize * sz * 0.17;
-            g.circle(hlX, hlY, hlR * 1.8);
-            g.fill({ color: yw > 0.5 ? C_HL_WARM : C_HL, alpha: a * 0.06 });
             g.circle(hlX, hlY, hlR);
-            g.fill({ color: 0xffffff, alpha: a * 0.14 });
-            g.circle(hlX, hlY, hlR * 0.35);
-            g.fill({ color: 0xffffff, alpha: a * 0.22 });
-
-            // Reflet secondaire
-            const hl2X = b.cx + Math.cos(b.hlAngle + Math.PI + 0.6) * b.maxSize * sz * 0.45;
-            const hl2Y = b.cy + Math.sin(b.hlAngle + Math.PI + 0.6) * b.maxSize * sz * 0.45;
-            g.circle(hl2X, hl2Y, b.maxSize * sz * 0.05);
-            g.fill({ color: 0xffffff, alpha: a * 0.12 });
+            g.fill({ color: 0xffffff, alpha: a * 0.4 });
 
             // Pulsation d'enflure
             if (b.phase === 'swelling') {
                 const throb = Math.sin(time * 14 + b.pulsePhase) * 0.5 + 0.5;
                 g.circle(b.cx, b.cy, b.maxSize * sz * 0.4);
-                g.fill({ color: yw > 0.5 ? C_YELLOW_W : C_HL, alpha: a * 0.025 * throb });
+                g.fill({ color: C_HL, alpha: a * 0.1 * throb });
             }
         }
 
@@ -4982,7 +4699,7 @@ class GameVFXSystem {
             b.popRingSize = b.maxSize * 0.5;
             const yw = b.yellowAmount;
 
-            const numDrops = Math.max(4, Math.floor(b.maxSize * 0.6));
+            const numDrops = Math.max(3, Math.floor(b.maxSize * 0.4));
             for (let i = 0; i < numDrops; i++) {
                 const angle = rand(0, Math.PI * 2);
                 const speed = rand(1, 4) * (b.maxSize / 20);
@@ -4992,8 +4709,8 @@ class GameVFXSystem {
                     y: b.cy + Math.sin(angle) * b.maxSize * 0.2,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
-                    size: rand(1, Math.max(2, b.maxSize * 0.12)),
-                    alpha: rand(0.15, 0.35),
+                    size: rand(1.5, Math.max(3, b.maxSize * 0.15)),
+                    alpha: rand(0.4, 0.7),
                     color: isYellowDrop
                         ? [C_YELLOW, C_YELLOW_W][randInt(0, 1)]
                         : [b.outerColor, b.innerColor, b.coreColor][randInt(0, 2)],
@@ -5002,7 +4719,7 @@ class GameVFXSystem {
                 });
             }
 
-            const numSplats = randInt(2, 4);
+            const numSplats = randInt(1, 3);
             for (let i = 0; i < numSplats; i++) {
                 const angle = rand(0, Math.PI * 2);
                 const dist = rand(b.maxSize * 0.3, b.maxSize * 1.2);
@@ -5013,7 +4730,7 @@ class GameVFXSystem {
                     y: b.cy + Math.sin(angle) * dist,
                     size: sz, scale: 0, targetScale: 1,
                     points: blobPoints(0, 0, sz, sz * 0.3, 8),
-                    alpha: rand(0.05, 0.12),
+                    alpha: rand(0.15, 0.3),
                     color: isYellow ? C_YELLOW : [b.outerColor, b.innerColor][randInt(0, 1)],
                 });
             }
@@ -5022,21 +4739,17 @@ class GameVFXSystem {
         function drawBlisterPop(g, b, gf) {
             if (b.popRingAlpha > 0.003) {
                 g.circle(b.cx, b.cy, b.popRingSize);
-                g.fill({ color: b.innerColor, alpha: b.popRingAlpha * 0.05 * gf });
+                g.fill({ color: b.innerColor, alpha: b.popRingAlpha * 0.2 * gf });
             }
             b.popSplats.forEach(s => {
                 if (s.alpha <= 0) return;
                 const pts = s.points.map(p => ({ x: s.x + p.x * s.scale, y: s.y + p.y * s.scale }));
-                drawBlobFill(g, pts, s.color, s.alpha * gf);
+                drawBlobFill(g, pts, s.color, s.alpha * 3 * gf);
             });
             b.popParticles.forEach(p => {
                 if (p.alpha <= 0) return;
-                g.circle(p.x - p.vx * 1.5, p.y - p.vy * 1.5, p.size * 0.35);
-                g.fill({ color: p.color, alpha: p.alpha * 0.12 * gf });
                 g.circle(p.x, p.y, p.size);
-                g.fill({ color: p.color, alpha: p.alpha * 0.35 * gf });
-                g.circle(p.x, p.y, p.size * 0.25);
-                g.fill({ color: 0xffffff, alpha: p.alpha * 0.1 * gf });
+                g.fill({ color: p.color, alpha: p.alpha * 0.8 * gf });
             });
         }
 
@@ -5059,8 +4772,8 @@ class GameVFXSystem {
         effectContainer.addChild(dmgText);
 
         const dmgGlow = new PIXI.Graphics();
-        dmgGlow.circle(0, 0, 35);
-        dmgGlow.fill({ color: 0x2ecc71, alpha: 0.4 });
+        dmgGlow.circle(0, 0, 45);
+        dmgGlow.fill({ color: 0x2ecc71, alpha: 0.6 });
         dmgGlow.position.set(x, y);
         dmgGlow.alpha = 0;
         effectContainer.addChild(dmgGlow);
@@ -5068,6 +4781,10 @@ class GameVFXSystem {
         // ═══════ BOUCLE D'ANIMATION ═══════
         let elapsedSec = 0;
         const DUR_SEC = duration / 1000;
+
+        // Réutiliser un seul Graphics (évite alloc/destroy GPU par frame)
+        const g = new PIXI.Graphics();
+        blobContainer.addChild(g);
 
         const animate = () => {
             if (effect.finished) return;
@@ -5077,7 +4794,7 @@ class GameVFXSystem {
             const t = Math.min(elapsed / duration, 1);
             const gf = t > 0.82 ? easeInOutSine((1 - t) / 0.18) : 1;
 
-            const g = new PIXI.Graphics();
+            g.clear();
 
             blisters.forEach(b => {
                 if (b.phase === 'popped') {
@@ -5121,9 +4838,6 @@ class GameVFXSystem {
                 }
             });
 
-            blobContainer.addChild(g);
-            while (blobContainer.children.length > 2) blobContainer.removeChild(blobContainer.children[0]).destroy();
-
             // ── Nombre de dégâts (0.3 → 1) ──
             if (t >= 0.3) {
                 const dmgT = (t - 0.3) / 0.7;
@@ -5155,7 +4869,7 @@ class GameVFXSystem {
         };
 
         requestAnimationFrame(animate);
-        this.screenShake(3, 100);
+        this.screenShake(3, 0.90, 100);
         return effect;
     }
 
@@ -5180,7 +4894,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
         const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
@@ -5369,7 +5083,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
         const lerp = (a, b, t) => a + (b - a) * t;
@@ -6114,7 +5828,7 @@ class GameVFXSystem {
             requestAnimationFrame(animate);
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
     }
 
@@ -6360,7 +6074,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
 
@@ -6381,18 +6095,16 @@ class GameVFXSystem {
 
         // Créer des wisps de brume (petits disques flous qui dérivent)
         const wisps = [];
-        const WISP_COUNT = 14;
+        const WISP_COUNT = 7;
         for (let i = 0; i < WISP_COUNT; i++) {
             const g = new PIXI.Graphics();
-            const baseR = rand(12, 28);
+            const baseR = rand(14, 30);
             const color = COLORS[Math.floor(rand(0, COLORS.length))];
-            // Disque flou multi-couche
-            g.circle(0, 0, baseR * 1.5);
-            g.fill({ color, alpha: 0.08 });
-            g.circle(0, 0, baseR);
-            g.fill({ color, alpha: 0.15 });
-            g.circle(0, 0, baseR * 0.5);
-            g.fill({ color: HIGHLIGHT, alpha: 0.1 });
+            // Disque flou simplifié (2 couches au lieu de 3)
+            g.circle(0, 0, baseR * 1.3);
+            g.fill({ color, alpha: 0.1 });
+            g.circle(0, 0, baseR * 0.6);
+            g.fill({ color, alpha: 0.18 });
 
             const startX = x + rand(-cardW * 0.45, cardW * 0.45);
             const startY = y + cardH * 0.5 + rand(5, 20); // Naît en bas
@@ -6413,7 +6125,7 @@ class GameVFXSystem {
 
         // Petites particules scintillantes (gouttelettes toxiques)
         const sparkles = [];
-        const SPARKLE_COUNT = 8;
+        const SPARKLE_COUNT = 4;
         for (let i = 0; i < SPARKLE_COUNT; i++) {
             const g = new PIXI.Graphics();
             const r = rand(1.5, 3);
@@ -6502,10 +6214,314 @@ class GameVFXSystem {
             }
         };
 
-        this.activeEffects.push(effect);
+        this._pushEffect(effect);
         requestAnimationFrame(animate);
         return effect;
     }
+
+    // ==================== SLASH / CLAW RENDERING (Canvas2D → PIXI Texture) ====================
+
+    /**
+     * Dessine une lame effilée (forme de feuille/lens avec contour noir + remplissage rouge)
+     * @param ctx  Canvas2D context (déjà translate/rotate)
+     * @param halfLen  demi-longueur de la lame
+     * @param maxW  demi-largeur max au centre
+     * @param progress  0..1 progression du reveal
+     */
+    _drawBlade(ctx, halfLen, maxW, progress) {
+        if (progress < 0.01) return;
+        const startX = -halfLen;
+        const visLen = halfLen * 2 * progress;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(startX - 2, -maxW * 4, visLen + 4, maxW * 8);
+        ctx.clip();
+
+        // Contour noir (légèrement plus large)
+        const oe = 2;
+        ctx.beginPath();
+        ctx.moveTo(-halfLen, 0);
+        ctx.bezierCurveTo(-halfLen * 0.3, -(maxW + oe) * 1.15, halfLen * 0.3, -(maxW + oe) * 1.15, halfLen, 0);
+        ctx.bezierCurveTo(halfLen * 0.3, (maxW + oe) * 1.15, -halfLen * 0.3, (maxW + oe) * 1.15, -halfLen, 0);
+        ctx.closePath();
+        ctx.fillStyle = '#111111';
+        ctx.fill();
+
+        // Remplissage rouge intérieur
+        ctx.beginPath();
+        ctx.moveTo(-halfLen + 2, 0);
+        ctx.bezierCurveTo(-halfLen * 0.3, -maxW * 1.1, halfLen * 0.3, -maxW * 1.1, halfLen - 2, 0);
+        ctx.bezierCurveTo(halfLen * 0.3, maxW * 1.1, -halfLen * 0.3, maxW * 1.1, -halfLen + 2, 0);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(-halfLen, 0, halfLen, 0);
+        grad.addColorStop(0, '#111111');
+        grad.addColorStop(0.18, '#111111');
+        grad.addColorStop(0.32, '#cc1a1a');
+        grad.addColorStop(0.5, '#dd2222');
+        grad.addColorStop(0.68, '#cc1a1a');
+        grad.addColorStop(0.82, '#111111');
+        grad.addColorStop(1, '#111111');
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Highlight subtil sur la moitié haute
+        ctx.beginPath();
+        ctx.moveTo(-halfLen + 5, 0);
+        ctx.bezierCurveTo(-halfLen * 0.3, -maxW * 0.75, halfLen * 0.3, -maxW * 0.75, halfLen - 5, 0);
+        ctx.lineTo(-halfLen + 5, 0);
+        ctx.closePath();
+        const hGrad = ctx.createLinearGradient(-halfLen, 0, halfLen, 0);
+        hGrad.addColorStop(0, 'rgba(220,50,40,0)');
+        hGrad.addColorStop(0.35, 'rgba(220,50,40,0.3)');
+        hGrad.addColorStop(0.5, 'rgba(240,80,60,0.35)');
+        hGrad.addColorStop(0.65, 'rgba(220,50,40,0.3)');
+        hGrad.addColorStop(1, 'rgba(220,50,40,0)');
+        ctx.fillStyle = hGrad;
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    /**
+     * Rend un frame de griffures (3 lames parallèles diagonales)
+     * @returns HTMLCanvasElement
+     */
+    _renderClawFrame(progresses, size) {
+        const canvas = document.createElement('canvas');
+        const res = window.devicePixelRatio || 1;
+        canvas.width = size * res;
+        canvas.height = size * res;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(res, res);
+
+        const cx = size / 2, cy = size / 2;
+        const halfLen = size * 0.40;
+        const maxW = size * 0.022;
+        const angle = -0.52;
+        const spacing = size * 0.11;
+        const perpX = Math.cos(angle + Math.PI / 2);
+        const perpY = Math.sin(angle + Math.PI / 2);
+
+        for (let i = 0; i < 3; i++) {
+            const offset = (i - 1) * spacing;
+            const ox = cx + perpX * offset;
+            const oy = cy + perpY * offset;
+            const lenMult = i === 1 ? 1 : 0.88;
+            const wMult = i === 1 ? 1 : 0.85;
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.rotate(angle);
+            this._drawBlade(ctx, halfLen * lenMult, maxW * wMult, progresses[i]);
+            ctx.restore();
+        }
+        return canvas;
+    }
+
+    /**
+     * Rend un frame de croix (X) — 2 lames croisées
+     * @returns HTMLCanvasElement
+     */
+    _renderCrossFrame(prog1, prog2, size) {
+        const canvas = document.createElement('canvas');
+        const res = window.devicePixelRatio || 1;
+        canvas.width = size * res;
+        canvas.height = size * res;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(res, res);
+
+        const cx = size / 2, cy = size / 2;
+        const halfLen = size * 0.40;
+        const maxW = size * 0.022;
+
+        // Lame 1 : haut-gauche → bas-droite
+        ctx.save();
+        ctx.translate(cx - size * 0.03, cy - size * 0.05);
+        ctx.rotate(0.55);
+        this._drawBlade(ctx, halfLen, maxW, prog1);
+        ctx.restore();
+
+        // Lame 2 : bas-gauche → haut-droite
+        ctx.save();
+        ctx.translate(cx + size * 0.02, cy + size * 0.03);
+        ctx.rotate(-0.62);
+        this._drawBlade(ctx, halfLen * 0.92, maxW * 0.9, prog2);
+        ctx.restore();
+
+        return canvas;
+    }
+
+    /**
+     * Spawn un slash animé (griffures ou croix) sur un container PIXI.
+     * Les lames se dessinent progressivement frame par frame (Canvas2D → texture PIXI).
+     * @param parentContainer  PIXI.Container cible (centré sur la carte)
+     * @param type  'claw' | 'cross'
+     * @param slashSize  taille du slash en px
+     * @returns {{ animateIn(), fadeOut(), sprite }}
+     */
+    spawnSlash(parentContainer, type, slashSize) {
+        const self = this;
+        const isClaw = type === 'claw';
+        const numPhases = isClaw ? 3 : 2;
+        const progs = new Array(numPhases).fill(0);
+
+        const renderFn = isClaw
+            ? (p) => self._renderClawFrame(p, slashSize)
+            : (p) => self._renderCrossFrame(p[0], p[1], slashSize);
+
+        let currentCanvas = renderFn(progs);
+        let currentTex = PIXI.Texture.from(currentCanvas);
+        const sprite = new PIXI.Sprite(currentTex);
+        sprite.anchor.set(0.5);
+        // Le canvas est à size*DPR pixels mais on veut slashSize unités PIXI
+        const dprScale = 1 / (window.devicePixelRatio || 1);
+        sprite.scale.set(dprScale);
+        sprite.x = 0;
+        sprite.y = -2;
+        parentContainer.addChild(sprite);
+
+        function updateTexture() {
+            if (currentTex) currentTex.destroy(true);
+            currentCanvas = renderFn(progs);
+            currentTex = PIXI.Texture.from(currentCanvas);
+            sprite.texture = currentTex;
+        }
+
+        return {
+            sprite,
+            animateIn() {
+                return new Promise(resolve => {
+                    // Phase 1 : toutes les lames (claw) ou première lame (cross)
+                    const dur1 = 100;
+                    const start1 = performance.now();
+                    const step1 = () => {
+                        const t = Math.min((performance.now() - start1) / dur1, 1);
+                        const e = t * (2 - t); // outQuad
+                        if (isClaw) {
+                            for (let i = 0; i < numPhases; i++) progs[i] = e;
+                        } else {
+                            progs[0] = e;
+                        }
+                        updateTexture();
+                        if (t >= 1) {
+                            if (isClaw) { resolve(); return; }
+                            // Phase 2 (cross seulement) : deuxième lame
+                            const dur2 = 90;
+                            const start2 = performance.now();
+                            const step2 = () => {
+                                const t2 = Math.min((performance.now() - start2) / dur2, 1);
+                                const e2 = t2 * (2 - t2);
+                                progs[1] = e2;
+                                updateTexture();
+                                if (t2 >= 1) resolve();
+                                else requestAnimationFrame(step2);
+                            };
+                            requestAnimationFrame(step2);
+                        } else {
+                            requestAnimationFrame(step1);
+                        }
+                    };
+                    requestAnimationFrame(step1);
+                });
+            },
+            fadeOut() {
+                return new Promise(resolve => {
+                    const dur = 350;
+                    const start = performance.now();
+                    const step = () => {
+                        const t = Math.min((performance.now() - start) / dur, 1);
+                        sprite.alpha = 1 - t * t; // inQuad fade
+                        if (t >= 1) {
+                            if (sprite.parent) sprite.parent.removeChild(sprite);
+                            if (currentTex) currentTex.destroy(true);
+                            currentTex = null;
+                            sprite.destroy();
+                            resolve();
+                        } else {
+                            requestAnimationFrame(step);
+                        }
+                    };
+                    requestAnimationFrame(step);
+                });
+            }
+        };
+    }
+
+    /**
+     * Shockwave ring expanding (effet d'impact au point de collision)
+     */
+    createShockwave(x, y, maxRadius = 100, duration = 500) {
+        if (!this.initialized) return;
+        const effectContainer = new PIXI.Container();
+        effectContainer.position.set(x, y);
+        this.container.addChild(effectContainer);
+
+        const ring1 = new PIXI.Graphics();
+        effectContainer.addChild(ring1);
+        const ring2 = new PIXI.Graphics();
+        effectContainer.addChild(ring2);
+
+        const effect = { container: effectContainer, finished: false, startTime: performance.now(), duration };
+        const animate = () => {
+            const p = Math.min((performance.now() - effect.startTime) / duration, 1);
+            const a = 1 - p;
+            const th = 3 + 5 * (1 - p);
+            ring1.clear();
+            ring1.circle(0, 0, maxRadius * p);
+            ring1.stroke({ color: 0xDDEEFF, alpha: a * 0.45, width: th });
+            ring2.clear();
+            if (p < 0.65) {
+                ring2.circle(0, 0, maxRadius * p * 0.78);
+                ring2.stroke({ color: 0xFFFFFF, alpha: a * 0.2, width: 2 });
+            }
+            if (p >= 1) { effect.finished = true; }
+            else effect._rafId = requestAnimationFrame(animate);
+        };
+        this._pushEffect(effect);
+        effect._rafId = requestAnimationFrame(animate);
+    }
+
+    /**
+     * Screen shake — secoue le #game-scaler pendant une durée donnée
+     * @param intensity  amplitude max en px
+     * @param decay  facteur de décroissance par frame (0.84–0.90)
+     * @param duration  durée max en ms
+     */
+    screenShake(intensity = 14, decay = 0.86, duration = 400) {
+        const scaler = document.getElementById('game-scaler');
+        if (!scaler) return;
+        // Prendre le max d'intensité si un shake est déjà en cours
+        if (this._shakeActive && intensity <= this._shakeIntensity) return;
+        // Cancel old RAF loop if running (prevents zombie loops)
+        if (this._shakeRafId) cancelAnimationFrame(this._shakeRafId);
+        // Store pre-shake scaler rect so _toScaler/updateShields/updateCamouflages
+        // can use it instead of calling getBoundingClientRect during the shake
+        // (avoids layout thrashing since we write style.transform every frame)
+        if (!this._shakeActive) {
+            this._preShakeRect = scaler.getBoundingClientRect();
+        }
+        this._shakeActive = true;
+        this._shakeIntensity = intensity;
+        const start = performance.now();
+        let currentI = intensity;
+        const step = () => {
+            const elapsed = performance.now() - start;
+            if (elapsed > duration || currentI < 0.3) {
+                scaler.style.transform = '';
+                this._shakeActive = false;
+                this._shakeRafId = null;
+                this._preShakeRect = null;
+                return;
+            }
+            const ox = (Math.random() - 0.5) * currentI * 2;
+            const oy = (Math.random() - 0.5) * currentI * 2;
+            scaler.style.transform = `translate(${ox}px, ${oy}px)`;
+            currentI *= decay;
+            this._shakeRafId = requestAnimationFrame(step);
+        };
+        this._shakeRafId = requestAnimationFrame(step);
+    }
+
 }
 
 // Instance globale (GameVFX est le nom principal, CombatVFX est un alias rétrocompat)
@@ -6547,6 +6563,12 @@ class SleepAnimationSystem {
     }
 
     updateAllAnimations() {
+        // Early return si aucune animation active et aucune carte just-played visible
+        if (this.activeAnimations.size === 0) {
+            const any = document.querySelector('.card.just-played');
+            if (!any) return;
+        }
+
         // Trouver toutes les cartes avec la classe just-played
         const sleepingCards = document.querySelectorAll('.card.just-played');
 
@@ -6628,10 +6650,9 @@ class SleepAnimationSystem {
 
     updateAnimationPosition(card, animData) {
         const rect = card.getBoundingClientRect();
-        const x = rect.right - 5;
-        const y = rect.top + 10;
-
-        animData.container.position.set(x, y);
+        const vx = rect.right - 5;
+        const vy = rect.top + 10;
+        animData.container.position.set(vx, vy);
 
         // Animer les Z
         const elapsed = performance.now() - animData.startTime;
@@ -6672,8 +6693,8 @@ class SleepAnimationSystem {
     stopAnimation(slotKey) {
         const animData = this.activeAnimations.get(slotKey);
         if (animData) {
-            if (animData.container && animData.container.parent) {
-                animData.container.parent.removeChild(animData.container);
+            if (animData.container) {
+                animData.container.destroy({ children: true });
             }
             this.activeAnimations.delete(slotKey);
         }

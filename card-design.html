@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Card Design - Bataille</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@700;900&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --card-w: 144px;
+            --card-h: 192px;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 40px;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px;
+            font-family: 'Quicksand', sans-serif;
+            color: #ccc;
+        }
+
+        h1 {
+            width: 100%;
+            text-align: center;
+            font-family: 'Cinzel', serif;
+            color: #e5e5e5;
+        }
+
+        .card-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .card-container .label {
+            font-size: 13px;
+            color: #888;
+        }
+
+        /* ==================== CARTE DE BASE ==================== */
+        .card {
+            width: calc(var(--card-w) * 19 / 24);
+            height: calc(var(--card-h) * 19 / 24);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(180deg, #2a2a3a 0%, #1a1a25 100%);
+            flex-shrink: 0;
+            border: 2px solid rgba(200,180,140,0.6);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* ==================== STYLE ARENA ==================== */
+        .card.arena-style {
+            background-size: cover;
+            background-position: center;
+            border-radius: 10px;
+            border: 2px solid #333;
+            position: relative;
+            overflow: visible;
+        }
+
+        /* Titre */
+        .card.arena-style .arena-title {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            right: 2px;
+            text-align: center;
+        }
+        .card.arena-style .arena-name {
+            font-family: 'Bree Serif', serif;
+            font-size: 0.6em;
+            color: #e5e5e5;
+            -webkit-text-stroke: 2px #353535;
+            paint-order: stroke fill;
+            letter-spacing: 0.2px;
+            line-height: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        /* Zone de texte */
+        .card.arena-style .arena-text-zone {
+            padding-left: 3px;
+            padding-right: 3px;
+            position: absolute;
+            bottom: 24px;
+            left: 2px;
+            right: 2px;
+            height: 60px;
+            border-radius: 4px;
+            text-align: left;
+            overflow: visible;
+        }
+        .card.arena-style.card-spell .arena-text-zone {
+            bottom: 14px;
+        }
+        .card.arena-style .arena-type {
+            margin-top: 3px;
+            font-family: 'Quicksand', sans-serif;
+            font-size: 4px;
+            font-weight: 500;
+            color: #ffd700;
+            text-align: center;
+        }
+        .card.arena-style .arena-abilities {
+            font-family: 'Quicksand', sans-serif;
+            font-size: 6px;
+            font-weight: 600;
+            color: #e5e5e5;
+            margin-top: 1px;
+            text-align: left;
+        }
+        .card.arena-style .arena-special {
+            font-family: 'Quicksand', sans-serif;
+            font-size: 6px;
+            font-weight: 500;
+            color: #d0d0d0;
+            margin-top: 2px;
+            line-height: 1.2;
+            text-align: left;
+        }
+
+        /* Mana */
+        .card.arena-style .arena-mana {
+            position: absolute;
+            top: 21px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: rgba(50, 90, 160, 0.75);
+            border: 1px solid #6baef0;
+            border-radius: 2px 10px 2px 10px;
+            display: flex;
+            align-items: normal;
+            justify-content: center;
+            font-family: 'Cinzel', serif;
+            font-size: 15px;
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Stats */
+        .card.arena-style .arena-stats {
+            position: absolute;
+            bottom: 2px;
+            height: 12%;
+            right: -6px;
+            border-radius: 12px;
+            padding: 0px 6px 0px 6px;
+            font-family: 'Cinzel', serif;
+            font-size: 0.8em;
+            font-weight: 900;
+            color: #e5e5e5;
+            z-index: 10;
+            text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
+            text-align: center;
+        }
+        .card.arena-style .arena-atk.boosted,
+        .card.arena-style .arena-hp.boosted,
+        .card.arena-style .arena-special .boosted,
+        .card.arena-style .arena-abilities .boosted {
+            color: #7fff7f;
+            font-weight: 900;
+        }
+        .card.arena-style .arena-atk.reduced,
+        .card.arena-style .arena-hp.reduced {
+            color: #ff6b6b;
+        }
+
+        /* ==================== DIAMANT DE RARETÉ ==================== */
+        .card.arena-style .arena-edition {
+            position: absolute;
+            bottom: 2px;
+            left: 0;
+            right: 0;
+            margin: 0 auto;
+            z-index: 10;
+            width: 10px;
+            height: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card.arena-style .rarity-icon {
+            width: 6px;
+            height: 6px;
+            position: relative;
+            transform: rotate(45deg);
+            border-radius: 1px;
+        }
+        .card.arena-style .rarity-icon .inner-shape {
+            position: absolute;
+            inset: 2px;
+            border-radius: 0.5px;
+        }
+        .card.arena-style .rarity-icon.common {
+            background: linear-gradient(135deg, #2c2c2c 0%, #1a1a1a 100%);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        }
+        .card.arena-style .rarity-icon.common .inner-shape { background: #444; }
+        .card.arena-style .rarity-icon.uncommon {
+            background: linear-gradient(135deg, #9a9a9a 0%, #6e6e6e 50%, #858585 100%);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 1px 4px rgba(200, 200, 200, 0.5), inset 0 -1px 4px rgba(0, 0, 0, 0.3);
+            animation: silverShimmer 3s ease-in-out infinite;
+        }
+        .card.arena-style .rarity-icon.uncommon .inner-shape { background: linear-gradient(135deg, #c0c0c0 0%, #888 100%); }
+        .card.arena-style .rarity-icon.rare {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 25%, #ffa500 50%, #ff8c00 75%, #ffd700 100%);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), 0 0 8px rgba(255, 215, 0, 0.6), inset 0 1px 4px rgba(255, 255, 200, 0.8), inset 0 -1px 4px rgba(204, 153, 0, 0.4);
+            animation: rarityGoldPulse 2.5s ease-in-out infinite;
+        }
+        .card.arena-style .rarity-icon.rare .inner-shape { background: linear-gradient(135deg, #fffacd 0%, #ffb700 100%); }
+        .card.arena-style .rarity-icon.mythic {
+            background: linear-gradient(135deg, #ff4500 0%, #ff6347 25%, #ff8c00 50%, #ffa500 75%, #ff4500 100%);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 100, 50, 0.7), inset 0 1px 5px rgba(255, 200, 100, 0.8), inset 0 -1px 5px rgba(180, 30, 0, 0.5);
+            animation: rarityMythicFlame 2s ease-in-out infinite;
+        }
+        .card.arena-style .rarity-icon.mythic .inner-shape { background: linear-gradient(135deg, #ffeb3b 0%, #ff5722 100%); }
+        .card.arena-style .rarity-icon.platinum {
+            background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 25%, #e8e8e8 50%, #f5f5f5 75%, #ffffff 100%);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15), 0 0 12px rgba(255, 255, 255, 0.8), inset 0 1px 5px rgba(255, 255, 255, 1), inset 0 -1px 4px rgba(200, 200, 200, 0.3);
+            animation: rarityPlatinumShine 3s ease-in-out infinite;
+        }
+        .card.arena-style .rarity-icon.platinum .inner-shape { background: linear-gradient(135deg, #fff 0%, #ddd 100%); }
+
+        @keyframes silverShimmer { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+        @keyframes rarityGoldPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+        @keyframes rarityMythicFlame { 0%, 100% { filter: brightness(1) saturate(1.2); } 50% { filter: brightness(1.3) saturate(1.5); } }
+        @keyframes rarityPlatinumShine { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.15); } }
+
+        /* ==================== FACTIONS ==================== */
+        .card.arena-style.faction-green  { --faction-border: #4a7a5a; }
+        .card.arena-style.faction-red    { --faction-border: #a04048; }
+        .card.arena-style.faction-black  { --faction-border: #5a5a5a; }
+        .card.arena-style.faction-blue   { --faction-border: #6a93d9; }
+        .card.arena-style.faction-white  { --faction-border: #d5d0c5; }
+        .card.arena-style.faction-neutral { --faction-border: #6b5535; }
+
+        .card.arena-style[class*="faction-"] {
+            position: relative;
+            border: 2px solid #353535 !important;
+            border-radius: 4px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+        .card.arena-style[class*="faction-"] .arena-title {
+            background: #323e82c4;
+            border: 2px solid var(--faction-border);
+            border-radius: 4px;
+        }
+        .card.arena-style[class*="faction-"] .arena-name {
+            padding: 1px 6px 2px 6px;
+        }
+        .card.arena-style.faction-red .arena-title   { background: rgb(189 66 66 / 50%); }
+        .card.arena-style.faction-blue .arena-title   { background: #323e828a; }
+        .card.arena-style.faction-white .arena-title  { background: #ffffff91; }
+        .card.arena-style.faction-green .arena-title  { background: #29573c94; }
+        .card.arena-style.faction-black .arena-title  { background: #2a2a2acc; }
+        .card.arena-style.faction-neutral .arena-title { background: #573a29b5; }
+
+        .card.arena-style[class*="faction-"] .arena-text-zone {
+            background: rgba(0, 0, 0, 0.72);
+            border: 2px solid var(--faction-border);
+        }
+        .card.arena-style.faction-black .arena-text-zone { background: rgba(20, 20, 20, 0.8); }
+
+        /* Stats ronds séparés ATK / HP */
+        .card.arena-style[class*="faction-"] .arena-stats {
+            left: 2px;
+            right: 2px;
+            background: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0;
+            height: auto;
+            min-width: auto;
+        }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 900;
+            color: #e5e5e5;
+        }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk {
+            background: #f96916c2;
+            border: 1px solid #f06717;
+            border-radius: 10px 2px 10px 2px;
+        }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp {
+            background: #9a1b1bd6;
+            border: 1px solid #dc4d4dbd;
+            border-radius: 2px 10px 2px 10px;
+        }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk.boosted,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp.boosted { color: #7fff7f; }
+        .card.arena-style[class*="faction-"] .arena-stats .arena-atk.reduced,
+        .card.arena-style[class*="faction-"] .arena-stats .arena-hp.reduced { color: #ff6b6b; }
+
+        /* Bâtiment */
+        .card.arena-style.card-building .arena-stats { top: 20px; }
+        .card.arena-style.card-building[class*="faction-"] .arena-stats { left: auto; }
+        .card.arena-style .arena-stats .arena-armor {
+            background: #8c8888e3;
+            border: 1px solid #beb4b4bd;
+            border-radius: 10px 2px 10px 2px;
+            color: #fff;
+            width: 20px;
+            height: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        /* Sorts — pas de stats */
+        .card.arena-style.card-spell .arena-stats { display: none; }
+
+        /* ==================== ZOOM (version grande) ==================== */
+        .card-large {
+            --card-w: 288px;
+            --card-h: 384px;
+            transform: none;
+        }
+        .card-large .card {
+            width: calc(var(--card-w) * 19 / 24);
+            height: calc(var(--card-h) * 19 / 24);
+        }
+        .card-large .arena-name {
+            font-size: 1.2em !important;
+            line-height: 20px !important;
+        }
+        .card-large .arena-type {
+            font-size: 8px !important;
+        }
+        .card-large .arena-abilities {
+            font-size: 11px !important;
+        }
+        .card-large .arena-special {
+            font-size: 11px !important;
+        }
+        .card-large .arena-mana {
+            width: 40px !important;
+            height: 40px !important;
+            font-size: 28px !important;
+            top: 42px !important;
+            left: 4px !important;
+            border-width: 2px !important;
+        }
+        .card-large .arena-stats .arena-atk,
+        .card-large .arena-stats .arena-hp {
+            width: 40px !important;
+            height: 40px !important;
+            font-size: 26px !important;
+            border-width: 2px !important;
+        }
+        .card-large .arena-text-zone {
+            height: 120px !important;
+            bottom: 48px !important;
+            padding: 4px 6px !important;
+        }
+        .card-large .arena-title {
+            border-width: 3px !important;
+        }
+        .card-large .arena-text-zone {
+            border-width: 3px !important;
+        }
+        .card-large .arena-edition {
+            width: 20px !important;
+            height: 20px !important;
+        }
+        .card-large .rarity-icon {
+            width: 12px !important;
+            height: 12px !important;
+        }
+        .card-large .rarity-icon .inner-shape {
+            inset: 3px !important;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Card Design Workshop</h1>
+
+<!-- Les cartes sont générées par le script ci-dessous -->
+<div id="cards"></div>
+
+<script>
+// ==================== DONNÉES DES CARTES ====================
+// Modifie ce tableau pour tester différentes cartes
+const CARDS = [
+    {
+        id: 'zombie_delabre',
+        name: 'Zombie délabré',
+        atk: 1, hp: 4, cost: 3,
+        type: 'creature',
+        combatType: 'melee',
+        creatureType: 'undead',
+        abilities: ['poison'],
+        poisonX: 1,
+        faction: 'black',
+        edition: 2,
+        image: 'cards/black/zombie_delabre.png',
+        description: 'Mort : inflige 1 compteur poison à chaque créature adverse sur la ligne.'
+    },
+    {
+        id: 'liche_affaiblie',
+        name: 'Liche affaiblie',
+        atk: 2, hp: 2, cost: 2,
+        type: 'creature',
+        combatType: 'melee',
+        creatureType: 'spirit',
+        abilities: ['spectral'],
+        faction: 'black',
+        edition: 1,
+        image: 'cards/black/liche_affaiblie.png',
+        description: ''
+    },
+    {
+        id: 'little_bone',
+        name: 'Petit Os, le futé',
+        atk: 1, hp: 1, cost: 1,
+        type: 'creature',
+        combatType: 'melee',
+        creatureType: 'undead',
+        abilities: [],
+        faction: 'black',
+        edition: 4,
+        image: 'cards/black/little_bone.png',
+        description: 'Si cette créature devait aller au cimetière, transformez-la en Pile d\'os.'
+    },
+    {
+        id: 'exemple_sort',
+        name: 'Pacte ténébreux',
+        atk: 0, hp: 0, cost: 4,
+        type: 'spell',
+        abilities: [],
+        faction: 'black',
+        edition: 3,
+        image: 'cards/black/little_bone.png',
+        description: 'Détruisez une créature alliée. Piochez 2 cartes.'
+    }
+];
+
+// ==================== RENDU DES CARTES ====================
+const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+
+const commonAbilityNames = {
+    haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
+    trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile',
+    wall: 'Mur', regeneration: 'Régénération', protection: 'Protection',
+    spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang',
+    melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel',
+    spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable',
+    entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie',
+    dissipation: 'Dissipation', antitoxin: 'Antitoxine', unsacrificable: 'Non sacrifiable'
+};
+
+const creatureTypeNames = {
+    undead: 'Mort-vivant', human: 'Humain', goblin: 'Gobelin', demon: 'Démon',
+    elemental: 'Élémentaire', beast: 'Bête', spirit: 'Esprit', dragon: 'Dragon',
+    serpent: 'Serpent', monstrosity: 'Monstruosité', ogre: 'Ogre', spider: 'Araignée',
+    parasite: 'Parasite', plant: 'Plante', vampire: 'Vampire', insect: 'Insecte'
+};
+
+function makeCard(card) {
+    const el = document.createElement('div');
+    el.className = `card arena-style faction-${card.faction || 'black'}`;
+
+    const isSpell = card.type === 'spell';
+    const isTrap = card.type === 'trap';
+    const noStats = isSpell || isTrap;
+    if (noStats) el.classList.add('card-spell');
+    if (card.isBuilding) el.classList.add('card-building');
+
+    el.style.backgroundImage = `url('${card.image}')`;
+
+    // Rareté
+    const rarityClass = rarityMap[card.edition] || 'common';
+    const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
+
+    // Capacités
+    const abilities = (card.abilities || [])
+        .filter(a => a !== 'shooter' && a !== 'fly')
+        .map(a => {
+            if (a === 'poison') return `Poison ${card.poisonX || 1}`;
+            if (a === 'regeneration') return `Régénération ${card.regenerationX || ''}`.trim();
+            if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
+            if (a === 'entrave') return `Entrave ${card.entraveX || ''}`.trim();
+            return commonAbilityNames[a] || a;
+        });
+    const abilitiesText = abilities.join(', ');
+
+    // Type de combat
+    let combatTypeText = 'Mêlée';
+    if (card.combatType === 'shooter') combatTypeText = 'Tireur';
+    else if (card.combatType === 'fly') combatTypeText = 'Volant';
+
+    // Ligne de type
+    const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
+    let typeLineText;
+    if (card.isBuilding) {
+        typeLineText = 'Bâtiment';
+        if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
+    } else if (noStats) {
+        typeLineText = card.type === 'trap' ? 'Piège' : 'Sort';
+    } else {
+        typeLineText = `Créature - ${combatTypeText}`;
+        if (creatureTypeName) typeLineText += ` - ${creatureTypeName}`;
+    }
+
+    // Titre style (noir par défaut)
+    const titleStyle = card.titleColor ? `style="background: ${card.titleColor}"` : '';
+
+    if (noStats) {
+        el.innerHTML = `
+            <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+            <div class="arena-text-zone">
+                <div class="arena-type">${typeLineText}</div>
+                ${card.description ? `<div class="arena-special">${card.description}</div>` : ''}
+            </div>
+            ${rarityDiamond}
+            <div class="arena-mana">${card.cost}</div>`;
+    } else {
+        el.innerHTML = `
+            <div class="arena-title" ${titleStyle}><div class="arena-name">${card.name}</div></div>
+            <div class="arena-text-zone">
+                <div class="arena-type">${typeLineText}</div>
+                ${abilitiesText ? `<div class="arena-abilities">${abilitiesText}</div>` : ''}
+                ${card.description ? `<div class="arena-special">${card.description}</div>` : ''}
+            </div>
+            ${rarityDiamond}
+            <div class="arena-mana">${card.cost}</div>
+            <div class="arena-stats">
+                ${card.isBuilding
+                    ? `<span class="arena-armor">${card.hp}</span>`
+                    : `<span class="arena-atk">${card.atk}</span><span class="arena-hp">${card.hp}</span>`
+                }
+            </div>`;
+    }
+
+    return el;
+}
+
+// ==================== GÉNÉRATION ====================
+const container = document.getElementById('cards');
+container.style.display = 'flex';
+container.style.flexWrap = 'wrap';
+container.style.gap = '40px';
+container.style.justifyContent = 'center';
+
+CARDS.forEach(card => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'card-container';
+
+    // Version petite (taille main)
+    const small = document.createElement('div');
+    small.appendChild(makeCard(card));
+    wrapper.appendChild(small);
+
+    // Version grande (x2)
+    const large = document.createElement('div');
+    large.className = 'card-large';
+    large.appendChild(makeCard(card));
+    wrapper.appendChild(large);
+
+    // Label
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `${card.name} — ${card.type} — ed.${card.edition}`;
+    wrapper.appendChild(label);
+
+    container.appendChild(wrapper);
+});
+</script>
+</body>
+</html>

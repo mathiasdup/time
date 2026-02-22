@@ -41,6 +41,13 @@ const CardGlow = (() => {
         { spread: 1,   alpha: 1.0,  lineW: 1.5, color: '#d080ff' },
     ];
 
+    const LAYER_CONFIGS_WHITE = [
+        { spread: 3,   alpha: 0.5,  lineW: 9, color: '#aabbcc' },
+        { spread: 2,   alpha: 0.65, lineW: 5, color: '#ccddef' },
+        { spread: 1.5, alpha: 0.85, lineW: 3, color: '#ddeeff' },
+        { spread: 1,   alpha: 1.0,  lineW: 1.5, color: '#ffffff' },
+    ];
+
     const NUM_CTRL = 36; // Points de contrôle (léger pour Canvas 2D)
     const GLOW_MARGIN = 1;
 
@@ -146,8 +153,10 @@ const CardGlow = (() => {
                 continue;
             }
             const isDragging = cardEl.classList.contains('arrow-dragging');
+            const isHovered = cardEl.matches(':hover');
             const { borderW, borderR } = getCachedBorder(cardEl);
-            newTargets.push({ el: cardEl, layers: isDragging ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR });
+            const layers = isDragging ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
+            newTargets.push({ el: cardEl, layers, borderW, borderR });
             activeEls.add(cardEl);
         }
 
@@ -211,10 +220,27 @@ const CardGlow = (() => {
             rebuildTargets();
         }
 
+        // Mettre à jour le glow hover à chaque frame (pas besoin de rebuild complet)
+        for (const target of _cachedTargets) {
+            if (target.el.closest('.my-hand') && target.el.classList.contains('playable')
+                && !target.el.classList.contains('arrow-dragging')) {
+                target.layers = target.el.matches(':hover') ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
+            }
+        }
+
         for (const target of _cachedTargets) {
             const { el: cardEl, layers, borderW, borderR } = target;
             // Vérifier que l'élément est toujours dans le DOM
             if (!cardEl.isConnected) continue;
+
+            // Masquer le glow si la carte est ciblée par un sort commité (hover)
+            if (cardEl.classList.contains('spell-hover-target')) {
+                if (target._canvas) target._canvas.style.display = 'none';
+                continue;
+            }
+            if (target._canvas && target._canvas.style.display === 'none') {
+                target._canvas.style.display = '';
+            }
 
             // Créer ou récupérer le canvas glow
             let glowCanvas = target._canvas;
@@ -290,6 +316,7 @@ const CardGlow = (() => {
             ctx.globalAlpha = 1;
             ctx.restore();
         }
+
     }
 
     // ── API publique ──

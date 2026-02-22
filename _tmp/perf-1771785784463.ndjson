@@ -1,0 +1,3 @@
+{"ts":1771785784465,"event":"sessionStart","pid":988}
+{"ts":1771785792791,"event":"roomCreated","room":"4K3272"}
+{"ts":1771786002175,"event":"turnSummary","room":"4K3272","turn":1,"reason":"next_turn","stateEmitCount":10,"stateEmitBytes":35957,"stateEmitSerializeMs":1.76,"stateEmitByPlayer":{"1":{"count":5,"bytes":18635},"2":{"count":5,"bytes":17322}},"animationCount":1,"animationByType":{"draw":1},"resolutionLogCount":2,"resolutionMs":2670,"client":{"1":null,"2":null}}

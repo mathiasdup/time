@@ -189,6 +189,35 @@ function canPlaceAt(card, col) {
     return col === 1;
 }
 
+function getProvocationPrioritySlots(card) {
+    if (!card || card.type !== 'creature' || !state) return [];
+    if (card.isBuilding) return [];
+    if (card.abilities?.includes('fly')) return [];
+
+    const preferredCol = card.abilities?.includes('shooter') ? 0 : 1;
+    const forced = [];
+    for (let row = 0; row < 4; row++) {
+        const oppFront = state.opponent?.field?.[row]?.[1];
+        const oppBack = state.opponent?.field?.[row]?.[0];
+        const hasProvocation =
+            !!(oppFront && oppFront.currentHp > 0 && oppFront.abilities?.includes('provocation')) ||
+            !!(oppBack && oppBack.currentHp > 0 && oppBack.abilities?.includes('provocation'));
+        if (!hasProvocation) continue;
+
+        const occupied =
+            !!state.me.field[row][preferredCol] ||
+            committedReanimationSlots.some(s => s.row === row && s.col === preferredCol);
+        if (!occupied) forced.push({ row, col: preferredCol });
+    }
+    return forced;
+}
+
+function respectsProvocationPriority(card, row, col) {
+    const forced = getProvocationPrioritySlots(card);
+    if (forced.length === 0) return true;
+    return forced.some(s => s.row === row && s.col === col);
+}
+
 function getValidSlots(card) {
     const valid = [];
     if (!card || !state) return valid;
@@ -215,6 +244,7 @@ function getValidSlots(card) {
             for (let col = 0; col < 2; col++) {
                 if (canPlaceAt(card, col) && !state.me.field[row][col]
                     && !committedReanimationSlots.some(s => s.row === row && s.col === col)) {
+                    if (!respectsProvocationPriority(card, row, col)) continue;
                     valid.push({ row, col });
                 }
             }
@@ -267,7 +297,7 @@ function getValidSlots(card) {
                 for (let col = 0; col < 2; col++) {
                     if (!state.me.field[row][col]
                         && !committedReanimationSlots.some(s => s.row === row && s.col === col)) {
-                        if (availableCreatures.some(c => canPlaceAt(c, col))) {
+                        if (availableCreatures.some(c => canPlaceAt(c, col) && respectsProvocationPriority(c, row, col))) {
                             valid.push({ owner: 'me', row, col });
                         }
                     }
@@ -278,7 +308,8 @@ function getValidSlots(card) {
         else if (card.targetSelfCreature) {
             for (let row = 0; row < 4; row++) {
                 for (let col = 0; col < 2; col++) {
-                    if (state.me.field[row][col]) {
+                    const target = state.me.field[row][col];
+                    if (target && !(card.excludeBuildings && target.isBuilding)) {
                         valid.push({ owner: 'me', row, col });
                     }
                 }
