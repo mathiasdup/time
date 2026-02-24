@@ -1,9 +1,9 @@
-/* ==================== LAYOUT ====================
-   Structure, board, top bar, panels, héros, deck/graveyard, slots */
+﻿/* ==================== LAYOUT ====================
+   Structure, board, top bar, panels, hÃ©ros, deck/graveyard, slots */
 
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
+@import url('https://fonts.cdnfonts.com/css/glacial-indifference');
         :root {
-            /* Taille de référence des cartes sur le board */
+            /* Taille de rÃ©fÃ©rence des cartes sur le board */
             --card-w: 144px;
             --card-h: 192px;
         }
@@ -11,7 +11,7 @@
         *, *::before, *::after { cursor: none !important; }
 
         body {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             background: url('../battlefield/background_1.png') no-repeat center center fixed;
             background-size: cover;
             background-color: #000;
@@ -20,7 +20,7 @@
             overflow: hidden;
         }
 
-        /* ── Game Scaler : résolution de référence 1920×1080 ── */
+        /* â”€â”€ Game Scaler : rÃ©solution de rÃ©fÃ©rence 1920Ã—1080 â”€â”€ */
         #game-scaler {
             width: 1920px;
             height: 1080px;
@@ -31,7 +31,7 @@
             will-change: transform;
         }
 
-        /* ── Curseur fantasy custom ── */
+        /* â”€â”€ Curseur fantasy custom â”€â”€ */
         .cursor-fantasy {
             position: fixed;
             pointer-events: none;
@@ -56,7 +56,7 @@
         .lobby.hidden { display: none; }
         .lobby-title { font-size: 3em; color: #ffd700; text-shadow: 0 0 30px rgba(255,215,0,0.5); margin-bottom: 30px; }
         .lobby-box { background: rgba(20,20,40,0.95); padding: 35px; border-radius: 15px; border: 3px solid #8b7355; text-align: center; min-width: 380px; }
-        .lobby-btn { display: block; width: 100%; padding: 16px; margin: 12px 0; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; font-family: 'Cinzel', serif; }
+        .lobby-btn { display: block; width: 100%; padding: 16px; margin: 12px 0; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; font-family: 'Glacial Indifference', sans-serif; }
         .lobby-btn:hover { transform: scale(1.05); }
         .btn-create { background: linear-gradient(135deg, #8b4513, #cd853f); color: white; }
         .btn-join { background: linear-gradient(135deg, #2e4a2e, #4a7c4a); color: white; }
@@ -112,7 +112,7 @@
         .zoom-art-toggle:hover { color: rgba(255,255,255,0.9); }
         .zoom-art-toggle.active { color: #62d7ff; }
         .zoom-art-toggle svg { width: 100%; height: 100%; }
-        /* Zoom : supprimer translateZ(0) des pseudo-éléments pour éviter le flou de rasterisation */
+        /* Zoom : supprimer translateZ(0) des pseudo-Ã©lÃ©ments pour Ã©viter le flou de rasterisation */
         .card-zoom-container .card .arena-title::before,
         .card-zoom-container .card .arena-text-zone::before,
         .card-zoom-container .card .arena-stats::before {
@@ -163,7 +163,7 @@
             z-index: 5;
             pointer-events: none;
         }
-        /* Décaler le texte pour laisser place à la gemme */
+        /* DÃ©caler le texte pour laisser place Ã  la gemme */
         .player-info-bar.left .player-frame .player-name-zone {
             right: 30px;
         }
@@ -171,7 +171,7 @@
             left: 30px;
         }
         .player-frame .player-name-text {
-            font-family: 'Cinzel Decorative', 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-weight: 700;
             font-size: 16px;
             letter-spacing: 2px;
@@ -196,7 +196,7 @@
             text-shadow: 0 1px 3px rgba(0,0,0,0.6);
         }
 
-        /* Gemme de rang — cercle + gemme centrée */
+        /* Gemme de rang â€” cercle + gemme centrÃ©e */
         .rank-gem-slot {
             position: absolute;
             top: 50%;
@@ -238,7 +238,7 @@
             bottom: -16px;
             left: 50%;
             transform: translateX(-50%);
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 0.85em;
             font-weight: 900;
             letter-spacing: 1px;
@@ -248,7 +248,7 @@
             white-space: nowrap;
         }
 
-        /* Shimmer animé */
+        /* Shimmer animÃ© */
         @keyframes shimmer {
             0% { transform: translateX(-200%); }
             100% { transform: translateX(200%); }
@@ -281,7 +281,7 @@
             margin-left: 0;
             margin-right: 12px;
         }
-        /* ==================== BOUTONS CÔTÉ DROIT ==================== */
+        /* ==================== BOUTONS CÃ”TÃ‰ DROIT ==================== */
         .buttons-right {
             position: fixed;
             right: 0;
@@ -469,7 +469,7 @@
         }
 
         .panel-title {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 17px;
             font-weight: 700;
             color: #c4b896;
@@ -565,7 +565,7 @@
         }
 
         .setting-label {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 12px;
             color: #c4b896;
             letter-spacing: 1px;
@@ -678,7 +678,7 @@
         }
 
         .surrender-text {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 18px;
             font-weight: 700;
             color: #d86a6f;
@@ -708,7 +708,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 1.2em;
             font-weight: 900;
             color: #fff;
@@ -717,7 +717,7 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
         }
         
-        /* Bouton Fin de Tour - Style pilule métallique */
+        /* Bouton Fin de Tour - Style pilule mÃ©tallique */
         .end-turn-btn {
             width: 180px;
             height: 50px;
@@ -766,7 +766,7 @@
             pointer-events: none;
         }
         .end-turn-text {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 1.2em;
             font-weight: 900;
             color: #d9d0b4;
@@ -779,7 +779,7 @@
         }
         .end-turn-timer {
             display: none;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 1.4em;
             font-weight: 900;
             color: #d9d0b4;
@@ -791,7 +791,7 @@
 
         .end-turn-phase {
             display: none;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 0.9em;
             font-weight: 700;
             color: #d9d0b4;
@@ -811,7 +811,7 @@
             z-index: 2;
         }
 
-        /* Hover — lueur dorée + reflet qui traverse */
+        /* Hover â€” lueur dorÃ©e + reflet qui traverse */
         .end-turn-btn:not(.waiting):not(.resolving):not(.has-phase):hover {
             box-shadow:
                 0 8px 20px rgba(0, 0, 0, 0.6),
@@ -851,7 +851,7 @@
             100% { left: 200%; }
         }
 
-        /* Active — le bouton s'enfonce au clic */
+        /* Active â€” le bouton s'enfonce au clic */
         .end-turn-btn:active:not(.waiting) {
             transform: translateY(2px);
             box-shadow:
@@ -859,14 +859,14 @@
                 inset 0 1px 2px rgba(255, 255, 255, 0.1);
         }
 
-        /* Waiting / Resolving / Phase - désactivé */
+        /* Waiting / Resolving / Phase - dÃ©sactivÃ© */
         .end-turn-btn.waiting,
         .end-turn-btn.resolving,
         .end-turn-btn.has-phase {
             pointer-events: none;
             cursor: default;
         }
-        /* Resolving - grisé, affiche le texte de phase */
+        /* Resolving - grisÃ©, affiche le texte de phase */
         .end-turn-btn.resolving {
             background: linear-gradient(135deg,
                 #6a6a6a 0%,
@@ -927,7 +927,7 @@
             display: block;
         }
         
-        /* Phase indicator masqué - remplacé par le bouton fin de tour */
+        /* Phase indicator masquÃ© - remplacÃ© par le bouton fin de tour */
         .phase-indicator { display: none !important; }
         
         .side-panel {
@@ -960,7 +960,7 @@
         .hero-card.hero-targetable {
             border-color: transparent !important;
         }
-        /* Flash rouge DOM quand le héros prend des dégâts (hérite de la perspective 3D) */
+        /* Flash rouge DOM quand le hÃ©ros prend des dÃ©gÃ¢ts (hÃ©rite de la perspective 3D) */
         @keyframes heroHitFlash {
             0% { opacity: 0.45; }
             100% { opacity: 0; }
@@ -975,7 +975,7 @@
             pointer-events: none;
             animation: heroHitFlash 0.55s ease-out forwards;
         }
-        /* Aura verte DOM quand le héros est soigné (Erebeth) */
+        /* Aura verte DOM quand le hÃ©ros est soignÃ© (Erebeth) */
         @keyframes heroHealFlash {
             0% { opacity: 0; }
             25% { opacity: 1; }
@@ -993,7 +993,7 @@
             pointer-events: none;
             animation: heroHealFlash 0.7s ease-out forwards;
         }
-        /* Flash blanc→rouge DOM quand une créature prend des dégâts (hérite de la perspective 3D) */
+        /* Flash blancâ†’rouge DOM quand une crÃ©ature prend des dÃ©gÃ¢ts (hÃ©rite de la perspective 3D) */
         @keyframes cardDamageFlash {
             0% { opacity: 0.5; background: #ffffff; }
             20% { opacity: 0.35; background: #ff4444; }
@@ -1009,7 +1009,7 @@
             pointer-events: none;
             animation: cardDamageFlash 0.42s ease-out forwards;
         }
-        /* Flash orange DOM quand un slot prend des dégâts on-death (hérite de la perspective 3D) */
+        /* Flash orange DOM quand un slot prend des dÃ©gÃ¢ts on-death (hÃ©rite de la perspective 3D) */
         @keyframes slotHitFlash {
             0% { opacity: 0.3; }
             20% { opacity: 0.3; }
@@ -1025,7 +1025,7 @@
             pointer-events: none;
             animation: slotHitFlash 0.5s ease-out forwards;
         }
-        /* Aura verte DOM quand une créature est soignée (hérite de la perspective 3D) */
+        /* Aura verte DOM quand une crÃ©ature est soignÃ©e (hÃ©rite de la perspective 3D) */
         @keyframes healAuraFlash {
             0% { opacity: 0; }
             30% { opacity: 1; }
@@ -1042,7 +1042,7 @@
             pointer-events: none;
             animation: healAuraFlash 0.6s ease-out forwards;
         }
-        /* Aura rouge sang DOM quand une créature lifesteal se soigne (perspective 3D) */
+        /* Aura rouge sang DOM quand une crÃ©ature lifesteal se soigne (perspective 3D) */
         @keyframes lifestealAuraFlash {
             0% { opacity: 0; }
             20% { opacity: 1; }
@@ -1059,7 +1059,7 @@
             pointer-events: none;
             animation: lifestealAuraFlash 0.7s ease-out forwards;
         }
-        /* Glow DOM quand un sort cible un slot (hérite de la perspective 3D) */
+        /* Glow DOM quand un sort cible un slot (hÃ©rite de la perspective 3D) */
         @keyframes spellHighlightFlash {
             0% { opacity: 0; }
             10% { opacity: 1; }
@@ -1117,9 +1117,9 @@
 
 
         .hero-title {
-            display: none; /* Caché sur le terrain, visible uniquement en hover/preview */
+            display: none; /* CachÃ© sur le terrain, visible uniquement en hover/preview */
         }
-        /* HP Héros — style arena (même design que les stats de créature) */
+        /* HP HÃ©ros â€” style arena (mÃªme design que les stats de crÃ©ature) */
         .hero-hp {
             position: absolute;
             width: 60px;
@@ -1143,14 +1143,14 @@
             display: none;
         }
         .hero-hp-number {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 22px;
             font-weight: 900;
             color: #e5e5e5;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
             z-index: 2;
         }
-        /* Mana héros — style arena (même design que les stats de créature) */
+        /* Mana hÃ©ros â€” style arena (mÃªme design que les stats de crÃ©ature) */
         .hero-mana {
             position: absolute;
             width: 60px;
@@ -1175,14 +1175,14 @@
             align-items: center;
         }
         .hero-mana-number {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 22px;
             font-weight: 900;
             color: #e5e5e5;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
             z-index: 2;
         }
-        /* Notre héros (side-panel left) — HP bas-droite, Mana haut-gauche */
+        /* Notre hÃ©ros (side-panel left) â€” HP bas-droite, Mana haut-gauche */
         .side-panel.left .hero-hp {
             bottom: 2px;
             right: 2px;
@@ -1192,7 +1192,7 @@
             top: 2px;
             left: 2px;
         }
-        /* Héros adverse (side-panel right) — HP bas-gauche, Mana haut-droite */
+        /* HÃ©ros adverse (side-panel right) â€” HP bas-gauche, Mana haut-droite */
         .side-panel.right .hero-hp {
             bottom: 2px;
             right: 2px;
@@ -1257,7 +1257,7 @@
         .grave-box:hover .grave-tooltip {
             opacity: 1;
         }
-        /* Cartes empilées style Magic Arena avec effet 3D */
+        /* Cartes empilÃ©es style Magic Arena avec effet 3D */
         .deck-card-layer {
             position: absolute;
             width: 100%;
@@ -1265,9 +1265,9 @@
             background: url('../cardback/back_1.png') center/cover no-repeat;
             border-radius: 6px;
         }
-        /* Couches empilées vers la droite pour le joueur - effet 3D avec ombres
-           ORDRE INVERSÉ : nth-child(1) = fond (le plus décalé), nth-child(5) = proche du dessus
-           Ainsi quand on masque les derniers index, on enlève le "dessus" de l'épaisseur */
+        /* Couches empilÃ©es vers la droite pour le joueur - effet 3D avec ombres
+           ORDRE INVERSÃ‰ : nth-child(1) = fond (le plus dÃ©calÃ©), nth-child(5) = proche du dessus
+           Ainsi quand on masque les derniers index, on enlÃ¨ve le "dessus" de l'Ã©paisseur */
         .side-panel.left .deck-card-layer:nth-child(1) {
             transform: translate(12px, 4px);
             z-index: 1;
@@ -1298,7 +1298,7 @@
             box-shadow: 2px 3px 4px rgba(0,0,0,0.4);
         }
 
-        /* Couches empilées vers la gauche pour l'adversaire (miroir) - effet 3D avec ombres */
+        /* Couches empilÃ©es vers la gauche pour l'adversaire (miroir) - effet 3D avec ombres */
         .side-panel.right .deck-card-layer:nth-child(1) {
             transform: translate(-12px, 4px);
             z-index: 1;
@@ -1329,7 +1329,7 @@
             box-shadow: -2px 3px 4px rgba(0,0,0,0.4);
         }
 
-        /* Carte du dessus du deck avec ombre portée */
+        /* Carte du dessus du deck avec ombre portÃ©e */
         .deck-card-top {
             position: absolute;
             width: 100%;
@@ -1342,7 +1342,7 @@
                 0 4px 8px rgba(0,0,0,0.2);
         }
 
-        /* Ombre au sol sous le deck — taille proportionnelle au nombre de couches (--stack-layers) */
+        /* Ombre au sol sous le deck â€” taille proportionnelle au nombre de couches (--stack-layers) */
         .deck-stack::after {
             content: '';
             position: absolute;
@@ -1375,7 +1375,7 @@
             border-radius: 4px;
         }
         
-        /* Cimetière avec pile de cartes */
+        /* CimetiÃ¨re avec pile de cartes */
         .grave-box {
             width: var(--card-w);
             height: var(--card-h);
@@ -1394,7 +1394,7 @@
             width: var(--card-w);
             height: var(--card-h);
         }
-        /* Cartes empilées du cimetière — vraies cartes */
+        /* Cartes empilÃ©es du cimetiÃ¨re â€” vraies cartes */
         .grave-card-layer {
             position: absolute;
             width: 100%;
@@ -1409,7 +1409,7 @@
             margin: 0 !important;
             font-size: 16px;
         }
-        /* Couches empilées vers la droite pour le joueur - effet 3D */
+        /* Couches empilÃ©es vers la droite pour le joueur - effet 3D */
         .side-panel.left .grave-card-layer:nth-child(1) {
             transform: translate(8px, 3px);
             z-index: 1;
@@ -1429,7 +1429,7 @@
             filter: brightness(0.95);
         }
 
-        /* Couches empilées vers la gauche pour l'adversaire (miroir) - effet 3D */
+        /* Couches empilÃ©es vers la gauche pour l'adversaire (miroir) - effet 3D */
         .side-panel.right .grave-card-layer:nth-child(1) {
             transform: translate(-8px, 3px);
             z-index: 1;
@@ -1449,7 +1449,7 @@
             filter: brightness(0.95);
         }
 
-        /* La visibilité des couches est contrôlée dynamiquement par JS (updateGraveDisplay) */
+        /* La visibilitÃ© des couches est contrÃ´lÃ©e dynamiquement par JS (updateGraveDisplay) */
         
         .card.in-graveyard .img-atk,
         .card.in-graveyard .img-hp {
@@ -1476,7 +1476,7 @@
                 0 2px 4px rgba(0,0,0,0.3),
                 0 4px 8px rgba(0,0,0,0.2);
         }
-        /* Ombre au sol sous le cimetière — taille proportionnelle (--stack-layers) */
+        /* Ombre au sol sous le cimetiÃ¨re â€” taille proportionnelle (--stack-layers) */
         .grave-stack.has-cards::after {
             content: '';
             position: absolute;
@@ -1501,7 +1501,7 @@
             width: 100% !important;
             height: 100% !important;
             margin: 0 !important;
-            font-size: 16px; /* Annuler le font-size: 0.75em du grave-box pour que les em dans .arena-name/.arena-stats soient cohérents avec le terrain */
+            font-size: 16px; /* Annuler le font-size: 0.75em du grave-box pour que les em dans .arena-name/.arena-stats soient cohÃ©rents avec le terrain */
         }
         .grave-top-card.empty {
             background: rgba(255,255,255,0.05);
@@ -1611,7 +1611,7 @@
             align-items: center;
             justify-content: center;
         }
-        /* Losange intérieur */
+        /* Losange intÃ©rieur */
         .card-slot::before {
             content: '';
             position: absolute;
@@ -1659,7 +1659,7 @@
             position: relative;
             overflow: visible;
         }
-        /* Icône piège à ours */
+        /* IcÃ´ne piÃ¨ge Ã  ours */
         .trap-slot::before {
             content: '';
             width: 28px;
@@ -1671,7 +1671,7 @@
             opacity: 0.35;
             filter: brightness(0) invert(1);
         }
-        /* Miroir pour les pièges adverses (colonne de droite) */
+        /* Miroir pour les piÃ¨ges adverses (colonne de droite) */
         .trap-col:last-child .trap-slot::before {
             transform: scaleX(-1);
         }
@@ -1695,3 +1695,5 @@
         .trap-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.4) !important; }
         .trap-slot.triggered { animation: trapExplode 0.6s ease-out; }
         @keyframes trapExplode { 0% { transform: scale(1); } 30% { transform: scale(1.3); background: rgba(255,100,0,0.8); } 100% { transform: scale(1); background: transparent; } }
+
+

@@ -49,7 +49,7 @@
             visibility: hidden;
         }
 
-        /* === Arrow Targeting Mode (sorts/pièges) === */
+        /* === Arrow Targeting Mode (sorts/piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ges) === */
         #gl-canvas {
             position: fixed;
             top: 0;
@@ -59,14 +59,14 @@
         }
         .my-hand .card.arrow-dragging,
         .my-hand .card.arena-style.arrow-dragging[class*="faction-"] {
-            transform: translateY(-50px) scale(1) !important; /* zoom rend à 144px, scale(1) = natif */
+            transform: translateY(-50px) scale(1) !important; /* zoom rend ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  144px, scale(1) = natif */
             z-index: 1000 !important;
             border: 2px solid #252525 !important;
             pointer-events: none;
             overflow: visible;
         }
 
-        /* Cartes avec image de fond (nouveau système) */
+        /* Cartes avec image de fond (nouveau systÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨me) */
         /* Template original: 636x934 pixels */
         .card.has-image {
             background-size: cover;
@@ -79,7 +79,7 @@
         .card.has-image .card-cost {
             display: none !important;
         }
-        /* Coût mana - orbe bleu en haut à gauche (centre orbe ~7% du bord, ~4% du haut) */
+        /* CoÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â»t mana - orbe bleu en haut ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  gauche (centre orbe ~7% du bord, ~4% du haut) */
         .card.has-image .img-cost {
             position: absolute;
             top: 4%;
@@ -94,11 +94,11 @@
             color: #4caf50;
             text-shadow: 0 0 4px #000, 0 0 8px #1b5e20, 0 0 12px rgba(76, 175, 80, 0.8);
         }
-        /* Sous-type - caché car pas de zone sur le template */
+        /* Sous-type - cachÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© car pas de zone sur le template */
         .card.has-image .img-subtype {
             display: none;
         }
-        /* Nom de la carte - bannière rouge (centre bannière ~50% du haut) */
+        /* Nom de la carte - banniÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨re rouge (centre banniÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨re ~50% du haut) */
         .card.has-image .img-name {
             position: absolute;
             top: 50%;
@@ -113,7 +113,7 @@
             letter-spacing: 1px;
             z-index: 10;
         }
-        /* Type de créature - zone texte haut (~72% du haut) */
+        /* Type de crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature - zone texte haut (~72% du haut) */
         .card.has-image .img-type-line {
             position: absolute;
             top: 72%;
@@ -125,7 +125,7 @@
             white-space: nowrap;
             z-index: 10;
         }
-        /* Capacités - zone texte milieu (~78% du haut) */
+        /* CapacitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©s - zone texte milieu (~78% du haut) */
         .card.has-image .img-abilities {
             position: absolute;
             top: 78%;
@@ -186,7 +186,7 @@
             transform: translateZ(0);
         }
 
-        /* Titre en haut - fond vert par défaut */
+        /* Titre en haut - fond vert par dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©faut */
         .card.arena-style .arena-title {
             position: absolute;
             top: 2px;
@@ -249,7 +249,7 @@
             text-align: left;
         }
 
-        /* Icône type de créature - en haut à droite sous le titre */
+        /* IcÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ne type de crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature - en haut ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  droite sous le titre */
         .card.arena-style .arena-creature-type {
             position: absolute;
             top: 14%;
@@ -267,7 +267,7 @@
             display: block;
         }
 
-        /* ========== ICÔNE DE RARETÉ - DIAMANT STYLE MTG ========== */
+        /* ========== ICÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂNE DE RARETÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â° - DIAMANT STYLE MTG ========== */
         .card.arena-style .arena-edition {
             position: absolute;
             bottom: 2px;
@@ -307,7 +307,7 @@
             background: #444;
         }
 
-        /* UNCOMMON - Argenté */
+        /* UNCOMMON - ArgentÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© */
         .card.arena-style .rarity-icon.uncommon {
             background: linear-gradient(135deg, #9a9a9a 0%, #6e6e6e 50%, #858585 100%);
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3),
@@ -380,46 +380,45 @@
             position: absolute;
             top: 20px;
             left: 2px;
-            width: 22px;
-            height: 22px;
-            background: #233793;
+            width: 25px;
+            height: 25px;
+            background: #d1d1d1;
             background-clip: padding-box;
-            border: 2px solid #5aa3d985;
+            border: 2px solid #d1d1d185;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Cinzel', serif;
-            font-size: 15px;
+            font-family: 'Glacial Indifference', sans-serif;
+            font-size: 19px;
             font-weight: 900;
-            color: #ffffff;
-            text-shadow: 0 0 15px rgba(123, 184, 232, 0.4), 0 2px 4px rgba(0, 0, 0, 0.8);
+            color: #292929;
             z-index: 10;
             pointer-events: none;
         }
-        /* Mana réduit par Hyrule - chiffre vert */
+        /* Mana rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©duit par Hyrule - chiffre vert */
         .card.arena-style .arena-mana.discounted {
             color: #4caf50;
             text-shadow: 0 0 6px #1b5e20, 0 0 10px rgba(76, 175, 80, 0.8);
         }
 
         /* Stats - Pilule style Magic Arena */
-        .card.arena-style .arena-stats {
+.card.arena-style .arena-stats {
             position: absolute;
             bottom: 2px;
             height: 12%;
             right: -6px;
             border-radius: 12px;
             padding: 0px 6px 0px 6px;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 0.8em;
             font-weight: 900;
             color: #e5e5e5;
             z-index: 10;
-            text-shadow: 0 0 15px rgba(0 0 0 / 80%), 0 0px 4px rgba(0, 0, 0, 0.8);
+            text-shadow: 0 0 15px rgba(0 0 0 / 10%), 0 0px 2px rgba(0, 0, 0, 0.8);
             text-align: center;
         }
-        /* Stats individuelles colorées */
+        /* Stats individuelles colorÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©es */
         .card.arena-style .arena-atk.boosted,
         .card.arena-style .arena-hp.boosted,
         .card.arena-style .arena-special .boosted,
@@ -432,7 +431,7 @@
             color: #ff6b6b;
         }
 
-        /* Version terrain : pas de mana affiché */
+        /* Version terrain : pas de mana affichÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© */
         .card.arena-style.on-field:not(.in-graveyard) .arena-title {
             display: none;
         }
@@ -446,13 +445,13 @@
             display: flex;
             justify-content: center;
         }
-        /* Bâtiments : repositionner le conteneur stats */
+        /* BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢timents : repositionner le conteneur stats */
         .card.arena-style.card-building .arena-stats {
         }
         .card-slot .card.arena-style.on-field.card-building .arena-stats,
         .drag-ghost-card.arena-style.card-building .arena-stats {
         }
-        /* Style de l'armor (HP bâtiment) */
+        /* Style de l'armor (HP bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢timent) */
         .card.arena-style .arena-stats .arena-armor {
             background: linear-gradient(135deg, #b8bec2, #a3aaae, #8a9298);
             background-clip: padding-box;
@@ -474,7 +473,7 @@
             font-size: 20px;
             border-width: 2px;
         }
-        /* Ghost hors #game-scaler: adapter les stats au zoom global écran */
+        /* Ghost hors #game-scaler: adapter les stats au zoom global ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cran */
         .drag-ghost-card.arena-style .arena-stats .arena-armor {
             width: calc(40px * var(--game-scale, 1));
             height: calc(25px * var(--game-scale, 1));
@@ -482,7 +481,7 @@
             border-width: calc(2px * var(--game-scale, 1));
         }
 
-        /* États arena-style — bordures et glow gérés plus bas avec spécificité élevée */
+        /* ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°tats arena-style ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordures et glow gÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©s plus bas avec spÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cificitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©levÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e */
 
         /* ========== STYLES PAR FACTION - Bordures mono-couleur ========== */
         .card.arena-style.faction-green { --faction-border: #4a7a5a; }
@@ -528,7 +527,7 @@
             background: rgba(0, 0, 0, 0.5) !important;
             border: 2px solid var(--faction-border);
         }
-        /* Ronds séparés ATK / HP — toutes factions */
+        /* Ronds sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©parÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©s ATK / HP ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â toutes factions */
         .card.arena-style[class*="faction-"] .arena-stats {
             left: 2px;
             right: 2px;
@@ -554,22 +553,22 @@
             color: #e5e5e5;
         }
         .card.arena-style[class*="faction-"] .arena-stats .arena-atk {
-            background: linear-gradient(225deg, #f59415, #e67e22, #c46a10);
+            background: linear-gradient(to bottom right, #fbbf24, #f59e0b, #d97706);
             background-clip: padding-box;
             border: 2px solid #ff6b2196;
             border-radius: 2px 10px 2px 10px;
         }
         .card.arena-style[class*="faction-"] .arena-stats .arena-hp {
-            background: linear-gradient(135deg, #ef5350, #d32f2f, #a52a2a);
+            background: linear-gradient(to bottom right, #f472b6, #e11d48, #be123c);
             background-clip: padding-box;
             border: 2px solid #ff440180;
             border-radius: 10px 2px 10px 2px;
         }
-        /* Bâtiments — stats uniquement à droite (pas de left) */
+        /* BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢timents ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â stats uniquement ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  droite (pas de left) */
         .card.arena-style.card-building[class*="faction-"] .arena-stats {
             left: auto;
         }
-        /* Board & drag ghost — ronds plus grands */
+        /* Board & drag ghost ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ronds plus grands */
         .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-atk,
         .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-hp,
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-atk,
@@ -578,7 +577,7 @@
             height: 25px;
             font-size: 20px;
         }
-        /* Ghost hors #game-scaler: adapter ATK/HP au zoom global écran */
+        /* Ghost hors #game-scaler: adapter ATK/HP au zoom global ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cran */
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-atk,
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-hp {
             width: calc(40px * var(--game-scale, 1));
@@ -602,13 +601,13 @@
         }
         .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-atk,
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-atk {
-            background: linear-gradient(225deg, #f59415, #e67e22, #c46a10);
+            background: linear-gradient(to bottom right, #fbbf24, #f59e0b, #d97706);
             background-clip: padding-box;
             border: 2px solid #ff6b2196;
         }
         .card-slot .card.arena-style.on-field[class*="faction-"] .arena-stats .arena-hp,
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-hp {
-            background: linear-gradient(135deg, #ef5350, #d32f2f, #a52a2a);
+            background: linear-gradient(to bottom right, #f472b6, #e11d48, #be123c);
             background-clip: padding-box;
             border: 2px solid #ff440180;
         }
@@ -616,7 +615,7 @@
         .drag-ghost-card.arena-style[class*="faction-"] .arena-stats .arena-hp {
             border-width: calc(2px * var(--game-scale, 1));
         }
-        /* Boosted/reduced — spécificité suffisante pour écraser la couleur par défaut */
+        /* Boosted/reduced ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â spÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cificitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© suffisante pour ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©craser la couleur par dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©faut */
         .card.arena-style[class*="faction-"] .arena-stats .arena-atk.boosted,
         .card.arena-style[class*="faction-"] .arena-stats .arena-hp.boosted {
             color: #7fff7f;
@@ -629,7 +628,7 @@
         /* Faction white - texte clair */
         .card.arena-style.faction-white .arena-name { color: #e5e5e5; }
 
-        /* Cartes créatures sur le board — nom plus grand */
+        /* Cartes crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©atures sur le board ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â nom plus grand */
         .card-slot .card.arena-style .arena-name {
             font-size: 0.8em;
         }
@@ -639,7 +638,7 @@
         .card-slot .card.arena-style.on-field .arena-stats {
         }
 
-        /* Code couleur des bordures — double classe pour écraser faction */
+        /* Code couleur des bordures ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â double classe pour ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©craser faction */
         .card.card.just-played, .card.arena-style.just-played[class*="faction-"] {
             border: 2px solid rgba(255,255,255,0.4) !important;
         }
@@ -651,20 +650,20 @@
             border-color: #3498db !important;
         }
 
-        /* Cartes jouables en main — bordure normale, le glow Canvas est derrière */
+        /* Cartes jouables en main ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordure normale, le glow Canvas est derriÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨re */
         .card.card.playable, .card.arena-style.playable[class*="faction-"] {
             border-color: #353535 !important;
             overflow: visible;
         }
 
-        /* Surbrillance orange quand un sort/piège cible une créature */
+        /* Surbrillance orange quand un sort/piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ge cible une crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature */
         .card.card.spell-hover-target, .card.arena-style.spell-hover-target[class*="faction-"] {
             border: 2px solid transparent !important;
             overflow: visible;
         }
 
 
-        /* === Animated gradient borders (conic-gradient rotatif dans un ::after masqué) === */
+        /* === Animated gradient borders (conic-gradient rotatif dans un ::after masquÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©) === */
         @property --border-angle {
             syntax: '<angle>';
             initial-value: 0deg;
@@ -674,7 +673,7 @@
             to { --border-angle: 360deg; }
         }
 
-        /* Slots — bordures mono-couleur (comme les trap-slots) */
+        /* Slots ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordures mono-couleur (comme les trap-slots) */
         .card-slot.valid-target {
             border-color: #62d7ff !important;
             background: rgba(98,215,255,0.15) !important;
@@ -685,7 +684,7 @@
             background: rgba(241,196,15,0.2) !important;
         }
 
-        /* Héros — bordures mono-couleur */
+        /* HÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ros ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordures mono-couleur */
         .hero-card.hero-targetable {
             border-color: #62d7ff !important;
             background: rgba(98,215,255,0.15) !important;
@@ -695,15 +694,24 @@
             background: rgba(241,196,15,0.2) !important;
         }
 
-        /* Bleu = créature ciblable par un sort (avant hover) */
+        /* Bleu = crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature ciblable par un sort (avant hover) */
         .card.card.spell-targetable, .card.arena-style.spell-targetable[class*="faction-"] {
             border-color: #62d7ff !important;
         }
-        /* Orange mono-couleur = spell hover sur créature */
+        /* Orange mono-couleur = spell hover sur crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature */
         .card.card.spell-hover-target, .card.arena-style.spell-hover-target[class*="faction-"] {
             border-color: #f39c12 !important;
             box-shadow: 0 0 8px rgba(243, 156, 18, 0.5);
         }
+
+        /* Pre-signal piege : on coupe les glows terrain, seules les cibles gardent le glow orange existant. */
+        #battlefield.trap-warning-mode .card-slot .card:not(.spell-hover-target) .card-glow-canvas {
+            opacity: 0 !important;
+        }
+        #battlefield.trap-warning-mode .card-slot .card:not(.spell-hover-target) {
+            box-shadow: none !important;
+        }
+
         /* Ghost card : pas de ::after gradient, le glow orange remplace */
 
         /* ANIMATIONS */
@@ -736,7 +744,7 @@
         }
         
         
-        /* Carte fantôme pour animation de déplacement */
+        /* Carte fantÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´me pour animation de dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©placement */
         .card-moving {
             position: fixed;
             z-index: 3000;
@@ -744,7 +752,7 @@
             transition: left 0.5s ease-in-out, top 0.5s ease-in-out;
         }
         
-        /* Carte affichée lors des sorts/pièges */
+        /* Carte affichÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e lors des sorts/piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ges */
         .card-showcase { 
             position: fixed; 
             top: 50%; 
@@ -779,20 +787,20 @@
         .attack-projectile { position: fixed; z-index: 1000; font-size: 2em; pointer-events: none; transition: transform 0.3s ease-out, left 0.3s ease-out, top 0.3s ease-out; }
         
         
-        /* Les animations de dégâts sont maintenant gérées par PixiJS */
+        /* Les animations de dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©gÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ts sont maintenant gÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©es par PixiJS */
         /* Voir combat-animations.js pour les griffures et effets visuels */
 
 
-        /* Animation de lévitation pour les créatures volantes */
+        /* Animation de lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©vitation pour les crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©atures volantes */
         .card.on-field {
             box-shadow: none;
         }
         .card.flying-creature {
             box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-            /* Décalage vers le haut pour montrer l'emplacement en dessous */
+            /* DÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©calage vers le haut pour montrer l'emplacement en dessous */
             position: relative;
             z-index: 10;
-            /* GPU compositing : la carte + stats bougent comme une seule texture, élimine le tremblement */
+            /* GPU compositing : la carte + stats bougent comme une seule texture, ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©limine le tremblement */
             will-change: transform;
             backface-visibility: hidden;
         }
@@ -800,9 +808,9 @@
         /* Death Transform: Petit Os -> Pile d'Os (tout en rAF, pas de keyframes) */
 
 
-        /* Le slot avec un volant - pas de couleur spéciale */
+        /* Le slot avec un volant - pas de couleur spÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ciale */
         
-        /* MAIN DU JOUEUR - 30% cachée (partie inférieure hors écran) */
+        /* MAIN DU JOUEUR - 30% cachÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e (partie infÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rieure hors ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cran) */
         .my-hand {
             position: absolute;
             bottom: -30px; /* Cache ~20% de la carte */
@@ -821,6 +829,26 @@
             z-index: 1;
             transform-origin: bottom center;
         }
+        /* Mode host Pixi: la logique reste DOM, le visuel est dessiné en overlay Pixi */
+        .my-hand .card.pixi-hand-host.pixi-hand-ready {
+            background: transparent !important;
+            background-image: none !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
+        .my-hand .card.pixi-hand-host.pixi-hand-ready > * {
+            visibility: hidden !important;
+        }
+        /* Board host Pixi: garder les marqueurs DOM, masquer le rendu carte DOM */
+        .card-slot .card.pixi-board-host.pixi-board-ready {
+            background: transparent !important;
+            background-image: none !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
+        .card-slot .card.pixi-board-host.pixi-board-ready > :not(.gaze-marker):not(.poison-marker):not(.entrave-marker):not(.buff-marker):not(.card-glow-canvas) {
+            visibility: hidden !important;
+        }
         .my-hand .card:first-child { margin-left: 0; }
         .my-hand .card:hover:not(.dragging), .my-hand .card.dragging {
             transform: translateY(-50px);
@@ -835,10 +863,10 @@
             z-index: 101 !important;
         }
         
-        /* MAIN ADVERSE - 30% cachée */
+        /* MAIN ADVERSE - 30% cachÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e */
         .opp-hand {
             position: absolute;
-            bottom: -60px; /* 50% cachée */
+            bottom: -60px; /* 50% cachÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e */
             right: 185px;
             display: flex; 
             padding: 10px 15px 0 15px;
@@ -873,7 +901,7 @@
 
         /* ========== MELODY LOCK & PETRIFICATION ========== */
 
-        /* Créature bloquée par Mélodie — terni par-dessus tout sauf stats */
+        /* CrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature bloquÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e par MÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©lodie ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â terni par-dessus tout sauf stats */
         .card.melody-locked {
             position: relative;
             isolation: isolate;
@@ -893,12 +921,12 @@
             z-index: 15 !important;
         }
 
-        /* Créature pétrifiée — N&B complet sauf stats */
+        /* CrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ature pÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©trifiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â N&B complet sauf stats */
         .card.petrified {
             position: relative;
             isolation: isolate;
         }
-        /* Couche de désaturation via mix-blend-mode */
+        /* Couche de dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©saturation via mix-blend-mode */
         .card.petrified::before {
             content: '';
             position: absolute;
@@ -910,12 +938,12 @@
             border-radius: 8px;
             pointer-events: none;
         }
-        /* Stats restent colorées au-dessus du N&B */
+        /* Stats restent colorÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©es au-dessus du N&B */
         .card.petrified .arena-stats {
             z-index: 15 !important;
         }
 
-        /* Jeton compteur de gaze (Medusa) — bordure gradient violet rotatif */
+        /* Jeton compteur de gaze (Medusa) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordure gradient violet rotatif */
         .gaze-marker {
             position: absolute;
             top: 2px;
@@ -988,7 +1016,7 @@
             z-index: 20;
         }
 
-        /* Cacher titre, stats et markers sur les cartes au cimetière (pile uniquement, pas la popup) */
+        /* Cacher titre, stats et markers sur les cartes au cimetiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨re (pile uniquement, pas la popup) */
         .grave-card-layer .card.in-graveyard .arena-title,
         .grave-card-layer .card.in-graveyard .arena-stats,
         .grave-card-layer .card.in-graveyard .arena-mana,
@@ -1016,7 +1044,7 @@
             animation: markerPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
 
-        /* Flash du compteur quand il s'incrémente */
+        /* Flash du compteur quand il s'incrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©mente */
         @keyframes markerCountBump {
             0% { transform: scale(1); }
             30% { transform: scale(1.4); color: #fff; }
@@ -1025,3 +1053,6 @@
         .marker-bump {
             animation: markerCountBump 0.3s ease-out;
         }
+
+
+

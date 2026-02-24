@@ -571,6 +571,11 @@ function createRoom() {
     socket.emit('createRoom', (r) => {
         if (r.success) {
             myNum = r.playerNum;
+            if (typeof window !== 'undefined') {
+                window.__visTraceContext = window.__visTraceContext || {};
+                window.__visTraceContext.roomCode = r.code || null;
+                window.__visTraceContext.playerNum = Number(r.playerNum || 0);
+            }
             document.getElementById('room-code-display').textContent = r.code;
             document.getElementById('lobby-menu').classList.add('hidden');
             document.getElementById('lobby-waiting').classList.remove('hidden');
@@ -582,7 +587,14 @@ function joinRoom() {
     const code = document.getElementById('room-code-input').value.trim();
     if (!code) return;
     socket.emit('joinRoom', code, (r) => {
-        if (r.success) myNum = r.playerNum;
+        if (r.success) {
+            myNum = r.playerNum;
+            if (typeof window !== 'undefined') {
+                window.__visTraceContext = window.__visTraceContext || {};
+                window.__visTraceContext.roomCode = code;
+                window.__visTraceContext.playerNum = Number(r.playerNum || 0);
+            }
+        }
         else alert(r.error);
     });
 }

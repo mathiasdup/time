@@ -134,6 +134,8 @@ const CardGlow = (() => {
         _dirty = false;
         const newTargets = [];
         const activeEls = new Set();
+        const battlefieldEl = document.getElementById('battlefield');
+        const trapWarningMode = !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
 
         // Cartes en main (playable, pas committed, pas cachée par custom-dragging)
         // Cache borderW/borderR par élément pour éviter getComputedStyle à chaque frame
@@ -168,23 +170,33 @@ const CardGlow = (() => {
             activeEls.add(ghostCard);
         }
 
-        // Cartes en combat (glow violet) — prioritaire sur le glow vert
-        const combatCards = document.querySelectorAll('.card-slot .card[data-in-combat="true"]');
-        for (const cardEl of combatCards) {
-            const { borderW, borderR } = getCachedBorder(cardEl);
-            newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR });
-            activeEls.add(cardEl);
-        }
-
-        // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
-        const spellDragging = typeof dragged !== 'undefined' && dragged && dragged.type === 'spell';
-        if (!spellDragging) {
-            const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
-            for (const cardEl of attackCards) {
-                if (activeEls.has(cardEl)) continue; // déjà en combat (glow violet)
+        // Mode warning piège : couper tous les glows du board, ne garder qu'un glow orange sur les cibles.
+        if (trapWarningMode) {
+            const trapTargetCards = document.querySelectorAll('#battlefield .card-slot .card.spell-hover-target');
+            for (const cardEl of trapTargetCards) {
                 const { borderW, borderR } = getCachedBorder(cardEl);
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR });
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR });
                 activeEls.add(cardEl);
+            }
+        } else {
+            // Cartes en combat (glow violet) — prioritaire sur le glow vert
+            const combatCards = document.querySelectorAll('.card-slot .card[data-in-combat="true"]');
+            for (const cardEl of combatCards) {
+                const { borderW, borderR } = getCachedBorder(cardEl);
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR });
+                activeEls.add(cardEl);
+            }
+
+            // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
+            const spellDragging = typeof dragged !== 'undefined' && dragged && dragged.type === 'spell';
+            if (!spellDragging) {
+                const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
+                for (const cardEl of attackCards) {
+                    if (activeEls.has(cardEl)) continue; // déjà en combat (glow violet)
+                    const { borderW, borderR } = getCachedBorder(cardEl);
+                    newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR });
+                    activeEls.add(cardEl);
+                }
             }
         }
 
@@ -199,19 +211,19 @@ const CardGlow = (() => {
         _cachedTargets = newTargets;
     }
 
-    // ── Boucle d'animation (30fps cap) ──
+    // ── Boucle d'animation (20fps cap) ──
 
-    const FRAME_INTERVAL = 1000 / 30; // 30fps — fluide visuellement, 2× moins de CPU
+    const FRAME_INTERVAL = 1000 / 20; // 20fps — fluide visuellement, 2× moins de CPU
     let _lastFrameTime = 0;
 
     function update(timestamp) {
         animId = requestAnimationFrame(update);
 
-        // Cap à 30fps : skip si le delta est trop court
+        // Cap à 20fps : skip si le delta est trop court
         if (timestamp - _lastFrameTime < FRAME_INTERVAL) return;
         _lastFrameTime = timestamp;
 
-        const dt = lastTime ? (timestamp - lastTime) / 1000 : 1 / 60;
+        const dt = lastTime ? (timestamp - lastTime) / 1000 : (FRAME_INTERVAL / 1000);
         lastTime = timestamp;
         elapsed += dt;
 
@@ -228,13 +240,16 @@ const CardGlow = (() => {
             }
         }
 
+        const battlefieldEl = document.getElementById('battlefield');
+        const trapWarningMode = !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
+
         for (const target of _cachedTargets) {
             const { el: cardEl, layers, borderW, borderR } = target;
             // Vérifier que l'élément est toujours dans le DOM
             if (!cardEl.isConnected) continue;
 
             // Masquer le glow si la carte est ciblée par un sort commité (hover)
-            if (cardEl.classList.contains('spell-hover-target')) {
+            if (cardEl.classList.contains('spell-hover-target') && !trapWarningMode) {
                 if (target._canvas) target._canvas.style.display = 'none';
                 continue;
             }

@@ -7,12 +7,86 @@ const { performance } = require('perf_hooks');
 
 // Import game modules
 const { CardDB, CardByIdMap, HERO_NAMES, HEROES, resetCardForGraveyard, addToGraveyard, createDeck, createPlayerState, createGameState } = require('./game/cards');
+const {
+    CANONICAL_COMBAT_SLOT_PHASES,
+    createCombatCycleId,
+    markDeathResolvedInCycle,
+    markOnDeathResolvedInCycle,
+    markPoisonDeathResolvedInCycle
+} = require('./game/combat-canonical');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" }, perMessageDeflate: true });
 
+app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+const VIS_TRACE_DIR = path.join(__dirname, '_tmp', 'vis-trace');
+
+function ensureVisTraceDir() {
+    try {
+        fs.mkdirSync(VIS_TRACE_DIR, { recursive: true });
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function sanitizeFilePart(value, fallback = 'unknown') {
+    const raw = String(value || fallback);
+    const clean = raw.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return clean.length > 60 ? clean.slice(0, 60) : (clean || fallback);
+}
+
+app.post('/api/vis-trace/upload', (req, res) => {
+    try {
+        if (!ensureVisTraceDir()) {
+            return res.status(500).json({ ok: false, error: 'vis_trace_dir_unavailable' });
+        }
+
+        const body = req.body || {};
+        const lines = Array.isArray(body.lines) ? body.lines : [];
+        if (!lines.length) {
+            return res.status(400).json({ ok: false, error: 'empty_lines' });
+        }
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const roomCode = sanitizeFilePart(body.roomCode, 'room_unknown');
+        const playerNum = Number.isFinite(Number(body.playerNum)) ? Number(body.playerNum) : 0;
+        const turn = Number.isFinite(Number(body.turn)) ? Number(body.turn) : 0;
+        const reason = sanitizeFilePart(body.reason, 'manual');
+        const sessionId = sanitizeFilePart(body.sessionId, 'session');
+
+        const fileName = `vistrace-${ts}-room-${roomCode}-p${playerNum}-t${turn}-${reason}-${sessionId}.log`;
+        const filePath = path.join(VIS_TRACE_DIR, fileName);
+
+        const header = {
+            savedAt: Date.now(),
+            roomCode: body.roomCode || null,
+            playerNum,
+            turn,
+            phase: body.phase || null,
+            reason: body.reason || null,
+            sessionId: body.sessionId || null,
+            lineCount: lines.length
+        };
+        const payload = `# ${JSON.stringify(header)}\n${lines.join('\n')}\n`;
+        fs.writeFileSync(filePath, payload, 'utf8');
+
+        return res.json({
+            ok: true,
+            file: fileName,
+            lineCount: lines.length
+        });
+    } catch (e) {
+        return res.status(500).json({
+            ok: false,
+            error: 'vis_trace_write_failed',
+            message: String(e && e.message ? e.message : e)
+        });
+    }
+});
 
 // ==================== RESOLUTION V2 ====================
 const RESOLUTION_V2 = true; // Nouveau systÃƒÂ¨me de rÃƒÂ©solution simplifiÃƒÂ©
@@ -236,27 +310,11 @@ const ANIM_TIMING = {
     phaseIntro: 600,   // temps d'affichage du nom de phase
 };
 
-// ==================== COMBAT PIPELINE (15 PHASES) ====================
+// ==================== COMBAT PIPELINE (CANONIQUE) ====================
 const COMBAT_PHASE_TRACE = process.env.BATAILLE_PHASE_TRACE === '1';
-const COMBAT_PHASES_15 = Object.freeze([
-    'pre_hit',
-    'hit_attacker',
-    'on_hit_attacker',
-    'riposte',
-    'on_hit_riposte',
-    'return_to_slot',
-    'power_primary',
-    'life_abilities',
-    'poison_damage',
-    'death_detect',
-    'grave_animations',
-    'power_post_poison',
-    'regeneration',
-    'end_of_combat',
-    'post_end_of_combat'
-]);
+const COMBAT_PHASES = CANONICAL_COMBAT_SLOT_PHASES;
 const COMBAT_PHASE_INDEX = Object.freeze(
-    COMBAT_PHASES_15.reduce((acc, phase, idx) => {
+    COMBAT_PHASES.reduce((acc, phase, idx) => {
         acc[phase] = idx;
         return acc;
     }, {})
@@ -269,7 +327,7 @@ function createCombatPhaseTracker(log, row, col) {
         if (idx === undefined) return;
         if (idx < lastPhaseIdx) {
             log(
-                `[PHASE-15][WARN] slot=${row},${col} phase-regression from=${COMBAT_PHASES_15[lastPhaseIdx]} to=${phase} ${meta}`,
+                `[PHASE][WARN] slot=${row},${col} phase-regression from=${COMBAT_PHASES[lastPhaseIdx]} to=${phase} ${meta}`,
                 'error'
             );
         } else if (idx > lastPhaseIdx) {
@@ -277,7 +335,7 @@ function createCombatPhaseTracker(log, row, col) {
         }
         if (COMBAT_PHASE_TRACE) {
             log(
-                `[PHASE-15] slot=${row},${col} phase=${phase}${meta ? ` ${meta}` : ''}`,
+                `[PHASE] slot=${row},${col} phase=${phase}${meta ? ` ${meta}` : ''}`,
                 'action'
             );
         }
@@ -286,7 +344,7 @@ function createCombatPhaseTracker(log, row, col) {
 
 function markCombatPhase(log, row, col, phase, meta = '') {
     if (!COMBAT_PHASE_TRACE) return;
-    log(`[PHASE-15] slot=${row},${col} phase=${phase}${meta ? ` ${meta}` : ''}`, 'action');
+    log(`[PHASE] slot=${row},${col} phase=${phase}${meta ? ` ${meta}` : ''}`, 'action');
 }
 
 // GÃƒÂ©nÃƒÂ©rer un code de room unique
@@ -384,19 +442,42 @@ function getPublicGameState(room, forPlayer) {
         oppTraps = opp.revealTraps;
     }
 
-    // Recalculer poisonX (poisonPerGraveyard) ÃƒÂ  chaque ÃƒÂ©mission de state
+    // Recalculer poisonX dynamique Ã  chaque Ã©mission de state
     const patchPoison = (card, graveyardLen, source) => {
-        if (!card || !card.poisonPerGraveyard) return card;
-        const basePoisonX = card.basePoisonX ?? card.poisonX ?? 1;
+        if (!card) return card;
+        const basePoisonRaw = Number(card.basePoisonX ?? card.poisonX ?? 1);
+        const basePoisonX = Number.isFinite(basePoisonRaw) ? Math.max(0, Math.floor(basePoisonRaw)) : 1;
         if (card.basePoisonX === undefined) card.basePoisonX = basePoisonX;
-        card.poisonX = basePoisonX + Math.floor(graveyardLen / card.poisonPerGraveyard);
+
+        if (card.poisonPerGraveyard) {
+            const stepRaw = Number(card.poisonPerGraveyard);
+            const step = Number.isFinite(stepRaw) && stepRaw > 0 ? Math.floor(stepRaw) : 1;
+            card.poisonX = basePoisonX + Math.floor(graveyardLen / step);
+        } else if (card.poisonEqualsTotalPoisonInPlay) {
+            card.poisonX = basePoisonX + cachedPoisonCounters;
+        }
         return card;
     };
     const patchField = (field, graveyardLen, source) => field.map(row => row.map(card => patchPoison(card, graveyardLen, source)));
+    const patchHandCard = (card, graveyardLen, graveyardCreatureCount, source) => {
+        if (!card) return card;
+        patchPoison(card, graveyardLen, source);
+
+        if (card.atkPerGraveyard) {
+            const baseAtkRaw = Number(card.baseAtk ?? card.atk ?? 0);
+            const baseAtk = Number.isFinite(baseAtkRaw) ? Math.floor(baseAtkRaw) : 0;
+            if (card.baseAtk === undefined) card.baseAtk = baseAtk;
+            card.atk = baseAtk + Math.max(0, graveyardCreatureCount);
+        } else if (card.atkPerPoisonInPlay) {
+            card.atk = Math.max(0, cachedPoisonCounters);
+        }
+        return card;
+    };
 
     const cachedPoisonCounters = countTotalPoisonCounters(room);
     const meGraveyardLen = me.graveyard.length;
     const oppGraveyardLen = opp.graveyard.length;
+    const meGraveyardCreatureCount = me.graveyard.reduce((n, g) => n + (g?.type === 'creature' ? 1 : 0), 0);
 
     // N'envoyer les tableaux complets de cimetiere que s'ils ont change
     // pour ce receveur (sinon, le client conserve le precedent).
@@ -411,7 +492,7 @@ function getPublicGameState(room, forPlayer) {
     gyCache.opp = oppGraveyardSig;
 
     // Patch main
-    for (const card of me.hand) patchPoison(card, meGraveyardLen, 'HAND');
+    for (const card of me.hand) patchHandCard(card, meGraveyardLen, meGraveyardCreatureCount, 'HAND');
 
     // Patch terrain Ã¢â‚¬â€ on crÃƒÂ©e toujours une copie mappÃƒÂ©e pour garantir les bonnes valeurs
     let meField = patchField(me.field, meGraveyardLen, 'ME_FIELD');
@@ -603,6 +684,35 @@ function emitAnimation(room, type, data) {
     io.to(room.code).emit('animation', { type, ...data });
 }
 
+function addPoisonCounters(card, amount, meta = {}) {
+    if (!card) return 0;
+    const incNum = Number(amount);
+    if (!Number.isFinite(incNum) || incNum <= 0) return 0;
+    const inc = Math.floor(incNum);
+    if (inc <= 0) return 0;
+    const before = Number(card.poisonCounters) || 0;
+    const after = before + inc;
+    card.poisonCounters = after;
+    const audit = {
+        source: meta.source || 'unknown',
+        turn: meta.turn ?? null,
+        row: meta.row ?? null,
+        col: meta.col ?? null,
+        sourcePlayer: meta.sourcePlayer ?? null,
+        byCard: meta.byCard || null,
+        byUid: meta.byUid || null,
+        added: inc,
+        before,
+        after,
+        at: Date.now()
+    };
+    card._lastPoisonAudit = audit;
+    if (!Array.isArray(card._poisonAuditTrail)) card._poisonAuditTrail = [];
+    card._poisonAuditTrail.push(audit);
+    if (card._poisonAuditTrail.length > 6) card._poisonAuditTrail.shift();
+    return inc;
+}
+
 function emitResolutionLog(room, msg, type) {
     perfRecordResolutionLog(room);
     io.to(room.code).emit('resolutionLog', { msg, type });
@@ -630,23 +740,21 @@ function rowContainsRadjawak(room, row) {
     return false;
 }
 
-async function applyRowRegeneration(room, row, log, sleep) {
+async function applySlotRegeneration(room, row, col, log, sleep) {
     const regenBatch = [];
     for (let playerNum = 1; playerNum <= 2; playerNum++) {
-        for (let col = 0; col < 2; col++) {
-            const card = room.gameState.players[playerNum].field[row][col];
-            if (!card || card.currentHp <= 0) continue;
-            if (!card.abilities?.includes('regeneration')) continue;
-            if (card.isBuilding) continue;
-            const regenAmount = Math.max(0, card.regenerationX || 1);
-            if (regenAmount <= 0) continue;
-            const oldHp = card.currentHp;
-            card.currentHp = Math.min(card.hp, oldHp + regenAmount);
-            const healed = card.currentHp - oldHp;
-            if (healed <= 0) continue;
-            regenBatch.push({ type: 'regen', player: playerNum, row, col, amount: healed });
-            log(`[REGEN] ${card.name} +${healed} HP (${oldHp} -> ${card.currentHp})`, 'heal');
-        }
+        const card = room.gameState.players[playerNum].field[row][col];
+        if (!card || card.currentHp <= 0) continue;
+        if (!card.abilities?.includes('regeneration')) continue;
+        if (card.isBuilding) continue;
+        const regenAmount = Math.max(0, card.regenerationX || 1);
+        if (regenAmount <= 0) continue;
+        const oldHp = card.currentHp;
+        card.currentHp = Math.min(card.hp, oldHp + regenAmount);
+        const healed = card.currentHp - oldHp;
+        if (healed <= 0) continue;
+        regenBatch.push({ type: 'regen', player: playerNum, row, col, amount: healed });
+        log(`[REGEN] ${card.name} +${healed} HP (${oldHp} -> ${card.currentHp})`, 'heal');
     }
 
     if (regenBatch.length === 0) return;
@@ -655,56 +763,228 @@ async function applyRowRegeneration(room, row, log, sleep) {
     await sleep(900);
 }
 
-async function resolvePostEndOfCombatStabilization(room, row, log, sleep, checkVictory) {
-    const MAX_PASSES = 8;
-    for (let pass = 0; pass < MAX_PASSES; pass++) {
-        const pendingDeaths = [];
-        for (let p = 1; p <= 2; p++) {
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 2; c++) {
-                    const card = room.gameState.players[p].field[r][c];
-                    if (card && card.currentHp <= 0) {
-                        pendingDeaths.push({ player: p, row: r, col: c, card });
-                    }
+async function processEndOfCombatForSlot(room, row, col, log, sleep, checkVictory) {
+    let hasEffects = false;
+    for (let p = 1; p <= 2; p++) {
+        const card = room.gameState.players[p].field[row][col];
+        if (!card || card.currentHp <= 0 || !card.endOfCombat || !card._attackedThisCombat || card._endOfCombatResolved) continue;
+        hasEffects = true;
+    }
+    if (!hasEffects) return false;
+
+    await sleep(300);
+
+    let resolvedAny = false;
+    for (let p = 1; p <= 2; p++) {
+        const card = room.gameState.players[p].field[row][col];
+        const resolved = await resolveEndOfCombatForCard(room, card, p, row, col, log, sleep);
+        if (resolved) resolvedAny = true;
+    }
+
+    if (resolvedAny) {
+        await resolveSpectreReanimates(room, log, sleep);
+    }
+
+    const winner = checkVictory();
+    return winner !== null;
+}
+
+async function applySlotPoisonDamage(room, row, col, attackedSlots, log, sleep, checkVictory) {
+    const poisonEffects = [];
+    const poisonPowerCandidates = [];
+    const sameSlotTickKey = `${room.gameState.turn}:${row}:${col}`;
+
+    if (!Array.isArray(attackedSlots) || attackedSlots.length === 0) {
+        return { gameEnded: false, poisonPowerCandidates };
+    }
+
+    for (const slot of attackedSlots) {
+        const playerNum = Number(slot?.playerNum);
+        const slotRow = Number(slot?.row);
+        const slotCol = Number(slot?.col);
+        if (playerNum !== 1 && playerNum !== 2) continue;
+        if (slotRow !== row || slotCol !== col) continue;
+
+        const card = room.gameState.players[playerNum].field[slotRow][slotCol];
+        if (!card || card.currentHp <= 0) continue;
+        const poisonCountersNum = Number(card.poisonCounters);
+        if (!Number.isFinite(poisonCountersNum) || poisonCountersNum <= 0) {
+            log(
+                `[POISON-TICK-DBG] skip-invalid-counters card=${card.name} uid=${card.uid || '-'} slot=${slotRow},${slotCol} raw=${card.poisonCounters}`,
+                'action'
+            );
+            continue;
+        }
+        if (card._skipPoisonTickKey === sameSlotTickKey) {
+            delete card._skipPoisonTickKey;
+            continue;
+        }
+        if (card.isBuilding || (card.abilities && card.abilities.includes('antitoxin'))) continue;
+
+        const damage = Math.max(0, Math.floor(poisonCountersNum));
+        if (damage <= 0) continue;
+        const currentHpNum = Number(card.currentHp);
+        if (!Number.isFinite(currentHpNum)) {
+            log(
+                `[POISON-TICK-DBG] invalid-currentHp-reset card=${card.name} uid=${card.uid || '-'} slot=${slotRow},${slotCol} rawCurrentHp=${card.currentHp} hp=${card.hp}`,
+                'action'
+            );
+            card.currentHp = Number.isFinite(Number(card.hp)) ? Number(card.hp) : 0;
+        }
+        const poisonAudit = card._lastPoisonAudit || null;
+        log(
+            `[POISON-TICK-DBG] card=${card.name} uid=${card.uid || '-'} slot=${slotRow},${slotCol} counters=${card.poisonCounters} dmg=${damage} lastSource=${poisonAudit?.source || 'unknown'} lastTurn=${poisonAudit?.turn ?? 'n/a'} lastBy=${poisonAudit?.byCard || '-'} lastAdded=${poisonAudit?.added ?? 'n/a'}`,
+            'action'
+        );
+        card.currentHp -= damage;
+        log(`[POISON] ${card.name} subit ${damage} degat(s) de poison! (${Math.max(0, card.currentHp)}/${card.hp})`, 'damage');
+        poisonEffects.push({
+            type: 'poisonDamage',
+            player: playerNum,
+            row: slotRow,
+            col: slotCol,
+            amount: damage,
+            source: 'combat.poisonTick',
+            poisonCounters: card.poisonCounters,
+            cardName: card.name,
+            cardUid: card.uid || null,
+            lastPoisonSource: poisonAudit?.source || null,
+            lastPoisonTurn: poisonAudit?.turn ?? null,
+            lastPoisonByCard: poisonAudit?.byCard || null,
+            lastPoisonAdded: poisonAudit?.added ?? null
+        });
+
+        if (card.currentHp <= 0) {
+            card._killedByPoisonTick = true;
+        } else if (card.abilities?.includes('power')) {
+            poisonPowerCandidates.push({
+                playerNum,
+                row: slotRow,
+                col: slotCol,
+                uid: card.uid,
+                cardName: card.name,
+                bonus: card.powerX || 1
+            });
+        }
+    }
+
+    if (poisonEffects.length === 0) {
+        return { gameEnded: false, poisonPowerCandidates };
+    }
+
+    emitAnimationBatch(room, poisonEffects);
+    emitStateToBoth(room);
+    await sleep(1400);
+
+    const winner = checkVictory();
+    return { gameEnded: winner !== null, poisonPowerCandidates };
+}
+
+async function resolveCombatDeathsAndPostEffects(room, postCombatEffects, log, sleep, checkVictory, options = {}) {
+    const includePostCombatEffects = options.includePostCombatEffects !== false;
+    const includePoisonDeathEffects = options.includePoisonDeathEffects !== false;
+    const cycleId = options.cycleId || null;
+    const deaths = [];
+    for (let p = 1; p <= 2; p++) {
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 2; c++) {
+                const card = room.gameState.players[p].field[r][c];
+                if (card && card.currentHp <= 0) {
+                    if (cycleId && !markDeathResolvedInCycle(card, cycleId)) continue;
+                    deaths.push({ player: p, row: r, col: c, card });
                 }
             }
         }
-        if (pendingDeaths.length === 0) return false;
+    }
 
-        log(`[EOC-STAB] row=${row} pass=${pass + 1} pendingDeaths=${pendingDeaths.length}`, 'action');
+    const normalDeaths = [];
+    const poisonDeaths = [];
+    if (deaths.length > 0) {
         const deathAnims = [];
-        const normalDeaths = [];
-        for (const d of pendingDeaths) {
+        for (const d of deaths) {
+            const diedFromPoison = !!d.card._killedByPoisonTick;
+            delete d.card._killedByPoisonTick;
             const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
             if (result.transformed) {
                 deathAnims.push({ type: 'deathTransform', player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
             } else {
                 deathAnims.push({ type: 'death', player: d.player, row: d.row, col: d.col, card: d.card });
                 normalDeaths.push(d);
+                if (diedFromPoison) poisonDeaths.push(d);
             }
         }
         if (deathAnims.length > 0) emitAnimationBatch(room, deathAnims);
         emitStateToBoth(room);
         await sleep(1100);
         await resolveImmediateWhenTriggersAfterDeaths(room, log, sleep);
-
-        if (normalDeaths.length > 0) {
-            const onDeathEffects = collectOnDeathEffects(normalDeaths);
-            if (onDeathEffects.length > 0) {
-                await resolvePostCombatEffects(room, onDeathEffects, log, sleep);
-            }
-        }
-        await applyPendingHealOnDeath(room, log);
-
-        recalcDynamicAtk(room);
-        emitStateToBoth(room);
-
-        const winner = checkVictory();
-        if (winner !== null) return true;
     }
 
-    log(`[EOC-STAB][WARN] row=${row} reached max passes`, 'error');
-    return checkVictory() !== null;
+    const combinedEffects = [];
+    if (includePostCombatEffects && Array.isArray(postCombatEffects) && postCombatEffects.length > 0) {
+        combinedEffects.push(...postCombatEffects);
+    }
+    if (normalDeaths.length > 0) {
+        const onDeathDeaths = cycleId
+            ? normalDeaths.filter((d) => markOnDeathResolvedInCycle(d.card, cycleId))
+            : normalDeaths;
+        const onDeathEffects = collectOnDeathEffects(onDeathDeaths);
+        if (onDeathEffects.length > 0) combinedEffects.push(...onDeathEffects);
+    }
+
+    if (combinedEffects.length > 0) {
+        await resolvePostCombatEffects(room, combinedEffects, log, sleep);
+    }
+    if (includePoisonDeathEffects && poisonDeaths.length > 0) {
+        const poisonCandidates = cycleId
+            ? poisonDeaths.filter((d) => markPoisonDeathResolvedInCycle(d.card, cycleId))
+            : poisonDeaths;
+        if (poisonCandidates.length > 0) {
+            await processOnPoisonDeathEffects(room, poisonCandidates, log, sleep);
+        }
+    }
+
+    await applyPendingHealOnDeath(room, log);
+    recalcDynamicAtk(room);
+    emitStateToBoth(room);
+
+    const winner = checkVictory();
+    return winner !== null;
+}
+
+async function applyPoisonPowerBonuses(room, poisonPowerCandidates, log, sleep, checkVictory) {
+    if (!Array.isArray(poisonPowerCandidates) || poisonPowerCandidates.length === 0) {
+        return false;
+    }
+
+    const poisonPowerBuffs = [];
+    for (const pb of poisonPowerCandidates) {
+        const liveCard = room.gameState.players[pb.playerNum]?.field?.[pb.row]?.[pb.col];
+        if (!liveCard || liveCard.currentHp <= 0) continue;
+        if (pb.uid && liveCard.uid !== pb.uid) continue;
+        const bonus = pb.bonus || 1;
+        liveCard.powerStacks = (liveCard.powerStacks || 0) + bonus;
+        poisonPowerBuffs.push({ playerNum: pb.playerNum, row: pb.row, col: pb.col, bonus, cardName: liveCard.name });
+    }
+
+    if (poisonPowerBuffs.length > 0) {
+        const buffBatch = [];
+        for (const pb of poisonPowerBuffs) {
+            const card = room.gameState.players[pb.playerNum]?.field?.[pb.row]?.[pb.col];
+            const fromAtk = card ? (card.atk || 0) : 0;
+            log(`[POWER] ${pb.cardName} +${pb.bonus} ATK (poison -> power)`, 'buff');
+            buffBatch.push({ type: 'powerBuff', player: pb.playerNum, row: pb.row, col: pb.col, amount: pb.bonus, fromAtk });
+        }
+        emitAnimationBatch(room, buffBatch);
+    }
+
+    recalcDynamicAtk(room);
+    if (poisonPowerBuffs.length > 0) {
+        emitStateToBoth(room);
+        await sleep(1100);
+    }
+
+    const winner = checkVictory();
+    return winner !== null;
 }
 
 /**
@@ -760,9 +1040,20 @@ function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sou
     if (sourceCreature && damage > 0 && card.currentHp > 0) {
         const srcCard = room.gameState.players[sourceCreature.player]?.field[sourceCreature.row]?.[sourceCreature.col];
         if (srcCard && srcCard.abilities && srcCard.abilities.includes('poison')) {
-            const poisonAmount = srcCard.poisonX || 1;
-            card.poisonCounters = (card.poisonCounters || 0) + poisonAmount;
-            log(`Ã¢ËœÂ Ã¯Â¸Â Poison : ${srcCard.name} inflige ${poisonAmount} compteur(s) poison ÃƒÂ  ${card.name} (total: ${card.poisonCounters})`, 'damage');
+            const poisonAmountRaw = Number(srcCard.poisonX);
+            const poisonAmount = Number.isFinite(poisonAmountRaw) ? Math.max(0, Math.floor(poisonAmountRaw)) : 1;
+            if (poisonAmount > 0) {
+                addPoisonCounters(card, poisonAmount, {
+                    source: 'combat.onHit.poison',
+                    turn: room.gameState.turn,
+                    row,
+                    col,
+                    sourcePlayer: sourceCreature.player,
+                    byCard: srcCard.name || null,
+                    byUid: srcCard.uid || null
+                });
+                log(`Ã¢ËœÂ Ã¯Â¸Â Poison : ${srcCard.name} inflige ${poisonAmount} compteur(s) poison ÃƒÂ  ${card.name} (total: ${card.poisonCounters})`, 'damage');
+            }
         }
     }
     // Entrave : si la source a 'entrave' et inflige des dÃƒÂ©gÃƒÂ¢ts de combat, ajouter des marqueurs entrave
@@ -802,7 +1093,15 @@ function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sou
                 if (target.uid === card.uid) continue;
                 if (target.isBuilding) continue;
                 if (target.abilities?.includes('antitoxin')) continue;
-                target.poisonCounters = (target.poisonCounters || 0) + poisonAmt;
+                addPoisonCounters(target, poisonAmt, {
+                    source: 'combat.onEnemyDamage.poisonRow',
+                    turn: room.gameState.turn,
+                    row,
+                    col: cc,
+                    sourcePlayer: ownerPlayer,
+                    byCard: card.name || null,
+                    byUid: card.uid || null
+                });
             }
         }
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} empoisonne la ligne! (+${poisonAmt} poison)`, 'poison');
@@ -852,6 +1151,7 @@ async function applyPendingLifelinkHeals(room, log) {
     await new Promise(r => setTimeout(r, 800));
 
     let emittedAny = false;
+    const lifestealBatch = [];
     for (let p = 1; p <= 2; p++) {
         for (let r = 0; r < 4; r++) {
             for (let c = 0; c < 2; c++) {
@@ -874,7 +1174,7 @@ async function applyPendingLifelinkHeals(room, log) {
                     const healed = hero.hp - oldHeroHp;
                     if (healed > 0) {
                         log(`Ã°Å¸Â©Â¸ Lien vital : ${card.name} soigne ${hero.heroName} de ${healed} PV (${oldHeroHp} Ã¢â€ â€™ ${hero.hp})`, 'buff');
-                        emitAnimation(room, 'lifesteal', { player: p, row: r, col: c, amount: healed, heroHeal: true });
+                        lifestealBatch.push({ type: 'lifesteal', player: p, row: r, col: c, amount: healed, heroHeal: true });
                         emittedAny = true;
                     }
                 } else {
@@ -884,7 +1184,7 @@ async function applyPendingLifelinkHeals(room, log) {
                     const healed = card.currentHp - oldHp;
                     if (healed > 0) {
                         log(`Ã°Å¸Â©Â¸ Drain de vie : ${card.name} se soigne de ${healed} PV (${oldHp} Ã¢â€ â€™ ${card.currentHp})`, 'buff');
-                        emitAnimation(room, 'lifesteal', { player: p, row: r, col: c, amount: healed });
+                        lifestealBatch.push({ type: 'lifesteal', player: p, row: r, col: c, amount: healed });
                         emittedAny = true;
                     }
                 }
@@ -893,6 +1193,7 @@ async function applyPendingLifelinkHeals(room, log) {
     }
     // Ãƒâ€°mettre l'ÃƒÂ©tat aprÃƒÂ¨s le soin pour que le client voit les HP soignÃƒÂ©s
     if (emittedAny) {
+        if (lifestealBatch.length > 0) emitAnimationBatch(room, lifestealBatch);
         emitStateToBoth(room);
         await new Promise(r => setTimeout(r, 900));
     }
@@ -1082,6 +1383,7 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
 function recalcDynamicAtk(room, excludeSlots) {
     // V2 : Zdejebel aura Ã¢â‚¬â€ compter combien de joueurs ont Zdejebel
     let zdjebelCount = 0;
+    const totalPoisonInPlay = countTotalPoisonCounters(room);
     if (RESOLUTION_V2) {
         for (let p = 1; p <= 2; p++) {
             if (room.gameState.players[p].hero?.id === 'zdejebel') zdjebelCount++;
@@ -1174,12 +1476,19 @@ function recalcDynamicAtk(room, excludeSlots) {
                     graveyardBonus = graveyardCreatureCount;
                 }
 
-                // Poison dynamique (poisonPerGraveyard) : +1 Poison par tranche de X cartes au cimetiÃƒÂ¨re
-                if (card.poisonPerGraveyard) {
-                    const basePoisonX = card.basePoisonX ?? card.poisonX ?? 1;
+                // Poison dynamique (poisonPerGraveyard / poisonEqualsTotalPoisonInPlay)
+                if (card.poisonPerGraveyard || card.poisonEqualsTotalPoisonInPlay) {
+                    const basePoisonRaw = Number(card.basePoisonX ?? card.poisonX ?? 1);
+                    const basePoisonX = Number.isFinite(basePoisonRaw) ? Math.max(0, Math.floor(basePoisonRaw)) : 1;
                     if (card.basePoisonX === undefined) card.basePoisonX = basePoisonX;
-                    const graveyardCount = player.graveyard.length;
-                    card.poisonX = basePoisonX + Math.floor(graveyardCount / card.poisonPerGraveyard);
+                    if (card.poisonPerGraveyard) {
+                        const stepRaw = Number(card.poisonPerGraveyard);
+                        const step = Number.isFinite(stepRaw) && stepRaw > 0 ? Math.floor(stepRaw) : 1;
+                        const graveyardCount = player.graveyard.length;
+                        card.poisonX = basePoisonX + Math.floor(graveyardCount / step);
+                    } else if (card.poisonEqualsTotalPoisonInPlay) {
+                        card.poisonX = basePoisonX + totalPoisonInPlay;
+                    }
                 }
 
                 // Bonus buffCounters (Armes magiques) : +1 ATK par marqueur
@@ -1189,7 +1498,7 @@ function recalcDynamicAtk(room, excludeSlots) {
                 // atkPerPoisonInPlay : ATK = nombre total de marqueurs poison en jeu
                 if (card.atkPerPoisonInPlay) {
                     const entraveMalus = card.entraveCounters || 0;
-                    card.atk = countTotalPoisonCounters(room) + bc - entraveMalus - poisonedAuraMalus;
+                    card.atk = totalPoisonInPlay + bc - entraveMalus - poisonedAuraMalus;
                     continue;
                 }
 
@@ -1572,22 +1881,51 @@ async function processOnSummonAbility(room, card, playerNum, row, col, log, slee
                 if (card.sacrificeBonus.absorbStats) {
                     let totalAtkGain = 0, totalHpGain = 0;
                     for (const sc of sacrificedCards) {
-                        const atkGain = sc.card.baseAtk || sc.card.atk || 0;
-                        const hpGain = sc.card.baseHp || sc.card.hp || 0;
+                        const rawAtkGain = sc.card.baseAtk || sc.card.atk || 0;
+                        const rawHpGain = sc.card.baseHp || sc.card.hp || 0;
+                        const atkGain = Number.isFinite(Number(rawAtkGain)) ? Number(rawAtkGain) : 0;
+                        const hpGain = Number.isFinite(Number(rawHpGain)) ? Number(rawHpGain) : 0;
                         if (atkGain > 0 || hpGain > 0) {
+                            const preAtk = card.atk;
+                            const preHp = card.hp;
+                            const preCurrentHp = card.currentHp;
                             // Utiliser sacrificeAtkStacks pour que recalcDynamicAtk garde le buff
                             // Ne PAS toucher baseAtk/baseHp Ã¢â€ â€™ le client affiche les stats en vert (boosted)
                             card.sacrificeAtkStacks = (card.sacrificeAtkStacks || 0) + atkGain;
                             card.atk += atkGain;
                             card.hp += hpGain;
                             card.currentHp += hpGain;
+                            const postAtk = card.atk;
+                            const postHp = card.hp;
+                            const postCurrentHp = card.currentHp;
+                            const invalidPre =
+                                !Number.isFinite(Number(preAtk)) ||
+                                !Number.isFinite(Number(preHp)) ||
+                                !Number.isFinite(Number(preCurrentHp));
+                            const invalidPost =
+                                !Number.isFinite(Number(postAtk)) ||
+                                !Number.isFinite(Number(postHp)) ||
+                                !Number.isFinite(Number(postCurrentHp));
                             totalAtkGain += atkGain;
                             totalHpGain += hpGain;
+                            log(
+                                `[ABSORB-DBG] source=sacrificeBonus.absorbStats absorber=${card.name} absorberUid=${card.uid || '-'} victim=${sc.card?.name || '-'} victimUid=${sc.card?.uid || '-'} rawGain=${rawAtkGain}/${rawHpGain} gain=${atkGain}/${hpGain} pre=${preAtk}/${preCurrentHp} max=${preHp} post=${postAtk}/${postCurrentHp} max=${postHp} invalidPre=${invalidPre} invalidPost=${invalidPost}`,
+                                invalidPre || invalidPost ? 'error' : 'buff'
+                            );
                             log(`  Ã°Å¸ÂªÂ± ${heroName}: ${card.name} absorbe +${atkGain}/+${hpGain} de ${sc.card.name} Ã¢â€ â€™ ${card.atk}/${card.currentHp}`, 'buff');
                         }
                     }
                     if (totalAtkGain > 0 || totalHpGain > 0) {
-                        emitAnimation(room, 'buffApply', { player: playerNum, row, col, atkBuff: totalAtkGain, hpBuff: totalHpGain });
+                        emitAnimation(room, 'buffApply', {
+                            player: playerNum,
+                            row,
+                            col,
+                            atkBuff: totalAtkGain,
+                            hpBuff: totalHpGain,
+                            source: 'sacrificeBonus.absorbStats',
+                            absorberName: card.name,
+                            absorberUid: card.uid || null
+                        });
                     }
                     recalcDynamicAtk(room);
                     await sleep(800);
@@ -1716,7 +2054,15 @@ async function processOnSummonAbility(room, card, playerNum, row, col, log, slee
     // selfPoison : s'infliger des compteurs poison ÃƒÂ  l'invocation
     if (card.onSummon && card.onSummon.selfPoison) {
         const amount = card.onSummon.selfPoison;
-        card.poisonCounters = (card.poisonCounters || 0) + amount;
+        addPoisonCounters(card, amount, {
+            source: 'summon.selfPoison',
+            turn: room.gameState.turn,
+            row,
+            col,
+            sourcePlayer: playerNum,
+            byCard: card.name || null,
+            byUid: card.uid || null
+        });
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} s'inflige ${amount} marqueur(s) poison (total: ${card.poisonCounters})`, 'damage');
         emitAnimation(room, 'poisonApply', { player: playerNum, row, col, amount });
         recalcDynamicAtk(room);
@@ -1832,6 +2178,29 @@ function collectOnDeathEffects(normalDeaths) {
         }
         if (d.card.onDeath.poisonRow && d.row !== undefined) {
             effects.push({ type: 'poisonRow', sourcePlayer: d.player, row: d.row, poisonAmount: d.card.onDeath.poisonRow, source: d.card.name });
+        }
+        if (d.card.onDeath.poisonAll) {
+            effects.push({
+                type: 'poisonAll',
+                sourcePlayer: d.player,
+                poisonAmount: d.card.onDeath.poisonAll,
+                source: d.card.name,
+                sourceUid: d.card.uid || null
+            });
+        }
+        if (d.card.onDeath.summonIfPoisoned && d.row !== undefined && d.col !== undefined) {
+            const poisonCounters = Number(d.card.poisonCounters) || 0;
+            if (poisonCounters > 0) {
+                effects.push({
+                    type: 'summonIfPoisoned',
+                    player: d.player,
+                    row: d.row,
+                    col: d.col,
+                    summonId: d.card.onDeath.summonIfPoisoned,
+                    source: d.card.name,
+                    sourceUid: d.card.uid || null
+                });
+            }
         }
         if (d.card.onDeath.poisonExplosion && d.card.poisonCounters > 0) {
             effects.push({ type: 'poisonExplosion', sourcePlayer: d.player, damage: d.card.poisonCounters, source: d.card.name });
@@ -2015,7 +2384,15 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 for (let c = 0; c < 2; c++) {
                     const target = enemyField[effect.row][c];
                     if (target && target.currentHp > 0) {
-                        target.poisonCounters = (target.poisonCounters || 0) + effect.poisonAmount;
+                        addPoisonCounters(target, effect.poisonAmount, {
+                            source: 'onDeath.poisonRow',
+                            turn: room.gameState.turn,
+                            row: effect.row,
+                            col: c,
+                            sourcePlayer: effect.sourcePlayer,
+                            byCard: effect.source || null,
+                            byUid: null
+                        });
                         log(`Ã¢ËœÂ Ã¯Â¸Â ${effect.source} empoisonne ${target.name} (+${effect.poisonAmount} compteur poison, total: ${target.poisonCounters})`, 'damage');
                         emitAnimation(room, 'poisonApply', {
                             player: enemyPlayerNum,
@@ -2024,6 +2401,40 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                             amount: effect.poisonAmount
                         });
                     }
+                }
+                maxSleepTime = Math.max(maxSleepTime, 800);
+                break;
+            }
+            case 'poisonAll': {
+                const poisonAnims = [];
+                for (let p = 1; p <= 2; p++) {
+                    for (let r = 0; r < 4; r++) {
+                        for (let c = 0; c < 2; c++) {
+                            const target = room.gameState.players[p].field[r][c];
+                            if (!target || target.currentHp <= 0) continue;
+                            if (target.abilities?.includes('antitoxin')) continue;
+                            addPoisonCounters(target, effect.poisonAmount, {
+                                source: 'onDeath.poisonAll',
+                                turn: room.gameState.turn,
+                                row: r,
+                                col: c,
+                                sourcePlayer: effect.sourcePlayer,
+                                byCard: effect.source || null,
+                                byUid: effect.sourceUid || null
+                            });
+                            poisonAnims.push({
+                                type: 'poisonApply',
+                                player: p,
+                                row: r,
+                                col: c,
+                                amount: effect.poisonAmount
+                            });
+                        }
+                    }
+                }
+                if (poisonAnims.length > 0) {
+                    log(`☠️ ${effect.source} empoisonne toutes les créatures (+${effect.poisonAmount} poison)`, 'damage');
+                    emitAnimationBatch(room, poisonAnims);
                 }
                 maxSleepTime = Math.max(maxSleepTime, 800);
                 break;
@@ -2152,6 +2563,40 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
 
                 log(`  Ã°Å¸ÂªÂ¦ ${effect.source} : ${placed.name} est rÃƒÂ©animÃƒÂ© sur son emplacement`, 'special');
                 emitAnimation(room, 'reanimate', { player: effect.player, row: effect.row, col: effect.col, card: placed });
+                recalcDynamicAtk(room);
+                maxSleepTime = Math.max(maxSleepTime, 1200);
+                break;
+            }
+            case 'summonIfPoisoned': {
+                const player = room.gameState.players[effect.player];
+                if (!player) break;
+                if (effect.row === undefined || effect.col === undefined) break;
+                if (player.field[effect.row][effect.col]) break;
+
+                const template = CardByIdMap.get(effect.summonId);
+                if (!template) break;
+
+                const summoned = {
+                    ...template,
+                    abilities: [...(template.abilities || [])],
+                    uid: `${Date.now()}-onDeathSummon-${Math.random()}`,
+                    currentHp: template.hp,
+                    baseAtk: template.atk,
+                    baseHp: template.hp,
+                    canAttack: !!(template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))),
+                    turnsOnField: 0,
+                    movedThisTurn: false
+                };
+                if (summoned.abilities.includes('protection')) summoned.hasProtection = true;
+                if (summoned.abilities.includes('camouflage')) summoned.hasCamouflage = true;
+                if (summoned.abilities.includes('untargetable')) summoned.hasUntargetable = true;
+                summoned.summonOrder = ++room.gameState.summonCounter;
+
+                player.field[effect.row][effect.col] = summoned;
+                if (player.revealField) player.revealField[effect.row][effect.col] = summoned;
+
+                log(`  ☠️ ${effect.source} invoque ${summoned.name} sur son emplacement (mort empoisonnée)`, 'special');
+                emitAnimation(room, 'trapSummon', { player: effect.player, row: effect.row, col: effect.col, card: summoned });
                 recalcDynamicAtk(room);
                 maxSleepTime = Math.max(maxSleepTime, 1200);
                 break;
@@ -2317,7 +2762,15 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
     await sleep(900);
 
     if (card.activeAbility === 'selfPoison') {
-        card.poisonCounters = (card.poisonCounters || 0) + 1;
+        addPoisonCounters(card, 1, {
+            source: 'building.selfPoison',
+            turn: room.gameState.turn,
+            row,
+            col,
+            sourcePlayer: playerNum,
+            byCard: card.name || null,
+            byUid: card.uid || null
+        });
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} accumule du poison (${card.poisonCounters} marqueurs)`, 'action');
         // Le nuage poison est jouÃƒÂ© par le handler buildingActivate cÃƒÂ´tÃƒÂ© client (via selfPoison: true)
         // Plus besoin de emitAnimationBatch ici Ã¢â‚¬â€ le VFX est inclus dans l'animation queueÃƒÂ©e
@@ -2332,7 +2785,15 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                     const target = room.gameState.players[p].field[r][c];
                     if (!target || target.currentHp <= 0) continue;
                     if (target.abilities?.includes('antitoxin')) continue;
-                    target.poisonCounters = (target.poisonCounters || 0) + 1;
+                    addPoisonCounters(target, 1, {
+                        source: 'building.poisonAll',
+                        turn: room.gameState.turn,
+                        row: r,
+                        col: c,
+                        sourcePlayer: playerNum,
+                        byCard: card.name || null,
+                        byUid: card.uid || null
+                    });
                     // If this slot already resolved this row, delay poison tick to avoid retroactive damage.
                     if (r === row && c < col) {
                         target._skipPoisonTickKey = sameRowDelayKey;
@@ -2375,117 +2836,6 @@ function getAdjacentSacrificeTargets(field, row, col, excludeSlots) {
     return targets;
 }
 
-// V2 : DÃƒÂ©gÃƒÂ¢ts de poison aprÃƒÂ¨s chaque ligne de combat
-async function applyRowPoisonDamage(room, row, log, sleep, checkVictory) {
-    const poisonEffects = [];
-    const sameRowTickKey = `${room.gameState.turn}:${row}`;
-
-    for (let playerNum = 1; playerNum <= 2; playerNum++) {
-        const player = room.gameState.players[playerNum];
-        for (let col = 0; col < 2; col++) {
-            const card = player.field[row][col];
-            if (card && card.poisonCounters > 0 && card.currentHp > 0) {
-                if (card._skipPoisonTickKey === sameRowTickKey) {
-                    delete card._skipPoisonTickKey;
-                    continue;
-                }
-                if (card.isBuilding || (card.abilities && card.abilities.includes('antitoxin'))) {
-                    continue;
-                }
-                poisonEffects.push({ playerNum, card, row, col, damage: card.poisonCounters });
-            }
-        }
-    }
-
-    if (poisonEffects.length === 0) return false;
-
-    const poisonAnims = [];
-    const poisonDeaths = [];
-    const poisonPowerCandidates = [];
-
-    for (const eff of poisonEffects) {
-        eff.card.currentHp -= eff.damage;
-        log(`Ã¢ËœÂ Ã¯Â¸Â Poison : ${eff.card.name} subit ${eff.damage} dÃƒÂ©gÃƒÂ¢t(s) de poison! (${Math.max(0, eff.card.currentHp)}/${eff.card.hp})`, 'damage');
-        poisonAnims.push({ type: 'poisonDamage', player: eff.playerNum, row: eff.row, col: eff.col, amount: eff.damage });
-
-        if (eff.card.currentHp <= 0) {
-            poisonDeaths.push({ card: eff.card, player: eff.playerNum, row: eff.row, col: eff.col });
-        } else if (eff.card.abilities?.includes('power')) {
-            const powerBonus = eff.card.powerX || 1;
-            log(`Ã°Å¸â€™Âª ${eff.card.name} gagne +${powerBonus} ATK! (poison Ã¢â€ â€™ puissance)`, 'buff');
-            poisonPowerCandidates.push({ playerNum: eff.playerNum, row: eff.row, col: eff.col, uid: eff.card.uid, cardName: eff.card.name, bonus: eff.card.powerX || 1 });
-        }
-    }
-
-    emitAnimationBatch(room, poisonAnims);
-    await sleep(1400);
-
-    // Ãƒâ€°mettre les powerBuffs APRÃƒË†S l'animation poison (pour que le client les voie dans le bon ordre)
-
-    // GÃƒÂ©rer les morts par poison
-    if (poisonDeaths.length > 0) {
-        const deathAnims = [];
-        const normalDeaths = [];
-        for (const d of poisonDeaths) {
-            const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
-            if (result.transformed) {
-                deathAnims.push({ type: 'deathTransform', player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
-            } else {
-                deathAnims.push({ type: 'death', player: d.player, row: d.row, col: d.col, card: d.card });
-                normalDeaths.push(d);
-            }
-        }
-        if (deathAnims.length > 0) emitAnimationBatch(room, deathAnims);
-        emitStateToBoth(room);
-        await sleep(1100);
-        await resolveImmediateWhenTriggersAfterDeaths(room, log, sleep);
-
-        // Effets onDeath
-        const deathEffects = collectOnDeathEffects(normalDeaths);
-        if (deathEffects.length > 0) {
-            await resolvePostCombatEffects(room, deathEffects, log, sleep);
-        }
-
-        // Effets onPoisonDeath (poisonAllEnemies, draw, buff, heal)
-        await processOnPoisonDeathEffects(room, normalDeaths, log, sleep);
-
-        await applyPendingHealOnDeath(room, log);
-    }
-
-    const poisonPowerBuffs = [];
-    for (const pb of poisonPowerCandidates) {
-        const liveCard = room.gameState.players[pb.playerNum]?.field?.[pb.row]?.[pb.col];
-        if (!liveCard || liveCard.currentHp <= 0) continue;
-        if (pb.uid && liveCard.uid !== pb.uid) continue;
-        const bonus = pb.bonus || 1;
-        liveCard.powerStacks = (liveCard.powerStacks || 0) + bonus;
-        poisonPowerBuffs.push({ playerNum: pb.playerNum, row: pb.row, col: pb.col, bonus, cardName: liveCard.name });
-    }
-    for (const pb of poisonPowerBuffs) {
-        log(`[POWER] ${pb.cardName} +${pb.bonus} ATK (poison -> power)`, 'buff');
-        emitPowerBuffAnim(room, pb.playerNum, pb.row, pb.col, pb.bonus);
-    }
-    recalcDynamicAtk(room);
-    if (poisonPowerBuffs.length > 0) {
-        emitStateToBoth(room);
-        await sleep(1100);
-    }
-
-    emitStateToBoth(room);
-
-    const winner = checkVictory();
-    if (winner !== null) {
-        await sleep(800);
-        if (winner === 0) {
-            emitGameOver(room, { winner: 0, draw: true });
-        } else {
-            emitGameOver(room, { winner });
-        }
-        return true;
-    }
-    return false;
-}
-
 // V2 : Effets onPoisonDeath extraits pour rÃƒÂ©utilisation
 async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
     if (!normalDeaths || normalDeaths.length === 0) return;
@@ -2516,7 +2866,15 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
             const [enemyNum, r, c] = key.split('-').map(Number);
             const target = room.gameState.players[enemyNum].field[r][c];
             if (target && target.currentHp > 0) {
-                target.poisonCounters = (target.poisonCounters || 0) + totalPoison;
+                addPoisonCounters(target, totalPoison, {
+                    source: 'onDeath.poisonExplosion',
+                    turn: room.gameState.turn,
+                    row: r,
+                    col: c,
+                    sourcePlayer: null,
+                    byCard: poisonSources.join(' + ') || null,
+                    byUid: null
+                });
                 log(`Ã¢ËœÂ Ã¯Â¸Â ${poisonSources.join(' + ')} empoisonne ${target.name} (+${totalPoison} compteur poison, total: ${target.poisonCounters})`, 'damage');
                 poisonApplyAnims.push({ type: 'poisonApply', player: enemyNum, row: r, col: c, amount: totalPoison });
             }
@@ -3303,11 +3661,8 @@ async function startResolution(room) {
 
         const slotNames = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
 
-        // Combat LIGNE PAR LIGNE : mÃƒÂ©lodie/pÃƒÂ©trification puis piÃƒÂ¨ges puis attaques
+        // Combat LIGNE PAR LIGNE : piÃƒÂ¨ges puis attaques
         for (let row = 0; row < 4; row++) {
-            // MÃƒÂ©lodie + PÃƒÂ©trification pour cette ligne (avant les attaques de cette ligne)
-            await processMelodyForRow(room, row, log, sleep);
-
             for (let col = 0; col < 2; col++) {
 
                 // PiÃƒÂ¨ges dÃƒÂ©clenchÃƒÂ©s par les attaquants de cette colonne (AVANT le glow violet)
@@ -3338,17 +3693,6 @@ async function startResolution(room) {
                 // Puis le combat de ce slot
                 let gameEnded = await processCombatSlotV2(room, row, col, log, sleep, checkVictory, slotNames);
 
-                // Effet immÃƒÂ©diat post-slot: permet aux invocations de fin de combat
-                // d'influencer la colonne suivante de la mÃƒÂªme ligne (ex: DÃƒÂ©mon SuprÃƒÂªme).
-                if (!gameEnded && RESOLUTION_V2) {
-                    markCombatPhase(log, row, col, 'end_of_combat', 'immediate-slot');
-                    gameEnded = await processImmediateEndOfCombatForSlot(room, row, col, log, sleep, checkVictory);
-                    markCombatPhase(log, row, col, 'post_end_of_combat', 'immediate-slot');
-                    if (!gameEnded) {
-                        gameEnded = await resolvePostEndOfCombatStabilization(room, row, log, sleep, checkVictory);
-                    }
-                }
-
                 if (gameEnded) {
                     const winner = checkVictory();
                     if (winner !== null) {
@@ -3363,23 +3707,6 @@ async function startResolution(room) {
                         return;
                     }
                 }
-            }
-
-            if (RESOLUTION_V2) {
-                markCombatPhase(log, row, 'row', 'poison_damage');
-                const poisonGameEnded = await applyRowPoisonDamage(room, row, log, sleep, checkVictory);
-                if (poisonGameEnded) return;
-                markCombatPhase(log, row, 'row', 'power_post_poison');
-
-                markCombatPhase(log, row, 'row', 'regeneration');
-                await applyRowRegeneration(room, row, log, sleep);
-
-                markCombatPhase(log, row, 'row', 'end_of_combat', 'row-sweep');
-                const endOfCombatGameEnded = await processEndOfCombatRow(room, row, log, sleep, checkVictory);
-                if (endOfCombatGameEnded) return;
-                markCombatPhase(log, row, 'row', 'post_end_of_combat', 'row-sweep');
-                const postEndStabilizedGameEnded = await resolvePostEndOfCombatStabilization(room, row, log, sleep, checkVictory);
-                if (postEndStabilizedGameEnded) return;
             }
 
             // Nettoyer le flag _attackedThisCombat pour cette ligne
@@ -3591,6 +3918,14 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 if (!isMelee) continue; // Tireur/volant Ã¢â€ â€™ le piÃƒÂ¨ge ne se dÃƒÂ©clenche pas
             }
 
+            const trapPreviewTargets = trap.pattern === 'line'
+                ? [0, 1]
+                    .filter((col) => !!attackerState.field[row][col])
+                    .map((col) => ({ player: attackerPlayer, row, col }))
+                : (attackers[0]
+                    ? [{ player: attackerPlayer, row, col: attackers[0].col }]
+                    : []);
+
             // === PIÃƒË†GE SUMMON : condition spÃƒÂ©ciale Ã¢â‚¬â€ le slot adjacent (col 1) doit ÃƒÂªtre vide ===
             if (trap.effect === 'summon') {
                 const adjCol = 1; // colonne intÃƒÂ©rieure (B/D/F/H)
@@ -3599,7 +3934,14 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                     continue;
                 }
 
-                emitAnimation(room, 'trapTrigger', { player: defenderPlayer, row: row, trap: trap });
+                emitAnimation(room, 'trapTrigger', {
+                    player: defenderPlayer,
+                    row: row,
+                    trap: trap,
+                    triggerCol,
+                    attackerPlayer,
+                    targets: trapPreviewTargets
+                });
                 await sleep(2200);
 
                 const template = CardByIdMap.get(trap.summonId);
@@ -3640,7 +3982,14 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 continue;
             }
 
-            emitAnimation(room, 'trapTrigger', { player: defenderPlayer, row: row, trap: trap });
+            emitAnimation(room, 'trapTrigger', {
+                player: defenderPlayer,
+                row: row,
+                trap: trap,
+                triggerCol,
+                attackerPlayer,
+                targets: trapPreviewTargets
+            });
             await sleep(2200);
 
             if (trap.pattern === 'line') {
@@ -4067,7 +4416,17 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         const dmg = target.poisonCounters;
                         target.currentHp -= dmg;
                         log(`  Ã¢ËœÂ Ã¯Â¸Â ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${target.name} subit ${dmg} dÃƒÂ©gÃƒÂ¢t(s) de poison!`, 'damage');
-                        poisonDmgAnims.push({ type: 'poisonDamage', player: p, row: r, col: c, amount: dmg });
+                        poisonDmgAnims.push({
+                            type: 'poisonDamage',
+                            player: p,
+                            row: r,
+                            col: c,
+                            amount: dmg,
+                            source: 'spell.triggerPoison',
+                            poisonCounters: target.poisonCounters,
+                            cardName: target.name,
+                            cardUid: target.uid || null
+                        });
                         if (target.currentHp <= 0) {
                             poisonDeaths.push({ card: target, player: p, row: r, col: c });
                         } else if (target.abilities?.includes('power')) {
@@ -4135,7 +4494,15 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         const [enemyNum, r, c] = key.split('-').map(Number);
                         const target = room.gameState.players[enemyNum].field[r][c];
                         if (target && target.currentHp > 0) {
-                            target.poisonCounters = (target.poisonCounters || 0) + totalPoison;
+                            addPoisonCounters(target, totalPoison, {
+                                source: 'onDeath.poisonExplosion',
+                                turn: room.gameState.turn,
+                                row: r,
+                                col: c,
+                                sourcePlayer: null,
+                                byCard: poisonSources.join(' + ') || null,
+                                byUid: null
+                            });
                             log(`Ã¢ËœÂ Ã¯Â¸Â ${poisonSources.join(' + ')} empoisonne ${target.name} (+${totalPoison} compteur poison, total: ${target.poisonCounters})`, 'damage');
                             poisonApplyAnims.push({ type: 'poisonApply', player: enemyNum, row: r, col: c, amount: totalPoison });
                         }
@@ -4203,7 +4570,15 @@ async function applySpell(room, action, log, sleep, options = {}) {
             for (let c = 0; c < 2; c++) {
                 const target = opponent.field[r][c];
                 if (target && target.currentHp > 0) {
-                    target.poisonCounters = (target.poisonCounters || 0) + amount;
+                    addPoisonCounters(target, amount, {
+                        source: 'spell.poisonAllEnemies',
+                        turn: room.gameState.turn,
+                        row: r,
+                        col: c,
+                        sourcePlayer: playerNum,
+                        byCard: spell.name || null,
+                        byUid: null
+                    });
                     poisonAnims.push({ type: 'poisonApply', player: opponentNum, row: r, col: c, amount });
                     log(`  Ã¢ËœÂ Ã¯Â¸Â ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${target.name} reÃƒÂ§oit ${amount} marqueur(s) poison`, 'damage');
                     count++;
@@ -5032,60 +5407,27 @@ function emitPowerBuffAnim(room, playerNum, row, col, bonus) {
 // Appliquer les bonus Power en attente Ã¢â‚¬â€ retourne le nombre de buffs ÃƒÂ©mis
 function applyPendingPowerBonuses(room, log) {
     let count = 0;
+    const powerBuffBatch = [];
     for (let p = 1; p <= 2; p++) {
         for (let r = 0; r < 4; r++) {
             for (let c = 0; c < 2; c++) {
                 const card = room.gameState.players[p].field[r][c];
                 if (card && card.pendingPowerBonus > 0 && card.currentHp > 0) {
                     const bonus = card.pendingPowerBonus;
+                    const fromAtk = card.atk || 0;
                     card.powerStacks = (card.powerStacks || 0) + bonus;
                     log(`Ã°Å¸â€™Âª ${card.name} gagne +${bonus} ATK!`, 'action');
-                    emitPowerBuffAnim(room, p, r, c, bonus);
+                    powerBuffBatch.push({ type: 'powerBuff', player: p, row: r, col: c, amount: bonus, fromAtk });
                     card.pendingPowerBonus = 0;
                     count++;
                 }
             }
         }
     }
+    if (powerBuffBatch.length > 0) {
+        emitAnimationBatch(room, powerBuffBatch);
+    }
     return count;
-}
-
-// VÃƒÂ©rifier et retirer les crÃƒÂ©atures mortes
-async function checkAndRemoveDeadCreatures(room, slotsToCheck, log, sleep) {
-    const deadCards = [];
-    const deathAnimations = [];
-
-    for (const [r, c] of slotsToCheck) {
-        for (let p = 1; p <= 2; p++) {
-            const card = room.gameState.players[p].field[r][c];
-            if (card && card.currentHp <= 0) {
-                const result = handleCreatureDeath(room, card, p, r, c, log);
-                if (result.transformed) {
-                    deathAnimations.push({ type: 'deathTransform', player: p, row: r, col: c, fromCard: card, toCard: result.newCard });
-                } else {
-                    deadCards.push({ card, player: p, row: r, col: c });
-                    log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} dÃƒÂ©truit!`, 'damage');
-                    deathAnimations.push({ type: 'death', player: p, row: r, col: c, card: card });
-                }
-            }
-        }
-    }
-
-    // Ãƒâ€°mettre toutes les animations de mort en mÃƒÂªme temps
-    if (deathAnimations.length > 0) {
-        emitAnimationBatch(room, deathAnimations);
-    }
-
-    emitStateToBoth(room);
-    await sleep(1100);
-
-    // CapacitÃƒÂ©s onDeath
-    for (const d of deadCards) {
-        await processOnDeathAbility(room, d.card, d.player, d.row, d.col, log, sleep);
-    }
-
-    // Appliquer les soins healOnDeath APRÃƒË†S les morts (Reine toxique etc.)
-    await applyPendingHealOnDeath(room, log);
 }
 
 // Traiter le combat pour un slot spÃƒÂ©cifique (row, col)
@@ -5166,9 +5508,18 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
     for (const atk of attacks) {
         atk.attacker._attackedThisCombat = true;
     }
+    const attackedSlots = [];
+    const attackedSlotSet = new Set();
+    for (const atk of attacks) {
+        const key = `${atk.attackerPlayer}:${atk.attackerRow}:${atk.attackerCol}`;
+        if (attackedSlotSet.has(key)) continue;
+        attackedSlotSet.add(key);
+        attackedSlots.push({ playerNum: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol });
+    }
 
     // Effets post-combat ÃƒÂ  rÃƒÂ©soudre simultanÃƒÂ©ment (onDeath + onHeroHit + futurs)
     const postCombatEffects = [];
+    const combatCycleId = createCombatCycleId(room, row, col);
 
     // VÃƒÂ©rifier si combat mutuel (les deux s'attaquent l'une l'autre)
     let mutualCombat = false;
@@ -5332,17 +5683,12 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
             await applyTrampleDamage(room, atk2, log, sleep);
         }
 
-        // Appliquer bonus Power et ÃƒÂ©mettre l'ÃƒÂ©tat (avec dÃƒÂ©gÃƒÂ¢ts de riposte visibles)
-        enterPhase('return_to_slot');
-        enterPhase('power_primary');
-        applyPendingPowerBonuses(room, log);
-        recalcDynamicAtk(room);
-        emitStateToBoth(room);
-        // Appliquer les soins Lifelink APRÃƒË†S ÃƒÂ©mission (le client voit d'abord les dÃƒÂ©gÃƒÂ¢ts)
+        // Le pipeline unique (power/life/endOfCombat/poison/morts/regen) est appliquÃƒÂ© en sortie.
     } else {
         // Pas de combat mutuel - traiter les attaques
 
         // CAS SPÃƒâ€°CIAL : 2 attaques qui peuvent se faire en parallÃƒÂ¨le
+        let processedParallel = false;
         if (attacks.length === 2) {
             const atk1 = attacks[0];
             const atk2 = attacks[1];
@@ -5393,6 +5739,11 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         emitAnimation(room, 'heroHit', { defender: atk1.targetPlayer, damage: damage1, skipVfx: true });
                         accumulateLifelink(attackerCard1, damage1);
 
+                        // Collecter onHeroAttack (sera résolu avec les autres effets post-combat)
+                        if (attackerCard1.onHeroAttack && attackerCard1.onHeroAttack.millFirstCreature) {
+                            postCombatEffects.push({ type: 'millFirstCreature', player: atk1.attackerPlayer, source: `${attackerCard1.name} (onHeroAttack)` });
+                        }
+
                         // Collecter onHeroHit (sera rÃƒÂ©solu avec les autres effets post-combat)
                         if (attackerCard1.onHeroHit === 'draw') {
                             postCombatEffects.push({ type: 'draw', player: atk1.attackerPlayer, count: 1, source: `${attackerCard1.name} (onHeroHit)` });
@@ -5433,6 +5784,11 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                         emitAnimation(room, 'heroHit', { defender: atk2.targetPlayer, damage: damage2, skipVfx: true });
                         accumulateLifelink(attackerCard2, damage2);
 
+                        // Collecter onHeroAttack (sera résolu avec les autres effets post-combat)
+                        if (attackerCard2.onHeroAttack && attackerCard2.onHeroAttack.millFirstCreature) {
+                            postCombatEffects.push({ type: 'millFirstCreature', player: atk2.attackerPlayer, source: `${attackerCard2.name} (onHeroAttack)` });
+                        }
+
                         // Collecter onHeroHit (sera rÃƒÂ©solu avec les autres effets post-combat)
                         if (attackerCard2.onHeroHit === 'draw') {
                             postCombatEffects.push({ type: 'draw', player: atk2.attackerPlayer, count: 1, source: `${attackerCard2.name} (onHeroHit)` });
@@ -5469,70 +5825,17 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     enterPhase('riposte', 'parallel-conditional');
                     enterPhase('on_hit_riposte', 'parallel-conditional');
 
-                    // VÃƒÂ©rifier victoire
+                    // VÃƒÂ©rifier victoire hÃƒÂ©ros avant la suite de la pipeline.
                     if (room.gameState.players[1].hp <= 0 || room.gameState.players[2].hp <= 0) {
                         emitStateToBoth(room);
                         return true;
                     }
-
-                    // Appliquer bonus Power et ÃƒÂ©mettre l'ÃƒÂ©tat (avec dÃƒÂ©gÃƒÂ¢ts de riposte visibles)
-                    enterPhase('return_to_slot');
-                    enterPhase('power_primary');
-                    applyPendingPowerBonuses(room, log);
-                    recalcDynamicAtk(room);
-                    emitStateToBoth(room);
-                    // Appliquer les soins Lifelink APRÃƒË†S ÃƒÂ©mission (le client voit d'abord les dÃƒÂ©gÃƒÂ¢ts)
-                    await sleep(500);
-
-                    // Collecter toutes les crÃƒÂ©atures mortes
-                    enterPhase('death_detect');
-                    const deaths = [];
-                    for (let p = 1; p <= 2; p++) {
-                        for (let r = 0; r < 4; r++) {
-                            for (let c = 0; c < 2; c++) {
-                                const card = room.gameState.players[p].field[r][c];
-                                if (card && card.currentHp <= 0) {
-                                    deaths.push({ player: p, row: r, col: c, card });
-                                }
-                            }
-                        }
-                    }
-
-                    // Animations de mort simultanÃƒÂ©es
-                    if (deaths.length > 0) {
-                        enterPhase('grave_animations');
-                        const normalDeaths = [];
-                        for (const d of deaths) {
-                            const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
-                            if (result.transformed) {
-                                emitAnimation(room, 'deathTransform', { player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
-                            } else {
-                                log(`Ã¢ËœÂ Ã¯Â¸Â ${d.card.name} dÃƒÂ©truit!`, 'damage');
-                                emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
-                                normalDeaths.push(d);
-                            }
-                        }
-                        await sleep(1100);
-                        emitStateToBoth(room);
-                        await resolveImmediateWhenTriggersAfterDeaths(room, log, sleep);
-                        // Collecter onDeath et fusionner avec les effets onHeroHit
-                        const onDeathEffects = collectOnDeathEffects(normalDeaths);
-                        postCombatEffects.push(...onDeathEffects);
-                    }
-
-                    // Appliquer les soins healOnDeath APRÃƒË†S les morts
-                    await applyPendingHealOnDeath(room, log);
-
-                    // RÃƒÂ©soudre TOUS les effets post-combat en simultanÃƒÂ© (onHeroHit + onDeath)
-                    await resolvePostCombatEffects(room, postCombatEffects, log, sleep);
-                    enterPhase('life_abilities');
-                    await applyPendingLifelinkHeals(room, log);
-                    return false;
+                    processedParallel = true;
                 }
         }
 
         // Traitement sÃƒÂ©quentiel standard (1 attaque)
-        for (const atk of attacks) {
+        if (!processedParallel) for (const atk of attacks) {
             // VÃƒÂ©rifier si l'attaquant est encore en vie
             const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
             if (!attackerCard || attackerCard.currentHp <= 0) continue;
@@ -5555,6 +5858,11 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     });
                     emitStateToBoth(room);
                     await sleep(800);
+                }
+
+                // Collecter onHeroAttack (sera résolu avec les autres effets post-combat)
+                if (attackerCard.onHeroAttack && attackerCard.onHeroAttack.millFirstCreature) {
+                    postCombatEffects.push({ type: 'millFirstCreature', player: atk.attackerPlayer, source: `${attackerCard.name} (onHeroAttack)` });
                 }
 
                 const damage = Math.max(0, attackerCard.atk);
@@ -5658,71 +5966,68 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         }
     }
 
-    // Appliquer les soins Lifelink et bonus Power (cleave, etc.)
-    for (let p = 1; p <= 2; p++) {
-        for (let r = 0; r < 4; r++) {
-            for (let c = 0; c < 2; c++) {
-                const card = room.gameState.players[p].field[r][c];
-                if (card && card.abilities && card.abilities.includes('lifelink')) {
-                }
-            }
-        }
-    }
-    // Appliquer bonus Power et ÃƒÂ©mettre l'ÃƒÂ©tat (avec dÃƒÂ©gÃƒÂ¢ts de riposte visibles)
+    // PIPELINE UNIQUE DU SLOT (ordre canonique)
+    // return_to_slot
+    // -> death pass #1 (detect + grave/triggers/healOnDeath)
+    // -> power #1 -> life abilities -> endOfCombat -> postEndOfCombat
+    // -> poison tick
+    // -> death pass #2 (detect + grave/triggers/healOnDeath)
+    // -> regeneration -> power #2
     enterPhase('return_to_slot');
+
+    enterPhase('death_detect_pre');
+    enterPhase('grave_animations_pre');
+    const firstDeathsEnded = await resolveCombatDeathsAndPostEffects(room, postCombatEffects, log, sleep, checkVictory, {
+        includePostCombatEffects: true,
+        includePoisonDeathEffects: false,
+        cycleId: combatCycleId
+    });
+    if (firstDeathsEnded) return true;
+
     enterPhase('power_primary');
     applyPendingPowerBonuses(room, log);
     recalcDynamicAtk(room);
     emitStateToBoth(room);
-    // Appliquer les soins Lifelink APRÃƒË†S ÃƒÂ©mission (le client voit d'abord les dÃƒÂ©gÃƒÂ¢ts)
-    // Collecter toutes les crÃƒÂ©atures mortes DE TOUT LE TERRAIN
-    enterPhase('death_detect');
-    const deaths = [];
-    for (let p = 1; p <= 2; p++) {
-        for (let r = 0; r < 4; r++) {
-            for (let c = 0; c < 2; c++) {
-                const card = room.gameState.players[p].field[r][c];
-                if (card && card.currentHp <= 0) {
-                    deaths.push({ player: p, row: r, col: c, card });
-                }
-            }
-        }
-    }
 
-    // Envoyer toutes les animations de mort EN MÃƒÅ ME TEMPS
-    if (deaths.length > 0) {
-        enterPhase('grave_animations');
-        const normalDeaths = [];
-        for (const d of deaths) {
-            const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
-            if (result.transformed) {
-                emitAnimation(room, 'deathTransform', { player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
-            } else {
-                log(`Ã¢ËœÂ Ã¯Â¸Â ${d.card.name} dÃƒÂ©truit!`, 'damage');
-                emitAnimation(room, 'death', { player: d.player, row: d.row, col: d.col, card: d.card });
-                normalDeaths.push(d);
-            }
-        }
-        await sleep(1100);
-        emitStateToBoth(room);
-        await resolveImmediateWhenTriggersAfterDeaths(room, log, sleep);
-        // Collecter onDeath et fusionner avec les effets onHeroHit
-        const onDeathEffects = collectOnDeathEffects(normalDeaths);
-        postCombatEffects.push(...onDeathEffects);
-    }
-
-    // Appliquer les soins healOnDeath APRÃƒË†S les morts
-    await applyPendingHealOnDeath(room, log);
-
-    // RÃƒÂ©soudre TOUS les effets post-combat en simultanÃƒÂ© (onHeroHit + onDeath)
-    await resolvePostCombatEffects(room, postCombatEffects, log, sleep);
     enterPhase('life_abilities');
     await applyPendingLifelinkHeals(room, log);
 
-    // Spectre rÃƒÂ©current : rÃƒÂ©animation depuis le cimetiÃƒÂ¨re aprÃƒÂ¨s morts de combat
-    await resolveSpectreReanimates(room, log, sleep);
+    enterPhase('end_of_combat');
+    const endOfCombatEnded = await processEndOfCombatForSlot(room, row, col, log, sleep, checkVictory);
+    if (endOfCombatEnded) return true;
 
-    return false;
+    // postEndOfCombat: les effets endOfCombat sont resolus dans resolveEndOfCombatForCard
+    // (self-sacrifice, absorptions, spawns, etc.) avant le tick poison.
+    enterPhase('post_end_of_combat');
+
+    enterPhase('poison_tick');
+    const poisonResult = await applySlotPoisonDamage(room, row, col, attackedSlots, log, sleep, checkVictory);
+    if (poisonResult.gameEnded) return true;
+
+    enterPhase('death_detect_post');
+    enterPhase('grave_animations_post');
+    const secondDeathsEnded = await resolveCombatDeathsAndPostEffects(room, [], log, sleep, checkVictory, {
+        includePostCombatEffects: false,
+        includePoisonDeathEffects: true,
+        cycleId: combatCycleId
+    });
+    if (secondDeathsEnded) return true;
+
+    enterPhase('regeneration');
+    await applySlotRegeneration(room, row, col, log, sleep);
+    if (checkVictory() !== null) return true;
+
+    enterPhase('power_secondary');
+    const poisonPowerEnded = await applyPoisonPowerBonuses(room, poisonResult.poisonPowerCandidates, log, sleep, checkVictory);
+    if (poisonPowerEnded) return true;
+
+    // Nettoyage des marqueurs temporaires de poison sur les survivants.
+    for (let p = 1; p <= 2; p++) {
+        const card = room.gameState.players[p].field[row][col];
+        if (card) delete card._killedByPoisonTick;
+    }
+
+    return checkVictory() !== null;
 }
 
 // RÃƒÂ©solution endOfCombat d'une crÃƒÂ©ature unique.
@@ -5779,8 +6084,10 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
         }
         if (victim) {
             resolvedAny = true;
-            const atkGain = victim.baseAtk || victim.atk || 0;
-            const hpGain = victim.baseHp || victim.hp || 0;
+            const rawAtkGain = victim.baseAtk || victim.atk || 0;
+            const rawHpGain = victim.baseHp || victim.hp || 0;
+            const atkGain = Number.isFinite(Number(rawAtkGain)) ? Number(rawAtkGain) : 0;
+            const hpGain = Number.isFinite(Number(rawHpGain)) ? Number(rawHpGain) : 0;
             let victimDeathPayload = null;
             // Sacrifier la victime (slash + envoi au cimetiÃƒÂ¨re)
             log(`  Ã°Å¸â€™â‚¬ ${card.name} dÃƒÂ©vore ${victim.name}! (fin de combat)`, 'damage');
@@ -5804,12 +6111,43 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
             }
             // Absorber les stats de base
             if (atkGain > 0 || hpGain > 0) {
+                const preAtk = card.atk;
+                const preHp = card.hp;
+                const preCurrentHp = card.currentHp;
                 card.sacrificeAtkStacks = (card.sacrificeAtkStacks || 0) + atkGain;
                 card.atk += atkGain;
                 card.hp += hpGain;
                 card.currentHp += hpGain;
+                const postAtk = card.atk;
+                const postHp = card.hp;
+                const postCurrentHp = card.currentHp;
+                const invalidPre =
+                    !Number.isFinite(Number(preAtk)) ||
+                    !Number.isFinite(Number(preHp)) ||
+                    !Number.isFinite(Number(preCurrentHp));
+                const invalidPost =
+                    !Number.isFinite(Number(postAtk)) ||
+                    !Number.isFinite(Number(postHp)) ||
+                    !Number.isFinite(Number(postCurrentHp));
+                log(
+                    `[ABSORB-DBG] source=endOfCombat.absorbAdjacent absorber=${card.name} absorberUid=${card.uid || '-'} victim=${victim.name} victimUid=${victim.uid || '-'} rawGain=${rawAtkGain}/${rawHpGain} gain=${atkGain}/${hpGain} pre=${preAtk}/${preCurrentHp} max=${preHp} post=${postAtk}/${postCurrentHp} max=${postHp} invalidPre=${invalidPre} invalidPost=${invalidPost}`,
+                    invalidPre || invalidPost ? 'error' : 'buff'
+                );
                 log(`  Ã°Å¸ÂªÂ± ${card.name} absorbe +${atkGain}/+${hpGain} de ${victim.name} Ã¢â€ â€™ ${card.atk}/${card.currentHp}`, 'buff');
-                emitAnimation(room, 'buffApply', { player: playerNum, row, col, atkBuff: atkGain, hpBuff: hpGain });
+                emitAnimation(room, 'buffApply', {
+                    player: playerNum,
+                    row,
+                    col,
+                    atkBuff: atkGain,
+                    hpBuff: hpGain,
+                    source: 'endOfCombat.absorbAdjacent',
+                    absorberName: card.name,
+                    absorberUid: card.uid || null,
+                    victimName: victim.name,
+                    victimUid: victim.uid || null,
+                    rawAtkGain,
+                    rawHpGain
+                });
             }
             // Absorber les capacitÃƒÂ©s communes de la victime
             const victimAbilities = victim.abilities || [];
@@ -5852,6 +6190,43 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
     if (card.endOfCombat.spawnAdjacentMelee && card.currentHp > 0 && isStillInSlot() && !card._spawnAdjMeleeDone) {
         const spawned = await resolveSpawnAdjacentMeleeEndOfCombat(room, card, playerNum, row, col, log, sleep);
         resolvedAny = resolvedAny || spawned;
+    }
+
+    // damageAllEnemies (Banshee sauvage) : inflige X degats a toutes les creatures ennemies
+    if (card.endOfCombat.damageAllEnemies && card.currentHp > 0 && isStillInSlot()) {
+        const damageAmountRaw = Number(card.endOfCombat.damageAllEnemies);
+        const damageAmount = Number.isFinite(damageAmountRaw) ? Math.max(0, Math.floor(damageAmountRaw)) : 0;
+        if (damageAmount > 0) {
+            const enemyNum = playerNum === 1 ? 2 : 1;
+            const enemyField = room.gameState.players[enemyNum].field;
+            const damageAnims = [];
+            let hitCount = 0;
+
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const target = enemyField[r][c];
+                    if (!target || target.currentHp <= 0) continue;
+                    const actualDmg = applyCreatureDamage(target, damageAmount, room, log, enemyNum, r, c);
+                    if (actualDmg > 0) {
+                        hitCount++;
+                        damageAnims.push({ type: 'damage', player: enemyNum, row: r, col: c, amount: actualDmg });
+                        log(`⚔️ ${card.name} inflige ${actualDmg} degat a ${target.name} (fin de combat)`, 'damage');
+                    }
+                }
+            }
+
+            resolvedAny = true;
+            if (damageAnims.length > 0) {
+                emitAnimationBatch(room, damageAnims);
+                emitStateToBoth(room);
+                await sleep(900);
+            } else {
+                emitStateToBoth(room);
+            }
+            if (hitCount === 0) {
+                log(`ℹ️ ${card.name} n'a touche aucune creature ennemie (fin de combat)`, 'info');
+            }
+        }
     }
 
     // selfMill (Chevaucheur de l'ombre) : met X cartes du dessus du deck au cimetiÃƒÂ¨re
@@ -5914,69 +6289,6 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
 
 // endOfCombat immÃƒÂ©diat (post-slot) pour que les effets d'une crÃƒÂ©ature
 // soient rÃƒÂ©solus avant le prochain combat de crÃƒÂ©ature.
-async function processImmediateEndOfCombatForSlot(room, row, col, log, sleep, checkVictory) {
-    const radjRowDebug = rowContainsRadjawak(room, row);
-    if (radjRowDebug) {
-        log(`[RADJ-DBG] endOfCombat-slot-start row=${row} col=${col}`, 'action');
-    }
-    let resolvedAny = false;
-    for (let p = 1; p <= 2; p++) {
-        const card = room.gameState.players[p].field[row][col];
-        const resolved = await resolveEndOfCombatForCard(room, card, p, row, col, log, sleep);
-        if (radjRowDebug && card?.endOfCombat && card?._attackedThisCombat) {
-            log(`[RADJ-DBG] endOfCombat-card p=${p} row=${row} col=${col} card=${formatRadjawakDebugCard(card)} resolved=${resolved}`, 'action');
-        }
-        if (resolved) resolvedAny = true;
-    }
-
-    if (resolvedAny) {
-        // Spectre rÃƒÂ©current : rÃƒÂ©animation depuis le cimetiÃƒÂ¨re aprÃƒÂ¨s morts endOfCombat
-        await resolveSpectreReanimates(room, log, sleep);
-    }
-
-    // VÃƒÂ©rifier si des effets endOfCombat ont causÃƒÂ© une fin de partie
-    const winner = checkVictory();
-    return winner !== null;
-}
-
-// endOfCombat : effets dÃƒÂ©clenchÃƒÂ©s aprÃƒÂ¨s la rÃƒÂ©solution d'une ligne de combat
-// Ne se dÃƒÂ©clenche que si la crÃƒÂ©ature a attaquÃƒÂ© et survÃƒÂ©cu (onSurvive)
-async function processEndOfCombatRow(room, row, log, sleep, checkVictory) {
-    let hasEffects = false;
-
-    // Collecter les crÃƒÂ©atures avec endOfCombat sur cette ligne (qui ont attaquÃƒÂ©)
-    for (let p = 1; p <= 2; p++) {
-        for (let c = 0; c < 2; c++) {
-            const card = room.gameState.players[p].field[row][c];
-            if (!card || card.currentHp <= 0 || !card.endOfCombat || !card._attackedThisCombat || card._endOfCombatResolved) continue;
-            hasEffects = true;
-        }
-    }
-    if (!hasEffects) return false;
-
-    // Attendre que les animations de combat de cette ligne soient terminÃƒÂ©es cÃƒÂ´tÃƒÂ© client
-    await sleep(500);
-
-    let resolvedAny = false;
-    for (let p = 1; p <= 2; p++) {
-        for (let c = 0; c < 2; c++) {
-            const card = room.gameState.players[p].field[row][c];
-            const resolved = await resolveEndOfCombatForCard(room, card, p, row, c, log, sleep);
-            if (resolved) resolvedAny = true;
-        }
-    }
-
-    if (resolvedAny) {
-        // Spectre rÃƒÂ©current : rÃƒÂ©animation depuis le cimetiÃƒÂ¨re aprÃƒÂ¨s morts endOfCombat
-        await resolveSpectreReanimates(room, log, sleep);
-    }
-
-    // VÃƒÂ©rifier si des morts ont causÃƒÂ© une fin de partie
-    const winner = checkVictory();
-    if (winner !== null) return true;
-    return false;
-}
-
 async function resolveSpawnAdjacentMeleeEndOfCombat(room, card, playerNum, row, col, log, sleep) {
     const player = room.gameState.players[playerNum];
     const spawnId = card.endOfCombat?.spawnAdjacentMelee;
@@ -6024,291 +6336,7 @@ async function resolveSpawnAdjacentMeleeEndOfCombat(room, card, playerNum, row, 
     return true;
 }
 
-// Traiter le combat pour une rangÃƒÂ©e entiÃƒÂ¨re
-// ORDRE: Col 0 (back) d'abord, puis Col 1 (front)
-// Dans chaque colonne, on rÃƒÂ©sout les combats mutuels puis les attaques unilatÃƒÂ©rales
-async function processCombatRow(room, row, log, sleep, checkVictory) {
-    const p1State = room.gameState.players[1];
-    const p2State = room.gameState.players[2];
-    const rowNames = ['A', 'B', 'C', 'D'];
-    const allSlotsToCheck = [];
-
-    // Traiter colonne par colonne: d'abord col 0 (back), puis col 1 (front)
-    for (let col = 0; col < 2; col++) {
-        // Collecter les attaques des crÃƒÂ©atures de cette colonne
-        const attacks = [];
-
-        // CapacitÃƒÂ©s actives des bÃƒÂ¢timents (avant le combat normal)
-        const p1CardB = p1State.field[row][col];
-        if (p1CardB && p1CardB.isBuilding && p1CardB.currentHp > 0 && p1CardB.canAttack && p1CardB.activeAbility) {
-            await processBuildingActiveAbility(room, p1CardB, 1, row, col, log, sleep);
-        }
-        const p2CardB = p2State.field[row][col];
-        if (p2CardB && p2CardB.isBuilding && p2CardB.currentHp > 0 && p2CardB.canAttack && p2CardB.activeAbility) {
-            await processBuildingActiveAbility(room, p2CardB, 2, row, col, log, sleep);
-        }
-
-        // CrÃƒÂ©ature du joueur 1 sur cette colonne
-        const p1Card = p1State.field[row][col];
-        if (p1Card && canCreatureAttack(p1Card) && p1Card.currentHp > 0) {
-            const target = findTarget(p1Card, p2State.field[row][1], p2State.field[row][0], 2, row, col);
-            if (target) {
-                attacks.push({
-                    attacker: p1Card,
-                    attackerPlayer: 1,
-                    attackerRow: row,
-                    attackerCol: col,
-                    target: target.card,
-                    targetPlayer: target.player,
-                    targetRow: target.row,
-                    targetCol: target.col,
-                    targetIsHero: target.isHero,
-                    hasTrample: p1Card.abilities.includes('trample'),
-                    isShooter: p1Card.abilities.includes('shooter'),
-                    isFlying: p1Card.abilities.includes('fly'),
-                    processed: false
-                });
-            }
-        }
-
-        // CrÃƒÂ©ature du joueur 2 sur cette colonne
-        const p2Card = p2State.field[row][col];
-        if (p2Card && canCreatureAttack(p2Card) && p2Card.currentHp > 0) {
-            const target = findTarget(p2Card, p1State.field[row][1], p1State.field[row][0], 1, row, col);
-            if (target) {
-                attacks.push({
-                    attacker: p2Card,
-                    attackerPlayer: 2,
-                    attackerRow: row,
-                    attackerCol: col,
-                    target: target.card,
-                    targetPlayer: target.player,
-                    targetRow: target.row,
-                    targetCol: target.col,
-                    targetIsHero: target.isHero,
-                    hasTrample: p2Card.abilities.includes('trample'),
-                    isShooter: p2Card.abilities.includes('shooter'),
-                    isFlying: p2Card.abilities.includes('fly'),
-                    processed: false
-                });
-            }
-        }
-
-        if (attacks.length === 0) continue;
-
-        // Interception des volants (uniquement entre volants de la mÃƒÂªme colonne)
-        const p1Flying = attacks.find(a => a.attackerPlayer === 1 && a.isFlying);
-        const p2Flying = attacks.find(a => a.attackerPlayer === 2 && a.isFlying);
-
-        if (p1Flying && p2Flying) {
-            // Les deux volants s'interceptent ! Modifier leurs cibles
-            p1Flying.target = p2Flying.attacker;
-            p1Flying.targetPlayer = p2Flying.attackerPlayer;
-            p1Flying.targetRow = p2Flying.attackerRow;
-            p1Flying.targetCol = p2Flying.attackerCol;
-            p1Flying.targetIsHero = false;
-            p1Flying.intercepted = true;
-
-            p2Flying.target = p1Flying.attacker;
-            p2Flying.targetPlayer = p1Flying.attackerPlayer;
-            p2Flying.targetRow = p1Flying.attackerRow;
-            p2Flying.targetCol = p1Flying.attackerCol;
-            p2Flying.targetIsHero = false;
-            p2Flying.intercepted = true;
-
-            log(`Ã°Å¸Â¦â€¦ ${p1Flying.attacker.name} et ${p2Flying.attacker.name} s'interceptent en vol!`, 'action');
-        }
-
-        // Boost ATK avant l'attaque si cible = hÃƒÂ©ros (Salamandre de braise)
-        let anyHeroAtkBoostRow = false;
-        for (const atk of attacks) {
-            const atkCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
-            if (atk.targetIsHero && atkCard && atkCard.onHeroAttack && atkCard.onHeroAttack.atkBoost) {
-                const boost = atkCard.onHeroAttack.atkBoost;
-                atkCard.atk += boost;
-                atkCard.tempAtkBoost = (atkCard.tempAtkBoost || 0) + boost;
-                log(`Ã°Å¸â€Â¥ ${atkCard.name} gagne +${boost} ATK!`, 'buff');
-                emitAnimation(room, 'atkBoost', {
-                    player: atk.attackerPlayer,
-                    row: atk.attackerRow,
-                    col: atk.attackerCol,
-                    boost: boost
-                });
-                anyHeroAtkBoostRow = true;
-            }
-        }
-        if (anyHeroAtkBoostRow) {
-            emitStateToBoth(room);
-            await sleep(800);
-        }
-
-        // Animer les attaques de cette colonne
-        for (const atk of attacks) {
-            emitAnimation(room, 'attack', {
-                attacker: atk.attackerPlayer,
-                row: atk.attackerRow,
-                col: atk.attackerCol,
-                targetPlayer: atk.targetPlayer,
-                targetRow: atk.targetRow,
-                targetCol: atk.targetIsHero ? -1 : atk.targetCol,
-                isFlying: atk.isFlying,
-                isShooter: atk.isShooter
-            });
-        }
-        await sleep(500);
-
-        // Identifier les combats mutuels dans cette colonne
-        // Combat mutuel = les deux crÃƒÂ©atures de la mÃƒÂªme colonne se ciblent mutuellement
-        let mutualPair = null;
-        if (attacks.length === 2) {
-            const [atk1, atk2] = attacks;
-            const atk1TargetsAtk2 = atk1.targetPlayer === atk2.attackerPlayer &&
-                                   atk1.targetRow === atk2.attackerRow &&
-                                   atk1.targetCol === atk2.attackerCol;
-            const atk2TargetsAtk1 = atk2.targetPlayer === atk1.attackerPlayer &&
-                                   atk2.targetRow === atk1.attackerRow &&
-                                   atk2.targetCol === atk1.attackerCol;
-
-            if (atk1TargetsAtk2 && atk2TargetsAtk1) {
-                // VÃƒÂ©rifier si c'est tireur vs non-tireur (pas de combat mutuel)
-                if (atk1.isShooter === atk2.isShooter) {
-                    mutualPair = [atk1, atk2];
-                    atk1.processed = true;
-                    atk2.processed = true;
-                }
-            }
-        }
-
-        // Traiter le combat mutuel s'il y en a un
-        if (mutualPair) {
-            const [atk1, atk2] = mutualPair;
-
-            // DÃƒÂ©gÃƒÂ¢ts SIMULTANÃƒâ€°S
-            const dmg1to2 = atk1.attacker.atk;
-            const dmg2to1 = atk2.attacker.atk;
-
-            const actualMR1 = applyCreatureDamage(atk2.attacker, dmg1to2, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, uid: atk1.attacker.uid });
-            const actualMR2 = applyCreatureDamage(atk1.attacker, dmg2to1, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, uid: atk2.attacker.uid });
-
-            if (actualMR1 > 0 || actualMR2 > 0) {
-                log(`Ã¢Å¡â€Ã¯Â¸Â ${atk1.attacker.name} Ã¢â€ â€ ${atk2.attacker.name} (-${actualMR1} / -${actualMR2})`, 'damage');
-            }
-            if (actualMR1 > 0) {
-                emitAnimation(room, 'damage', { player: atk2.attackerPlayer, row: atk2.attackerRow, col: atk2.attackerCol, amount: actualMR1 });
-            }
-            if (actualMR2 > 0) {
-                emitAnimation(room, 'damage', { player: atk1.attackerPlayer, row: atk1.attackerRow, col: atk1.attackerCol, amount: actualMR2 });
-            }
-
-            // Power bonus
-            if (actualMR2 > 0 && atk1.attacker.currentHp > 0 && atk1.attacker.abilities.includes('power')) {
-                atk1.attacker.pendingPowerBonus = (atk1.attacker.pendingPowerBonus || 0) + (atk1.attacker.powerX || 1);
-            }
-            if (actualMR1 > 0 && atk2.attacker.currentHp > 0 && atk2.attacker.abilities.includes('power')) {
-                atk2.attacker.pendingPowerBonus = (atk2.attacker.pendingPowerBonus || 0) + (atk2.attacker.powerX || 1);
-            }
-
-            // PiÃƒÂ©tinement en combat mutuel - seulement si la cible est un tireur
-            if (atk2.attacker.abilities.includes('shooter')) {
-                await applyTrampleDamage(room, atk1, log, sleep);
-            }
-            if (atk1.attacker.abilities.includes('shooter')) {
-                await applyTrampleDamage(room, atk2, log, sleep);
-            }
-        }
-
-        // Traiter les attaques non-mutuelles (unilatÃƒÂ©rales)
-        for (const atk of attacks) {
-            if (atk.processed) continue;
-            atk.processed = true;
-
-            // VÃƒÂ©rifier si l'attaquant est encore vivant
-            const attackerCard = room.gameState.players[atk.attackerPlayer].field[atk.attackerRow][atk.attackerCol];
-            if (!attackerCard || attackerCard.currentHp <= 0) continue;
-
-            if (atk.targetIsHero) {
-                room.gameState.players[atk.targetPlayer].hp -= attackerCard.atk;
-                room.gameState.players[atk.targetPlayer].heroAttackedThisTurn = true;
-                log(`Ã¢Å¡â€Ã¯Â¸Â ${attackerCard.name} Ã¢â€ â€™ ${room.gameState.players[atk.targetPlayer].heroName} (-${attackerCard.atk})`, 'damage');
-                emitAnimation(room, 'heroHit', { defender: atk.targetPlayer, damage: attackerCard.atk, skipVfx: true });
-                accumulateLifelink(attackerCard, attackerCard.atk);
-
-                if (attackerCard.onHeroHit === 'draw') {
-                    await drawCards(room, atk.attackerPlayer, 1, log, sleep, `${attackerCard.name} (onHeroHit)`);
-                }
-
-                if (room.gameState.players[atk.targetPlayer].hp <= 0) {
-                    applyPendingPowerBonuses(room, log);
-                    emitStateToBoth(room);
-                    await applyPendingLifelinkHeals(room, log);
-                    return true;
-                }
-            } else {
-                const targetCard = room.gameState.players[atk.targetPlayer].field[atk.targetRow][atk.targetCol];
-                if (!targetCard) continue;
-
-                const hpBeforeThisAttack = targetCard.currentHp;
-                const damage = Math.max(0, attackerCard.atk);
-                const actualUniDmg = applyCreatureDamage(targetCard, damage, room, log, atk.targetPlayer, atk.targetRow, atk.targetCol, { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, uid: attackerCard.uid });
-                if (actualUniDmg > 0) {
-                    log(`Ã¢Å¡â€Ã¯Â¸Â ${attackerCard.name} Ã¢â€ â€™ ${targetCard.name} (-${actualUniDmg})`, 'damage');
-                    emitAnimation(room, 'damage', { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, amount: actualUniDmg, skipScratch: true });
-                }
-
-                if (actualUniDmg > 0 && targetCard.currentHp > 0 && targetCard.abilities.includes('power')) {
-                    targetCard.pendingPowerBonus = (targetCard.pendingPowerBonus || 0) + (targetCard.powerX || 1);
-                }
-
-                await applyTrampleDamage(room, atk, log, sleep);
-
-                // RIPOSTE si la cible ÃƒÂ©tait vivante et que l'attaquant n'est pas un tireur
-                const targetWasAlive = hpBeforeThisAttack > 0;
-
-                if (targetWasAlive && !atk.isShooter) {
-                    const riposteDamage = targetCard.atk;
-                    const actualUniRip = applyCreatureDamage(attackerCard, riposteDamage, room, log, atk.attackerPlayer, atk.attackerRow, atk.attackerCol, { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, uid: targetCard.uid, isRiposte: true });
-                    if (actualUniRip > 0) {
-                        log(`Ã¢â€ Â©Ã¯Â¸Â ${targetCard.name} riposte Ã¢â€ â€™ ${attackerCard.name} (-${actualUniRip})`, 'damage');
-                        emitAnimation(room, 'damage', { player: atk.attackerPlayer, row: atk.attackerRow, col: atk.attackerCol, amount: actualUniRip });
-                    }
-
-                    if (actualUniRip > 0 && attackerCard.currentHp > 0 && attackerCard.abilities.includes('power')) {
-                        attackerCard.pendingPowerBonus = (attackerCard.pendingPowerBonus || 0) + (attackerCard.powerX || 1);
-                    }
-                }
-            }
-        }
-
-        // Collecter les slots ÃƒÂ  vÃƒÂ©rifier pour les morts
-        for (const atk of attacks) {
-            allSlotsToCheck.push([atk.attackerRow, atk.attackerCol]);
-            if (!atk.targetIsHero) {
-                allSlotsToCheck.push([atk.targetRow, atk.targetCol]);
-            }
-        }
-
-        // Appliquer bonus Power et ÃƒÂ©mettre l'ÃƒÂ©tat (avec dÃƒÂ©gÃƒÂ¢ts de riposte visibles)
-        const powerCount = applyPendingPowerBonuses(room, log);
-        recalcDynamicAtk(room);
-        emitStateToBoth(room);
-        // Appliquer les soins Lifelink APRÃƒË†S ÃƒÂ©mission (le client voit d'abord les dÃƒÂ©gÃƒÂ¢ts)
-        await applyPendingLifelinkHeals(room, log);
-        await sleep(300);
-
-        // Retirer les crÃƒÂ©atures mortes aprÃƒÂ¨s chaque colonne (important pour col 1 qui suit)
-        await checkAndRemoveDeadCreatures(room, allSlotsToCheck, log, sleep);
-    }
-
-    // VÃƒÂ©rifier victoire
-    if (checkVictory && checkVictory()) {
-        return true;
-    }
-
-    return false;
-}
-
 // Helper pour appliquer les dÃƒÂ©gÃƒÂ¢ts de clivant (cleave)
-// Touche les crÃƒÂ©atures sur les lignes adjacentes (row Ã‚Â±1) dans la mÃƒÂªme colonne que la cible
 function applyCleaveV2(room, attackerCard, atk, log) {
     if (!attackerCard.abilities.includes('cleave')) return;
 
@@ -7221,5 +7249,6 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Ã°Å¸Å½Â® Server on http://localhost:${PORT}`));
+
 
 

@@ -6,12 +6,78 @@ let mulliganDone = false;
 let testModeSelection = [];
 let cardCatalog = null;
 
+// Debug bridge for automation/bench tools (Playwright, local visual probes).
+// Keeps access explicit without relying on lexical globals from outside scripts.
+if (typeof window !== 'undefined') {
+    window.__benchApi = window.__benchApi || {};
+    window.__benchApi.getState = () => state;
+    window.__benchApi.getMyNum = () => myNum;
+    window.__benchApi.emit = (eventName, payload) => {
+        if (!socket || !eventName) return false;
+        socket.emit(eventName, payload);
+        return true;
+    };
+}
+
 // Debug runtime logs (console). Keep disabled in production for performance.
 if (typeof window !== 'undefined' && typeof window.DEBUG_LOGS === 'undefined') {
     window.DEBUG_LOGS = false;
 }
 if (typeof window !== 'undefined' && typeof window.CLIENT_PACED_RESOLUTION === 'undefined') {
     window.CLIENT_PACED_RESOLUTION = false;
+}
+// Pixi card migration flags (opt-in). Keep disabled by default to preserve current DOM design.
+if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_HAND_OVERLAY === 'undefined') {
+    window.ENABLE_PIXI_HAND_OVERLAY = true;
+}
+if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_BOARD_OVERLAY === 'undefined') {
+    window.ENABLE_PIXI_BOARD_OVERLAY = false;
+}
+if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_ANIM_GHOSTS === 'undefined') {
+    window.ENABLE_PIXI_ANIM_GHOSTS = false;
+}
+if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN === 'undefined') {
+    window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN = true;
+}
+if (typeof window !== 'undefined' && typeof window.getPixiOverlayMode !== 'function') {
+    window.getPixiOverlayMode = () => ({
+        hand: !!window.ENABLE_PIXI_HAND_OVERLAY,
+        board: !!window.ENABLE_PIXI_BOARD_OVERLAY,
+        ghosts: !!window.ENABLE_PIXI_ANIM_GHOSTS,
+        domSnapshotSkin: window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN !== false
+    });
+}
+if (typeof window !== 'undefined' && typeof window.setPixiOverlayMode !== 'function') {
+    window.setPixiOverlayMode = (next = {}) => {
+        if (Object.prototype.hasOwnProperty.call(next, 'hand')) {
+            window.ENABLE_PIXI_HAND_OVERLAY = !!next.hand;
+            if (window.PixiHandLayer && typeof window.PixiHandLayer.setEnabled === 'function') {
+                window.PixiHandLayer.setEnabled(window.ENABLE_PIXI_HAND_OVERLAY);
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(next, 'board')) {
+            window.ENABLE_PIXI_BOARD_OVERLAY = !!next.board;
+            if (window.PixiBoardLayer && typeof window.PixiBoardLayer.setEnabled === 'function') {
+                window.PixiBoardLayer.setEnabled(window.ENABLE_PIXI_BOARD_OVERLAY);
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(next, 'ghosts')) {
+            window.ENABLE_PIXI_ANIM_GHOSTS = !!next.ghosts;
+        }
+        if (Object.prototype.hasOwnProperty.call(next, 'domSnapshotSkin')) {
+            window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN = !!next.domSnapshotSkin;
+        }
+        return window.getPixiOverlayMode();
+    };
+}
+if (typeof window !== 'undefined') {
+    // Apply runtime flags even though Pixi layers are loaded before this file.
+    if (window.PixiHandLayer && typeof window.PixiHandLayer.setEnabled === 'function') {
+        window.PixiHandLayer.setEnabled(!!window.ENABLE_PIXI_HAND_OVERLAY);
+    }
+    if (window.PixiBoardLayer && typeof window.PixiBoardLayer.setEnabled === 'function') {
+        window.PixiBoardLayer.setEnabled(!!window.ENABLE_PIXI_BOARD_OVERLAY);
+    }
 }
 if (typeof window !== 'undefined' && typeof window.VIS_TRACE_LOGS === 'undefined') {
     // Enabled for visual-debug sessions. Set to false to reduce console noise.
@@ -20,17 +86,145 @@ if (typeof window !== 'undefined' && typeof window.VIS_TRACE_LOGS === 'undefined
 if (typeof window !== 'undefined' && typeof window.__visTraceSeq === 'undefined') {
     window.__visTraceSeq = 0;
 }
+if (typeof window !== 'undefined' && typeof window.__visTraceBuffer === 'undefined') {
+    window.__visTraceBuffer = [];
+}
+if (typeof window !== 'undefined' && typeof window.__visTraceBufferMax === 'undefined') {
+    window.__visTraceBufferMax = 15000;
+}
+if (typeof window !== 'undefined' && typeof window.__visTraceSessionId === 'undefined') {
+    window.__visTraceSessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+if (typeof window !== 'undefined' && typeof window.__visTraceContext === 'undefined') {
+    window.__visTraceContext = {
+        roomCode: null,
+        playerNum: null
+    };
+}
+if (typeof window !== 'undefined' && typeof window.flushVisTraceLogs !== 'function') {
+    window.flushVisTraceLogs = async function flushVisTraceLogs(reason = 'manual', opts = {}) {
+        try {
+            if (window.__visTraceFlushInFlight) return { ok: false, skipped: 'in_flight' };
+            const lines = Array.isArray(window.__visTraceBuffer) ? window.__visTraceBuffer.slice() : [];
+            if (!lines.length) return { ok: false, skipped: 'empty' };
+
+            const context = window.__visTraceContext || {};
+            const body = {
+                reason,
+                sessionId: window.__visTraceSessionId || null,
+                roomCode: context.roomCode || null,
+                playerNum: Number(context.playerNum || 0),
+                turn: Number(state?.turn || 0),
+                phase: state?.phase || null,
+                lines
+            };
+            const bodyJson = JSON.stringify(body);
+            const payloadBytes = (typeof TextEncoder !== 'undefined')
+                ? new TextEncoder().encode(bodyJson).length
+                : bodyJson.length;
+            const BEACON_MAX_BYTES = 60 * 1024;
+            const KEEPALIVE_MAX_BYTES = 60 * 1024;
+
+            if (opts.useBeacon && navigator?.sendBeacon) {
+                if (payloadBytes > BEACON_MAX_BYTES) {
+                    if (typeof window.visTrace === 'function') {
+                        window.visTrace('visTrace:auto-save:beacon-too-large', {
+                            reason,
+                            payloadBytes,
+                            limit: BEACON_MAX_BYTES,
+                            lines: lines.length
+                        });
+                    }
+                } else {
+                    const ok = navigator.sendBeacon(
+                        '/api/vis-trace/upload',
+                        new Blob([bodyJson], { type: 'application/json' })
+                    );
+                    if (ok && opts.reset !== false) window.__visTraceBuffer.length = 0;
+                    return { ok, beacon: true, lines: lines.length, payloadBytes };
+                }
+            }
+
+            const keepaliveRequested = opts.keepalive !== false;
+            const keepalive = keepaliveRequested && payloadBytes <= KEEPALIVE_MAX_BYTES;
+            if (keepaliveRequested && !keepalive && typeof window.visTrace === 'function') {
+                window.visTrace('visTrace:auto-save:keepalive-disabled', {
+                    reason,
+                    payloadBytes,
+                    limit: KEEPALIVE_MAX_BYTES,
+                    lines: lines.length
+                });
+            }
+
+            window.__visTraceFlushInFlight = true;
+            const r = await fetch('/api/vis-trace/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: bodyJson,
+                keepalive
+            });
+            const raw = await r.text();
+            let data = {};
+            try {
+                data = raw ? JSON.parse(raw) : {};
+            } catch (_) {
+                data = raw ? { raw: String(raw).slice(0, 400) } : {};
+            }
+            if (r.ok && opts.reset !== false) {
+                window.__visTraceBuffer.length = 0;
+                if (data?.file) window.__lastVisTraceFile = data.file;
+            }
+            return { ok: !!r.ok, status: r.status, keepalive, payloadBytes, ...data };
+        } catch (e) {
+            const message = String(e && e.message ? e.message : e);
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('visTrace:auto-save:error', {
+                    reason,
+                    error: message,
+                    name: e?.name || null
+                });
+            }
+            return { ok: false, error: message, name: e?.name || null };
+        } finally {
+            window.__visTraceFlushInFlight = false;
+        }
+    };
+}
 if (typeof window !== 'undefined' && typeof window.visTrace !== 'function') {
     window.visTrace = function visTrace(tag, payload) {
         if (!window.VIS_TRACE_LOGS) return;
         const seq = ++window.__visTraceSeq;
         const ts = Date.now();
+        let payloadStr = '{}';
         try {
-            console.log(`[VIS-TRACE] #${seq} t=${ts} ${tag} ${JSON.stringify(payload || {})}`);
+            payloadStr = JSON.stringify(payload || {});
+            const line = `[VIS-TRACE] #${seq} t=${ts} ${tag} ${payloadStr}`;
+            console.log(line);
+            if (Array.isArray(window.__visTraceBuffer)) {
+                window.__visTraceBuffer.push(line);
+                const overflow = window.__visTraceBuffer.length - Number(window.__visTraceBufferMax || 0);
+                if (overflow > 0) window.__visTraceBuffer.splice(0, overflow);
+            }
         } catch (_) {
+            const line = `[VIS-TRACE] #${seq} t=${ts} ${tag} {"_unserializable":true}`;
             console.log(`[VIS-TRACE] #${seq} t=${ts} ${tag}`, payload || {});
+            if (Array.isArray(window.__visTraceBuffer)) {
+                window.__visTraceBuffer.push(line);
+                const overflow = window.__visTraceBuffer.length - Number(window.__visTraceBufferMax || 0);
+                if (overflow > 0) window.__visTraceBuffer.splice(0, overflow);
+            }
         }
     };
+}
+if (typeof window !== 'undefined' && !window.__visTraceBeforeUnloadHook) {
+    window.__visTraceBeforeUnloadHook = true;
+    window.addEventListener('beforeunload', () => {
+        try {
+            if (Array.isArray(window.__visTraceBuffer) && window.__visTraceBuffer.length > 0) {
+                window.flushVisTraceLogs('beforeunload', { useBeacon: true, reset: true });
+            }
+        } catch (_) {}
+    });
 }
 if (typeof window !== 'undefined' && typeof window.visBuildStateSig !== 'function') {
     const _visCardSig = (card) => {

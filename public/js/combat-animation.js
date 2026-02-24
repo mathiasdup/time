@@ -694,6 +694,7 @@ class CombatAnimationSystem {
 
         const pos = this.getSlotCenter(owner, row, col);
         if (!pos) return;
+        const card = this.getCardElement(owner, row, col);
 
         CombatVFX.screenShake(10, 0.88, 300);
 
@@ -703,6 +704,9 @@ class CombatAnimationSystem {
         await slash.animateIn();
 
         if (amount !== undefined) this.showDamageEffect(pos.x, pos.y, amount);
+        if (card && Number.isFinite(Number(amount)) && Number(amount) > 0) {
+            this._applyVisualDamage(card, Number(amount));
+        }
 
         await this.wait(380);
         await slash.fadeOut();
@@ -716,6 +720,7 @@ class CombatAnimationSystem {
 
         const pos = this.getSlotCenter(owner, row, col);
         if (!pos) return;
+        const card = this.getCardElement(owner, row, col);
 
         const slashSize = 162;
         const fx = this._createCardFxLayer(pos.x, pos.y);
@@ -723,6 +728,9 @@ class CombatAnimationSystem {
         await slash.animateIn();
 
         if (amount !== undefined) this.showDamageEffect(pos.x, pos.y, amount);
+        if (card && Number.isFinite(Number(amount)) && Number(amount) > 0) {
+            this._applyVisualDamage(card, Number(amount));
+        }
 
         await this.wait(380);
         await slash.fadeOut();

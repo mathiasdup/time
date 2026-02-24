@@ -1,7 +1,7 @@
-/* ==================== UI / OVERLAYS ====================
+﻿/* ==================== UI / OVERLAYS ====================
    Cimeti\u00e8re popup, game over, preview, mulligan, card picker */
 
-        /* Popup cimetière - style panneau bronze */
+        /* Popup cimetiÃ¨re - style panneau bronze */
         .graveyard-popup {
             position: fixed;
             bottom: 130px;
@@ -72,7 +72,7 @@
         }
 
         .graveyard-title {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 18px;
             font-weight: 700;
             color: #c4b896;
@@ -109,7 +109,7 @@
             width: var(--card-w) !important;
             height: var(--card-h) !important;
         }
-        /* Afficher les stats des créatures dans la popup du cimetière */
+        /* Afficher les stats des crÃ©atures dans la popup du cimetiÃ¨re */
         .graveyard-cards .card.in-graveyard .arena-stats,
         .graveyard-cards .card.arena-style.on-field.in-graveyard .arena-stats,
         .graveyard-cards .card.in-graveyard .img-atk,
@@ -118,14 +118,14 @@
         }
         .graveyard-empty {
             color: rgba(196, 184, 150, 0.4);
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-style: italic;
             text-align: center;
             padding: 40px;
             width: 300px;
         }
 
-        /* Réanimation : backdrop sombre pour sélection au cimetière */
+        /* RÃ©animation : backdrop sombre pour sÃ©lection au cimetiÃ¨re */
         .reanimate-backdrop {
             display: none;
             position: fixed;
@@ -136,7 +136,7 @@
         }
         .reanimate-backdrop.active { display: block; }
 
-        /* Créatures sélectionnables : bordure gradient orange rotatif */
+        /* CrÃ©atures sÃ©lectionnables : bordure gradient orange rotatif */
         .graveyard-popup.selection-mode .graveyard-selectable {
             cursor: pointer;
             border-color: transparent !important;
@@ -163,7 +163,7 @@
             transform: translateY(-6px) scale(1.05);
         }
 
-        /* Cartes non-créatures : grisées et non-cliquables */
+        /* Cartes non-crÃ©atures : grisÃ©es et non-cliquables */
         .graveyard-popup.selection-mode .graveyard-unselectable {
             opacity: 0.4;
             filter: grayscale(60%);
@@ -205,7 +205,7 @@
             background: url('../cardback/back_1.png') center/cover no-repeat;
         }
         
-        /* Preview héros - wrapper pour une carte arena */
+        /* Preview hÃ©ros - wrapper pour une carte arena */
         .hero-preview {
             position: fixed;
             top: 70px;
@@ -228,7 +228,7 @@
             margin-top: 10px;
         }
 
-        /* HP héros (preview/zoom arena) — même style que les HP créatures */
+        /* HP hÃ©ros (preview/zoom arena) â€” mÃªme style que les HP crÃ©atures */
         .arena-hero-hp {
             position: absolute;
             bottom: 2px;
@@ -260,7 +260,7 @@
             display: none;
         }
         .arena-hero-hp-number {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 15px;
             font-weight: 900;
             color: #e5e5e5;
@@ -268,7 +268,7 @@
             z-index: 2;
         }
 
-        /* Ancien modal héros supprimé - utilise maintenant card-zoom-overlay avec template arena */
+        /* Ancien modal hÃ©ros supprimÃ© - utilise maintenant card-zoom-overlay avec template arena */
 
         /* Animation Zdejebel */
         .zdejebel-effect {
@@ -303,7 +303,7 @@
             50% { transform: scale(1.2); filter: brightness(1.3); }
         }
 
-        /* Preview container avec capacités */
+        /* Preview container avec capacitÃ©s */
         .preview-container {
             display: flex;
             flex-direction: column;
@@ -345,7 +345,7 @@
             line-height: 1.3;
         }
 
-        /* Effets appliqués (sorts) */
+        /* Effets appliquÃ©s (sorts) */
         .preview-effects {
             display: flex;
             flex-direction: column;
@@ -370,7 +370,7 @@
             line-height: 1.3;
         }
         
-        /* Anciens styles settings-popup supprimés - remplacés par les panneaux */
+        /* Anciens styles settings-popup supprimÃ©s - remplacÃ©s par les panneaux */
         
         /* Zone de drop pour sorts globaux */
         .global-spell-zone {
@@ -523,7 +523,7 @@
             color: #ffd700;
             margin-bottom: 10px;
             text-shadow: 0 0 20px rgba(255,215,0,0.5);
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
         }
         .mode-selector-subtitle {
             color: #aaa;
@@ -558,7 +558,7 @@
             font-size: 1.4em;
             color: #ffd700;
             font-weight: bold;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             margin-bottom: 8px;
         }
         .mode-btn-desc {
@@ -590,7 +590,7 @@
         .card-picker-title {
             font-size: 1.6em;
             color: #ffd700;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             text-shadow: 0 0 15px rgba(255,215,0,0.4);
         }
         .card-picker-counter {
@@ -730,7 +730,7 @@
             padding: 16px 60px;
             font-size: 1.2em;
             font-weight: bold;
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             background: linear-gradient(135deg, #e67e22, #d35400);
             color: white;
             border: none;
@@ -883,7 +883,7 @@
         /* Cacher la section selection (thumbs) quand hidden */
         .card-picker-selection.hidden { display: none; }
 
-        /* Sorts engagés dans la main (joués pendant la planification) */
+        /* Sorts engagÃ©s dans la main (jouÃ©s pendant la planification) */
         .committed-spell {
             filter: grayscale(80%) brightness(0.7);
             opacity: 0.75;
@@ -914,7 +914,7 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.4);
         }
 
-        /* Highlight des cibles d'un sort engagé (hover) */
+        /* Highlight des cibles d'un sort engagÃ© (hover) */
         .committed-target-highlight {
             box-shadow: 0 0 12px 4px rgba(230, 126, 34, 0.7) !important;
             border-color: #e67e22 !important;
@@ -941,7 +941,7 @@
             100% { opacity: 0; }
         }
 
-        /* Rayons de lumière bronze rotatifs derrière le banner */
+        /* Rayons de lumiÃ¨re bronze rotatifs derriÃ¨re le banner */
         .round-banner-rays {
             position: absolute;
             width: 700px;
@@ -1004,7 +1004,7 @@
             100% { opacity: 0; }
         }
 
-        /* Halo central — warm bronze glow matching frame palette */
+        /* Halo central â€” warm bronze glow matching frame palette */
         .round-banner-glow {
             position: absolute;
             width: 500px;
@@ -1013,7 +1013,7 @@
             border-radius: 50%;
         }
 
-        /* Ribbon SVG container — above swords */
+        /* Ribbon SVG container â€” above swords */
         .round-banner-ribbon {
             position: relative;
             z-index: 2;
@@ -1054,7 +1054,7 @@
         }
 
         .round-banner-label {
-            font-family: 'Cinzel', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 15px;
             font-weight: 900;
             letter-spacing: 6px;
@@ -1067,7 +1067,7 @@
         }
 
         .round-banner-number {
-            font-family: 'Cinzel Decorative', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 56px;
             font-weight: 900;
             color: #d9d0b4;
@@ -1093,3 +1093,5 @@
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-3px); }
             75% { transform: translateX(3px); }
+
+

@@ -133,17 +133,39 @@ class GameVFXSystem {
     }
 
     update() {
+        // Fast path: keep ticker alive but skip work when nothing is active.
+        if (
+            this.activeEffects.length === 0 &&
+            this.activeShields.size === 0 &&
+            this.activeCamouflages.size === 0 &&
+            !this._shakeActive
+        ) {
+            return;
+        }
+
         // Increment frame ID to invalidate per-frame caches (_getScalerInfo)
         this._frameId = (this._frameId || 0) + 1;
+        const now = performance.now();
 
         this.activeEffects = this.activeEffects.filter(effect => {
-            if (effect.finished) {
+            const container = effect && effect.container;
+            const detached = !container || container.destroyed || !container.parent;
+            const hasDuration =
+                effect &&
+                Number.isFinite(Number(effect.duration)) &&
+                Number.isFinite(Number(effect.startTime));
+            // Safety valve: drop zombie effects that outlive their own declared duration.
+            const stale =
+                hasDuration &&
+                (now - Number(effect.startTime)) > (Number(effect.duration) * 4 + 1000);
+
+            if (effect.finished || detached || stale) {
                 if (effect._rafId) cancelAnimationFrame(effect._rafId);
-                if (effect.container && !effect.container.destroyed) {
-                    if (effect.container.parent) {
-                        effect.container.parent.removeChild(effect.container);
+                if (container && !container.destroyed) {
+                    if (container.parent) {
+                        container.parent.removeChild(container);
                     }
-                    effect.container.destroy({ children: true });
+                    container.destroy({ children: true });
                 }
                 return false;
             }
@@ -216,39 +238,6 @@ class GameVFXSystem {
         };
         this._pushEffect(effect);
         effect._rafId = requestAnimationFrame(animate);
-    }
-
-    // ==================== CURSOR TRAIL ====================
-
-    createCursorTrail(x, y) {
-        if (!this.initialized) return;
-        const dot = new PIXI.Graphics();
-        dot.circle(0, 0, 3);
-        dot.fill({ color: 0xFFAB40, alpha: 0.9 });
-        dot.position.set(x, y);
-        this.container.addChild(dot);
-
-        const effect = { container: dot, finished: false, startTime: performance.now(), duration: 350 };
-
-        const animate = () => {
-            if (effect.finished) return;
-            const elapsed = performance.now() - effect.startTime;
-            const progress = Math.min(elapsed / 350, 1);
-
-            if (progress >= 1) {
-                effect.finished = true;
-                dot.parent?.removeChild(dot);
-                dot.destroy();
-                return;
-            }
-
-            dot.alpha = (1 - progress) * 0.9;
-            dot.scale.set(1 - progress * 0.5);
-            requestAnimationFrame(animate);
-        };
-
-        this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== CLICK RING ====================
@@ -4529,6 +4518,17 @@ class GameVFXSystem {
      */
     createPoisonDripEffect(x, y, damage, cardW = 90, cardH = 120) {
         if (!this.initialized) return;
+        const rawDamage = damage;
+        const damageNum = Number(rawDamage);
+        const poisonDamage = Number.isFinite(damageNum) ? Math.max(0, damageNum) : 0;
+        if (!Number.isFinite(damageNum) && typeof window !== 'undefined' && typeof window.visTrace === 'function') {
+            window.visTrace('vfx:poisonDamage:invalid', {
+                rawDamage: rawDamage ?? null,
+                poisonDamage,
+                cardW,
+                cardH
+            });
+        }
 
         const effectContainer = new PIXI.Container();
         this.container.addChild(effectContainer);
@@ -4630,9 +4630,9 @@ class GameVFXSystem {
 
         // ═══════ CREATE BLISTERS (optimisé : moins d'objets) ═══════
         const blisters = [];
-        const bigCount = 3 + Math.min(damage, 3);
+        const bigCount = 3 + Math.min(poisonDamage, 3);
         for (let i = 0; i < bigCount; i++) blisters.push(makeBlister());
-        const smallCount = 2 + Math.min(damage, 2);
+        const smallCount = 2 + Math.min(poisonDamage, 2);
         for (let i = 0; i < smallCount; i++) {
             const b = makeBlister();
             b.maxSize = rand(cardW * 0.03, cardW * 0.07);
@@ -4755,7 +4755,7 @@ class GameVFXSystem {
 
         // ═══════ NOMBRE DE DÉGÂTS POISON ═══════
         const dmgText = new PIXI.Text({
-            text: `-${damage}`,
+            text: `-${poisonDamage}`,
             style: {
                 fontFamily: 'Arial Black, Arial',
                 fontSize: 52,
@@ -5072,6 +5072,20 @@ class GameVFXSystem {
      */
     createBuffEffect(x, y, atkBuff = 1, hpBuff = 1, cardW = 90, cardH = 120) {
         if (!this.initialized) return;
+        const atkNum = Number(atkBuff);
+        const hpNum = Number(hpBuff);
+        if (typeof window !== 'undefined' && typeof window.visTrace === 'function') {
+            if (!Number.isFinite(atkNum) || !Number.isFinite(hpNum)) {
+                window.visTrace('vfx:buffEffect:invalid', {
+                    atkBuffRaw: atkBuff ?? null,
+                    hpBuffRaw: hpBuff ?? null,
+                    atkNum: Number.isFinite(atkNum) ? atkNum : null,
+                    hpNum: Number.isFinite(hpNum) ? hpNum : null,
+                    cardW,
+                    cardH
+                });
+            }
+        }
 
         const effectContainer = new PIXI.Container();
         this.container.addChild(effectContainer);
@@ -6538,6 +6552,8 @@ class SleepAnimationSystem {
         this.activeAnimations = new Map(); // slotKey -> animation data
         this.startTimes = new Map(); // slotKey -> startTime (persiste entre les renders)
         this.initialized = false;
+        this.frameIntervalMs = 1000 / 30; // Global cap: 30 FPS
+        this._lastUpdateTs = 0;
     }
 
     async init() {
@@ -6555,8 +6571,12 @@ class SleepAnimationSystem {
     }
 
     startUpdateLoop() {
-        const update = () => {
-            this.updateAllAnimations();
+        const update = (ts) => {
+            const now = Number(ts || performance.now());
+            if (!this._lastUpdateTs || (now - this._lastUpdateTs) >= this.frameIntervalMs) {
+                this._lastUpdateTs = now;
+                this.updateAllAnimations();
+            }
             requestAnimationFrame(update);
         };
         requestAnimationFrame(update);

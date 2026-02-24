@@ -3,10 +3,18 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server.js",
-    "check:encoding": "powershell -ExecutionPolicy Bypass -File tools/check-mojibake.ps1"
+    "check:encoding": "powershell -ExecutionPolicy Bypass -File tools/check-mojibake.ps1",
+    "bench:visual": "node tools/visual-bench/run.js",
+    "bench:visual:headed": "set VIS_BENCH_HEADED=1&& node tools/visual-bench/run.js",
+    "test:combat-canonical": "node tools/tests/combat-canonical.test.js",
+    "test:combat-order": "node tools/tests/combat-phase-sequence.test.js",
+    "test:visual-guard": "node tools/tests/visual-guard.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.6.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2"
   }
 }

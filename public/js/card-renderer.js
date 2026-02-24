@@ -174,7 +174,10 @@ const CardRenderer = {
             if (a === 'spellBoost') return `Sort renforcé ${card.spellBoostAmount || ''}`.trim();
             if (a === 'enhance') return `Amélioration ${card.enhanceAmount || ''}`.trim();
             if (a === 'bloodthirst') return `Soif de sang ${card.bloodthirstAmount || ''}`.trim();
-            if (a === 'poison') return `Poison ${card.poisonX || 1}`;
+            if (a === 'poison') {
+                const poisonValue = Number.isFinite(Number(card.poisonX)) ? Math.max(0, Math.floor(Number(card.poisonX))) : 1;
+                return `Poison ${poisonValue}`;
+            }
             if (a === 'lifedrain') return `Drain de vie ${card.lifedrainX || ''}`.trim();
             if (a === 'lifelink') return `Lien vital ${card.lifelinkX || ''}`.trim();
             return abilityNames[a] || a;

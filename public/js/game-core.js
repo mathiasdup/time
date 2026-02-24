@@ -73,12 +73,63 @@ function _pickAnimMeta(anim) {
         'type', 'player', 'attacker', 'defender', 'caster', 'targetPlayer',
         'row', 'col', 'fromRow', 'fromCol', 'toRow', 'toCol',
         'targetRow', 'targetCol', 'amount', 'damage', 'riposteDamage',
-        'combatType', 'spellId', 'handIndex'
+        'combatType', 'spellId', 'handIndex',
+        'atkBuff', 'hpBuff', 'source', 'absorberName', 'absorberUid',
+        'victimName', 'victimUid', 'rawAtkGain', 'rawHpGain',
+        'cardName', 'cardUid', 'poisonCounters',
+        'lastPoisonSource', 'lastPoisonTurn', 'lastPoisonByCard', 'lastPoisonAdded'
     ];
     for (const k of keys) {
         if (anim[k] !== undefined) out[k] = anim[k];
     }
     return out;
+}
+
+function _toFiniteAnimNumberOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function _traceBuffApplyPayload(context, data) {
+    if (!data || typeof window?.visTrace !== 'function') return;
+    const atkBuff = _toFiniteAnimNumberOrNull(data.atkBuff);
+    const hpBuff = _toFiniteAnimNumberOrNull(data.hpBuff);
+    const source = typeof data.source === 'string' ? data.source : '';
+    const absorberName = typeof data.absorberName === 'string' ? data.absorberName : '';
+    const hasAbsorbContext = source.toLowerCase().includes('absorb') || absorberName.toLowerCase().includes('nourrisseur');
+    const isInvalid = atkBuff === null || hpBuff === null;
+    if (!hasAbsorbContext && !isInvalid) return;
+
+    const side = data.player === myNum ? 'me' : 'opponent';
+    const stateCard =
+        data.player !== undefined && data.row !== undefined && data.col !== undefined
+            ? state?.[side]?.field?.[data.row]?.[data.col]
+            : null;
+
+    window.visTrace(isInvalid ? 'buffApply:payload-invalid' : 'buffApply:payload', {
+        context,
+        source: data.source ?? null,
+        player: data.player ?? null,
+        row: data.row ?? null,
+        col: data.col ?? null,
+        atkBuffRaw: data.atkBuff ?? null,
+        hpBuffRaw: data.hpBuff ?? null,
+        atkBuff,
+        hpBuff,
+        absorberName: data.absorberName ?? null,
+        absorberUid: data.absorberUid ?? null,
+        victimName: data.victimName ?? null,
+        victimUid: data.victimUid ?? null,
+        rawAtkGain: data.rawAtkGain ?? null,
+        rawHpGain: data.rawHpGain ?? null,
+        stateCard: stateCard ? {
+            name: stateCard.name ?? null,
+            uid: stateCard.uid ?? null,
+            atk: stateCard.atk ?? null,
+            hp: stateCard.hp ?? null,
+            currentHp: stateCard.currentHp ?? null
+        } : null
+    });
 }
 
 function setupCustomDrag() {
@@ -278,6 +329,12 @@ function initSocket() {
     socket.on('gameStart', (s) => {
         state = s;
         myNum = s.myPlayer;
+        if (typeof window !== 'undefined') {
+            window.__visTraceContext = window.__visTraceContext || {};
+            window.__visTraceContext.playerNum = Number(myNum || 0);
+            const roomText = document.getElementById('room-code-display')?.textContent?.trim();
+            if (roomText) window.__visTraceContext.roomCode = roomText;
+        }
         if (s.features && typeof s.features.clientPacedResolution === 'boolean') {
             window.CLIENT_PACED_RESOLUTION = !!s.features.clientPacedResolution;
         }
@@ -359,9 +416,11 @@ function initSocket() {
 
         const wasInDeployPhase = state?.me?.inDeployPhase;
         const wasMulligan = state?.phase === 'mulligan';
+        // Tant qu'il reste du travail visuel de resolution (queue/anim draw),
+        // ne jamais appliquer un state "planning" immediatement: sinon la phase
+        // peut visuellement avancer avant la fin des animations.
         const shouldDeferPostResolutionState =
-            state?.phase === 'resolution' &&
-            s.phase !== 'resolution' &&
+            s.phase === 'planning' &&
             _hasActiveResolutionClientWork();
         if (shouldDeferPostResolutionState) {
             _deferredPostResolutionState = s;
@@ -536,7 +595,7 @@ function initSocket() {
 
     socket.on('newTurn', async (d) => {
         if (typeof window.visTrace === 'function') {
-            window.visTrace('socket:newTurn:start', {
+            window.visTrace('socket:newTurn:recv', {
                 turn: d?.turn,
                 maxEnergy: d?.maxEnergy,
                 qLen: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
@@ -553,21 +612,36 @@ function initSocket() {
         // Attendre que la queue d'animations ET les animations de pioche soient terminÃ©es
         // avant de reset l'UI et afficher la banniÃ¨re de tour
         let waitMs = 0;
+        let stableIdleMs = 0;
+        const tickMs = 100;
         const maxWait = 30000;
-        while (waitMs < maxWait && (
+        const isResolutionBusy = () => (
             isAnimating || animationQueue.length > 0 ||
             (typeof GameAnimations !== 'undefined' && (
                 GameAnimations.hasActiveDrawAnimation('me') ||
                 GameAnimations.hasActiveDrawAnimation('opp')
             ))
-        )) {
-            await new Promise(r => setTimeout(r, 100));
-            waitMs += 100;
+        );
+        while (waitMs < maxWait) {
+            if (isResolutionBusy()) {
+                stableIdleMs = 0;
+            } else {
+                stableIdleMs += tickMs;
+                if (stableIdleMs >= 200) break;
+            }
+            await new Promise(r => setTimeout(r, tickMs));
+            waitMs += tickMs;
         }
         if (typeof window.visTrace === 'function') {
             window.visTrace('socket:newTurn:wait-done', {
                 waitedMs: waitMs,
                 maxWait,
+                qLen: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+                isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
+            });
+            window.visTrace('socket:newTurn:start', {
+                turn: d?.turn,
+                maxEnergy: d?.maxEnergy,
                 qLen: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
                 isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
             });
@@ -710,6 +784,33 @@ function initSocket() {
             }
         }
         if (window.PerfMon) window.PerfMon.flush();
+        if (typeof window.flushVisTraceLogs === 'function') {
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('visTrace:auto-save:start', {
+                    reason: 'gameOver',
+                    bufferedLines: Array.isArray(window.__visTraceBuffer) ? window.__visTraceBuffer.length : 0
+                });
+            }
+            const flushResult = await window.flushVisTraceLogs('gameOver', { keepalive: false, reset: true });
+            if (!flushResult?.ok) {
+                const flushDetail = (() => {
+                    try { return JSON.stringify(flushResult); } catch (_) { return String(flushResult); }
+                })();
+                console.warn('[VIS-TRACE] auto-save failed on gameOver', flushDetail);
+                if (typeof window.visTrace === 'function') {
+                    window.visTrace('visTrace:auto-save:failed', { detail: flushDetail });
+                }
+            } else {
+                console.log('[VIS-TRACE] auto-saved', flushResult.file || null, flushResult.lineCount || 0);
+                if (typeof window.visTrace === 'function') {
+                    window.visTrace('visTrace:auto-save:success', {
+                        file: flushResult.file || null,
+                        lineCount: flushResult.lineCount || 0,
+                        payloadBytes: flushResult.payloadBytes || null
+                    });
+                }
+            }
+        }
         let resultText, resultClass;
         if (d.draw) {
             resultText = 'ðŸ¤ Match nul !';
@@ -805,6 +906,18 @@ function handleAnimation(data) {
         }
         // Bloquer render() HP immÃ©diatement pour poisonDamage (geler le HP prÃ©-poison)
         if (type === 'poisonDamage' && data.row !== undefined) {
+            const poisonAmount = Number(data.amount);
+            if (!Number.isFinite(poisonAmount) && typeof window.visTrace === 'function') {
+                window.visTrace('poisonDamage:payload-invalid', {
+                    context: 'socket:animation',
+                    player: data.player ?? null,
+                    row: data.row ?? null,
+                    col: data.col ?? null,
+                    amountRaw: data.amount ?? null,
+                    qLen: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+                    isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
+                });
+            }
             const pdOwner = data.player === myNum ? 'me' : 'opp';
             const pdKey = `${pdOwner}-${data.row}-${data.col}`;
             const side = pdOwner === 'me' ? 'me' : 'opponent';
@@ -881,6 +994,7 @@ function handleAnimation(data) {
             }
             case 'buff': animateBuff(data); break;
             case 'buffApply': {
+                _traceBuffApplyPayload('socket:animation', data);
                 const baOwner = data.player === myNum ? 'me' : 'opp';
                 const baSlot = getSlot(baOwner, data.row, data.col);
                 if (baSlot) {
@@ -1002,6 +1116,35 @@ function handleAnimationBatch(animations) {
             const displayedHp = document.querySelector(`#${target === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`)?.textContent;
             immediatePromises.push(animateZdejebelDamage(anim));
         } else if (anim.type === 'poisonDamage') {
+            const poisonAmount = Number(anim.amount);
+            if (!Number.isFinite(poisonAmount) && typeof window.visTrace === 'function') {
+                window.visTrace('poisonDamage:payload-invalid', {
+                    context: 'socket:animationBatch',
+                    player: anim.player ?? null,
+                    row: anim.row ?? null,
+                    col: anim.col ?? null,
+                    amountRaw: anim.amount ?? null,
+                    qLen: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+                    isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
+                });
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('poisonDamage:batch-payload', {
+                    player: anim.player ?? null,
+                    row: anim.row ?? null,
+                    col: anim.col ?? null,
+                    amountRaw: anim.amount ?? null,
+                    amount: Number.isFinite(poisonAmount) ? poisonAmount : null,
+                    source: anim.source ?? null,
+                    poisonCounters: anim.poisonCounters ?? null,
+                    cardName: anim.cardName ?? null,
+                    cardUid: anim.cardUid ?? null,
+                    lastPoisonSource: anim.lastPoisonSource ?? null,
+                    lastPoisonTurn: anim.lastPoisonTurn ?? null,
+                    lastPoisonByCard: anim.lastPoisonByCard ?? null,
+                    lastPoisonAdded: anim.lastPoisonAdded ?? null
+                });
+            }
             // Bloquer render() HP immÃ©diatement (mÃªme logique que handleAnimation)
             const pdOwner = anim.player === myNum ? 'me' : 'opp';
             const pdKey = `${pdOwner}-${anim.row}-${anim.col}`;
@@ -1037,6 +1180,7 @@ function handleAnimationBatch(animations) {
                 CombatVFX.createPoisonCloudEffect(v.x, v.y, v.w, v.h);
             }
         } else if (anim.type === 'buffApply') {
+            _traceBuffApplyPayload('socket:animationBatch', anim);
             const buffOwner = anim.player === myNum ? 'me' : 'opp';
             const buffSlot = getSlot(buffOwner, anim.row, anim.col);
             if (buffSlot) {
@@ -1051,6 +1195,9 @@ function handleAnimationBatch(animations) {
             // Keep strict ordering with queued combat/death animations.
             queueAnimation(anim.type, anim);
         } else {
+            // Fallback: preserve ordering for any batched animation type
+            // that is not handled as an immediate VFX-only event above.
+            queueAnimation(anim.type, anim);
         }
     }
 
@@ -1676,17 +1823,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // â”€â”€ Curseur fantasy custom â”€â”€
     const cursorEl = document.getElementById('cursor-fantasy');
-    let cursorTrailCounter = 0;
 
     document.addEventListener('mousemove', e => {
         cursorEl.style.left = e.clientX + 'px';
         cursorEl.style.top = e.clientY + 'px';
         cursorEl.style.opacity = '1';
-
-        cursorTrailCounter++;
-        if (cursorTrailCounter % 3 === 0) {
-            CombatVFX.createCursorTrail(e.clientX, e.clientY);
-        }
     });
 
     document.addEventListener('mousedown', e => {

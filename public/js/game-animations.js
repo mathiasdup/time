@@ -1,8 +1,8 @@
-// ==================== SYSTÃˆME D'ANIMATIONS DU JEU ====================
-// File d'attente, handlers combat/mort/sort/piÃ¨ge, effets visuels
+// ==================== SYSTÃƒË†ME D'ANIMATIONS DU JEU ====================
+// File d'attente, handlers combat/mort/sort/piÃƒÂ¨ge, effets visuels
 
-// === Smooth close du trou dans la main adverse aprÃ¨s hide d'une carte ===
-// Collapse la carte cachÃ©e (widthâ†’0, marginâ†’0) pour que le flexbox ferme le trou naturellement
+// === Smooth close du trou dans la main adverse aprÃƒÂ¨s hide d'une carte ===
+// Collapse la carte cachÃƒÂ©e (widthÃ¢â€ â€™0, marginÃ¢â€ â€™0) pour que le flexbox ferme le trou naturellement
 function smoothCloseOppHandGap(hiddenCard) {
     if (!hiddenCard) return;
     hiddenCard.style.transition = 'width 0.3s ease-out, margin-left 0.3s ease-out';
@@ -11,18 +11,18 @@ function smoothCloseOppHandGap(hiddenCard) {
     hiddenCard.style.overflow = 'hidden';
 }
 
-// === Mise Ã  jour dynamique de la popup cimetiÃ¨re ===
+// === Mise ÃƒÂ  jour dynamique de la popup cimetiÃƒÂ¨re ===
 function addCardToGraveyardPopup(owner, card) {
     const popup = document.getElementById('graveyard-popup');
     if (!popup || !popup.classList.contains('active')) return;
     if (popup.dataset.owner !== owner) return;
-    // Ne pas ajouter pendant la sÃ©lection de rÃ©animation
+    // Ne pas ajouter pendant la sÃƒÂ©lection de rÃƒÂ©animation
     if (popup.classList.contains('selection-mode')) return;
 
     const container = document.getElementById('graveyard-cards');
     if (!container) return;
 
-    // Retirer le message "vide" si prÃ©sent
+    // Retirer le message "vide" si prÃƒÂ©sent
     const emptyMsg = container.querySelector('.graveyard-empty');
     if (emptyMsg) emptyMsg.remove();
 
@@ -36,7 +36,7 @@ function addCardToGraveyardPopup(owner, card) {
         showCardZoom(card);
     };
 
-    // Animation d'entrÃ©e
+    // Animation d'entrÃƒÂ©e
     cardEl.style.opacity = '0';
     cardEl.style.transform = 'translateY(12px) scale(0.92)';
     cardEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
@@ -45,7 +45,7 @@ function addCardToGraveyardPopup(owner, card) {
     const nameEl = cardEl.querySelector('.arena-name');
     if (nameEl) fitArenaName(nameEl);
 
-    // DÃ©clencher l'animation au frame suivant
+    // DÃƒÂ©clencher l'animation au frame suivant
     requestAnimationFrame(() => {
         cardEl.style.opacity = '1';
         cardEl.style.transform = 'translateY(0) scale(1)';
@@ -78,7 +78,7 @@ function removeCardFromGraveyardPopup(owner, card) {
     }
 }
 
-// Cache des positions des cartes revealed dans la main adverse (sauvegardÃ© avant re-render de rÃ©vÃ©lation)
+// Cache des positions des cartes revealed dans la main adverse (sauvegardÃƒÂ© avant re-render de rÃƒÂ©vÃƒÂ©lation)
 const savedRevealedCardRects = new Map();
 
 function saveRevealedCardPositions() {
@@ -124,7 +124,215 @@ function _perfRecordAnimationStep(startMs, itemsProcessed) {
     window.PerfMon.recordAnimationStep(dt, itemsProcessed);
 }
 
-// Initialiser le systÃ¨me d'animation
+function _clampHeroHpValue(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+}
+
+function _setHeroHpText(hpElement, value) {
+    if (!hpElement) return;
+    hpElement.textContent = String(_clampHeroHpValue(value));
+}
+
+function _getPixiAnimRoot() {
+    const shared = window.__PixiCardOverlayShared;
+    if (!shared || !shared.app || !shared.ready || !window.PIXI) return null;
+    if (!shared.animRoot) {
+        const root = new PIXI.Container();
+        root.sortableChildren = true;
+        root.zIndex = 80;
+        shared.app.stage.addChild(root);
+        shared.animRoot = root;
+    }
+    return shared.animRoot;
+}
+
+function _createPixiAnimGhost(card, zIndex = 11000) {
+    if (typeof window !== 'undefined' && window.ENABLE_PIXI_ANIM_GHOSTS !== true) return null;
+    if (!card || typeof window.createCard !== 'function') return null;
+    const root = _getPixiAnimRoot();
+    if (!root) return null;
+
+    let view = null;
+    try {
+        view = window.createCard(card);
+    } catch (err) {
+        return null;
+    }
+    if (!view || !view.container) return null;
+
+    view.container.zIndex = zIndex;
+    root.addChild(view.container);
+    if (typeof view.setHovered === 'function') {
+        view.setHovered(false);
+    }
+
+    return {
+        syncFromElement(el, opts = {}) {
+            if (!view || !el || !el.isConnected) return;
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 1 || rect.height <= 1) {
+                view.container.visible = false;
+                return;
+            }
+            view.container.visible = true;
+            view.setLayout({
+                x: rect.left + rect.width * 0.5,
+                y: rect.top + rect.height * 0.5,
+                width: rect.width,
+                height: rect.height,
+                zIndex: opts.zIndex !== undefined ? Number(opts.zIndex) : zIndex
+            });
+
+            if (opts.alpha !== undefined) {
+                view.container.alpha = Math.max(0, Math.min(1, Number(opts.alpha) || 0));
+            } else {
+                view.container.alpha = 1;
+            }
+
+            if (view.__display) {
+                if (opts.tint !== undefined) {
+                    const tint = Number(opts.tint);
+                    view.__display.tint = Number.isFinite(tint) ? (tint & 0xffffff) : 0xffffff;
+                } else {
+                    const g = Math.max(0, Math.min(1, Number(opts.gray) || 0));
+                    const v = Math.max(0, Math.min(255, Math.round(255 - g * 95)));
+                    const tint = (v << 16) | (v << 8) | v;
+                    view.__display.tint = tint;
+                }
+            }
+
+            view.update(1 / 60);
+        },
+        destroy() {
+            if (!view) return;
+            try {
+                view.destroy();
+            } catch (err) {
+                // no-op
+            }
+            view = null;
+        }
+    };
+}
+
+// Trap warning state: keep orange target glow until trap damage animation ends.
+const trapWarningState = {
+    active: false,
+    waitingDamage: false,
+    targetKeys: new Set(),
+    clearTimer: null,
+};
+
+function _trapWarningKey(playerNum, row, col) {
+    const owner = Number(playerNum) === Number(myNum) ? 'me' : 'opp';
+    return `${owner}-${Number(row)}-${Number(col)}`;
+}
+
+function _clearTrapWarningTimer() {
+    if (trapWarningState.clearTimer) {
+        clearTimeout(trapWarningState.clearTimer);
+        trapWarningState.clearTimer = null;
+    }
+}
+
+function _setTrapWarningMode(active) {
+    const battlefield = document.getElementById('battlefield');
+    if (!battlefield) return;
+    const next = !!active;
+    const prev = battlefield.classList.contains('trap-warning-mode');
+    battlefield.classList.toggle('trap-warning-mode', next);
+    if (prev !== next && typeof CardGlow !== 'undefined') {
+        CardGlow.markDirty();
+    }
+}
+
+function _clearTrapTargetWarnings(reason = 'manual') {
+    _clearTrapWarningTimer();
+    _setTrapWarningMode(false);
+    document.querySelectorAll('.card-slot .card.spell-hover-target').forEach((el) => {
+        el.classList.remove('spell-hover-target');
+    });
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+    trapWarningState.active = false;
+    trapWarningState.waitingDamage = false;
+    trapWarningState.targetKeys = new Set();
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('trap:warning:clear', { reason });
+    }
+}
+
+function _applyTrapTargetWarnings(targets, options = {}) {
+    const waitForDamage = !!options.waitForDamage;
+    _clearTrapTargetWarnings('replace');
+    if (!Array.isArray(targets) || targets.length === 0) return 0;
+
+    _setTrapWarningMode(true);
+    let applied = 0;
+    const keys = new Set();
+    for (const target of targets) {
+        const tPlayer = Number(target?.player);
+        const tRow = Number(target?.row);
+        const tCol = Number(target?.col);
+        if (!Number.isFinite(tPlayer) || !Number.isFinite(tRow) || !Number.isFinite(tCol)) continue;
+        if (tRow < 0 || tRow > 3 || tCol < 0 || tCol > 1) continue;
+        const owner = tPlayer === myNum ? 'me' : 'opp';
+        const slot = getSlot(owner, tRow, tCol);
+        const cardEl = slot?.querySelector('.card');
+        if (!cardEl) continue;
+        cardEl.classList.add('spell-hover-target');
+        keys.add(_trapWarningKey(tPlayer, tRow, tCol));
+        applied++;
+    }
+
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+    trapWarningState.active = applied > 0;
+    trapWarningState.waitingDamage = waitForDamage && applied > 0;
+    trapWarningState.targetKeys = keys;
+
+    if (trapWarningState.waitingDamage) {
+        trapWarningState.clearTimer = setTimeout(() => {
+            _clearTrapTargetWarnings('fallback-timeout');
+        }, 15000);
+    }
+
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('trap:warning:targets', {
+            count: applied,
+            waitForDamage: trapWarningState.waitingDamage,
+            targets: targets.map((t) => ({
+                player: t?.player ?? null,
+                row: t?.row ?? null,
+                col: t?.col ?? null,
+            })),
+        });
+    }
+    return applied;
+}
+
+function _resolveTrapWarningByDamageBatch(batch) {
+    if (!trapWarningState.active || !trapWarningState.waitingDamage) return;
+    if (!Array.isArray(batch) || batch.length === 0) return;
+    const hit = batch.some((d) => {
+        const p = Number(d?.player);
+        const r = Number(d?.row);
+        const c = Number(d?.col);
+        if (!Number.isFinite(p) || !Number.isFinite(r) || !Number.isFinite(c)) return false;
+        return trapWarningState.targetKeys.has(_trapWarningKey(p, r, c));
+    });
+    if (hit) {
+        _clearTrapTargetWarnings('damage-batch-done');
+    }
+}
+
+function _releaseTrapWarningOnCombatEnd() {
+    if (trapWarningState.active && trapWarningState.waitingDamage) {
+        _clearTrapTargetWarnings('combat-end-fallback');
+    }
+}
+
+// Initialiser le systÃƒÂ¨me d'animation
 async function initCombatAnimations() {
     await CombatAnimations.init();
 }
@@ -148,14 +356,14 @@ function queueAnimation(type, data) {
         });
     }
 
-    // Pour zdejebel et onDeathDamage hÃ©ros, capturer les HP actuels AVANT que render() ne les mette Ã  jour
+    // Pour zdejebel et onDeathDamage hÃƒÂ©ros, capturer les HP actuels AVANT que render() ne les mette ÃƒÂ  jour
     if ((type === 'zdejebel' || (type === 'onDeathDamage' && data.targetRow === undefined)) && state) {
         const target = data.targetPlayer === myNum ? 'me' : 'opp';
         const currentDisplayedHp = target === 'me' ? state.me?.hp : state.opponent?.hp;
         data._displayHpBefore = currentDisplayedHp;
     }
 
-    // Pour burn, death, sacrifice, spell, trapTrigger, bloquer le render du cimetiÃ¨re IMMÃ‰DIATEMENT
+    // Pour burn, death, sacrifice, spell, trapTrigger, bloquer le render du cimetiÃƒÂ¨re IMMÃƒâ€°DIATEMENT
     if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger') {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
@@ -168,7 +376,7 @@ function queueAnimation(type, data) {
         animatingSlots.add(slotKey);
     }
 
-    // Pour deathTransform, bloquer le slot IMMÃ‰DIATEMENT pour que render() ne remplace pas la carte
+    // Pour deathTransform, bloquer le slot IMMÃƒâ€°DIATEMENT pour que render() ne remplace pas la carte
     if (type === 'deathTransform') {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
@@ -189,10 +397,10 @@ function queueAnimation(type, data) {
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
 
-        // PrÃ©-enregistrer pendingBounce au moment du queue (mÃªme technique que graveyardReturn)
-        // pour que render() cache la carte en main AVANT que l'animation ne dÃ©marre.
-        // Sans Ã§a, dans les parties longues avec beaucoup d'animations dans la queue,
-        // le state arrive et render() montre la carte en main avant que bounce ne dÃ©marre.
+        // PrÃƒÂ©-enregistrer pendingBounce au moment du queue (mÃƒÂªme technique que graveyardReturn)
+        // pour que render() cache la carte en main AVANT que l'animation ne dÃƒÂ©marre.
+        // Sans ÃƒÂ§a, dans les parties longues avec beaucoup d'animations dans la queue,
+        // le state arrive et render() montre la carte en main avant que bounce ne dÃƒÂ©marre.
         if (!data.toGraveyard && !pendingBounce) {
             const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
             const startHandCount = handPanel
@@ -210,16 +418,16 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour onDeathDamage crÃ©ature (Torche vivante), bloquer le slot pour que render()
-    // ne retire pas la carte avant que l'animation de dÃ©gÃ¢ts ne joue
+    // Pour onDeathDamage crÃƒÂ©ature (Torche vivante), bloquer le slot pour que render()
+    // ne retire pas la carte avant que l'animation de dÃƒÂ©gÃƒÂ¢ts ne joue
     if (type === 'onDeathDamage' && data.targetRow !== undefined && data.targetCol !== undefined) {
         const owner = data.targetPlayer === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.targetRow}-${data.targetCol}`;
         animatingSlots.add(slotKey);
     }
 
-    // Pour lifesteal, capturer les HP ACTUELS (avant le heal) ET bloquer le slot immÃ©diatement
-    // pour que render() ne puisse pas mettre Ã  jour les HP avec le state soignÃ© avant l'animation
+    // Pour lifesteal, capturer les HP ACTUELS (avant le heal) ET bloquer le slot immÃƒÂ©diatement
+    // pour que render() ne puisse pas mettre ÃƒÂ  jour les HP avec le state soignÃƒÂ© avant l'animation
     if (type === 'lifesteal' && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
@@ -231,7 +439,7 @@ function queueAnimation(type, data) {
             data._preHealMax = card.hp;
             data._preHealAtk = card.atk;
         }
-        // Pour heroHeal (lifelink), capturer les HP du hÃ©ros et bloquer render()
+        // Pour heroHeal (lifelink), capturer les HP du hÃƒÂ©ros et bloquer render()
         if (data.heroHeal) {
             const hpEl = document.querySelector(`#${owner === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`);
             data._preHeroHp = hpEl ? parseInt(hpEl.textContent) : undefined;
@@ -239,7 +447,7 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour heroHeal (hors lifesteal), capturer aussi les HP hÃ©ros affichÃ©s
+    // Pour heroHeal (hors lifesteal), capturer aussi les HP hÃƒÂ©ros affichÃƒÂ©s
     if (type === 'heroHeal' && data.player !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const hpEl = document.querySelector(`#${owner === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`);
@@ -248,7 +456,7 @@ function queueAnimation(type, data) {
         if (window.DEBUG_LOGS) console.log(`[EREBETH-DBG] queue heroHeal owner=${owner} amount=${data.amount} preHeroHp=${data._preHeroHp}`);
     }
 
-    // Pour regen, capturer les HP ACTUELS (avant le heal) â€” mÃªme technique que lifesteal
+    // Pour regen, capturer les HP ACTUELS (avant le heal) Ã¢â‚¬â€ mÃƒÂªme technique que lifesteal
     if (type === 'regen' && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const side = owner === 'me' ? 'me' : 'opponent';
@@ -260,9 +468,9 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour graveyardReturn, prÃ©-enregistrer pendingBounce au moment du queue
-    // pour que render() cache la carte AVANT que l'animation ne commence Ã  jouer
-    // (sinon la carte flash visible entre l'arrivÃ©e du state et le dÃ©but de l'animation)
+    // Pour graveyardReturn, prÃƒÂ©-enregistrer pendingBounce au moment du queue
+    // pour que render() cache la carte AVANT que l'animation ne commence ÃƒÂ  jouer
+    // (sinon la carte flash visible entre l'arrivÃƒÂ©e du state et le dÃƒÂ©but de l'animation)
     if (type === 'graveyardReturn' && data.player !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         if (!pendingBounce) {
@@ -282,7 +490,7 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour healOnDeath, capturer les HP ACTUELS (avant le heal) â€” mÃªme technique que lifesteal
+    // Pour healOnDeath, capturer les HP ACTUELS (avant le heal) Ã¢â‚¬â€ mÃƒÂªme technique que lifesteal
     if (type === 'healOnDeath' && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const side = owner === 'me' ? 'me' : 'opponent';
@@ -294,8 +502,8 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour damage/spellDamage, bloquer le slot pour que render() ne mette pas Ã  jour
-    // les stats (HP, ATK via Puissance) avant que l'animation de dÃ©gÃ¢ts ne joue
+    // Pour damage/spellDamage, bloquer le slot pour que render() ne mette pas ÃƒÂ  jour
+    // les stats (HP, ATK via Puissance) avant que l'animation de dÃƒÂ©gÃƒÂ¢ts ne joue
     if ((type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
@@ -307,8 +515,8 @@ function queueAnimation(type, data) {
         if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] queue ${type} owner=${owner} slot=${data.row},${data.col} amount=${data.amount ?? '-'} preHp=${data._preHp ?? '-'} preMaxHp=${data._preMaxHp ?? '-'} card=${preCard?.name || '-'}`);
     }
 
-    // Pour attack, bloquer le(s) slot(s) de l'attaquant pour que render() ne recrÃ©e pas
-    // l'Ã©lÃ©ment DOM pendant l'animation de charge/retour
+    // Pour attack, bloquer le(s) slot(s) de l'attaquant pour que render() ne recrÃƒÂ©e pas
+    // l'ÃƒÂ©lÃƒÂ©ment DOM pendant l'animation de charge/retour
     if (type === 'attack') {
         const blockedSlots = new Set();
         const addSlot = (owner, row, col) => {
@@ -335,7 +543,7 @@ function queueAnimation(type, data) {
             // solo, shooter, mutual_melee, shooter_vs_flyer
             const o = data.attacker === myNum ? 'me' : 'opp';
             addSlot(o, data.row, data.col);
-            // Bloquer aussi la cible pour Ã©viter l'update HP avant l'impact visuel.
+            // Bloquer aussi la cible pour ÃƒÂ©viter l'update HP avant l'impact visuel.
             const to = data.targetPlayer === myNum ? 'me' : 'opp';
             addSlot(to, data.targetRow, data.targetCol);
         }
@@ -345,32 +553,114 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Keep combat readability: play queued damage/poison before future combat rows.
-    // This avoids visuals where a later attacker moves before poison/damage is shown.
+    // Keep combat readability: play queued damage/poison/spellDamage before later combat actions.
+    // This avoids visuals where a later attacker moves before damage is shown.
     let insertAt = animationQueue.length;
-    if ((type === 'damage' || type === 'poisonDamage') && data && data.row !== undefined) {
-        const row = Number(data.row);
-        const firstFutureCombatIdx = animationQueue.findIndex((item) => {
-            if (!item) return false;
-            if (item.type !== 'combatRowStart' && item.type !== 'attack') return false;
-            const itemRow = Number(item.data?.row);
-            return Number.isFinite(itemRow) && itemRow !== row;
-        });
-        if (firstFutureCombatIdx > 0) {
-            insertAt = firstFutureCombatIdx;
+    if ((type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') && data && data.row !== undefined) {
+        if (type === 'spellDamage') {
+            // Visual priority: spell damage should not drift after combatEnd/phaseMessage
+            // or behind future combat rows.
+            const firstBarrierIdx = animationQueue.findIndex((item) => {
+                if (!item) return false;
+                return (
+                    item.type === 'combatRowStart' ||
+                    item.type === 'attack' ||
+                    item.type === 'combatEnd' ||
+                    item.type === 'phaseMessage'
+                );
+            });
+            if (firstBarrierIdx >= 0) {
+                insertAt = firstBarrierIdx;
+            }
+
+            // Preserve ordering with already queued direct damages before the barrier.
+            for (let i = 0; i < animationQueue.length; i++) {
+                const item = animationQueue[i];
+                if (!item) continue;
+                if (item.type !== 'damage' && item.type !== 'spellDamage') continue;
+                const sameSlot =
+                    Number(item.data?.player) === Number(data.player) &&
+                    Number(item.data?.row) === Number(data.row) &&
+                    Number(item.data?.col) === Number(data.col);
+                if (!sameSlot) continue;
+                if (firstBarrierIdx >= 0 && i >= firstBarrierIdx) break;
+                insertAt = Math.max(insertAt, i + 1);
+            }
+        } else if (type === 'poisonDamage') {
+            const firstQueuedCombatIdx = animationQueue.findIndex((item) => {
+                if (!item) return false;
+                if (item.type !== 'combatRowStart' && item.type !== 'attack') return false;
+                return true;
+            });
+            if (firstQueuedCombatIdx >= 0) {
+                insertAt = firstQueuedCombatIdx;
+            }
+        } else {
+            const row = Number(data.row);
+            const firstFutureCombatIdx = animationQueue.findIndex((item) => {
+                if (!item) return false;
+                if (item.type !== 'combatRowStart' && item.type !== 'attack') return false;
+                const itemRow = Number(item.data?.row);
+                return Number.isFinite(itemRow) && itemRow !== row;
+            });
+            if (firstFutureCombatIdx > 0) {
+                insertAt = firstFutureCombatIdx;
+            }
         }
 
-        // If direct damage for the same slot is already queued, keep poison after it.
+        // If direct damage/attack for the same slot is already queued, keep poison after it.
         if (type === 'poisonDamage' && data.col !== undefined) {
             const owner = data.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${data.row}-${data.col}`;
-            for (let i = 0; i < insertAt; i++) {
+
+            // If an attack involving this exact slot is still queued, keep poison after it.
+            // This preserves "attack impact first, poison after" for the same combat.
+            let relatedAttackIdx = -1;
+            const _isSameSlot = (player, row, col) =>
+                Number(player) === Number(data.player) &&
+                Number(row) === Number(data.row) &&
+                Number(col) === Number(data.col);
+            for (let i = 0; i < animationQueue.length; i++) {
+                const item = animationQueue[i];
+                if (!item || item.type !== 'attack' || !item.data) continue;
+                const sameAttacker = _isSameSlot(item.data.attacker, item.data.row, item.data.col);
+                const sameTarget = _isSameSlot(item.data.targetPlayer, item.data.targetRow, item.data.targetCol);
+                const subAttacks = [item.data.attack1, item.data.attack2].filter(Boolean);
+                const sameInParallel = subAttacks.some((a) =>
+                    _isSameSlot(a.attacker, a.row, a.col) ||
+                    _isSameSlot(a.targetPlayer, a.targetRow, a.targetCol)
+                );
+                if (sameAttacker || sameTarget || sameInParallel) {
+                    relatedAttackIdx = i;
+                }
+            }
+            if (relatedAttackIdx >= 0) {
+                let relatedTail = relatedAttackIdx;
+                while (relatedTail + 1 < animationQueue.length) {
+                    const next = animationQueue[relatedTail + 1];
+                    if (!next) break;
+                    if (
+                        next.type === 'heroHit' ||
+                        next.type === 'trampleHeroHit' ||
+                        next.type === 'damage' ||
+                        next.type === 'spellDamage' ||
+                        next.type === 'onDeathDamage'
+                    ) {
+                        relatedTail++;
+                        continue;
+                    }
+                    break;
+                }
+                insertAt = Math.max(insertAt, relatedTail + 1);
+            }
+
+            for (let i = 0; i < animationQueue.length; i++) {
                 const item = animationQueue[i];
                 if (!item || item.type !== 'damage' || !item.data) continue;
                 const dmgOwner = item.data.player === myNum ? 'me' : 'opp';
                 const dmgSlotKey = `${dmgOwner}-${item.data.row}-${item.data.col}`;
                 if (dmgSlotKey === slotKey) {
-                    insertAt = i + 1;
+                    insertAt = Math.max(insertAt, i + 1);
                 }
             }
         }
@@ -387,13 +677,13 @@ function queueAnimation(type, data) {
         });
     }
     if (window.PerfMon) window.PerfMon.recordAnimationQueue(animationQueue.length);
-    // Soupape de sÃ©curitÃ© : si la queue dÃ©passe 100, vider les animations non-critiques
+    // Soupape de sÃƒÂ©curitÃƒÂ© : si la queue dÃƒÂ©passe 100, vider les animations non-critiques
     if (animationQueue.length > 100) {
         const critical = new Set(['death', 'deathTransform', 'heroHit', 'zdejebel', 'trampleHeroHit']);
         for (let i = animationQueue.length - 1; i >= 0; i--) {
             if (!critical.has(animationQueue[i].type)) {
                 const purged = animationQueue[i];
-                // Nettoyer animatingSlots et graveRenderBlocked pour les animations purgÃ©es
+                // Nettoyer animatingSlots et graveRenderBlocked pour les animations purgÃƒÂ©es
                 if (purged.data?.row !== undefined && purged.data?.col !== undefined) {
                     const pOwner = purged.data.player === myNum ? 'me' : 'opp';
                     animatingSlots.delete(`${pOwner}-${purged.data.row}-${purged.data.col}`);
@@ -413,8 +703,8 @@ function queueAnimation(type, data) {
         }
     }
     if (!isAnimating) {
-        // Pour les types batchables (burn, death), diffÃ©rer le dÃ©marrage
-        // pour laisser les events du mÃªme batch serveur arriver
+        // Pour les types batchables (burn, death), diffÃƒÂ©rer le dÃƒÂ©marrage
+        // pour laisser les events du mÃƒÂªme batch serveur arriver
         if (type === 'burn' || type === 'death' || type === 'deathTransform' || type === 'sacrifice' || type === 'poisonDamage' || type === 'heroHeal') {
             if (!queueAnimation._batchTimeout) {
                 queueAnimation._batchTimeout = setTimeout(() => {
@@ -432,7 +722,7 @@ function queueAnimation(type, data) {
 }
 
 async function processAnimationQueue(processorId = null) {
-    // GÃ©nÃ©rer un ID unique pour ce processeur
+    // GÃƒÂ©nÃƒÂ©rer un ID unique pour ce processeur
     if (processorId === null) {
         currentProcessorId++;
         processorId = currentProcessorId;
@@ -446,7 +736,7 @@ async function processAnimationQueue(processorId = null) {
     }
 
     try {
-        // VÃ©rifier si un autre processeur a pris le relais
+        // VÃƒÂ©rifier si un autre processeur a pris le relais
         if (processorId !== currentProcessorId) {
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:processor:stale', {
@@ -466,7 +756,7 @@ async function processAnimationQueue(processorId = null) {
                     qLen: animationQueue.length,
                 });
             }
-            // Lancer les animations de pioche en attente (bloquÃ©es pendant les combats)
+            // Lancer les animations de pioche en attente (bloquÃƒÂ©es pendant les combats)
             if (typeof GameAnimations !== 'undefined') {
                 GameAnimations.startPendingDrawAnimations();
             }
@@ -482,7 +772,7 @@ async function processAnimationQueue(processorId = null) {
             });
         }
 
-        // Regrouper les animations de mort et transformation consÃ©cutives (jouÃ©es en parallÃ¨le)
+        // Regrouper les animations de mort et transformation consÃƒÂ©cutives (jouÃƒÂ©es en parallÃƒÂ¨le)
         if (animationQueue[0].type === 'death' || animationQueue[0].type === 'deathTransform') {
             const deathBatch = [];
             const transformBatch = [];
@@ -516,7 +806,7 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // Regrouper les animations zdejebel consÃ©cutives (jouÃ©es en parallÃ¨le)
+        // Regrouper les animations zdejebel consÃƒÂ©cutives (jouÃƒÂ©es en parallÃƒÂ¨le)
         if (animationQueue[0].type === 'zdejebel') {
             const batch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'zdejebel') {
@@ -537,7 +827,7 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // Jouer les animations de burn consÃ©cutives une par une (sÃ©quentiellement)
+        // Jouer les animations de burn consÃƒÂ©cutives une par une (sÃƒÂ©quentiellement)
         if (animationQueue[0].type === 'burn') {
             const burnBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'burn') {
@@ -560,7 +850,42 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // Regrouper les animations de dÃ©gÃ¢ts de sort consÃ©cutives en batch
+        if (animationQueue[0].type === 'damage') {
+            const damageBatch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'damage') {
+                damageBatch.push(animationQueue.shift().data);
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('animQueue:batch:damage', {
+                    processorId,
+                    count: damageBatch.length,
+                    qLenAfterShift: animationQueue.length,
+                });
+            }
+            _perfRecordBatchQueueWait(damageBatch);
+            const _perfStepStart = _perfNowMs();
+            await Promise.all(damageBatch.map((data) => handlePixiDamage(data)));
+            _perfRecordAnimationStep(_perfStepStart, damageBatch.length);
+            for (const d of damageBatch) {
+                const dmgOwner = d.player === myNum ? 'me' : 'opp';
+                const dmgSlotKey = `${dmgOwner}-${d.row}-${d.col}`;
+                const hasPendingDeath = animationQueue.some(item =>
+                    item.type === 'death' && item.data &&
+                    (item.data.player === myNum ? 'me' : 'opp') === dmgOwner &&
+                    item.data.row === d.row && item.data.col === d.col
+                );
+                if (!hasPendingDeath) {
+                    animatingSlots.delete(dmgSlotKey);
+                }
+            }
+            render();
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
+            _resolveTrapWarningByDamageBatch(damageBatch);
+            processAnimationQueue(processorId);
+            return;
+        }
+
+        // Regrouper les animations de dÃƒÂ©gÃƒÂ¢ts de sort consÃƒÂ©cutives en batch
         if (animationQueue[0].type === 'spellDamage') {
             const spellDamageBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'spellDamage') {
@@ -586,7 +911,7 @@ async function processAnimationQueue(processorId = null) {
             });
             await Promise.all(promises);
             _perfRecordAnimationStep(_perfStepStart, spellDamageBatch.length);
-            // DÃ©bloquer les slots de dÃ©gÃ¢ts de sort aprÃ¨s les animations
+            // DÃƒÂ©bloquer les slots de dÃƒÂ©gÃƒÂ¢ts de sort aprÃƒÂ¨s les animations
             // SAUF si une animation de mort est en attente pour ce slot
             for (const d of spellDamageBatch) {
                 const sdOwner = d.player === myNum ? 'me' : 'opp';
@@ -600,13 +925,13 @@ async function processAnimationQueue(processorId = null) {
                     animatingSlots.delete(sdSlotKey);
                 }
             }
-            render(); // Mettre Ã  jour les stats visuellement aprÃ¨s dÃ©blocage des slots
+            render(); // Mettre ÃƒÂ  jour les stats visuellement aprÃƒÂ¨s dÃƒÂ©blocage des slots
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
             processAnimationQueue(processorId);
             return;
         }
 
-        // Regrouper les animations poisonDamage consÃ©cutives (jouÃ©es en parallÃ¨le)
+        // Regrouper les animations poisonDamage consÃƒÂ©cutives (jouÃƒÂ©es en parallÃƒÂ¨le)
         if (animationQueue[0].type === 'poisonDamage') {
             const batch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'poisonDamage') {
@@ -627,13 +952,13 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // Regrouper les animations onDeathDamage consÃ©cutives (jouÃ©es en parallÃ¨le)
+        // Regrouper les animations onDeathDamage consÃƒÂ©cutives (jouÃƒÂ©es en parallÃƒÂ¨le)
         if (animationQueue[0].type === 'onDeathDamage') {
             const batch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'onDeathDamage') {
                 batch.push(animationQueue.shift().data);
             }
-            // Bloquer le render HP pour toute la durÃ©e du batch
+            // Bloquer le render HP pour toute la durÃƒÂ©e du batch
             const hasHeroTarget = batch.some(d => d.targetRow === undefined);
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:batch:onDeathDamage', {
@@ -650,7 +975,7 @@ async function processAnimationQueue(processorId = null) {
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handleOnDeathDamage(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
-            // DÃ©bloquer aprÃ¨s TOUTES les animations
+            // DÃƒÂ©bloquer aprÃƒÂ¨s TOUTES les animations
             if (hasHeroTarget) {
                 zdejebelAnimationInProgress = false;
             }
@@ -681,6 +1006,95 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
+        // Regrouper les lifesteal consecutifs pour eviter les micro-decalages.
+        if (animationQueue[0].type === 'lifesteal') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'lifesteal') {
+                batch.push(animationQueue.shift().data);
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('animQueue:batch:lifesteal', {
+                    processorId,
+                    count: batch.length,
+                    qLenAfterShift: animationQueue.length,
+                });
+            }
+            _perfRecordBatchQueueWait(batch);
+            const _perfStepStart = _perfNowMs();
+            await Promise.all(batch.map(data => handleLifestealAnim(data)));
+            _perfRecordAnimationStep(_perfStepStart, batch.length);
+            lifestealHeroHealInProgress = false;
+            render();
+            processAnimationQueue(processorId);
+            return;
+        }
+
+        // Regrouper les regen consecutifs pour affichage simultane.
+        if (animationQueue[0].type === 'regen') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'regen') {
+                batch.push(animationQueue.shift().data);
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('animQueue:batch:regen', {
+                    processorId,
+                    count: batch.length,
+                    qLenAfterShift: animationQueue.length,
+                });
+            }
+            _perfRecordBatchQueueWait(batch);
+            const _perfStepStart = _perfNowMs();
+            await Promise.all(batch.map(data => handleRegenAnim(data)));
+            _perfRecordAnimationStep(_perfStepStart, batch.length);
+            render();
+            processAnimationQueue(processorId);
+            return;
+        }
+
+        // Regrouper les powerBuff consecutifs pour affichage simultane.
+        if (animationQueue[0].type === 'powerBuff') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'powerBuff') {
+                batch.push(animationQueue.shift().data);
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('animQueue:batch:powerBuff', {
+                    processorId,
+                    count: batch.length,
+                    qLenAfterShift: animationQueue.length,
+                });
+            }
+            _perfRecordBatchQueueWait(batch);
+            const _perfStepStart = _perfNowMs();
+            await Promise.all(batch.map(data => handlePowerBuff(data)));
+            _perfRecordAnimationStep(_perfStepStart, batch.length);
+            render();
+            processAnimationQueue(processorId);
+            return;
+        }
+
+        // Regrouper healOnDeath consecutifs pour effets simultanes.
+        if (animationQueue[0].type === 'healOnDeath') {
+            const batch = [];
+            while (animationQueue.length > 0 && animationQueue[0].type === 'healOnDeath') {
+                batch.push(animationQueue.shift().data);
+            }
+            if (typeof window.visTrace === 'function') {
+                window.visTrace('animQueue:batch:healOnDeath', {
+                    processorId,
+                    count: batch.length,
+                    qLenAfterShift: animationQueue.length,
+                });
+            }
+            _perfRecordBatchQueueWait(batch);
+            const _perfStepStart = _perfNowMs();
+            await Promise.all(batch.map(data => handleHealOnDeathAnim(data)));
+            _perfRecordAnimationStep(_perfStepStart, batch.length);
+            render();
+            processAnimationQueue(processorId);
+            return;
+        }
+
         const { type, data } = animationQueue.shift();
         const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
         if (typeof window !== 'undefined') {
@@ -702,7 +1116,7 @@ async function processAnimationQueue(processorId = null) {
         }
         const _perfStepStart = _perfNowMs();
 
-        // ExÃ©cuter l'animation avec timeout de sÃ©curitÃ©
+        // ExÃƒÂ©cuter l'animation avec timeout de sÃƒÂ©curitÃƒÂ©
         try {
             const animationPromise = executeAnimationAsync(type, data);
             const timeoutPromise = new Promise((_, reject) =>
@@ -733,7 +1147,7 @@ async function processAnimationQueue(processorId = null) {
             }
         }
 
-        // DÃ©bloquer les slots d'attaquant aprÃ¨s l'animation d'attaque
+        // DÃƒÂ©bloquer les slots d'attaquant aprÃƒÂ¨s l'animation d'attaque
         // SAUF si une animation de damage/death est en attente pour ce slot
         if (type === 'attack' && data._attackerSlots) {
             for (const sk of data._attackerSlots) {
@@ -747,15 +1161,15 @@ async function processAnimationQueue(processorId = null) {
                 } else {
                 }
             }
-            render(); // Mettre Ã  jour les stats visuellement aprÃ¨s l'attaque (dÃ©gÃ¢ts mutuels simultanÃ©s)
+            render(); // Mettre ÃƒÂ  jour les stats visuellement aprÃƒÂ¨s l'attaque (dÃƒÂ©gÃƒÂ¢ts mutuels simultanÃƒÂ©s)
         }
 
-        // DÃ©bloquer les slots de dÃ©gÃ¢ts aprÃ¨s l'animation
+        // DÃƒÂ©bloquer les slots de dÃƒÂ©gÃƒÂ¢ts aprÃƒÂ¨s l'animation
         // SAUF si une animation de mort est en attente pour ce slot (elle a besoin de la carte dans le DOM)
         if (type === 'damage' || type === 'spellDamage') {
             const dmgOwner = data.player === myNum ? 'me' : 'opp';
             const dmgSlotKey = `${dmgOwner}-${data.row}-${data.col}`;
-            // Garder le slot bloquÃ© si death en attente (lifesteal n'a plus besoin de bloquer)
+            // Garder le slot bloquÃƒÂ© si death en attente (lifesteal n'a plus besoin de bloquer)
             const hasPendingBlock = animationQueue.some(item =>
                 item.type === 'death' && item.data &&
                 (item.data.player === myNum ? 'me' : 'opp') === dmgOwner &&
@@ -763,12 +1177,12 @@ async function processAnimationQueue(processorId = null) {
             );
             if (!hasPendingBlock) {
                 animatingSlots.delete(dmgSlotKey);
-                render(); // Mettre Ã  jour les stats visuellement aprÃ¨s dÃ©blocage du slot
+                render(); // Mettre ÃƒÂ  jour les stats visuellement aprÃƒÂ¨s dÃƒÂ©blocage du slot
             } else {
             }
         }
 
-        // DÃ©bloquer le slot aprÃ¨s l'animation lifesteal et mettre Ã  jour le rendu
+        // DÃƒÂ©bloquer le slot aprÃƒÂ¨s l'animation lifesteal et mettre ÃƒÂ  jour le rendu
         if (type === 'lifesteal') {
             const lsOwner = data.player === myNum ? 'me' : 'opp';
             const lsSlotKey = `${lsOwner}-${data.row}-${data.col}`;
@@ -776,7 +1190,7 @@ async function processAnimationQueue(processorId = null) {
             render();
         }
 
-        // DÃ©bloquer le slot aprÃ¨s l'animation healOnDeath et mettre Ã  jour le rendu
+        // DÃƒÂ©bloquer le slot aprÃƒÂ¨s l'animation healOnDeath et mettre ÃƒÂ  jour le rendu
         if (type === 'healOnDeath') {
             const hodOwner = data.player === myNum ? 'me' : 'opp';
             const hodSlotKey = `${hodOwner}-${data.row}-${data.col}`;
@@ -784,7 +1198,7 @@ async function processAnimationQueue(processorId = null) {
             render();
         }
 
-        // DÃ©bloquer le slot aprÃ¨s l'animation regen et mettre Ã  jour le rendu
+        // DÃƒÂ©bloquer le slot aprÃƒÂ¨s l'animation regen et mettre ÃƒÂ  jour le rendu
         if (type === 'regen') {
             const regenOwner = data.player === myNum ? 'me' : 'opp';
             const regenSlotKey = `${regenOwner}-${data.row}-${data.col}`;
@@ -797,12 +1211,16 @@ async function processAnimationQueue(processorId = null) {
             render();
         }
 
-        // AprÃ¨s powerBuff, forcer render() pour synchroniser l'ATK depuis l'Ã©tat serveur
+        // AprÃƒÂ¨s powerBuff, forcer render() pour synchroniser l'ATK depuis l'ÃƒÂ©tat serveur
         if (type === 'powerBuff') {
             render();
         }
 
-        // VÃ©rifier encore si on est toujours le processeur actif
+        if (type === 'combatEnd') {
+            _releaseTrapWarningOnCombatEnd();
+        }
+
+        // VÃƒÂ©rifier encore si on est toujours le processeur actif
         if (processorId !== currentProcessorId) {
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:processor:replaced', {
@@ -814,13 +1232,13 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        // summon/move/trapPlace gÃ¨rent dÃ©jÃ  leur propre timing interne.
+        // summon/move/trapPlace gÃƒÂ¨rent dÃƒÂ©jÃƒÂ  leur propre timing interne.
         const usesInternalTiming = type === 'summon' || type === 'move' || type === 'trapPlace';
         if (!usesInternalTiming) {
             await new Promise(resolve => setTimeout(resolve, delay));
         }
 
-        // Continuer la file (avec le mÃªme processorId)
+        // Continuer la file (avec le mÃƒÂªme processorId)
         processAnimationQueue(processorId);
     } catch (globalError) {
         isAnimating = false;
@@ -940,7 +1358,7 @@ async function executeAnimationAsync(type, data) {
             await handleHeroHealAnim(data);
             break;
         case 'combatRowStart':
-            // Retirer le glow violet de toutes les cartes prÃ©cÃ©dentes
+            // Retirer le glow violet de toutes les cartes prÃƒÂ©cÃƒÂ©dentes
             document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
                 c.dataset.inCombat = 'false';
             });
@@ -954,7 +1372,7 @@ async function executeAnimationAsync(type, data) {
                 }
             }
             CardGlow.markDirty();
-            // Laisser le glow apparaÃ®tre avant l'animation suivante
+            // Laisser le glow apparaÃƒÂ®tre avant l'animation suivante
             await new Promise(r => setTimeout(r, 50));
             break;
         case 'combatEnd':
@@ -1010,7 +1428,7 @@ async function handlePowerBuff(data) {
     const cy = rect.top + rect.height / 2;
     CombatVFX.createBuffEffect(cx, cy, data.amount, 0, rect.width, rect.height);
 
-    // Animer le chiffre ATK de fromAtk â†’ toAtk
+    // Animer le chiffre ATK de fromAtk Ã¢â€ â€™ toAtk
     if (atkEl) {
         atkEl.textContent = String(fromAtk);
         atkEl.classList.add('boosted');
@@ -1018,7 +1436,7 @@ async function handlePowerBuff(data) {
         atkEl.textContent = String(toAtk);
     }
 
-    // DÃ©bloquer le render ATK pour ce slot
+    // DÃƒÂ©bloquer le render ATK pour ce slot
     powerBuffAtkOverrides.delete(slotKey);
 
     await new Promise(r => setTimeout(r, 400));
@@ -1029,7 +1447,7 @@ async function handlePixiAttack(data) {
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
     const attackEventTs = data._queuedAt;
 
-    // Cas spÃ©cial : Tireur vs Volant (simultanÃ© - projectile touche le volant en mouvement)
+    // Cas spÃƒÂ©cial : Tireur vs Volant (simultanÃƒÂ© - projectile touche le volant en mouvement)
     if (data.combatType === 'shooter_vs_flyer') {
         await CombatAnimations.animateShooterVsFlyer({
             shooter: { owner: attackerOwner, row: data.row, col: data.col },
@@ -1041,7 +1459,7 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Attaques parallÃ¨les : deux crÃ©atures attaquent des cibles diffÃ©rentes en mÃªme temps
+    // Attaques parallÃƒÂ¨les : deux crÃƒÂ©atures attaquent des cibles diffÃƒÂ©rentes en mÃƒÂªme temps
     if (data.combatType === 'parallel_attacks') {
         const attack1Owner = data.attack1.attacker === myNum ? 'me' : 'opp';
         const attack1TargetOwner = data.attack1.targetPlayer === myNum ? 'me' : 'opp';
@@ -1075,7 +1493,7 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Combat mutuel tireurs = deux projectiles croisÃ©s simultanÃ©s
+    // Combat mutuel tireurs = deux projectiles croisÃƒÂ©s simultanÃƒÂ©s
     if (data.combatType === 'mutual_shooters') {
         const owner1 = data.attacker1 === myNum ? 'me' : 'opp';
         const owner2 = data.attacker2 === myNum ? 'me' : 'opp';
@@ -1089,7 +1507,7 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Combat mutuel mÃªlÃ©e = les deux se rencontrent au milieu (50/50)
+    // Combat mutuel mÃƒÂªlÃƒÂ©e = les deux se rencontrent au milieu (50/50)
     if (data.combatType === 'mutual_melee' || data.isMutual) {
         await CombatAnimations.animateMutualMelee({
             attacker1: { owner: attackerOwner, row: data.row, col: data.col },
@@ -1101,7 +1519,7 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Tireur simple = projectile avec griffure Ã  l'impact
+    // Tireur simple = projectile avec griffure ÃƒÂ  l'impact
     if (data.isShooter || data.combatType === 'shooter') {
         await CombatAnimations.animateProjectile({
             startOwner: attackerOwner,
@@ -1116,7 +1534,7 @@ async function handlePixiAttack(data) {
         return;
     }
 
-    // Attaque solo (volant ou mÃªlÃ©e) = charge vers la cible avec griffure
+    // Attaque solo (volant ou mÃƒÂªlÃƒÂ©e) = charge vers la cible avec griffure
     await CombatAnimations.animateSoloAttack({
         attackerOwner: attackerOwner,
         attackerRow: data.row,
@@ -1134,7 +1552,7 @@ async function handlePixiAttack(data) {
 async function handlePixiDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     
-    // Si les griffures ont dÃ©jÃ  Ã©tÃ© affichÃ©es par l'animation de combat, skip
+    // Si les griffures ont dÃƒÂ©jÃƒÂ  ÃƒÂ©tÃƒÂ© affichÃƒÂ©es par l'animation de combat, skip
     if (data.skipScratch) return;
     
     await CombatAnimations.animateDamage({
@@ -1158,18 +1576,46 @@ async function handlePoisonDamage(data) {
     const hpEl = cardEl?.querySelector('.arena-armor') || cardEl?.querySelector('.arena-hp') || cardEl?.querySelector('.img-hp');
     const cardUid = cardEl?.dataset?.uid || null;
 
-    // Lire le HP prÃ©-poison depuis l'override ou le DOM
+    // Lire le HP prÃƒÂ©-poison depuis l'override ou le DOM
     let override = poisonHpOverrides.get(slotKey);
     if (override && override.uid && cardUid && override.uid !== cardUid) {
         poisonHpOverrides.delete(slotKey);
         override = null;
     }
-    const domHp = hpEl ? parseInt(hpEl.textContent) : 0;
-    const currentHp = override ? override.hp : domHp;
-    const newHp = Math.max(0, currentHp - data.amount);
-    if (window.DEBUG_LOGS) console.log(`[POISON-HP] handlePoisonDamage: slot=${slotKey} override=${JSON.stringify(override)} domHp=${domHp} currentHp=${currentHp} amount=${data.amount} newHp=${newHp}`);
+    const rawAmount = data?.amount;
+    let poisonAmount = Number(rawAmount);
+    if (!Number.isFinite(poisonAmount)) {
+        const stateSide = owner === 'me' ? 'me' : 'opponent';
+        const stateCard = state?.[stateSide]?.field?.[data.row]?.[data.col];
+        const counterFallback = Number(stateCard?.poisonCounters);
+        poisonAmount = Number.isFinite(counterFallback) ? Math.max(0, counterFallback) : 0;
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('poisonDamage:amount-fallback', {
+                owner,
+                row: data?.row ?? null,
+                col: data?.col ?? null,
+                amountRaw: rawAmount ?? null,
+                amountFallback: poisonAmount,
+                stateCard: stateCard ? {
+                    name: stateCard.name ?? null,
+                    uid: stateCard.uid ?? null,
+                    poisonCounters: stateCard.poisonCounters ?? null,
+                    hp: stateCard.hp ?? null,
+                    currentHp: stateCard.currentHp ?? null
+                } : null
+            });
+        }
+    }
 
-    // S'assurer que le HP affichÃ© est le prÃ©-poison avant le VFX
+    const domHpRaw = hpEl ? parseInt(hpEl.textContent, 10) : NaN;
+    const domHp = Number.isFinite(domHpRaw) ? domHpRaw : 0;
+    const overrideHp = Number(override?.hp);
+    const currentHp = Number.isFinite(overrideHp) ? overrideHp : domHp;
+    const safePoisonAmount = Number.isFinite(poisonAmount) && poisonAmount > 0 ? poisonAmount : 0;
+    const newHp = Math.max(0, currentHp - safePoisonAmount);
+    if (window.DEBUG_LOGS) console.log(`[POISON-HP] handlePoisonDamage: slot=${slotKey} override=${JSON.stringify(override)} domHp=${domHp} currentHp=${currentHp} amount=${safePoisonAmount} rawAmount=${rawAmount} newHp=${newHp}`);
+
+    // S'assurer que le HP affichÃƒÂ© est le prÃƒÂ©-poison avant le VFX
     if (hpEl) hpEl.textContent = String(currentHp);
 
     const rect = slot.getBoundingClientRect();
@@ -1177,19 +1623,29 @@ async function handlePoisonDamage(data) {
     const y = rect.top + rect.height / 2;
 
     // Animation de cloaques toxiques
-    CombatVFX.createPoisonDripEffect(x, y, data.amount, rect.width, rect.height);
+    if (safePoisonAmount > 0) {
+        CombatVFX.createPoisonDripEffect(x, y, safePoisonAmount, rect.width, rect.height);
+    } else if (typeof window.visTrace === 'function') {
+        window.visTrace('poisonDamage:skip-invalid-amount', {
+            owner,
+            row: data?.row ?? null,
+            col: data?.col ?? null,
+            amountRaw: rawAmount ?? null,
+            amountResolved: safePoisonAmount
+        });
+    }
 
     // Attendre que l'animation principale soit visible avant de continuer
     await new Promise(r => setTimeout(r, 1400));
 
-    // Mettre Ã  jour le HP directement dans le DOM (post-poison)
+    // Mettre ÃƒÂ  jour le HP directement dans le DOM (post-poison)
     if (hpEl) {
         hpEl.textContent = String(newHp);
         hpEl.classList.remove('boosted');
         hpEl.classList.add('reduced');
     }
 
-    // Marquer l'override comme consommÃ© avec le nouveau HP
+    // Marquer l'override comme consommÃƒÂ© avec le nouveau HP
     poisonHpOverrides.set(slotKey, {
         hp: newHp,
         consumed: true,
@@ -1197,7 +1653,7 @@ async function handlePoisonDamage(data) {
         updatedAt: Date.now()
     });
 
-    // DÃ©bloquer le slot et rafraÃ®chir le rendu
+    // DÃƒÂ©bloquer le slot et rafraÃƒÂ®chir le rendu
     animatingSlots.delete(slotKey);
     render();
 }
@@ -1215,11 +1671,11 @@ async function handlePixiHeroHit(data) {
     const hpBefore = domHp ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-    // Garder les HP d'avant pendant l'animation de dÃ©gÃ¢ts
-    if (hpElement) hpElement.textContent = hpBefore;
+    // Garder les HP d'avant pendant l'animation de dÃƒÂ©gÃƒÂ¢ts
+    _setHeroHpText(hpElement, hpBefore);
 
     // Pour les sorts/effets : afficher le VFX (shake + explosion + chiffre)
-    // Pour les crÃ©atures : dÃ©jÃ  fait par animateSoloAttack Ã  l'impact
+    // Pour les crÃƒÂ©atures : dÃƒÂ©jÃƒÂ  fait par animateSoloAttack ÃƒÂ  l'impact
     if (!data.skipVfx) {
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (heroEl) {
@@ -1242,17 +1698,17 @@ async function handlePixiHeroHit(data) {
         await new Promise(r => setTimeout(r, 50));
     }
 
-    // Mettre Ã  jour les HP APRÃˆS l'animation
-    if (hpElement) hpElement.textContent = hpAfter;
+    // Mettre ÃƒÂ  jour les HP APRÃƒË†S l'animation
+    _setHeroHpText(hpElement, hpAfter);
 
-    // DÃ©bloquer render()
+    // DÃƒÂ©bloquer render()
     zdejebelAnimationInProgress = false;
 }
 
 async function handleOnDeathDamage(data) {
     const owner = data.targetPlayer === myNum ? 'me' : 'opp';
 
-    // Cas 1 : dÃ©gÃ¢ts Ã  une crÃ©ature (damageKiller â€” Torche vivante)
+    // Cas 1 : dÃƒÂ©gÃƒÂ¢ts ÃƒÂ  une crÃƒÂ©ature (damageKiller Ã¢â‚¬â€ Torche vivante)
     if (data.targetRow !== undefined && data.targetCol !== undefined) {
         const slot = document.querySelector(
             `.card-slot[data-owner="${owner}"][data-row="${data.targetRow}"][data-col="${data.targetCol}"]`
@@ -1262,11 +1718,11 @@ async function handleOnDeathDamage(data) {
             slot.style.animation = 'slotShake 0.5s ease-out';
             setTimeout(() => slot.style.animation = '', 500);
 
-            // Flash orange DOM (hÃ©rite de la perspective 3D)
+            // Flash orange DOM (hÃƒÂ©rite de la perspective 3D)
             slot.classList.add('slot-hit');
             setTimeout(() => slot.classList.remove('slot-hit'), 500);
 
-            // Slash VFX + onde de choc + Ã©tincelles PixiJS
+            // Slash VFX + onde de choc + ÃƒÂ©tincelles PixiJS
             const rect = slot.getBoundingClientRect();
             const x = rect.left + rect.width / 2;
             const y = rect.top + rect.height / 2;
@@ -1275,34 +1731,34 @@ async function handleOnDeathDamage(data) {
         }
         await new Promise(r => setTimeout(r, 600));
 
-        // DÃ©bloquer le slot aprÃ¨s l'animation â€” la carte a Ã©tÃ© visible pendant les dÃ©gÃ¢ts
+        // DÃƒÂ©bloquer le slot aprÃƒÂ¨s l'animation Ã¢â‚¬â€ la carte a ÃƒÂ©tÃƒÂ© visible pendant les dÃƒÂ©gÃƒÂ¢ts
         const slotKey = `${owner}-${data.targetRow}-${data.targetCol}`;
         animatingSlots.delete(slotKey);
         return;
     }
 
-    // Cas 2 : dÃ©gÃ¢ts au hÃ©ros (damageHero â€” Dragon CrÃ©pitant) â€” style Zdejebel
+    // Cas 2 : dÃƒÂ©gÃƒÂ¢ts au hÃƒÂ©ros (damageHero Ã¢â‚¬â€ Dragon CrÃƒÂ©pitant) Ã¢â‚¬â€ style Zdejebel
     zdejebelAnimationInProgress = true;
 
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
-    // PrÃ©server les HP d'avant l'animation
+    // PrÃƒÂ©server les HP d'avant l'animation
     const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
     const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
     const currentHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
     const hpBeforeAnimation = data._displayHpBefore ?? (currentHp !== undefined ? currentHp + data.damage : undefined);
 
-    if (hpElement && hpBeforeAnimation !== undefined) {
-        hpElement.textContent = hpBeforeAnimation;
+    if (hpBeforeAnimation !== undefined) {
+        _setHeroHpText(hpElement, hpBeforeAnimation);
     }
 
     if (heroCard) {
-        // Secousse + flash rouge DOM sur le hÃ©ros
+        // Secousse + flash rouge DOM sur le hÃƒÂ©ros
         heroCard.style.animation = 'heroShake 0.5s ease-out';
         heroCard.classList.add('hero-hit');
         setTimeout(() => { heroCard.style.animation = ''; heroCard.classList.remove('hero-hit'); }, 550);
 
-        // Slash VFX + ring/Ã©tincelles PixiJS
+        // Slash VFX + ring/ÃƒÂ©tincelles PixiJS
         const rect = heroCard.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
@@ -1313,12 +1769,12 @@ async function handleOnDeathDamage(data) {
     // Attendre que l'animation soit visible
     await new Promise(r => setTimeout(r, 600));
 
-    // Mettre Ã  jour les HP APRÃˆS l'animation
-    if (hpElement && currentHp !== undefined) {
-        hpElement.textContent = currentHp;
+    // Mettre ÃƒÂ  jour les HP APRÃƒË†S l'animation
+    if (currentHp !== undefined) {
+        _setHeroHpText(hpElement, currentHp);
     }
 
-    // DÃ©bloquer render()
+    // DÃƒÂ©bloquer render()
     zdejebelAnimationInProgress = false;
 
     await new Promise(r => setTimeout(r, 200));
@@ -1337,21 +1793,19 @@ async function animateZdejebelDamage(data) {
     const hpBefore = domHp ?? data._displayHpBefore ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-if (hpElement) {
-        // S'assurer que les HP d'avant sont affichÃ©s pendant l'animation
-        hpElement.textContent = hpBefore;
-    }
+    // S'assurer que les HP d'avant sont affichÃƒÂ©s pendant l'animation
+    _setHeroHpText(hpElement, hpBefore);
 
-    // RÃ©cupÃ©rer la position du hÃ©ros ciblÃ©
+    // RÃƒÂ©cupÃƒÂ©rer la position du hÃƒÂ©ros ciblÃƒÂ©
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
     if (heroCard) {
-        // Secousse + flash rouge DOM sur le hÃ©ros
+        // Secousse + flash rouge DOM sur le hÃƒÂ©ros
         heroCard.style.animation = 'heroShake 0.5s ease-out';
         heroCard.classList.add('hero-hit');
         setTimeout(() => { heroCard.style.animation = ''; heroCard.classList.remove('hero-hit'); }, 550);
 
-        // Slash VFX + ring/Ã©tincelles PixiJS
+        // Slash VFX + ring/ÃƒÂ©tincelles PixiJS
         const rect = heroCard.getBoundingClientRect();
         const x = rect.left + rect.width / 2;
         const y = rect.top + rect.height / 2;
@@ -1362,19 +1816,17 @@ if (hpElement) {
     // Attendre que l'animation soit visible
     await new Promise(r => setTimeout(r, 600));
 
-    // Mettre Ã  jour les HP APRÃˆS l'animation (hpBefore - damage, indÃ©pendant du state)
-    if (hpElement) {
-        hpElement.textContent = hpAfter;
-    }
+    // Mettre ÃƒÂ  jour les HP APRÃƒË†S l'animation (hpBefore - damage, indÃƒÂ©pendant du state)
+    _setHeroHpText(hpElement, hpAfter);
 
-    // DÃ©bloquer render() pour les HP
+    // DÃƒÂ©bloquer render() pour les HP
     zdejebelAnimationInProgress = false;
 
-    // Petit dÃ©lai supplÃ©mentaire pour voir le changement
+    // Petit dÃƒÂ©lai supplÃƒÂ©mentaire pour voir le changement
     await new Promise(r => setTimeout(r, 200));
 }
 
-// Fonction utilitaire pour afficher un nombre de dÃ©gÃ¢ts sur un Ã©lÃ©ment
+// Fonction utilitaire pour afficher un nombre de dÃƒÂ©gÃƒÂ¢ts sur un ÃƒÂ©lÃƒÂ©ment
 function showDamageNumber(element, damage) {
     const rect = element.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
@@ -1382,7 +1834,7 @@ function showDamageNumber(element, damage) {
     CombatVFX.showDamageNumber(x, y, damage);
 }
 
-// Animation de dÃ©gÃ¢ts de piÃ©tinement sur une crÃ©ature
+// Animation de dÃƒÂ©gÃƒÂ¢ts de piÃƒÂ©tinement sur une crÃƒÂ©ature
 async function animateTrampleDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = getSlot(owner, data.row, data.col);
@@ -1390,7 +1842,7 @@ async function animateTrampleDamage(data) {
 
     if (!card) return;
 
-    // Bloquer le slot pour que render() ne mette pas Ã  jour les HP pendant l'animation
+    // Bloquer le slot pour que render() ne mette pas ÃƒÂ  jour les HP pendant l'animation
     const slotKey = `${owner}-${data.row}-${data.col}`;
     animatingSlots.add(slotKey);
 
@@ -1399,7 +1851,7 @@ async function animateTrampleDamage(data) {
     if (hpEl && data.hpBefore !== undefined) {
         hpEl.textContent = data.hpBefore;
     }
-    // Pour le format ATK/HP combinÃ© dans arena-stats
+    // Pour le format ATK/HP combinÃƒÂ© dans arena-stats
     const statsEl = card.querySelector('.arena-stats');
     const atkEl = card.querySelector('.arena-atk');
     if (statsEl && !atkEl && data.hpBefore !== undefined) {
@@ -1412,11 +1864,11 @@ async function animateTrampleDamage(data) {
     card.style.animation = 'cardShake 0.4s ease-out';
     setTimeout(() => card.style.animation = '', 400);
 
-    // Flash DOM (hÃ©rite de la perspective 3D)
+    // Flash DOM (hÃƒÂ©rite de la perspective 3D)
     card.classList.add('card-damage-hit');
     setTimeout(() => card.classList.remove('card-damage-hit'), 420);
 
-    // Slash VFX + Ã©tincelles PixiJS
+    // Slash VFX + ÃƒÂ©tincelles PixiJS
     const rect = card.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
@@ -1426,7 +1878,7 @@ async function animateTrampleDamage(data) {
     // Attendre que l'animation soit visible
     await new Promise(r => setTimeout(r, 600));
 
-    // Mettre Ã  jour les HP APRÃˆS l'animation
+    // Mettre ÃƒÂ  jour les HP APRÃƒË†S l'animation
     if (hpEl && data.hpAfter !== undefined) {
         hpEl.textContent = data.hpAfter;
         hpEl.classList.remove('boosted');
@@ -1438,20 +1890,20 @@ async function animateTrampleDamage(data) {
         statsEl.textContent = `${atkPart}/${data.hpAfter}`;
     }
 
-    // DÃ©bloquer le slot
+    // DÃƒÂ©bloquer le slot
     animatingSlots.delete(slotKey);
 
     await new Promise(r => setTimeout(r, 200));
 }
 
-// Animation de dÃ©gÃ¢ts de piÃ©tinement sur le hÃ©ros
+// Animation de dÃƒÂ©gÃƒÂ¢ts de piÃƒÂ©tinement sur le hÃƒÂ©ros
 async function animateTrampleHeroHit(data) {
     const owner = data.defender === myNum ? 'me' : 'opp';
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
     if (!heroCard) return;
 
-    // Bloquer render() pour les HP du hÃ©ros (dÃ©jÃ  bloquÃ© dÃ¨s la rÃ©ception, mais on s'assure)
+    // Bloquer render() pour les HP du hÃƒÂ©ros (dÃƒÂ©jÃƒÂ  bloquÃƒÂ© dÃƒÂ¨s la rÃƒÂ©ception, mais on s'assure)
     zdejebelAnimationInProgress = true;
 
     // Lire les HP directement depuis le DOM (ce que le joueur voit)
@@ -1461,16 +1913,14 @@ async function animateTrampleHeroHit(data) {
     const hpBefore = domHp ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-if (hpElement) {
-        hpElement.textContent = hpBefore;
-    }
+    _setHeroHpText(hpElement, hpBefore);
 
-    // Secousse + flash rouge DOM sur le hÃ©ros
+    // Secousse + flash rouge DOM sur le hÃƒÂ©ros
     heroCard.style.animation = 'heroShake 0.5s ease-out';
     heroCard.classList.add('hero-hit');
     setTimeout(() => { heroCard.style.animation = ''; heroCard.classList.remove('hero-hit'); }, 550);
 
-    // Slash VFX + ring/Ã©tincelles PixiJS
+    // Slash VFX + ring/ÃƒÂ©tincelles PixiJS
     const rect = heroCard.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
@@ -1479,10 +1929,8 @@ if (hpElement) {
 
     await new Promise(r => setTimeout(r, 600));
 
-    // Mettre Ã  jour les HP APRÃˆS l'animation (hpBefore - damage, indÃ©pendant du state)
-    if (hpElement) {
-        hpElement.textContent = hpAfter;
-    }
+    // Mettre ÃƒÂ  jour les HP APRÃƒË†S l'animation (hpBefore - damage, indÃƒÂ©pendant du state)
+    _setHeroHpText(hpElement, hpAfter);
 
     zdejebelAnimationInProgress = false;
     await new Promise(r => setTimeout(r, 200));
@@ -1520,8 +1968,8 @@ function animateDeath(data) {
 }
 
 /**
- * Animation de transformation Ã  la mort (Petit Os â†’ Pile d'Os)
- * Flip 3D de la carte : la face avant (fromCard) se retourne pour rÃ©vÃ©ler la face arriÃ¨re (toCard)
+ * Animation de transformation ÃƒÂ  la mort (Petit Os Ã¢â€ â€™ Pile d'Os)
+ * Flip 3D de la carte : la face avant (fromCard) se retourne pour rÃƒÂ©vÃƒÂ©ler la face arriÃƒÂ¨re (toCard)
  */
 async function animateDeathTransform(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
@@ -1553,7 +2001,7 @@ async function animateDeathTransform(data) {
     }
     slot.classList.remove('has-card', 'has-flying');
 
-    // Flip directement dans le slot â€” le tilt du board s'applique naturellement
+    // Flip directement dans le slot Ã¢â‚¬â€ le tilt du board s'applique naturellement
     const origPerspective = slot.style.perspective;
     const origOverflow = slot.style.overflow;
     slot.style.perspective = '600px';
@@ -1567,7 +2015,7 @@ async function animateDeathTransform(data) {
         position: relative;
     `;
 
-    // Face avant (Petit Os) â€” 144x192 + offset -2px pour couvrir la bordure du slot
+    // Face avant (Petit Os) Ã¢â‚¬â€ 144x192 + offset -2px pour couvrir la bordure du slot
     const frontFace = makeCard(data.fromCard, false);
     const frontBg = frontFace.style.backgroundImage;
     frontFace.style.cssText = `
@@ -1577,7 +2025,7 @@ async function animateDeathTransform(data) {
     `;
     if (frontBg) frontFace.style.backgroundImage = frontBg;
 
-    // Face arriÃ¨re â€” prÃ©-retournÃ©e de 180Â°
+    // Face arriÃƒÂ¨re Ã¢â‚¬â€ prÃƒÂ©-retournÃƒÂ©e de 180Ã‚Â°
     const backFace = makeCard(data.toCard, false);
     const backBg = backFace.style.backgroundImage;
     backFace.style.cssText = `
@@ -1591,7 +2039,7 @@ async function animateDeathTransform(data) {
     flipContainer.appendChild(backFace);
     slot.appendChild(flipContainer);
 
-    // --- Animation flip (600ms) â€” rotateY dans le slot ---
+    // --- Animation flip (600ms) Ã¢â‚¬â€ rotateY dans le slot ---
     const TOTAL = 600;
 
     await new Promise(resolve => {
@@ -1627,17 +2075,17 @@ async function animateDeathTransform(data) {
     slot.appendChild(placedCard);
     slot.classList.add('has-card');
 
-    // DÃ©bloquer le slot
+    // DÃƒÂ©bloquer le slot
     activeDeathTransformSlots.delete(slotKey);
     animatingSlots.delete(slotKey);
 }
 
 /**
- * Animation de transformation en dÃ©but de tour (Pile d'Os â†’ Petit Os)
- * Flip 3D inverse : la face avant (fromCard/Pile d'Os) se retourne pour rÃ©vÃ©ler la face arriÃ¨re (toCard/Petit Os)
+ * Animation de transformation en dÃƒÂ©but de tour (Pile d'Os Ã¢â€ â€™ Petit Os)
+ * Flip 3D inverse : la face avant (fromCard/Pile d'Os) se retourne pour rÃƒÂ©vÃƒÂ©ler la face arriÃƒÂ¨re (toCard/Petit Os)
  */
 /**
- * Animation de dÃ©fausse depuis la main (dÃ©sintÃ©gration sur place)
+ * Animation de dÃƒÂ©fausse depuis la main (dÃƒÂ©sintÃƒÂ©gration sur place)
  */
 async function animateDiscard(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
@@ -1654,7 +2102,7 @@ async function animateDiscard(data) {
 
     const rect = cardEl.getBoundingClientRect();
 
-    // CrÃ©er un clone pour l'animation
+    // CrÃƒÂ©er un clone pour l'animation
     const clone = cardEl.cloneNode(true);
     clone.style.cssText = `
         position: fixed;
@@ -1672,7 +2120,7 @@ async function animateDiscard(data) {
     // Cacher la carte originale
     cardEl.style.visibility = 'hidden';
 
-    // Animation de dÃ©sintÃ©gration avec timeout de sÃ©curitÃ©
+    // Animation de dÃƒÂ©sintÃƒÂ©gration avec timeout de sÃƒÂ©curitÃƒÂ©
     let timeoutId;
     try {
         await Promise.race([
@@ -1696,99 +2144,83 @@ async function animateDiscard(data) {
 /**
  * Animation de burn professionnelle (style Hearthstone/Magic Arena)
  *
- * Phase 1 - Lift:    Dos de carte se soulÃ¨ve du deck
- * Phase 2 - Flip:    La carte se retourne prÃ¨s du deck (rÃ©vÃ¨le ce qui est brÃ»lÃ©)
- * Phase 3 - Hold:    Pause brÃ¨ve + teinte rouge (la carte est condamnÃ©e)
- * Phase 4 - Fly:     La carte vole vers le cimetiÃ¨re en rÃ©trÃ©cissant
- * Phase 5 - Impact:  Flash au cimetiÃ¨re, mise Ã  jour du graveyard
+ * Phase 1 - Lift:    Dos de carte se soulÃƒÂ¨ve du deck
+ * Phase 2 - Flip:    La carte se retourne prÃƒÂ¨s du deck (rÃƒÂ©vÃƒÂ¨le ce qui est brÃƒÂ»lÃƒÂ©)
+ * Phase 3 - Hold:    Pause brÃƒÂ¨ve + teinte rouge (la carte est condamnÃƒÂ©e)
+ * Phase 4 - Fly:     La carte vole vers le cimetiÃƒÂ¨re en rÃƒÂ©trÃƒÂ©cissant
+ * Phase 5 - Impact:  Flash au cimetiÃƒÂ¨re, mise ÃƒÂ  jour du graveyard
  */
 async function animateBurn(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const ownerKey = owner === 'me' ? 'me' : 'opp';
     const card = data.card;
-
-    // graveRenderBlocked dÃ©jÃ  incrÃ©mentÃ© par queueAnimation â€” pas de double add
-
     const deckEl = document.getElementById(owner === 'me' ? 'me-deck-stack' : 'opp-deck-stack');
     if (!deckEl) {
         graveRenderBlocked.delete(ownerKey);
         return;
     }
-
     const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
-
-    const deckRect = deckEl.getBoundingClientRect();
-    // Use on-screen deck size so burn cards match normal draw size at any zoom.
-    const fallbackW = 144;
-    const fallbackH = 192;
-    const cardWidth = (Number.isFinite(deckRect.width) && deckRect.width > 0) ? deckRect.width : fallbackW;
-    const cardHeight = (Number.isFinite(deckRect.height) && deckRect.height > 0) ? deckRect.height : fallbackH;
-
-    const startX = deckRect.left + deckRect.width / 2 - cardWidth / 2;
-    const startY = deckRect.top;
-
-    // Cacher le cimetiÃ¨re temporairement (la carte n'y est pas encore visuellement)
-    const graveTopEl = document.getElementById(`${owner}-grave-top`);
-    let graveSnapshot = null;
-    if (graveTopEl) {
-        graveSnapshot = graveTopEl.innerHTML;
+    const gameBoard = document.querySelector('.game-board');
+    if (!gameBoard) {
+        graveRenderBlocked.delete(ownerKey);
+        return;
     }
-
-    // Position et taille visuelle du cimetiÃ¨re â€” utiliser grave-top pour les dimensions EXACTES
+    const rootStyle = getComputedStyle(document.documentElement);
+    const cardWidth = parseFloat(rootStyle.getPropertyValue('--card-w')) || 144;
+    const cardHeight = parseFloat(rootStyle.getPropertyValue('--card-h')) || 192;
+    function getLocalPos(el) {
+        let x = 0;
+        let y = 0;
+        let cur = el;
+        while (cur && cur !== gameBoard) {
+            x += cur.offsetLeft;
+            y += cur.offsetTop;
+            cur = cur.offsetParent;
+        }
+        return { x, y };
+    }
+    const deckPos = getLocalPos(deckEl);
+    const deckW = deckEl.offsetWidth || cardWidth;
+    const deckH = deckEl.offsetHeight || cardHeight;
+    const startX = deckPos.x + deckW / 2 - cardWidth / 2;
+    const startY = deckPos.y + deckH / 2 - cardHeight / 2;
+    const graveTopEl = document.getElementById(ownerKey + '-grave-top');
+    const graveTarget = graveTopEl || graveEl;
     let graveX = startX;
     let graveY = startY + 200;
-    let graveScaleX = 1.0, graveScaleY = 1.0;
-    const graveTopEl2 = graveTopEl || document.getElementById(`${ownerKey}-grave-top`);
-    if (graveTopEl2) {
-        const tRect = graveTopEl2.getBoundingClientRect();
-        graveX = tRect.left + tRect.width / 2 - cardWidth / 2;
-        graveY = tRect.top + tRect.height / 2 - cardHeight / 2;
-        graveScaleX = tRect.width / cardWidth;
-        graveScaleY = tRect.height / cardHeight;
-    } else if (graveEl) {
-        const gRect = graveEl.getBoundingClientRect();
-        graveX = gRect.left + gRect.width / 2 - cardWidth / 2;
-        graveY = gRect.top + gRect.height / 2 - cardHeight / 2;
-        graveScaleX = gRect.width / cardWidth;
-        graveScaleY = gRect.height / cardHeight;
+    let graveScale = 1;
+    if (graveTarget) {
+        const gravePos = getLocalPos(graveTarget);
+        const gtW = graveTarget.offsetWidth || cardWidth;
+        const gtH = graveTarget.offsetHeight || cardHeight;
+        graveX = gravePos.x + gtW / 2 - cardWidth / 2;
+        graveY = gravePos.y + gtH / 2 - cardHeight / 2;
     }
-
-    // Position de reveal : Ã  cÃ´tÃ© du deck (pas au centre)
     const revealX = startX;
     const revealY = startY - cardHeight - 20;
-
-    // Wrapper avec perspective
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = `
-        position: fixed; z-index: 10000; pointer-events: none;
-        left: ${startX}px; top: ${startY}px;
-        width: ${cardWidth}px; height: ${cardHeight}px;
-        transform-origin: center center;
-        transform: scale(1); opacity: 0;
-        perspective: 800px;
-    `;
-
-    // Flipper 3D
+    wrapper.style.cssText =
+        'position: absolute; z-index: 10000; pointer-events: none;' +
+        'left: ' + startX + 'px; top: ' + startY + 'px;' +
+        'width: ' + cardWidth + 'px; height: ' + cardHeight + 'px;' +
+        'transform-origin: center center;' +
+        'transform: scale(1); opacity: 0;' +
+        'perspective: 800px;';
+    let burnGhost = _createPixiAnimGhost(card, 11000);
     const flipper = document.createElement('div');
-    flipper.style.cssText = `
-        width: 100%; height: 100%;
-        position: relative;
-        transform-style: preserve-3d;
-        transform: rotateY(0deg);
-    `;
-
-    // Dos de carte
+    flipper.style.cssText =
+        'width: 100%; height: 100%;' +
+        'position: relative;' +
+        'transform-style: preserve-3d;' +
+        'transform: rotateY(0deg);';
     const backFace = document.createElement('div');
     backFace.className = 'opp-card-back';
-    backFace.style.cssText = `
-        position: absolute; top: 0; left: 0;
-        width: 100%; height: 100%;
-        backface-visibility: hidden;
-        transform: rotateY(0deg);
-        border-radius: 6px;
-    `;
-
-    // Face avant (template board = false, comme les cartes sur le terrain)
+    backFace.style.cssText =
+        'position: absolute; top: 0; left: 0;' +
+        'width: 100%; height: 100%;' +
+        'backface-visibility: hidden;' +
+        'transform: rotateY(0deg);' +
+        'border-radius: 6px;';
     const frontFace = (typeof makeCard === 'function')
         ? makeCard(card, false)
         : createCardElementForAnimation(card);
@@ -1804,168 +2236,133 @@ async function animateBurn(data) {
     frontFace.style.backfaceVisibility = 'hidden';
     frontFace.style.transform = 'rotateY(180deg)';
     if (bgImage) frontFace.style.backgroundImage = bgImage;
-
+    if (burnGhost) {
+        frontFace.style.visibility = 'hidden';
+    }
     flipper.appendChild(backFace);
     flipper.appendChild(frontFace);
     wrapper.appendChild(flipper);
-
-    // Conteneur perspective pour matcher l'inclinaison du game-board
-    const gameBoardWrapper = document.querySelector('.game-board-wrapper');
-    let perspContainer = null;
-    let graveTiltDeg = 0;
-    if (gameBoardWrapper) {
-        const gameBoard = document.querySelector('.game-board');
-        if (gameBoard) {
-            const computedTransform = getComputedStyle(gameBoard).transform;
-            if (computedTransform && computedTransform !== 'none') {
-                const mat = new DOMMatrix(computedTransform);
-                graveTiltDeg = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
-            }
-        }
-        const gbwRect = gameBoardWrapper.getBoundingClientRect();
-        perspContainer = document.createElement('div');
-        perspContainer.style.cssText = `
-            position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
-            z-index: 10000; pointer-events: none;
-            perspective: 1000px;
-            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height * 0.8}px;
-        `;
-        document.body.appendChild(perspContainer);
-        perspContainer.appendChild(wrapper);
-    } else {
-        document.body.appendChild(wrapper);
-    }
-
-    // Calibrer graveScaleX/Y : 3 passes itÃ©ratives, correction indÃ©pendante W et H
-    if (graveTopEl2) {
+    gameBoard.appendChild(wrapper);
+    if (graveTarget) {
         const savedLeft = wrapper.style.left;
         const savedTop = wrapper.style.top;
         const savedTransform = wrapper.style.transform;
-        const target = graveTopEl2.getBoundingClientRect();
-        for (let pass = 0; pass < 3; pass++) {
+        const target = graveTarget.getBoundingClientRect();
+        for (let pass = 0; pass < 6; pass++) {
             wrapper.style.left = graveX + 'px';
             wrapper.style.top = graveY + 'px';
-            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
+            wrapper.style.transform = 'scale(' + graveScale + ')';
             const m = wrapper.getBoundingClientRect();
             if (m.width > 0 && m.height > 0) {
-                graveScaleX *= target.width / m.width;
-                graveScaleY *= target.height / m.height;
+                const ratio = Math.min(target.width / m.width, target.height / m.height);
+                graveScale *= ratio;
                 graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
                 graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
             }
-
         }
         wrapper.style.left = savedLeft;
         wrapper.style.top = savedTop;
         wrapper.style.transform = savedTransform;
     }
-
-    // Auto-fit du nom (les noms longs dÃ©bordent pendant l'animation)
     const burnNameFit = frontFace.querySelector('.arena-name');
     if (burnNameFit) fitArenaName(burnNameFit);
-
-    // DurÃ©es (rÃ©duites pour enchaÃ®ner rapidement quand plusieurs burns)
     const liftDuration = 120;
     const flipDuration = 250;
     const holdDuration = 250;
     const flyDuration = 300;
     const totalDuration = liftDuration + flipDuration + holdDuration + flyDuration;
-
     await new Promise(resolve => {
         const startTime = performance.now();
-
         const safetyTimeout = setTimeout(() => {
             graveRenderBlocked.delete(ownerKey);
+            if (burnGhost) {
+                burnGhost.destroy();
+                burnGhost = null;
+            }
             wrapper.remove();
-            if (perspContainer) perspContainer.remove();
             resolve();
         }, totalDuration + 500);
-
         function animate() {
             const elapsed = performance.now() - startTime;
             const progress = Math.min(elapsed / totalDuration, 1);
-
             const t1 = liftDuration / totalDuration;
             const t2 = (liftDuration + flipDuration) / totalDuration;
             const t3 = (liftDuration + flipDuration + holdDuration) / totalDuration;
-
-            let x, y, scaleX, scaleY, opacity, flipDeg, redTint, tiltDeg;
-
+            let x, y, scale, opacity, flipDeg, redTint;
             if (progress <= t1) {
-                // === PHASE 1: LIFT ===
                 const p = progress / t1;
                 const ep = easeOutCubic(p);
                 x = startX;
                 y = startY - ep * 30;
-                scaleX = scaleY = 1 + ep * 0.05;
+                scale = 1 + ep * 0.05;
                 opacity = 0.3 + ep * 0.7;
                 flipDeg = 0;
                 redTint = 0;
-                tiltDeg = 0;
-
             } else if (progress <= t2) {
-                // === PHASE 2: FLIP (retourne la carte prÃ¨s du deck) ===
                 const p = (progress - t1) / (t2 - t1);
                 const ep = easeInOutCubic(p);
                 x = startX + (revealX - startX) * ep;
                 y = (startY - 30) + (revealY - (startY - 30)) * ep;
-                scaleX = scaleY = 1.05 + (1.2 - 1.05) * ep;
+                scale = 1.05 + (1.2 - 1.05) * ep;
                 opacity = 1;
                 flipDeg = easeInOutCubic(p) * 180;
                 redTint = 0;
-                tiltDeg = 0;
-
             } else if (progress <= t3) {
-                // === PHASE 3: HOLD (teinte rouge progressive) ===
                 const p = (progress - t2) / (t3 - t2);
                 x = revealX;
                 y = revealY;
-                scaleX = scaleY = 1.2;
+                scale = 1.2;
                 opacity = 1;
                 flipDeg = 180;
                 redTint = easeOutCubic(p) * 0.6;
-                tiltDeg = 0;
-
             } else {
-                // === PHASE 4: FLY TO GRAVEYARD ===
                 const p = (progress - t3) / (1 - t3);
                 const ep = easeInOutCubic(p);
                 x = revealX + (graveX - revealX) * ep;
                 y = revealY + (graveY - revealY) * ep;
-                scaleX = 1.2 + (graveScaleX - 1.2) * ep;
-                scaleY = 1.2 + (graveScaleY - 1.2) * ep;
+                scale = 1.2 + (graveScale - 1.2) * ep;
                 opacity = 1;
                 flipDeg = 180;
                 redTint = 0.6;
-                tiltDeg = ep * graveTiltDeg;
             }
-
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
-            wrapper.style.transform = `scale(${scaleX}, ${scaleY}) rotateX(${tiltDeg}deg)`;
-            flipper.style.transform = `rotateY(${flipDeg}deg)`;
-
-            // Teinte rouge via overlay
-            if (redTint > 0) {
-                wrapper.style.filter = `sepia(${redTint * 0.5}) saturate(${1 + redTint * 2}) hue-rotate(-10deg) brightness(${1 - redTint * 0.2})`;
+            wrapper.style.transform = 'scale(' + scale + ')';
+            flipper.style.transform = 'rotateY(' + flipDeg + 'deg)';
+            if (burnGhost) {
+                const showGhost = flipDeg >= 90;
+                flipper.style.visibility = showGhost ? 'hidden' : 'visible';
+                const g = Math.max(0, Math.min(255, Math.round(255 - redTint * 90)));
+                const b = Math.max(0, Math.min(255, Math.round(255 - redTint * 165)));
+                const tint = (255 << 16) | (g << 8) | b;
+                burnGhost.syncFromElement(wrapper, {
+                    alpha: showGhost ? opacity : 0,
+                    gray: 0,
+                    tint,
+                    zIndex: 11000
+                });
+                wrapper.style.filter = 'none';
+            } else if (redTint > 0) {
+                wrapper.style.filter =
+                    'sepia(' + (redTint * 0.5) + ') ' +
+                    'saturate(' + (1 + redTint * 2) + ') ' +
+                    'hue-rotate(-10deg) ' +
+                    'brightness(' + (1 - redTint * 0.2) + ')';
             } else {
                 wrapper.style.filter = 'none';
             }
-
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 clearTimeout(safetyTimeout);
-
-                // Cacher le wrapper AVANT de placer la carte (mÃªme frame synchrone = pas de pop)
                 wrapper.style.visibility = 'hidden';
-
-                // DÃ©bloquer et mettre Ã  jour le cimetiÃ¨re
-                // Afficher la carte de CE burn comme top card (pas la derniÃ¨re du state,
-                // car le state peut dÃ©jÃ  contenir les burns suivants)
                 graveRenderBlocked.delete(ownerKey);
-                const topContainer = document.getElementById(`${ownerKey}-grave-top`);
+                if (burnGhost) {
+                    burnGhost.destroy();
+                    burnGhost = null;
+                }
+                const topContainer = document.getElementById(ownerKey + '-grave-top');
                 if (topContainer) {
                     const burnCardId = card.uid || card.id;
                     topContainer.dataset.topCardUid = burnCardId;
@@ -1984,31 +2381,26 @@ async function animateBurn(data) {
                         updateGraveDisplay(ownerKey, graveyard);
                     }
                 }
-
-                // Mise Ã  jour dynamique de la popup cimetiÃ¨re
                 addCardToGraveyardPopup(ownerKey, card);
-
                 wrapper.remove();
-                if (perspContainer) perspContainer.remove();
                 resolve();
             }
         }
-
         requestAnimationFrame(animate);
     });
 }
 
 /**
- * Animation de mort â€” la carte vole vers le cimetiÃ¨re (style Hearthstone/Arena)
- * Phase 1 - Death Mark (400ms) : greyscale progressif + lÃ©ger shrink
- * Phase 2 - Fly to Graveyard (500ms) : vol vers le cimetiÃ¨re avec perspective tilt
+ * Animation de mort Ã¢â‚¬â€ la carte vole vers le cimetiÃƒÂ¨re (style Hearthstone/Arena)
+ * Phase 1 - Death Mark (400ms) : greyscale progressif + lÃƒÂ©ger shrink
+ * Phase 2 - Fly to Graveyard (500ms) : vol vers le cimetiÃƒÂ¨re avec perspective tilt
  */
 async function animateDeathToGraveyard(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const ownerKey = owner;
     const deathSlotKey = `${owner}-${data.row}-${data.col}`;
 
-    // graveRenderBlocked dÃ©jÃ  incrÃ©mentÃ© par queueAnimation â€” pas de double add
+    // graveRenderBlocked dÃƒÂ©jÃƒÂ  incrÃƒÂ©mentÃƒÂ© par queueAnimation Ã¢â‚¬â€ pas de double add
 
     // 1. Trouver le slot et la carte
     const slot = document.querySelector(
@@ -2022,15 +2414,15 @@ async function animateDeathToGraveyard(data) {
         return;
     }
 
-    // 2. Positions en coordonnÃ©es locales au game-board (pas en screen-space)
+    // 2. Positions en coordonnÃƒÂ©es locales au game-board (pas en screen-space)
     //    Comme le wrapper sera DANS le board, la perspective s'applique naturellement
     const gameBoard = document.querySelector('.game-board');
     const boardRect = gameBoard.getBoundingClientRect();
     const cardWidth = 144;
     const cardHeight = 192;
 
-    // Position du slot en coordonnÃ©es locales au board CSS (avant perspective)
-    // On utilise offsetLeft/offsetTop rÃ©cursivement jusqu'au board
+    // Position du slot en coordonnÃƒÂ©es locales au board CSS (avant perspective)
+    // On utilise offsetLeft/offsetTop rÃƒÂ©cursivement jusqu'au board
     function getLocalPos(el) {
         let x = 0, y = 0;
         let cur = el;
@@ -2047,7 +2439,7 @@ async function animateDeathToGraveyard(data) {
     const startX = slotPos.x + slotW / 2 - cardWidth / 2;
     const startY = slotPos.y + slotH / 2 - cardHeight / 2;
 
-    // 3. Position cible : cimetiÃ¨re (calibrÃ©e aprÃ¨s insertion dans le DOM)
+    // 3. Position cible : cimetiÃƒÂ¨re (calibrÃƒÂ©e aprÃƒÂ¨s insertion dans le DOM)
     const deathGraveTop = document.getElementById(`${ownerKey}-grave-top`);
     const graveEl = document.getElementById(owner === 'me' ? 'me-grave-box' : 'opp-grave-box');
     const graveTarget = deathGraveTop || graveEl;
@@ -2056,7 +2448,7 @@ async function animateDeathToGraveyard(data) {
     let graveScaleX = 1;
     let graveScaleY = 1;
 
-    // 4. CrÃ©er le wrapper DANS le game-board (hÃ©rite de la perspective automatiquement)
+    // 4. CrÃƒÂ©er le wrapper DANS le game-board (hÃƒÂ©rite de la perspective automatiquement)
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
         position: absolute; z-index: 10000; pointer-events: none;
@@ -2065,8 +2457,14 @@ async function animateDeathToGraveyard(data) {
         transform-origin: center center;
         opacity: 1;
     `;
+    wrapper.dataset.animTrack = 'deathToGrave';
+    wrapper.dataset.animOwner = ownerKey;
+    wrapper.dataset.animRow = String(data.row);
+    wrapper.dataset.animCol = String(data.col);
+    wrapper.dataset.animUid = String(data.card?.uid || data.card?.id || '');
+    let deathGhost = _createPixiAnimGhost(data.card || cardEl?.__cardData || null, 11000);
 
-    // CrÃ©er la face de la carte
+    // CrÃƒÂ©er la face de la carte
     let cardFace;
     if (data.card && typeof makeCard === 'function') {
         cardFace = makeCard(data.card, false);
@@ -2085,28 +2483,34 @@ async function animateDeathToGraveyard(data) {
     cardFace.style.height = cardHeight + 'px';
     cardFace.style.margin = '0';
     if (bgImage) cardFace.style.backgroundImage = bgImage;
-    // Figer les stats Ã  la taille board (hors .card-slot, le CSS retombe sur des tailles plus petites)
+    // Figer les stats ÃƒÂ  la taille board (hors .card-slot, le CSS retombe sur des tailles plus petites)
     for (const statEl of cardFace.querySelectorAll('.arena-atk, .arena-hp, .arena-armor')) {
         statEl.style.width = '40px';
         statEl.style.height = '25px';
         statEl.style.fontSize = '20px';
     }
+    if (deathGhost) {
+        cardFace.style.visibility = 'hidden';
+    }
     wrapper.appendChild(cardFace);
 
-    // 5. Retirer la carte originale du slot immÃ©diatement
+    // 5. Retirer la carte originale du slot immÃƒÂ©diatement
     if (cardEl) {
         cardEl.remove();
     }
     slot.classList.remove('has-card');
     slot.classList.remove('has-flying');
 
-    // DÃ©bloquer le slot â€” la carte est maintenant dans le wrapper volant, render() peut toucher le slot
+    // DÃƒÂ©bloquer le slot Ã¢â‚¬â€ la carte est maintenant dans le wrapper volant, render() peut toucher le slot
     animatingSlots.delete(deathSlotKey);
 
-    // 6. Ajouter au DOM dans le game-board (hÃ©rite de la perspective)
+    // 6. Ajouter au DOM dans le game-board (hÃƒÂ©rite de la perspective)
     gameBoard.appendChild(wrapper);
+    if (deathGhost) {
+        deathGhost.syncFromElement(wrapper, { alpha: 1, gray: 0, zIndex: 11000 });
+    }
 
-    // 7. Calibrer graveX/graveY par itÃ©ration (la perspective rend offsetLeft inexact)
+    // 7. Calibrer graveX/graveY par itÃƒÂ©ration (la perspective rend offsetLeft inexact)
     if (graveTarget) {
         const gtRect = graveTarget.getBoundingClientRect();
         const gtCx = gtRect.left + gtRect.width / 2;
@@ -2130,11 +2534,11 @@ async function animateDeathToGraveyard(data) {
         wrapper.style.transform = 'scale(1, 1)';
     }
 
-    // Auto-fit du nom (les noms longs dÃ©bordent pendant l'animation)
+    // Auto-fit du nom (les noms longs dÃƒÂ©bordent pendant l'animation)
     const deathNameFit = cardFace.querySelector('.arena-name');
     if (deathNameFit) fitArenaName(deathNameFit);
 
-    // PrÃ©-charger l'image de la carte pour l'effet de dissipation
+    // PrÃƒÂ©-charger l'image de la carte pour l'effet de dissipation
     let dissipCardImage = null;
     let dissipationStarted = false;
     const isDissipation = data.card?.abilities?.includes('dissipation');
@@ -2157,6 +2561,10 @@ async function animateDeathToGraveyard(data) {
 
         const safetyTimeout = setTimeout(() => {
             graveRenderBlocked.delete(ownerKey);
+            if (deathGhost) {
+                deathGhost.destroy();
+                deathGhost = null;
+            }
             wrapper.remove();
             resolve();
         }, totalDuration + 500);
@@ -2179,11 +2587,11 @@ async function animateDeathToGraveyard(data) {
                 opacity = 1.0;
                 greyAmount = ep;
             } else if (isDissipation && !dissipationStarted) {
-                // === PHASE 2 (DISSIPATION): DÃ‰SINTÃ‰GRATION EN FRAGMENTS CANVAS ===
+                // === PHASE 2 (DISSIPATION): DÃƒâ€°SINTÃƒâ€°GRATION EN FRAGMENTS CANVAS ===
                 dissipationStarted = true;
                 clearTimeout(safetyTimeout);
 
-                // CrÃ©er le canvas source : image cover + bordure arrondie
+                // CrÃƒÂ©er le canvas source : image cover + bordure arrondie
                 const srcRes = 2;
                 const sourceCanvas = document.createElement('canvas');
                 sourceCanvas.width = cardWidth * srcRes;
@@ -2199,7 +2607,7 @@ async function animateDeathToGraveyard(data) {
                 sctx.roundRect(0, 0, sw, sh, borderR);
                 sctx.fill();
 
-                // Clipper l'intÃ©rieur et dessiner l'image avec cover positioning
+                // Clipper l'intÃƒÂ©rieur et dessiner l'image avec cover positioning
                 sctx.save();
                 sctx.beginPath();
                 sctx.roundRect(brdW, brdW, sw - brdW * 2, sh - brdW * 2, borderR - brdW);
@@ -2229,6 +2637,10 @@ async function animateDeathToGraveyard(data) {
                 // Position visuelle du wrapper
                 const wrapperRect = wrapper.getBoundingClientRect();
                 wrapper.style.visibility = 'hidden';
+                if (deathGhost) {
+                    deathGhost.destroy();
+                    deathGhost = null;
+                }
 
                 animateDissipationVanish(sourceCanvas, wrapperRect.left, wrapperRect.top, cardWidth, cardHeight, 0, null).then(() => {
                     wrapper.remove();
@@ -2237,7 +2649,7 @@ async function animateDeathToGraveyard(data) {
                 });
                 return;
             } else if (isDissipation) {
-                // Dissipation dÃ©jÃ  lancÃ©e â€” ne rien faire
+                // Dissipation dÃƒÂ©jÃƒÂ  lancÃƒÂ©e Ã¢â‚¬â€ ne rien faire
                 return;
             } else {
                 // === PHASE 2: FLY TO GRAVEYARD ===
@@ -2262,6 +2674,9 @@ async function animateDeathToGraveyard(data) {
             } else {
                 wrapper.style.filter = 'none';
             }
+            if (deathGhost) {
+                deathGhost.syncFromElement(wrapper, { alpha: opacity, gray: greyAmount, zIndex: 11000 });
+            }
 
             if (progress < 1) {
                 requestAnimationFrame(animate);
@@ -2272,13 +2687,17 @@ async function animateDeathToGraveyard(data) {
                 wrapper.style.top = graveY + 'px';
                 wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY})`;
 
-                // Cacher le wrapper AVANT de placer la carte (mÃªme frame synchrone = pas de pop)
+                // Cacher le wrapper AVANT de placer la carte (mÃƒÂªme frame synchrone = pas de pop)
                 wrapper.style.visibility = 'hidden';
+                if (deathGhost) {
+                    deathGhost.destroy();
+                    deathGhost = null;
+                }
 
-                // Placer la carte directement dans le cimetiÃ¨re via data.card
-                // Le state n'est pas encore Ã  jour (graveyard.length=0), donc on
-                // utilise la carte de l'animation pour prÃ©-remplir le cimetiÃ¨re
-                // Dissipation : pas de placement au cimetiÃ¨re
+                // Placer la carte directement dans le cimetiÃƒÂ¨re via data.card
+                // Le state n'est pas encore ÃƒÂ  jour (graveyard.length=0), donc on
+                // utilise la carte de l'animation pour prÃƒÂ©-remplir le cimetiÃƒÂ¨re
+                // Dissipation : pas de placement au cimetiÃƒÂ¨re
                 graveRenderBlocked.delete(ownerKey);
                 const isDissip = data.card?.abilities?.includes('dissipation');
                 if (data.card && !isDissip) {
@@ -2290,7 +2709,7 @@ async function animateDeathToGraveyard(data) {
                         container.innerHTML = '';
                         const cardEl = makeCard(data.card, false);
                         cardEl.classList.remove('just-played', 'can-attack', 'melody-locked', 'petrified');
-                        // Nettoyer les effets Medusa (la carte au cimetiÃ¨re est reset)
+                        // Nettoyer les effets Medusa (la carte au cimetiÃƒÂ¨re est reset)
                         const gazeMarkerEl = cardEl.querySelector('.gaze-marker');
                         if (gazeMarkerEl) gazeMarkerEl.remove();
                         cardEl.classList.add('grave-card', 'in-graveyard');
@@ -2298,11 +2717,11 @@ async function animateDeathToGraveyard(data) {
                         const nameEl = cardEl.querySelector('.arena-name');
                         if (nameEl) fitArenaName(nameEl);
                     }
-                    // Aussi mettre Ã  jour le stack
+                    // Aussi mettre ÃƒÂ  jour le stack
                     const graveyard = owner === 'me' ? state?.me?.graveyard : state?.opponent?.graveyard;
                     updateGraveDisplay(ownerKey, graveyard || [data.card]);
 
-                    // Mise Ã  jour dynamique de la popup cimetiÃ¨re
+                    // Mise ÃƒÂ  jour dynamique de la popup cimetiÃƒÂ¨re
                     addCardToGraveyardPopup(ownerKey, data.card);
                 }
 
@@ -2319,8 +2738,8 @@ async function animateDeathToGraveyard(data) {
 }
 
 /**
- * Animation de dissipation : la carte se dÃ©sintÃ¨gre en fragments qui s'envolent
- * Effet style Magic Arena â€” chaque fragment contient un sous-ensemble alÃ©atoire de pixels
+ * Animation de dissipation : la carte se dÃƒÂ©sintÃƒÂ¨gre en fragments qui s'envolent
+ * Effet style Magic Arena Ã¢â‚¬â€ chaque fragment contient un sous-ensemble alÃƒÂ©atoire de pixels
  */
 async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth, cardHeight, tiltDeg = 0, perspContainer = null) {
     const NUM_FRAGMENTS = 24;
@@ -2334,7 +2753,7 @@ async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth,
     const h = sourceCanvas.height;
     const original = ctx.getImageData(0, 0, w, h);
 
-    // Distribuer les pixels dans les fragments â€” biaisÃ© par x (gauche se dissout en premier)
+    // Distribuer les pixels dans les fragments Ã¢â‚¬â€ biaisÃƒÂ© par x (gauche se dissout en premier)
     const fragmentDatas = Array.from({ length: NUM_FRAGMENTS }, () => ctx.createImageData(w, h));
     for (let x = 0; x < w; x++) {
         for (let y = 0; y < h; y++) {
@@ -2362,14 +2781,14 @@ async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth,
         z-index: 10001;
     `;
 
-    // Conteneur sÃ©parÃ© pour les particules (pas de tilt)
+    // Conteneur sÃƒÂ©parÃƒÂ© pour les particules (pas de tilt)
     const container = document.createElement('div');
     container.style.cssText = `
         position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
         z-index: 10001; pointer-events: none;
     `;
 
-    // CrÃ©er les Ã©lÃ©ments canvas pour chaque fragment
+    // CrÃƒÂ©er les ÃƒÂ©lÃƒÂ©ments canvas pour chaque fragment
     const fragments = fragmentDatas.map((imgData, i) => {
         const cvs = document.createElement('canvas');
         cvs.width = w;
@@ -2398,7 +2817,7 @@ async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth,
         };
     });
 
-    // CrÃ©er les particules violettes
+    // CrÃƒÂ©er les particules violettes
     const particles = Array.from({ length: NUM_PARTICLES }, () => {
         const size = 3 + Math.random() * 3;
         const px = startX + Math.random() * cardWidth;
@@ -2428,7 +2847,7 @@ async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth,
         };
     });
 
-    // Ajouter le wrapper dans le perspContainer (mÃªme perspective 3D que le plateau)
+    // Ajouter le wrapper dans le perspContainer (mÃƒÂªme perspective 3D que le plateau)
     if (perspContainer) {
         perspContainer.appendChild(fragWrapper);
     } else {
@@ -2436,7 +2855,7 @@ async function animateDissipationVanish(sourceCanvas, startX, startY, cardWidth,
     }
     document.body.appendChild(container);
 
-    // Compenser le dÃ©calage du wrapper causÃ© par le rotateX dans le perspContainer
+    // Compenser le dÃƒÂ©calage du wrapper causÃƒÂ© par le rotateX dans le perspContainer
     if (tiltDeg !== 0 && perspContainer) {
         const before = fragWrapper.getBoundingClientRect();
         const corrX = startX - before.left;
@@ -2536,11 +2955,11 @@ async function animateSacrifice(data) {
     }
 
     if (data.noFlyToGrave) {
-        // CrÃ©ature avec transformInto : pas de fly-to-graveyard, le deathTransform suivant gÃ¨re le flip
-        // DÃ©bloquer seulement graveRenderBlocked â€” le slot reste bloquÃ© pour le deathTransform
+        // CrÃƒÂ©ature avec transformInto : pas de fly-to-graveyard, le deathTransform suivant gÃƒÂ¨re le flip
+        // DÃƒÂ©bloquer seulement graveRenderBlocked Ã¢â‚¬â€ le slot reste bloquÃƒÂ© pour le deathTransform
         graveRenderBlocked.delete(owner);
     } else {
-        // Mort normale : enchaÃ®ner avec l'animation fly-to-graveyard standard.
+        // Mort normale : enchaÃƒÂ®ner avec l'animation fly-to-graveyard standard.
         // Safety race avoids queue hard-timeout if browser throttles rAF.
         await Promise.race([
             animateDeathToGraveyard(data),
@@ -2550,31 +2969,47 @@ async function animateSacrifice(data) {
 }
 
 /**
- * CrÃ©e un Ã©lÃ©ment carte pour l'animation (copie de celle dans animations.js)
+ * CrÃƒÂ©e un ÃƒÂ©lÃƒÂ©ment carte pour l'animation (copie de celle dans animations.js)
  */
 function createCardElementForAnimation(card) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
-    const hp = card.currentHp ?? card.hp;
+    const hpNum = Number(card.currentHp ?? card.hp);
+    const atkNum = Number(card.atk);
+    const hp = Number.isFinite(hpNum) ? hpNum : 0;
+    const atk = Number.isFinite(atkNum) ? atkNum : 0;
+    if (card.type === 'creature' && (!Number.isFinite(hpNum) || !Number.isFinite(atkNum))) {
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('card:invalid-stats:anim', {
+                source: 'createCardElementForAnimation',
+                uid: card.uid || null,
+                id: card.id || null,
+                name: card.name || null,
+                atk: card.atk ?? null,
+                hp: card.hp ?? null,
+                currentHp: card.currentHp ?? null,
+            });
+        }
+    }
 
-    // Si la carte a une image, utiliser le nouveau systÃ¨me
+    // Si la carte a une image, utiliser le nouveau systÃƒÂ¨me
     if (card.image) {
         el.classList.add('has-image');
         el.style.backgroundImage = `url('/cards/${card.image}')`;
 
         const abilityNames = {
-            fly: 'Vol', shooter: 'Tireur', haste: 'CÃ©lÃ©ritÃ©', superhaste: 'SupercÃ©lÃ©ritÃ©', intangible: 'Intangible',
-            trample: 'PiÃ©tinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'RÃ©gÃ©nÃ©ration',
+            fly: 'Vol', shooter: 'Tireur', haste: 'CÃƒÂ©lÃƒÂ©ritÃƒÂ©', superhaste: 'SupercÃƒÂ©lÃƒÂ©ritÃƒÂ©', intangible: 'Intangible',
+            trample: 'PiÃƒÂ©tinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'RÃƒÂ©gÃƒÂ©nÃƒÂ©ration',
             protection: 'Protection', untargetable: 'Inciblable', provocation: 'Provocation'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
             if (a === 'power') return `Puissance ${card.powerX || ''}`.trim();
-            if (a === 'regeneration') return `RÃ©gÃ©nÃ©ration ${card.regenerationX || ''}`.trim();
+            if (a === 'regeneration') return `RÃƒÂ©gÃƒÂ©nÃƒÂ©ration ${card.regenerationX || ''}`.trim();
             return abilityNames[a] || a;
         }).join(', ');
 
-        let combatTypeText = 'MÃªlÃ©e';
+        let combatTypeText = 'MÃƒÂªlÃƒÂ©e';
         if (card.combatType === 'shooter' || card.abilities?.includes('shooter')) combatTypeText = 'Tireur';
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
@@ -2582,9 +3017,9 @@ function createCardElementForAnimation(card) {
             <div class="img-cost">${card.cost}</div>
             <div class="img-subtype">${card.subtype || ''}</div>
             <div class="img-name">${card.name}</div>
-            <div class="img-type-line">CrÃ©ature - ${combatTypeText}</div>
+            <div class="img-type-line">CrÃƒÂ©ature - ${combatTypeText}</div>
             <div class="img-abilities">${abilitiesText}</div>
-            <div class="img-atk">${card.atk}</div>
+            <div class="img-atk">${atk}</div>
             <div class="img-hp">${hp}</div>`;
         return el;
     }
@@ -2593,9 +3028,9 @@ function createCardElementForAnimation(card) {
 }
 
 /**
- * Animation de rÃ©vÃ©lation d'un sort ou piÃ¨ge â€” style Hearthstone/Arena
- * La carte apparaÃ®t en grand (gauche = joueur, droite = adversaire)
- * puis vole vers le cimetiÃ¨re du propriÃ©taire.
+ * Animation de rÃƒÂ©vÃƒÂ©lation d'un sort ou piÃƒÂ¨ge Ã¢â‚¬â€ style Hearthstone/Arena
+ * La carte apparaÃƒÂ®t en grand (gauche = joueur, droite = adversaire)
+ * puis vole vers le cimetiÃƒÂ¨re du propriÃƒÂ©taire.
  */
 async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const isMine = casterPlayerNum === myNum;
@@ -2603,9 +3038,9 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const cardWidth = 144;
     const cardHeight = 192;
 
-    // graveRenderBlocked dÃ©jÃ  incrÃ©mentÃ© par queueAnimation â€” pas de double add
+    // graveRenderBlocked dÃƒÂ©jÃƒÂ  incrÃƒÂ©mentÃƒÂ© par queueAnimation Ã¢â‚¬â€ pas de double add
 
-    // 1. CrÃ©er l'Ã©lÃ©ment carte (version on-field : juste le nom, comme au cimetiÃ¨re)
+    // 1. CrÃƒÂ©er l'ÃƒÂ©lÃƒÂ©ment carte (version on-field : juste le nom, comme au cimetiÃƒÂ¨re)
     const cardEl = (typeof makeCard === 'function')
         ? makeCard(card, false)
         : createCardElementForAnimation(card);
@@ -2629,7 +3064,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         : gbRect.left + gbRect.width * 0.80 - (cardWidth * showcaseScale) / 2;
     const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardHeight * showcaseScale) / 2;
 
-    // 3. Calculer la position du cimetiÃ¨re du caster â€” utiliser grave-top pour dimensions EXACTES
+    // 3. Calculer la position du cimetiÃƒÂ¨re du caster Ã¢â‚¬â€ utiliser grave-top pour dimensions EXACTES
     const graveEl = document.getElementById(side + '-grave-box');
     const spellGraveTop = document.getElementById(side + '-grave-top');
     let graveX = showcaseX;
@@ -2649,7 +3084,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         graveScaleY = gRect.height / cardHeight;
     }
 
-    // 4. Position de dÃ©part : depuis la main (startRect) ou materialisation classique
+    // 4. Position de dÃƒÂ©part : depuis la main (startRect) ou materialisation classique
     const hasStartRect = !!startRect;
     const initX = hasStartRect ? startRect.left + startRect.width / 2 - cardWidth / 2 : showcaseX;
     const initY = hasStartRect ? startRect.top + startRect.height / 2 - cardHeight / 2 : showcaseY;
@@ -2666,8 +3101,9 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         transform: scale(${initScale}); opacity: ${initOpacity};
         perspective: 800px;
     `;
+    let spellGhost = _createPixiAnimGhost(card, 11000);
 
-    // Pour les sorts adverses : flip dos â†’ face au lieu de fade
+    // Pour les sorts adverses : flip dos Ã¢â€ â€™ face au lieu de fade
     let flipInner = null;
     if (oppFlip) {
         cardEl.style.backfaceVisibility = 'hidden';
@@ -2693,8 +3129,12 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     } else {
         wrapper.appendChild(cardEl);
     }
+    if (spellGhost) {
+        if (flipInner) flipInner.style.visibility = 'hidden';
+        else cardEl.style.visibility = 'hidden';
+    }
 
-    // 5. Perspective container pour le fly-to-graveyard (mÃªme technique que animateBurn)
+    // 5. Perspective container pour le fly-to-graveyard (mÃƒÂªme technique que animateBurn)
     const gameBoardWrapper = document.querySelector('.game-board-wrapper');
     let perspContainer = null;
     let graveTiltDeg = 0;
@@ -2720,8 +3160,11 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     } else {
         document.body.appendChild(wrapper);
     }
+    if (spellGhost) {
+        spellGhost.syncFromElement(wrapper, { alpha: initOpacity, gray: 0, zIndex: 11000 });
+    }
 
-    // Calibrer graveScaleX/Y : 3 passes itÃ©ratives, correction indÃ©pendante W et H
+    // Calibrer graveScaleX/Y : 3 passes itÃƒÂ©ratives, correction indÃƒÂ©pendante W et H
     if (spellGraveTop) {
         const savedLeft = wrapper.style.left;
         const savedTop = wrapper.style.top;
@@ -2747,11 +3190,11 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         wrapper.style.opacity = savedOpacity;
     }
 
-    // Auto-fit du nom (les noms longs dÃ©bordent pendant l'animation)
+    // Auto-fit du nom (les noms longs dÃƒÂ©bordent pendant l'animation)
     const spellNameFit = cardEl.querySelector('.arena-name');
     if (spellNameFit) fitArenaName(spellNameFit);
 
-    // 6. DurÃ©es des phases (pas de phase impact â€” le fly est la derniÃ¨re, comme burn)
+    // 6. DurÃƒÂ©es des phases (pas de phase impact Ã¢â‚¬â€ le fly est la derniÃƒÂ¨re, comme burn)
     const materializeDuration = 500;
     const holdDuration = 800;
     const shrinkDuration = 300;
@@ -2763,6 +3206,10 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 
         const safetyTimeout = setTimeout(() => {
             graveRenderBlocked.delete(side);
+            if (spellGhost) {
+                spellGhost.destroy();
+                spellGhost = null;
+            }
             wrapper.remove();
             if (perspContainer) perspContainer.remove();
             resolve();
@@ -2779,13 +3226,13 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
             let x, y, scaleX, scaleY, opacity, tiltDeg;
 
             if (progress <= t1) {
-                // === PHASE 1: MATERIALIZE â€” montÃ©e progressive vers showcase ===
+                // === PHASE 1: MATERIALIZE Ã¢â‚¬â€ montÃƒÂ©e progressive vers showcase ===
                 const p = progress / t1;
                 const ep = easeInOutCubic(p);
                 x = initX + (showcaseX - initX) * ep;
                 y = initY + (showcaseY - initY) * ep;
                 if (hasStartRect) {
-                    // Depuis la main : garder la taille initiale au dÃ©but, grossir aprÃ¨s avoir commencÃ© Ã  monter
+                    // Depuis la main : garder la taille initiale au dÃƒÂ©but, grossir aprÃƒÂ¨s avoir commencÃƒÂ© ÃƒÂ  monter
                     const scaleDelay = 0.3;
                     const sp = Math.max(0, (p - scaleDelay) / (1 - scaleDelay));
                     scaleX = scaleY = initScale + (showcaseScale - initScale) * easeOutCubic(sp);
@@ -2815,7 +3262,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 tiltDeg = 0;
 
             } else {
-                // === PHASE 4: FLY TO GRAVEYARD (derniÃ¨re phase, comme burn) ===
+                // === PHASE 4: FLY TO GRAVEYARD (derniÃƒÂ¨re phase, comme burn) ===
                 const p = (progress - t3) / (1 - t3);
                 const ep = easeInOutCubic(p);
                 x = showcaseX + (graveX - showcaseX) * ep;
@@ -2830,8 +3277,11 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
             wrapper.style.transform = `scale(${scaleX}, ${scaleY}) rotateX(${tiltDeg}deg)`;
+            if (spellGhost) {
+                spellGhost.syncFromElement(wrapper, { alpha: opacity, gray: 0, zIndex: 11000 });
+            }
 
-            // Flip dos â†’ face pour les sorts adverses (pendant phase 1)
+            // Flip dos Ã¢â€ â€™ face pour les sorts adverses (pendant phase 1)
             if (flipInner) {
                 const flipDeg = progress <= t1 ? 180 * easeInOutCubic(progress / t1) : 180;
                 flipInner.style.transform = `rotateY(${flipDeg}deg)`;
@@ -2842,10 +3292,10 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
             } else {
                 clearTimeout(safetyTimeout);
 
-                // Cacher le wrapper AVANT de placer la carte (mÃªme frame synchrone = pas de pop)
+                // Cacher le wrapper AVANT de placer la carte (mÃƒÂªme frame synchrone = pas de pop)
                 wrapper.style.visibility = 'hidden';
 
-                // VÃ©rifier si ce sort doit retourner en main (returnOnMiss)
+                // VÃƒÂ©rifier si ce sort doit retourner en main (returnOnMiss)
                 const spellId = card.uid || card.id;
                 if (pendingSpellReturns.has(spellId)) {
                     pendingSpellReturns.delete(spellId);
@@ -2858,7 +3308,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         }
                     }
                 } else {
-                    // Placer la carte visuellement dans le cimetiÃ¨re
+                    // Placer la carte visuellement dans le cimetiÃƒÂ¨re
                     const graveTopContainer = document.getElementById(side + '-grave-top');
                     if (graveTopContainer) {
                         const spellCardId = card.uid || card.id;
@@ -2872,13 +3322,13 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         const spellNameEl = graveCardEl.querySelector('.arena-name');
                         if (spellNameEl) fitArenaName(spellNameEl);
                     }
-                    // Mise Ã  jour dynamique de la popup cimetiÃ¨re
+                    // Mise ÃƒÂ  jour dynamique de la popup cimetiÃƒÂ¨re
                     addCardToGraveyardPopup(side, card);
 
                     // GARDER graveRenderBlocked actif !
-                    // Le state du serveur n'a pas encore le sort dans le cimetiÃ¨re.
-                    // Si on dÃ©bloque maintenant, render() voit un cimetiÃ¨re vide et efface notre carte.
-                    // On dÃ©bloque aprÃ¨s un dÃ©lai pour laisser le state se mettre Ã  jour.
+                    // Le state du serveur n'a pas encore le sort dans le cimetiÃƒÂ¨re.
+                    // Si on dÃƒÂ©bloque maintenant, render() voit un cimetiÃƒÂ¨re vide et efface notre carte.
+                    // On dÃƒÂ©bloque aprÃƒÂ¨s un dÃƒÂ©lai pour laisser le state se mettre ÃƒÂ  jour.
                     const capturedSide = side;
                     const spellUid = card.uid || card.id;
                     setTimeout(() => {
@@ -2886,9 +3336,9 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         if (state) {
                             const graveyard = capturedSide === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
                             if (graveyard) {
-                                // VÃ©rifier que le state contient bien le sort avant de mettre Ã  jour.
-                                // Pour les sorts lents (destroy etc.), le state peut ne pas encore Ãªtre arrivÃ©.
-                                // Dans ce cas, garder le placement manuel â€” render() mettra Ã  jour quand le state arrivera.
+                                // VÃƒÂ©rifier que le state contient bien le sort avant de mettre ÃƒÂ  jour.
+                                // Pour les sorts lents (destroy etc.), le state peut ne pas encore ÃƒÂªtre arrivÃƒÂ©.
+                                // Dans ce cas, garder le placement manuel Ã¢â‚¬â€ render() mettra ÃƒÂ  jour quand le state arrivera.
                                 const hasSpell = graveyard.some(c => (c.uid || c.id) === spellUid);
                                 if (hasSpell) {
                                     updateGraveDisplay(capturedSide, graveyard);
@@ -2900,6 +3350,10 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 }
 
                 wrapper.remove();
+                if (spellGhost) {
+                    spellGhost.destroy();
+                    spellGhost = null;
+                }
                 if (perspContainer) perspContainer.remove();
                 resolve();
             }
@@ -2919,7 +3373,7 @@ async function animateSpell(data) {
             const cardW = 144, cardH = 192, sc = 1.8;
             const showcaseX = gbRect.left + gbRect.width * 0.80 - (cardW * sc) / 2;
             const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardH * sc) / 2;
-            // Prendre le dos de carte du DOM (filtrer les dÃ©jÃ  cachÃ©es)
+            // Prendre le dos de carte du DOM (filtrer les dÃƒÂ©jÃƒÂ  cachÃƒÂ©es)
             let savedRect = null;
             if (data.visualHandIndex >= 0) {
                 const hp = document.getElementById('opp-hand');
@@ -2933,18 +3387,18 @@ async function animateSpell(data) {
                     savedRect = savedOppHandRects[data.visualHandIndex];
                 }
             }
-            // Pas de flyFromOppHand â€” animateSpellReveal gÃ¨re tout le trajet mainâ†’showcase avec scale progressif + flip
+            // Pas de flyFromOppHand Ã¢â‚¬â€ animateSpellReveal gÃƒÂ¨re tout le trajet mainÃ¢â€ â€™showcase avec scale progressif + flip
             startRect = savedRect || { left: showcaseX, top: showcaseY, width: cardW * sc, height: cardH * sc };
         }
     }
-    // Pour nos propres sorts : rÃ©cupÃ©rer la position du sort engagÃ© dans la main
+    // Pour nos propres sorts : rÃƒÂ©cupÃƒÂ©rer la position du sort engagÃƒÂ© dans la main
     if (data.spell && data.caster === myNum && committedSpells.length > 0) {
         const handPanel = document.getElementById('my-hand');
         const committedEls = handPanel ? handPanel.querySelectorAll('.committed-spell') : [];
         const csIdx = committedSpells.findIndex(cs => cs.card.id === data.spell.id);
         if (csIdx >= 0) {
             const commitId = committedSpells[csIdx].commitId;
-            // Chercher l'Ã©lÃ©ment DOM du sort engagÃ©
+            // Chercher l'ÃƒÂ©lÃƒÂ©ment DOM du sort engagÃƒÂ©
             let foundEl = null;
             for (const el of committedEls) {
                 if (parseInt(el.dataset.commitId) === commitId) {
@@ -2954,7 +3408,7 @@ async function animateSpell(data) {
             }
 
             if (foundEl) {
-                // Ã‰lÃ©ment trouvÃ© dans le DOM â€” rÃ©cupÃ©rer sa position et le retirer
+                // Ãƒâ€°lÃƒÂ©ment trouvÃƒÂ© dans le DOM Ã¢â‚¬â€ rÃƒÂ©cupÃƒÂ©rer sa position et le retirer
                 startRect = foundEl.getBoundingClientRect();
 
                 // FLIP : capturer les positions des cartes voisines AVANT de retirer le sort
@@ -2993,7 +3447,7 @@ async function animateSpell(data) {
                     });
                 }
             } else if (cachedCommittedRects[commitId]) {
-                // Ã‰lÃ©ment dÃ©jÃ  retirÃ© du DOM â€” utiliser la position cachÃ©e (par commitId, unique)
+                // Ãƒâ€°lÃƒÂ©ment dÃƒÂ©jÃƒÂ  retirÃƒÂ© du DOM Ã¢â‚¬â€ utiliser la position cachÃƒÂ©e (par commitId, unique)
                 startRect = cachedCommittedRects[commitId];
             }
 
@@ -3001,7 +3455,7 @@ async function animateSpell(data) {
             delete cachedCommittedRects[commitId];
         }
     }
-    // Afficher la carte du sort avec animation de rÃ©vÃ©lation
+    // Afficher la carte du sort avec animation de rÃƒÂ©vÃƒÂ©lation
     if (data.spell) {
         await animateSpellReveal(data.spell, data.caster, startRect);
     }
@@ -3023,10 +3477,10 @@ function animateSpellReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const spellId = data.card.uid || data.card.id;
     if (window.DEBUG_LOGS) console.log(`[BLAST-RET] spellReturnToHand event owner=${owner} card=${data.card?.name || data.card?.id || '-'} spellId=${spellId} handIndex=${data.handIndex}`);
-    // Marquer ce sort comme devant retourner en main (pas au cimetiÃ¨re)
+    // Marquer ce sort comme devant retourner en main (pas au cimetiÃƒÂ¨re)
     pendingSpellReturns.set(spellId, { owner, handIndex: data.handIndex });
-    // Si l'animation du sort a dÃ©jÃ  terminÃ© et placÃ© la carte dans le cimetiÃ¨re (race condition),
-    // nettoyer immÃ©diatement le visuel du cimetiÃ¨re
+    // Si l'animation du sort a dÃƒÂ©jÃƒÂ  terminÃƒÂ© et placÃƒÂ© la carte dans le cimetiÃƒÂ¨re (race condition),
+    // nettoyer immÃƒÂ©diatement le visuel du cimetiÃƒÂ¨re
     const graveTopContainer = document.getElementById(owner + '-grave-top');
     if (graveTopContainer && graveTopContainer.dataset.topCardUid === spellId) {
         if (window.DEBUG_LOGS) console.log(`[BLAST-RET] race-cleanup grave top already had spellId=${spellId} owner=${owner}`);
@@ -3040,12 +3494,12 @@ function animateSpellReturnToHand(data) {
             }
         }
     }
-    // Marquer cet index comme retour depuis le cimetiÃ¨re
+    // Marquer cet index comme retour depuis le cimetiÃƒÂ¨re
     const beforeReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
     GameAnimations.pendingGraveyardReturns[owner].add(data.handIndex);
     const afterReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
     if (window.DEBUG_LOGS) console.log(`[BLAST-RET] mark pendingGraveyardReturns owner=${owner} before=[${beforeReturns.join(',')}] after=[${afterReturns.join(',')}]`);
-    // RÃ©utiliser le systÃ¨me de pioche standard (carte cachÃ©e au render, animation, reveal)
+    // RÃƒÂ©utiliser le systÃƒÂ¨me de pioche standard (carte cachÃƒÂ©e au render, animation, reveal)
     if (window.DEBUG_LOGS) console.log(`[BLAST-RET] queue draw-prep owner=${owner} handIndex=${data.handIndex} spellId=${spellId}`);
     GameAnimations.prepareDrawAnimation({
         cards: [{ player: data.player, handIndex: data.handIndex, card: data.card }]
@@ -3056,7 +3510,7 @@ function animateHeal(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slot = getSlot(owner, data.row, data.col);
     if (slot) {
-        // Aura verte DOM (hÃ©rite de la perspective 3D)
+        // Aura verte DOM (hÃƒÂ©rite de la perspective 3D)
         slot.classList.add('heal-aura');
         setTimeout(() => slot.classList.remove('heal-aura'), 600);
 
@@ -3072,13 +3526,13 @@ async function handleRegenAnim(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
 
-    // Bloquer le slot pour que render() ne touche pas Ã  la carte
+    // Bloquer le slot pour que render() ne touche pas ÃƒÂ  la carte
     animatingSlots.add(slotKey);
 
     const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
-    // Ã‰TAPE 1 : Forcer l'affichage des HP post-dÃ©gÃ¢ts (avant regen)
+    // Ãƒâ€°TAPE 1 : Forcer l'affichage des HP post-dÃƒÂ©gÃƒÂ¢ts (avant regen)
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
@@ -3090,10 +3544,10 @@ async function handleRegenAnim(data) {
         }
     }
 
-    // Ã‰TAPE 2 : Laisser le joueur voir les HP rÃ©duits pendant 500ms
+    // Ãƒâ€°TAPE 2 : Laisser le joueur voir les HP rÃƒÂ©duits pendant 500ms
     await new Promise(r => setTimeout(r, 500));
 
-    // Ã‰TAPE 3 : Jouer l'animation de regen (nombre rouge style lifesteal)
+    // Ãƒâ€°TAPE 3 : Jouer l'animation de regen (nombre rouge style lifesteal)
     if (slot) {
         slot.classList.add('lifesteal-aura');
         setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
@@ -3104,10 +3558,10 @@ async function handleRegenAnim(data) {
         CombatVFX.showLifestealNumber(x, y, data.amount);
     }
 
-    // Ã‰TAPE 4 : Attendre que l'effet soit visible
+    // Ãƒâ€°TAPE 4 : Attendre que l'effet soit visible
     await new Promise(r => setTimeout(r, 600));
 
-    // Ã‰TAPE 5 : Mettre Ã  jour les HP finaux dans le DOM
+    // Ãƒâ€°TAPE 5 : Mettre ÃƒÂ  jour les HP finaux dans le DOM
     if (cardEl) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
@@ -3139,7 +3593,7 @@ async function handleBuildingActivate(data) {
     );
     await new Promise(r => setTimeout(r, 900));
 
-    // Nuage poison pour selfPoison (Pustule vivante) â€” jouÃ© APRÃˆS le VFX dorÃ©
+    // Nuage poison pour selfPoison (Pustule vivante) Ã¢â‚¬â€ jouÃƒÂ© APRÃƒË†S le VFX dorÃƒÂ©
     if (data.selfPoison) {
         const poisonRect = slot.getBoundingClientRect();
         CombatVFX.createPoisonCloudEffect(
@@ -3154,19 +3608,19 @@ async function handleLifestealAnim(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
 
-    // Le slot est dÃ©jÃ  bloquÃ© depuis le queue (dans queueAnimation)
+    // Le slot est dÃƒÂ©jÃƒÂ  bloquÃƒÂ© depuis le queue (dans queueAnimation)
     animatingSlots.add(slotKey);
 
     const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
-    // Ã‰TAPE 1 : Forcer l'affichage des HP post-dÃ©gÃ¢ts directement dans le DOM
-    // (le state global peut dÃ©jÃ  avoir les HP soignÃ©s, on utilise les HP capturÃ©s Ã  la rÃ©ception)
+    // Ãƒâ€°TAPE 1 : Forcer l'affichage des HP post-dÃƒÂ©gÃƒÂ¢ts directement dans le DOM
+    // (le state global peut dÃƒÂ©jÃƒÂ  avoir les HP soignÃƒÂ©s, on utilise les HP capturÃƒÂ©s ÃƒÂ  la rÃƒÂ©ception)
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             hpEl.textContent = data._preHealHp;
-            // Colorer en rouge si endommagÃ© (classe "reduced" pour arena-style)
+            // Colorer en rouge si endommagÃƒÂ© (classe "reduced" pour arena-style)
             if (data._preHealHp < data._preHealMax) {
                 hpEl.classList.add('reduced');
                 hpEl.classList.remove('boosted');
@@ -3174,21 +3628,19 @@ async function handleLifestealAnim(data) {
         }
     }
 
-    // Ã‰TAPE 1b : Pour heroHeal, forcer les HP prÃ©-soin du hÃ©ros dans le DOM
+    // Ãƒâ€°TAPE 1b : Pour heroHeal, forcer les HP prÃƒÂ©-soin du hÃƒÂ©ros dans le DOM
     if (data.heroHeal && data._preHeroHp !== undefined) {
         const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
         const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
-        if (hpElement) {
-            hpElement.textContent = data._preHeroHp;
-        }
+        _setHeroHpText(hpElement, data._preHeroHp);
     }
 
-    // Ã‰TAPE 2 : Laisser le joueur voir les HP rÃ©duits pendant 500ms
+    // Ãƒâ€°TAPE 2 : Laisser le joueur voir les HP rÃƒÂ©duits pendant 500ms
     await new Promise(r => setTimeout(r, 500));
 
-    // Ã‰TAPE 3 : Jouer l'animation de lifesteal
+    // Ãƒâ€°TAPE 3 : Jouer l'animation de lifesteal
     if (data.heroHeal) {
-        // Lifelink : animation sur le portrait du hÃ©ros
+        // Lifelink : animation sur le portrait du hÃƒÂ©ros
         const heroEl = document.getElementById(`hero-${owner === 'me' ? 'me' : 'opp'}`);
         if (heroEl) {
             heroEl.classList.add('lifesteal-aura');
@@ -3201,7 +3653,7 @@ async function handleLifestealAnim(data) {
             CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
         }
     } else if (slot) {
-        // Lifedrain : animation sur la crÃ©ature
+        // Lifedrain : animation sur la crÃƒÂ©ature
         slot.classList.add('lifesteal-aura');
         setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
 
@@ -3212,21 +3664,21 @@ async function handleLifestealAnim(data) {
         CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
     }
 
-    // Ã‰TAPE 4 : Attendre que l'effet soit visible
+    // Ãƒâ€°TAPE 4 : Attendre que l'effet soit visible
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Ã‰TAPE 5 : Mettre Ã  jour les HP finaux dans le DOM
+    // Ãƒâ€°TAPE 5 : Mettre ÃƒÂ  jour les HP finaux dans le DOM
     if (data.heroHeal) {
-        // Lifelink : mettre Ã  jour les HP du hÃ©ros
+        // Lifelink : mettre ÃƒÂ  jour les HP du hÃƒÂ©ros
         const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
         const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
         if (hpElement) {
             const finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
-            if (finalHp !== undefined) hpElement.textContent = finalHp;
+            if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp);
         }
         lifestealHeroHealInProgress = false;
     } else if (cardEl) {
-        // Lifedrain : mettre Ã  jour les HP de la crÃ©ature
+        // Lifedrain : mettre ÃƒÂ  jour les HP de la crÃƒÂ©ature
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
@@ -3252,8 +3704,8 @@ async function handleHeroHealAnim(data) {
     const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
     const heroEl = document.getElementById(`hero-${owner === 'me' ? 'me' : 'opp'}`);
 
-    if (hpElement && data._preHeroHp !== undefined) {
-        hpElement.textContent = data._preHeroHp;
+    if (data._preHeroHp !== undefined) {
+        _setHeroHpText(hpElement, data._preHeroHp);
     }
 
     await new Promise(r => setTimeout(r, 250));
@@ -3273,7 +3725,7 @@ async function handleHeroHealAnim(data) {
 
     if (hpElement) {
         const finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
-        if (finalHp !== undefined) hpElement.textContent = finalHp;
+        if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp);
     }
 
     if (window.DEBUG_LOGS) console.log(`[EREBETH-DBG] heroHeal anim owner=${owner} amount=${amount} preHeroHp=${data._preHeroHp} finalHp=${owner === 'me' ? state?.me?.hp : state?.opponent?.hp}`);
@@ -3283,13 +3735,13 @@ async function handleHealOnDeathAnim(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
 
-    // Bloquer le slot pour que render() ne touche pas Ã  la carte
+    // Bloquer le slot pour que render() ne touche pas ÃƒÂ  la carte
     animatingSlots.add(slotKey);
 
     const slot = getSlot(owner, data.row, data.col);
     const cardEl = slot?.querySelector('.card');
 
-    // Ã‰TAPE 1 : Forcer l'affichage des HP post-dÃ©gÃ¢ts (avant heal)
+    // Ãƒâ€°TAPE 1 : Forcer l'affichage des HP post-dÃƒÂ©gÃƒÂ¢ts (avant heal)
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
@@ -3301,10 +3753,10 @@ async function handleHealOnDeathAnim(data) {
         }
     }
 
-    // Ã‰TAPE 2 : Laisser le joueur voir les HP rÃ©duits
+    // Ãƒâ€°TAPE 2 : Laisser le joueur voir les HP rÃƒÂ©duits
     await new Promise(r => setTimeout(r, 500));
 
-    // Ã‰TAPE 3 : Jouer l'animation de soin (mÃªme VFX que lifesteal avec couleur verte)
+    // Ãƒâ€°TAPE 3 : Jouer l'animation de soin (mÃƒÂªme VFX que lifesteal avec couleur verte)
     if (slot) {
         slot.classList.add('lifesteal-aura');
         setTimeout(() => slot.classList.remove('lifesteal-aura'), 700);
@@ -3316,10 +3768,10 @@ async function handleHealOnDeathAnim(data) {
         CombatVFX.createLifestealEffect(x, y, rect.width, rect.height);
     }
 
-    // Ã‰TAPE 4 : Attendre que l'effet soit visible
+    // Ãƒâ€°TAPE 4 : Attendre que l'effet soit visible
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Ã‰TAPE 5 : Mettre Ã  jour les HP finaux dans le DOM
+    // Ãƒâ€°TAPE 5 : Mettre ÃƒÂ  jour les HP finaux dans le DOM
     if (cardEl) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
@@ -3365,7 +3817,7 @@ function animateTrapPlace(data) {
 
         // Si c'est l'adversaire, faire voler la carte de la main d'abord
         if (owner === 'opp') {
-            // Prendre le dos de carte du DOM (filtrer les dÃ©jÃ  cachÃ©es)
+            // Prendre le dos de carte du DOM (filtrer les dÃƒÂ©jÃƒÂ  cachÃƒÂ©es)
             let savedRect = null;
             if (data.visualHandIndex >= 0) {
                 const hp = document.getElementById('opp-hand');
@@ -3391,19 +3843,61 @@ function animateTrapPlace(data) {
 }
 
 async function animateTrap(data) {
+    function resolveTrapPreviewTargets(payload) {
+        if (Array.isArray(payload?.targets) && payload.targets.length > 0) {
+            return payload.targets;
+        }
+
+        const row = Number(payload?.row);
+        if (!Number.isFinite(row) || row < 0 || row > 3) return [];
+
+        const trapOwnerPlayer = Number(payload?.player);
+        const attackerPlayer = Number.isFinite(Number(payload?.attackerPlayer))
+            ? Number(payload.attackerPlayer)
+            : (trapOwnerPlayer === 1 ? 2 : 1);
+        const attackerSide = attackerPlayer === myNum ? 'me' : 'opponent';
+        const attackerField = state?.[attackerSide]?.field;
+        if (!attackerField || !attackerField[row]) return [];
+
+        const trap = payload?.trap || {};
+        if (trap.pattern === 'line') {
+            return [0, 1]
+                .filter((col) => !!attackerField[row][col])
+                .map((col) => ({ player: attackerPlayer, row, col }));
+        }
+
+        const preferredCol = Number(payload?.triggerCol);
+        const colOrder = Number.isFinite(preferredCol)
+            ? [preferredCol, preferredCol === 0 ? 1 : 0]
+            : [1, 0];
+        for (const col of colOrder) {
+            if (attackerField[row][col]) {
+                return [{ player: attackerPlayer, row, col }];
+            }
+        }
+
+        return [];
+    }
+
     const owner = data.player === myNum ? 'me' : 'opp';
     const trapKey = `${owner}-${data.row}`;
     const trapSlot = getTrapSlot(owner, data.row);
 
-    // ProtÃ©ger le slot (dÃ©jÃ  fait dans handleAnimation, mais au cas oÃ¹)
+    // Protect trap slot in case render arrives mid-animation.
     animatingTrapSlots.add(trapKey);
 
-    // 1. Afficher la carte du piÃ¨ge avec animation de rÃ©vÃ©lation
-    if (data.trap) {
-        await animateSpellReveal(data.trap, data.player);
-    }
+    // 1. Pre-signal: remove board glows and highlight only real trap targets.
+    const previewTargets = resolveTrapPreviewTargets(data);
+    const trapDamage = Number(data?.trap?.damage);
+    const shouldHoldUntilDamage = Number.isFinite(trapDamage) && trapDamage > 0 && previewTargets.length > 0;
+    const warnedCount = _applyTrapTargetWarnings(previewTargets, { waitForDamage: shouldHoldUntilDamage });
 
-    // 2. Explosion du slot du piÃ¨ge
+    // 2. Reveal starts when warning appears.
+    const revealPromise = data.trap
+        ? animateSpellReveal(data.trap, data.player)
+        : Promise.resolve();
+
+    // 3. Trap slot explosion (same time as warning/reveal).
     if (trapSlot) {
         trapSlot.classList.add('triggered');
         const rect = trapSlot.getBoundingClientRect();
@@ -3417,20 +3911,28 @@ async function animateTrap(data) {
         }, 600);
     }
 
+    if (warnedCount > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 420));
+    }
+    await revealPromise;
+
+    if (!shouldHoldUntilDamage) {
+        _clearTrapTargetWarnings('trap-no-damage');
+    }
 }
 
-// === SystÃ¨me de bounce (Voyage inattendu) ===
-// Carte bounced en attente : sera cachÃ©e au prochain render, puis l'animation atterrit dessus
+// === SystÃƒÂ¨me de bounce (Voyage inattendu) ===
+// Carte bounced en attente : sera cachÃƒÂ©e au prochain render, puis l'animation atterrit dessus
 let pendingBounce = null;   // { owner, card, wrapper, resolveTarget }
 
 /**
- * AppelÃ© par renderOppHand / renderHand pour savoir si la derniÃ¨re carte
- * vient d'un bounce et doit Ãªtre cachÃ©e + rendue face visible
+ * AppelÃƒÂ© par renderOppHand / renderHand pour savoir si la derniÃƒÂ¨re carte
+ * vient d'un bounce et doit ÃƒÂªtre cachÃƒÂ©e + rendue face visible
  */
 function checkPendingBounce(owner, cardElements) {
     if (!pendingBounce || pendingBounce.owner !== owner) return;
     // Cibler d'abord la vraie carte (uid) quand elle est revealed,
-    // sinon fallback sur la derniÃ¨re carte de la main.
+    // sinon fallback sur la derniÃƒÂ¨re carte de la main.
     let target = null;
     const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
     if (pendingBounce.card && pendingBounce.card.uid && panel) {
@@ -3440,8 +3942,8 @@ function checkPendingBounce(owner, cardElements) {
             target = panel.querySelector(`.card[data-uid="${pendingBounce.card.uid}"]`);
         }
     }
-    // En prÃ©-enregistrement (queue time), attendre que la carte soit effectivement
-    // ajoutÃ©e en main avant de fallback sur "la derniÃ¨re carte" (Ã©vite le flash
+    // En prÃƒÂ©-enregistrement (queue time), attendre que la carte soit effectivement
+    // ajoutÃƒÂ©e en main avant de fallback sur "la derniÃƒÂ¨re carte" (ÃƒÂ©vite le flash
     // de l'ancienne carte de droite).
     if (!target && pendingBounce.queued && typeof pendingBounce.startHandCount === 'number') {
         if (cardElements.length <= pendingBounce.startHandCount) return;
@@ -3449,7 +3951,7 @@ function checkPendingBounce(owner, cardElements) {
     if (!target) target = cardElements[cardElements.length - 1];
     if (!target) return;
     target.style.visibility = 'hidden';
-    // RÃ©soudre la cible une seule fois (premiÃ¨re render aprÃ¨s le state update)
+    // RÃƒÂ©soudre la cible une seule fois (premiÃƒÂ¨re render aprÃƒÂ¨s le state update)
     if (!pendingBounce.resolved) {
         const rect = target.getBoundingClientRect();
         pendingBounce.resolveTarget({
@@ -3461,16 +3963,16 @@ function checkPendingBounce(owner, cardElements) {
         });
         pendingBounce.resolved = true;
     }
-    // NE PAS null pendingBounce ici â€” l'animation le fera quand le fly est terminÃ©
-    // Sinon un re-render pendant le fly montre la carte prÃ©maturÃ©ment
+    // NE PAS null pendingBounce ici Ã¢â‚¬â€ l'animation le fera quand le fly est terminÃƒÂ©
+    // Sinon un re-render pendant le fly montre la carte prÃƒÂ©maturÃƒÂ©ment
 }
 
 /**
- * Animation de bounce (Voyage inattendu) â€” style pioche inversÃ©e professionnelle
+ * Animation de bounce (Voyage inattendu) Ã¢â‚¬â€ style pioche inversÃƒÂ©e professionnelle
  *
- * Phase 1 - Lift (200ms):   Carte se soulÃ¨ve du slot avec glow magique
+ * Phase 1 - Lift (200ms):   Carte se soulÃƒÂ¨ve du slot avec glow magique
  * Phase 2 - Wait:           Carte flotte en attendant la position exacte de render()
- * Phase 3 - Fly (450ms):    Arc BÃ©zier fluide DIRECTEMENT vers la position exacte (pas d'approximation)
+ * Phase 3 - Fly (450ms):    Arc BÃƒÂ©zier fluide DIRECTEMENT vers la position exacte (pas d'approximation)
  */
 async function animateBounceToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
@@ -3495,7 +3997,7 @@ async function animateBounceToHand(data) {
     // Cacher la vraie carte dans le slot
     if (cardInSlot) cardInSlot.style.visibility = 'hidden';
 
-    // CrÃ©er le wrapper animÃ©
+    // CrÃƒÂ©er le wrapper animÃƒÂ©
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
         position: fixed;
@@ -3508,7 +4010,7 @@ async function animateBounceToHand(data) {
         transform-origin: center center;
     `;
 
-    // Carte face visible â€” prÃ©server le backgroundImage
+    // Carte face visible Ã¢â‚¬â€ prÃƒÂ©server le backgroundImage
     const cardFace = makeCard(data.card, false);
     const bgImage = cardFace.style.backgroundImage;
     cardFace.style.position = 'absolute';
@@ -3523,11 +4025,11 @@ async function animateBounceToHand(data) {
     wrapper.appendChild(cardFace);
     document.body.appendChild(wrapper);
 
-    // Auto-fit du nom (les noms longs dÃ©bordent pendant l'animation)
+    // Auto-fit du nom (les noms longs dÃƒÂ©bordent pendant l'animation)
     const bounceNameFit = cardFace.querySelector('.arena-name');
     if (bounceNameFit) fitArenaName(bounceNameFit);
 
-    // === PHASE 1 : LIFT (200ms) â€” carte se soulÃ¨ve du slot ===
+    // === PHASE 1 : LIFT (200ms) Ã¢â‚¬â€ carte se soulÃƒÂ¨ve du slot ===
     const liftHeight = 40;
     const liftScale = 1.08;
 
@@ -3546,7 +4048,7 @@ async function animateBounceToHand(data) {
         requestAnimationFrame(animate);
     });
 
-    // Convertir de scale vers coordonnÃ©es visuelles rÃ©elles (pas de changement visuel)
+    // Convertir de scale vers coordonnÃƒÂ©es visuelles rÃƒÂ©elles (pas de changement visuel)
     const liftEndCssY = startY - liftHeight;
     const floatX = startX + cardWidth * (1 - liftScale) / 2;
     const floatY = liftEndCssY + cardHeight * (1 - liftScale) / 2;
@@ -3559,16 +4061,16 @@ async function animateBounceToHand(data) {
     wrapper.style.height = floatH + 'px';
     wrapper.style.transform = 'none';
 
-    // === Main pleine â†’ voler vers le cimetiÃ¨re avec teinte rouge ===
+    // === Main pleine Ã¢â€ â€™ voler vers le cimetiÃƒÂ¨re avec teinte rouge ===
     if (data.toGraveyard) {
         const ownerKey = owner;
         const graveTopEl = document.getElementById(`${ownerKey}-grave-top`);
         const graveBox = document.getElementById(`${ownerKey}-grave-box`);
         const graveEl = graveTopEl || graveBox;
 
-        // graveRenderBlocked dÃ©jÃ  incrÃ©mentÃ© par queueAnimation â€” pas de double add
+        // graveRenderBlocked dÃƒÂ©jÃƒÂ  incrÃƒÂ©mentÃƒÂ© par queueAnimation Ã¢â‚¬â€ pas de double add
 
-        // Perspective container pour matcher l'inclinaison du board (mÃªme technique que animateBurn)
+        // Perspective container pour matcher l'inclinaison du board (mÃƒÂªme technique que animateBurn)
         const gameBoardWrapper = document.querySelector('.game-board-wrapper');
         let perspContainer = null;
         let graveTiltDeg = 0;
@@ -3589,7 +4091,7 @@ async function animateBounceToHand(data) {
                 perspective: 1000px;
                 perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height * 0.8}px;
             `;
-            // TransfÃ©rer le wrapper dans le perspContainer
+            // TransfÃƒÂ©rer le wrapper dans le perspContainer
             wrapper.remove();
             perspContainer.appendChild(wrapper);
             document.body.appendChild(perspContainer);
@@ -3605,7 +4107,7 @@ async function animateBounceToHand(data) {
             graveScaleY = gRect.height / floatH;
         }
 
-        // Calibration itÃ©rative (3 passes) pour position/scale exactes avec perspective
+        // Calibration itÃƒÂ©rative (3 passes) pour position/scale exactes avec perspective
         if (graveEl) {
             const savedLeft = wrapper.style.left;
             const savedTop = wrapper.style.top;
@@ -3628,7 +4130,7 @@ async function animateBounceToHand(data) {
             wrapper.style.transform = savedTransform;
         }
 
-        // Glow rouge pour indiquer "main pleine â†’ cimetiÃ¨re"
+        // Glow rouge pour indiquer "main pleine Ã¢â€ â€™ cimetiÃƒÂ¨re"
         cardFace.style.boxShadow = '0 0 25px rgba(255, 80, 80, 0.8), 0 4px 12px rgba(0,0,0,0.4)';
 
         const ctrlX = (floatX + graveX) / 2;
@@ -3650,17 +4152,17 @@ async function animateBounceToHand(data) {
                 wrapper.style.top = y + 'px';
                 wrapper.style.transform = `scale(${sx}, ${sy}) rotateX(${tiltDeg}deg)`;
 
-                // Teinte rouge progressive (mÃªme filtre que animateBurn)
+                // Teinte rouge progressive (mÃƒÂªme filtre que animateBurn)
                 const redTint = easeOutCubic(p) * 0.6;
                 wrapper.style.filter = `sepia(${redTint * 0.5}) saturate(${1 + redTint * 2}) hue-rotate(-10deg) brightness(${1 - redTint * 0.2})`;
 
                 if (p < 1) {
                     requestAnimationFrame(animate);
                 } else {
-                    // Cacher le wrapper avant de placer la carte dans le cimetiÃ¨re
+                    // Cacher le wrapper avant de placer la carte dans le cimetiÃƒÂ¨re
                     wrapper.style.visibility = 'hidden';
 
-                    // Placer la carte dans le cimetiÃ¨re (mÃªme logique que animateBurn)
+                    // Placer la carte dans le cimetiÃƒÂ¨re (mÃƒÂªme logique que animateBurn)
                     graveRenderBlocked.delete(ownerKey);
                     if (graveTopEl) {
                         const cardUid = data.card.uid || data.card.id;
@@ -3679,7 +4181,7 @@ async function animateBounceToHand(data) {
                         if (graveyard) updateGraveDisplay(ownerKey, graveyard);
                     }
 
-                    // Mise Ã  jour dynamique de la popup cimetiÃ¨re
+                    // Mise ÃƒÂ  jour dynamique de la popup cimetiÃƒÂ¨re
                     addCardToGraveyardPopup(ownerKey, data.card);
 
                     wrapper.remove();
@@ -3694,9 +4196,9 @@ async function animateBounceToHand(data) {
         return;
     }
 
-    // === Main pas pleine â†’ voler vers la main (flow normal) ===
+    // === Main pas pleine Ã¢â€ â€™ voler vers la main (flow normal) ===
 
-    // Utiliser le pendingBounce prÃ©-enregistrÃ© au queue time, ou en crÃ©er un nouveau
+    // Utiliser le pendingBounce prÃƒÂ©-enregistrÃƒÂ© au queue time, ou en crÃƒÂ©er un nouveau
     let targetPromise;
     if (data._bounceTargetPromise) {
         targetPromise = data._bounceTargetPromise;
@@ -3707,9 +4209,9 @@ async function animateBounceToHand(data) {
         });
     }
 
-    // Forcer un render() au cas oÃ¹ l'Ã©tat est dÃ©jÃ  arrivÃ© pendant que la queue traitait
-    // une animation prÃ©cÃ©dente (ex: trapTrigger avant bounce). Sans Ã§a, pendingBounce
-    // ne serait jamais rÃ©solu car render() a dÃ©jÃ  tournÃ© avant qu'on le dÃ©finisse.
+    // Forcer un render() au cas oÃƒÂ¹ l'ÃƒÂ©tat est dÃƒÂ©jÃƒÂ  arrivÃƒÂ© pendant que la queue traitait
+    // une animation prÃƒÂ©cÃƒÂ©dente (ex: trapTrigger avant bounce). Sans ÃƒÂ§a, pendingBounce
+    // ne serait jamais rÃƒÂ©solu car render() a dÃƒÂ©jÃƒÂ  tournÃƒÂ© avant qu'on le dÃƒÂ©finisse.
     render();
 
     // Animation de flottement pendant l'attente
@@ -3770,8 +4272,8 @@ async function animateBounceToHand(data) {
                 if (p < 1) {
                     requestAnimationFrame(animate);
                 } else {
-                    // Ne pas toucher la visibilitÃ© manuellement â€” laisser render() gÃ©rer
-                    // Cela Ã©vite un flash (diffÃ©rence de style entre wrapper board et carte hand)
+                    // Ne pas toucher la visibilitÃƒÂ© manuellement Ã¢â‚¬â€ laisser render() gÃƒÂ©rer
+                    // Cela ÃƒÂ©vite un flash (diffÃƒÂ©rence de style entre wrapper board et carte hand)
                     wrapper.remove();
                     resolve();
                 }
@@ -3792,9 +4294,9 @@ async function animateBounceToHand(data) {
 }
 
 // === Animation Graveyard Return (Goule tenace) ===
-// Copie exacte de animateBounceToHand, mais part du cimetiÃ¨re au lieu du terrain.
-// Utilise pendingBounce AVANT le lift (contrairement Ã  bounce qui le fait aprÃ¨s) car
-// emitAnimation et emitStateToBoth arrivent quasi-simultanÃ©ment du serveur.
+// Copie exacte de animateBounceToHand, mais part du cimetiÃƒÂ¨re au lieu du terrain.
+// Utilise pendingBounce AVANT le lift (contrairement ÃƒÂ  bounce qui le fait aprÃƒÂ¨s) car
+// emitAnimation et emitStateToBoth arrivent quasi-simultanÃƒÂ©ment du serveur.
 async function animateGraveyardReturn(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const logPrefix = '[GRAVE-AXIS]';
@@ -3811,14 +4313,14 @@ async function animateGraveyardReturn(data) {
         }
     }
 
-    // Retirer la carte de la popup cimetiÃ¨re si ouverte
+    // Retirer la carte de la popup cimetiÃƒÂ¨re si ouverte
     removeCardFromGraveyardPopup(owner, data.card);
 
     const graveEl = document.getElementById(owner + '-grave-box');
     const graveTopEl = document.getElementById(owner + '-grave-top');
     if (!graveEl) return;
 
-    // Utiliser le pendingBounce prÃ©-enregistrÃ© au queue time, ou en crÃ©er un nouveau
+    // Utiliser le pendingBounce prÃƒÂ©-enregistrÃƒÂ© au queue time, ou en crÃƒÂ©er un nouveau
     let targetPromise;
     if (data._bounceTargetPromise) {
         targetPromise = data._bounceTargetPromise;
@@ -3828,8 +4330,8 @@ async function animateGraveyardReturn(data) {
         });
     }
 
-    // RÃ©fÃ©rence de gÃ©omÃ©trie: le slot du cimetiÃ¨re (stable), pas la carte interne
-    // qui peut avoir un ratio/style diffÃ©rent (source d'effet "tassÃ©").
+    // RÃƒÂ©fÃƒÂ©rence de gÃƒÂ©omÃƒÂ©trie: le slot du cimetiÃƒÂ¨re (stable), pas la carte interne
+    // qui peut avoir un ratio/style diffÃƒÂ©rent (source d'effet "tassÃƒÂ©").
     const graveTopCardEl = graveTopEl ? graveTopEl.querySelector('.card') : null;
     const sourceSlotEl = graveTopEl || graveEl;
     const sourceRect = sourceSlotEl.getBoundingClientRect();
@@ -3838,7 +4340,7 @@ async function animateGraveyardReturn(data) {
     const sourceTiltDeg = extractRotateXDeg(sourceTransform);
 
     // Prendre la taille d'une carte de main existante pour garder exactement
-    // le mÃªme axe/look pendant toute l'animation (pas de reconfiguration visuelle).
+    // le mÃƒÂªme axe/look pendant toute l'animation (pas de reconfiguration visuelle).
     function getHandCardSize() {
         const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
         if (!panel) return null;
@@ -3855,20 +4357,20 @@ async function animateGraveyardReturn(data) {
     const cardW = handSize ? handSize.w : sourceRect.width;
     const cardH = handSize ? handSize.h : sourceRect.height;
     // Base "carte de main" + scale initiale.
-    // IMPORTANT: Ã©viter un scale anisotrope (X != Y) qui "tasse" la carte.
+    // IMPORTANT: ÃƒÂ©viter un scale anisotrope (X != Y) qui "tasse" la carte.
     const initialScaleXRaw = sourceRect.width / Math.max(1, cardW);
     const initialScaleYRaw = sourceRect.height / Math.max(1, cardH);
     const initialScaleRaw = Math.sqrt(Math.max(1e-6, initialScaleXRaw * initialScaleYRaw));
     const initialScale = Number.isFinite(initialScaleRaw) && initialScaleRaw > 0 ? initialScaleRaw : 1;
     const initialScaleX = initialScale;
     const initialScaleY = initialScale;
-    // X centrÃ© sur le cimetiÃ¨re.
+    // X centrÃƒÂ© sur le cimetiÃƒÂ¨re.
     const startX = sourceRect.left + sourceRect.width / 2 - cardW / 2;
-    // Y: dÃ©marrer SOUS le bord bas du cimetiÃ¨re (full masquÃ©), puis extraction vers le haut.
+    // Y: dÃƒÂ©marrer SOUS le bord bas du cimetiÃƒÂ¨re (full masquÃƒÂ©), puis extraction vers le haut.
     const sourceBottomY = sourceRect.top + sourceRect.height;
     const startY = sourceBottomY;
 
-    // Inclinaison de dÃ©part (inspirÃ©e du board) pour la sortie du cimetiÃ¨re.
+    // Inclinaison de dÃƒÂ©part (inspirÃƒÂ©e du board) pour la sortie du cimetiÃƒÂ¨re.
     let startTiltDeg = 10;
     let boardTransform = 'none';
     try {
@@ -3909,9 +4411,15 @@ async function animateGraveyardReturn(data) {
         document.body.appendChild(flyCard);
     }
     const overlayRoot = perspContainer || flyCard;
+    let graveReturnGhost = _createPixiAnimGhost(data.card || null, 11000);
+    function destroyGraveReturnGhost() {
+        if (!graveReturnGhost) return;
+        graveReturnGhost.destroy();
+        graveReturnGhost = null;
+    }
 
     // Carte volante "art-only": garder le fond/cadre, retirer tout le contenu interne
-    // pour Ã©viter les micro-mouvements de texte/stats pendant le vol.
+    // pour ÃƒÂ©viter les micro-mouvements de texte/stats pendant le vol.
     const cardEl = makeCard(data.card, true);
     while (cardEl.firstChild) cardEl.removeChild(cardEl.firstChild);
     cardEl.style.cssText = 'width: 100%; height: 100%; margin: 0; position: relative; border-radius: 6px;';
@@ -3945,10 +4453,10 @@ async function animateGraveyardReturn(data) {
             const ep = easeOutCubic(p);
             const curY = startY - ep * extractDistance;
             flyCard.style.top = curY + 'px';
-            // Sortie du cimetiÃ¨re : garder l'axe inclinÃ© "cimetiÃ¨re".
+            // Sortie du cimetiÃƒÂ¨re : garder l'axe inclinÃƒÂ© "cimetiÃƒÂ¨re".
             flyCard.style.transform = `rotateX(${startTiltDeg}deg) scale(${initialScaleX}, ${initialScaleY})`;
-            // Clip basÃ© sur la gÃ©omÃ©trie PROJETÃ‰E rÃ©elle (perspective + rotateX),
-            // pour Ã©viter l'effet de traversÃ©e en deux temps.
+            // Clip basÃƒÂ© sur la gÃƒÂ©omÃƒÂ©trie PROJETÃƒâ€°E rÃƒÂ©elle (perspective + rotateX),
+            // pour ÃƒÂ©viter l'effet de traversÃƒÂ©e en deux temps.
             const m = flyCard.getBoundingClientRect();
             const belowViewport = Math.max(0, m.bottom - sourceBottomY);
             const projectedScaleY = m.height / Math.max(1, cardH);
@@ -3958,10 +4466,14 @@ async function animateGraveyardReturn(data) {
         }
         requestAnimationFrame(extractUp);
     });
+    if (graveReturnGhost) {
+        cardEl.style.visibility = 'hidden';
+        graveReturnGhost.syncFromElement(flyCard, { alpha: 1, gray: 0, zIndex: 11000 });
+    }
     const extractRect = flyCard.getBoundingClientRect();
     if (window.DEBUG_LOGS) console.log(`${logPrefix} extract-end flyRect{${rectStr(extractRect)}} expectedVisibleH=${visibleStartH.toFixed(2)} transform=${flyCard.style.transform}`);
 
-    // DÃ©part de la phase 2 (on est dÃ©jÃ  en fixed/viewport)
+    // DÃƒÂ©part de la phase 2 (on est dÃƒÂ©jÃƒÂ  en fixed/viewport)
     const extractedRect = flyCard.getBoundingClientRect();
     const extractedCx = extractedRect.left + extractedRect.width / 2;
     const extractedCy = extractedRect.top + extractedRect.height / 2;
@@ -3973,7 +4485,7 @@ async function animateGraveyardReturn(data) {
 
     if (pendingBounce) pendingBounce.wrapper = overlayRoot;
 
-    // Forcer la rÃ©solution si le state est dÃ©jÃ  arrivÃ©
+    // Forcer la rÃƒÂ©solution si le state est dÃƒÂ©jÃƒÂ  arrivÃƒÂ©
     if (pendingBounce && pendingBounce.owner === owner && !pendingBounce.resolved) {
         const existingCards = owner === 'me'
             ? document.querySelectorAll('#my-hand .card:not(.committed-spell)')
@@ -3987,9 +4499,9 @@ async function animateGraveyardReturn(data) {
     const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2000));
     const target = await Promise.race([targetPromise, timeoutPromise]);
 
-    // Helper : trouver la derniÃ¨re carte ACTUELLE dans la main
-    // TOUJOURS requÃªter le DOM â€” ne jamais rÃ©utiliser target.el car un re-render
-    // peut l'avoir remplacÃ© (l'ancien reste "connected" mais invisible/orphelin)
+    // Helper : trouver la derniÃƒÂ¨re carte ACTUELLE dans la main
+    // TOUJOURS requÃƒÂªter le DOM Ã¢â‚¬â€ ne jamais rÃƒÂ©utiliser target.el car un re-render
+    // peut l'avoir remplacÃƒÂ© (l'ancien reste "connected" mais invisible/orphelin)
     function findCurrentTarget() {
         if (owner === 'me') {
             const cards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
@@ -4030,6 +4542,7 @@ async function animateGraveyardReturn(data) {
             }
         }
 
+        destroyGraveReturnGhost();
         requestAnimationFrame(() => {
             if (overlayRoot && overlayRoot.isConnected) overlayRoot.remove();
             requestAnimationFrame(() => {
@@ -4039,7 +4552,7 @@ async function animateGraveyardReturn(data) {
     }
 
     if (target) {
-        // Position cible (recalculÃ©e au cas oÃ¹ un re-render a bougÃ© les cartes)
+        // Position cible (recalculÃƒÂ©e au cas oÃƒÂ¹ un re-render a bougÃƒÂ© les cartes)
         const curTarget = findCurrentTarget();
         const endRect = curTarget ? curTarget.getBoundingClientRect() : { left: target.x, top: target.y, width: target.w, height: target.h };
         const endCx = endRect.left + endRect.width / 2;
@@ -4051,8 +4564,8 @@ async function animateGraveyardReturn(data) {
         const ctrlX = (startCx + endCx) / 2;
         const ctrlY = Math.min(startCy, endCy) - 80;
 
-        // Bridge progressif : on "dÃ©plie" la perspective du board vers la main
-        // tout en convergeant vers la taille projetÃ©e de la cible.
+        // Bridge progressif : on "dÃƒÂ©plie" la perspective du board vers la main
+        // tout en convergeant vers la taille projetÃƒÂ©e de la cible.
         const endScaleX = endRect.width / cardW;
         const endScaleY = endRect.height / cardH;
 
@@ -4079,14 +4592,17 @@ async function animateGraveyardReturn(data) {
                 flyCard.style.left = (cx - cardW / 2) + 'px';
                 flyCard.style.top = (cy - cardH / 2) + 'px';
 
-                // DÃ©sinclinaison progressive pendant la descente + convergence d'Ã©chelle.
-                // Avant l'apex: on garde l'axe inclinÃ©.
-                // AprÃ¨s l'apex: on redresse progressivement vers l'axe main.
+                // DÃƒÂ©sinclinaison progressive pendant la descente + convergence d'ÃƒÂ©chelle.
+                // Avant l'apex: on garde l'axe inclinÃƒÂ©.
+                // AprÃƒÂ¨s l'apex: on redresse progressivement vers l'axe main.
                 const sx = startScaleX + (endScaleX - startScaleX) * t;
                 const sy = startScaleY + (endScaleY - startScaleY) * t;
                 const descentT = t <= apexT ? 0 : (t - apexT) / Math.max(1e-6, (1 - apexT));
                 const tilt = startTiltDeg * (1 - descentT);
                 flyCard.style.transform = `rotateX(${tilt}deg) scale(${sx}, ${sy})`;
+                if (graveReturnGhost) {
+                    graveReturnGhost.syncFromElement(flyCard, { alpha: 1, gray: 0, zIndex: 11000 });
+                }
                 if (!loggedFlyStart && t >= 0.02) {
                     const r = flyCard.getBoundingClientRect();
                     if (window.DEBUG_LOGS) console.log(`${logPrefix} fly-start t=${t.toFixed(3)} p=${p.toFixed(3)} tilt=${tilt.toFixed(2)} scale=${sx.toFixed(3)}x${sy.toFixed(3)} flyRect{${rectStr(r)}}`);
@@ -4103,11 +4619,11 @@ async function animateGraveyardReturn(data) {
                 } else {
                     const r = flyCard.getBoundingClientRect();
                     if (window.DEBUG_LOGS) console.log(`${logPrefix} fly-end t=${t.toFixed(3)} p=${p.toFixed(3)} tilt=${tilt.toFixed(2)} scale=${sx.toFixed(3)}x${sy.toFixed(3)} flyRect{${rectStr(r)}}`);
-                    // NE PAS null pendingBounce ici â€” le laisser vivre jusqu'au prochain render
-                    // pour que le render puisse faire ses opÃ©rations DOM (purge, replaceWith, append)
-                    // avec la flyCard en couverture visuelle et le pendingBounce bloquant la visibilitÃ©.
-                    // Sinon: race condition â€” si le state arrive APRÃˆS le SWAP, le render fait
-                    // purge + replaceWith + append avec pendingBounce=null â†’ flash visuel.
+                    // NE PAS null pendingBounce ici Ã¢â‚¬â€ le laisser vivre jusqu'au prochain render
+                    // pour que le render puisse faire ses opÃƒÂ©rations DOM (purge, replaceWith, append)
+                    // avec la flyCard en couverture visuelle et le pendingBounce bloquant la visibilitÃƒÂ©.
+                    // Sinon: race condition Ã¢â‚¬â€ si le state arrive APRÃƒË†S le SWAP, le render fait
+                    // purge + replaceWith + append avec pendingBounce=null Ã¢â€ â€™ flash visuel.
 
                     const stateAlreadyArrived = pendingBounce && pendingBounce.resolved;
                     if (pendingBounce) {
@@ -4136,13 +4652,14 @@ async function animateGraveyardReturn(data) {
         flyCard.style.opacity = '0';
         await new Promise(r => setTimeout(r, 200));
         pendingBounce = null;
+        destroyGraveReturnGhost();
         if (overlayRoot && overlayRoot.isConnected) overlayRoot.remove();
         if (window.DEBUG_LOGS) console.log(`${logPrefix} no-target timeout cleanup card=${data.card?.name || data.card?.id || '-'}`);
     }
 
-    // pendingBounce sera null aprÃ¨s le cleanup (render ou safety timeout/rAF)
+    // pendingBounce sera null aprÃƒÂ¨s le cleanup (render ou safety timeout/rAF)
 
-    // Forcer la mise Ã  jour du cimetiÃ¨re depuis le state actuel
+    // Forcer la mise ÃƒÂ  jour du cimetiÃƒÂ¨re depuis le state actuel
     if (state) {
         const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
         if (graveyard) {
@@ -4154,14 +4671,14 @@ async function animateGraveyardReturn(data) {
 
 // Slots en cours d'animation - render() ne doit pas les toucher
 let animatingSlots = new Set();
-// Trap slots en cours d'animation â€” renderTraps() ne doit pas y toucher
+// Trap slots en cours d'animation Ã¢â‚¬â€ renderTraps() ne doit pas y toucher
 let animatingTrapSlots = new Set();
-// Slots avec deathTransform EN COURS D'EXÃ‰CUTION (protÃ©gÃ©s contre resetAnimationStates)
+// Slots avec deathTransform EN COURS D'EXÃƒâ€°CUTION (protÃƒÂ©gÃƒÂ©s contre resetAnimationStates)
 let activeDeathTransformSlots = new Set();
 
 /**
- * RÃ©initialise tous les Ã©tats d'animation pour Ã©viter les bugs de persistance
- * AppelÃ© au dÃ©but de chaque nouveau tour
+ * RÃƒÂ©initialise tous les ÃƒÂ©tats d'animation pour ÃƒÂ©viter les bugs de persistance
+ * AppelÃƒÂ© au dÃƒÂ©but de chaque nouveau tour
  */
 function resetAnimationStates() {
     // Ne pas vider les slots qui ont encore des animations en attente dans la queue
@@ -4212,7 +4729,7 @@ function resetAnimationStates() {
     }
 
     // NE PAS vider la file d'animation - laisser les animations se terminer naturellement
-    // Cela Ã©vite de perdre des animations comme zdejebel qui arrivent en fin de tour
+    // Cela ÃƒÂ©vite de perdre des animations comme zdejebel qui arrivent en fin de tour
     // animationQueue.length = 0;
     // isAnimating = false;
 
@@ -4221,12 +4738,12 @@ function resetAnimationStates() {
         GameAnimations.clear();
     }
 
-    // RÃ©initialiser les flags de combat sur toutes les cartes
+    // RÃƒÂ©initialiser les flags de combat sur toutes les cartes
     document.querySelectorAll('.card[data-in-combat="true"]').forEach(card => {
         card.dataset.inCombat = 'false';
     });
 
-    // Filet de sÃ©curitÃ© : aucun override visuel ne doit survivre Ã  un nouveau tour.
+    // Filet de sÃƒÂ©curitÃƒÂ© : aucun override visuel ne doit survivre ÃƒÂ  un nouveau tour.
     if (typeof poisonHpOverrides !== 'undefined' && poisonHpOverrides?.clear) {
         poisonHpOverrides.clear();
     }
@@ -4234,20 +4751,20 @@ function resetAnimationStates() {
         powerBuffAtkOverrides.clear();
     }
 
-    // Retirer les classes d'animation rÃ©siduelles
+    // Retirer les classes d'animation rÃƒÂ©siduelles
     document.querySelectorAll('.card.dying').forEach(card => {
         card.classList.remove('dying');
     });
 
 }
 
-// Animation de lÃ©vitation continue pour les crÃ©atures volantes
-// Utilise le temps global pour que l'animation reste synchronisÃ©e mÃªme aprÃ¨s re-render
+// Animation de lÃƒÂ©vitation continue pour les crÃƒÂ©atures volantes
+// Utilise le temps global pour que l'animation reste synchronisÃƒÂ©e mÃƒÂªme aprÃƒÂ¨s re-render
 const flyingAnimationSpeed = 0.002; // Vitesse de l'oscillation
 const flyingAnimationAmplitude = 4; // Amplitude en pixels
 
 function startFlyingAnimation(cardEl) {
-    // Guard : ne pas empiler de boucles RAF sur le mÃªme Ã©lÃ©ment
+    // Guard : ne pas empiler de boucles RAF sur le mÃƒÂªme ÃƒÂ©lÃƒÂ©ment
     if (cardEl.dataset.flyingAnimation === 'true') return;
     cardEl.dataset.flyingAnimation = 'true';
 
@@ -4260,7 +4777,7 @@ function startFlyingAnimation(cardEl) {
 
         // Stop si la carte est en train d'attaquer (l'animation de combat prend le dessus)
         if (cardEl.dataset.inCombat === 'true') {
-            requestAnimationFrame(animate); // Continue Ã  vÃ©rifier pour reprendre aprÃ¨s
+            requestAnimationFrame(animate); // Continue ÃƒÂ  vÃƒÂ©rifier pour reprendre aprÃƒÂ¨s
             return;
         }
 
@@ -4275,9 +4792,9 @@ function startFlyingAnimation(cardEl) {
 
 /**
  * Anime un dos de carte volant de la main adverse vers une position cible.
- * Retourne une Promise rÃ©solue quand l'animation est terminÃ©e.
+ * Retourne une Promise rÃƒÂ©solue quand l'animation est terminÃƒÂ©e.
  * @param {DOMRect} targetRect - Rectangle cible (slot, trap, centre)
- * @param {number} duration - DurÃ©e en ms (dÃ©faut 300)
+ * @param {number} duration - DurÃƒÂ©e en ms (dÃƒÂ©faut 300)
  * @returns {Promise<void>}
  */
 function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRect = null) {
@@ -4299,7 +4816,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             handRect = sourceCard.getBoundingClientRect();
         }
 
-        // Cacher la carte revealed dans la main (elle va Ãªtre remplacÃ©e par le clone volant)
+        // Cacher la carte revealed dans la main (elle va ÃƒÂªtre remplacÃƒÂ©e par le clone volant)
         if (spell && spell.uid) {
             const handPanel = document.getElementById('opp-hand');
             const match = handPanel?.querySelector(`.opp-revealed[data-uid="${spell.uid}"]`);
@@ -4309,7 +4826,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             }
         }
 
-        // CrÃ©er la carte volante directement Ã  la taille cible (comme un drag)
+        // CrÃƒÂ©er la carte volante directement ÃƒÂ  la taille cible (comme un drag)
         const fw = targetRect.width, fh = targetRect.height;
         const flyCard = document.createElement('div');
         flyCard.style.cssText = `
@@ -4350,11 +4867,11 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             const p = Math.min((performance.now() - t0) / duration, 1);
             const t = easeInOutCubic(p);
 
-            // Centre sur la courbe de BÃ©zier
+            // Centre sur la courbe de BÃƒÂ©zier
             const cx = (1-t)*(1-t)*scx + 2*(1-t)*t*ccx + t*t*ecx;
             const cy = (1-t)*(1-t)*scy + 2*(1-t)*t*ccy + t*t*ecy;
 
-            // Convertir centre â†’ top-left (taille fixe)
+            // Convertir centre Ã¢â€ â€™ top-left (taille fixe)
             flyCard.style.left = (cx - fw / 2) + 'px';
             flyCard.style.top = (cy - fh / 2) + 'px';
             flyCard.style.opacity = (1 - t * 0.2);
@@ -4370,15 +4887,78 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
     });
 }
 
-// Animation d'invocation - overlay indÃ©pendant du render
-// Carte adverse : vole de la main vers le slot puis apparaÃ®t
+// Animation d'invocation - overlay indÃƒÂ©pendant du render
+// Carte adverse : vole de la main vers le slot puis apparaÃƒÂ®t
 function animateSummon(data) {
     return new Promise((resolve) => {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
+    const stateSide = owner === 'me' ? 'me' : 'opponent';
+
+    const toFiniteNumber = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+    };
+
+    function getStateSummonCard() {
+        return state?.[stateSide]?.field?.[data.row]?.[data.col] || null;
+    }
+
+    function getRenderableSummonCard(requireCombatStats = false) {
+        const stateCard = getStateSummonCard();
+        const animCard = data.card || null;
+        const sourceCard = stateCard || animCard;
+        if (!sourceCard) return null;
+
+        const card = { ...(animCard || {}), ...(stateCard || {}) };
+        if (!card.uid) card.uid = stateCard?.uid || animCard?.uid || null;
+        if (!card.name) card.name = stateCard?.name || animCard?.name || 'Carte';
+        if (!card.type) card.type = stateCard?.type || animCard?.type || 'creature';
+
+        if (card.type === 'creature') {
+            const atk = toFiniteNumber(card.atk);
+            const hp = toFiniteNumber(card.hp);
+            const curHp = toFiniteNumber(card.currentHp);
+            const stateAtk = toFiniteNumber(stateCard?.atk);
+            const stateHp = toFiniteNumber(stateCard?.hp);
+            const stateCurHp = toFiniteNumber(stateCard?.currentHp);
+            const animAtk = toFiniteNumber(animCard?.atk);
+            const animHp = toFiniteNumber(animCard?.hp);
+            const animCurHp = toFiniteNumber(animCard?.currentHp);
+
+            if (atk === null) card.atk = stateAtk ?? animAtk;
+            if (hp === null) card.hp = stateHp ?? animHp ?? stateCurHp ?? animCurHp;
+            if (curHp === null) card.currentHp = stateCurHp ?? animCurHp ?? toFiniteNumber(card.hp);
+            if (toFiniteNumber(card.baseAtk) === null) card.baseAtk = toFiniteNumber(card.atk);
+            if (toFiniteNumber(card.baseHp) === null) card.baseHp = toFiniteNumber(card.hp);
+
+            if (requireCombatStats) {
+                if (toFiniteNumber(card.atk) === null || toFiniteNumber(card.hp) === null || toFiniteNumber(card.currentHp) === null) {
+                    return null;
+                }
+            }
+        }
+
+        return card;
+    }
 
     function ensureCardVisibleInSlot() {
-        if (!data.card) return false;
+        const renderCard = getRenderableSummonCard(true);
+        if (!renderCard) {
+            if (typeof window.visTrace === 'function') {
+                const stateCard = getStateSummonCard();
+                window.visTrace('summon:fallback-skip-invalid', {
+                    owner,
+                    row: data.row,
+                    col: data.col,
+                    hasAnimCard: !!data.card,
+                    hasStateCard: !!stateCard,
+                    animUid: data.card?.uid || null,
+                    stateUid: stateCard?.uid || null,
+                });
+            }
+            return false;
+        }
         const targetSlot = getSlot(owner, data.row, data.col);
         if (!targetSlot) return false;
         if (targetSlot.querySelector('.card')) return true;
@@ -4387,30 +4967,34 @@ function animateSummon(data) {
         targetSlot.innerHTML = '';
         if (label) targetSlot.appendChild(label.cloneNode(true));
         targetSlot.classList.add('has-card');
-        const cardEl = makeCard(data.card, false);
+        const cardEl = makeCard(renderCard, false);
         targetSlot.appendChild(cardEl);
         if (typeof window.visTrace === 'function') {
             window.visTrace('summon:fallback-card', {
                 owner,
                 row: data.row,
                 col: data.col,
-                uid: data.card?.uid || null,
+                uid: renderCard?.uid || null,
+                name: renderCard?.name || null,
+                atk: renderCard?.atk ?? null,
+                hp: renderCard?.currentHp ?? renderCard?.hp ?? null,
+                source: getStateSummonCard() ? 'state' : 'anim',
             });
         }
         return true;
     }
 
-    function releaseSummonSlotWhenStateReady() {
-        const side = owner === 'me' ? 'me' : 'opponent';
-        const expectedUid = data.card?.uid || null;
+    function releaseSummonSlotWhenStateReady(wrapperEl = null) {
+        const expectedUid = getRenderableSummonCard(false)?.uid || data.card?.uid || null;
         const t0 = performance.now();
         const maxWait = 2200;
 
         function loop() {
-            const stateCard = state?.[side]?.field?.[data.row]?.[data.col] || null;
+            const stateCard = getStateSummonCard();
             const hasStateCard = !!stateCard;
             const uidMatches = !expectedUid || !stateCard?.uid || stateCard.uid === expectedUid;
             if ((hasStateCard && uidMatches) || (performance.now() - t0) > maxWait) {
+                if (wrapperEl && wrapperEl.isConnected) wrapperEl.remove();
                 animatingSlots.delete(slotKey);
                 render();
                 if (typeof window.visTrace === 'function') {
@@ -4431,16 +5015,16 @@ function animateSummon(data) {
     }
 
     function finishOverlay(wrapperEl) {
-        ensureCardVisibleInSlot();
-        if (wrapperEl && wrapperEl.isConnected) wrapperEl.remove();
-        releaseSummonSlotWhenStateReady();
+        const pinned = ensureCardVisibleInSlot();
+        if (pinned && wrapperEl && wrapperEl.isConnected) wrapperEl.remove();
+        releaseSummonSlotWhenStateReady(pinned ? null : wrapperEl);
         resolve();
     }
 
-    // Animation d'invocation pour ses propres crÃ©atures
-    // DÃ©lai pour synchroniser la fin avec l'animation adverse (fly+flip â‰ˆ 1040ms, ripple â‰ˆ 820ms)
+    // Animation d'invocation pour ses propres crÃƒÂ©atures
+    // DÃƒÂ©lai pour synchroniser la fin avec l'animation adverse (fly+flip Ã¢â€°Ë† 1040ms, ripple Ã¢â€°Ë† 820ms)
     if (data.player === myNum) {
-        // Garder le slot bloquÃ© jusqu'Ã  ce que le state serveur soit prÃªt pour Ã©viter les flashs.
+        // Garder le slot bloquÃƒÂ© jusqu'ÃƒÂ  ce que le state serveur soit prÃƒÂªt pour ÃƒÂ©viter les flashs.
         animatingSlots.add(slotKey);
         setTimeout(() => {
             const slot = getSlot('me', data.row, data.col);
@@ -4462,7 +5046,7 @@ function animateSummon(data) {
         return;
     }
 
-    // Le slot devrait dÃ©jÃ  Ãªtre bloquÃ© par blockSlots, mais on s'assure
+    // Le slot devrait dÃƒÂ©jÃƒÂ  ÃƒÂªtre bloquÃƒÂ© par blockSlots, mais on s'assure
     animatingSlots.add(slotKey);
 
     // Trouver le slot cible
@@ -4473,7 +5057,7 @@ function animateSummon(data) {
         return;
     }
 
-    // Vider le slot (au cas oÃ¹)
+    // Vider le slot (au cas oÃƒÂ¹)
     const label = slot.querySelector('.slot-label');
     slot.innerHTML = '';
     if (label) slot.appendChild(label.cloneNode(true));
@@ -4482,19 +5066,20 @@ function animateSummon(data) {
     const rect = slot.getBoundingClientRect();
     const cw = rect.width, ch = rect.height;
 
-    const isRevealed = data.card && data.card.revealedToOpponent;
+    const summonCard = getRenderableSummonCard(false);
+    const isRevealed = !!(summonCard && summonCard.revealedToOpponent);
 
-    // Utiliser la position sauvegardÃ©e au dÃ©but de la rÃ©vÃ©lation (avant re-render)
+    // Utiliser la position sauvegardÃƒÂ©e au dÃƒÂ©but de la rÃƒÂ©vÃƒÂ©lation (avant re-render)
     let savedSourceRect = null;
-    if (isRevealed && data.card.uid) {
-        savedSourceRect = savedRevealedCardRects.get(data.card.uid) || null;
-        // NE PAS supprimer du cache ici â€” la carte reste cachÃ©e dans le DOM
-        // tant que l'animation n'est pas terminÃ©e (state updates peuvent re-render)
+    if (isRevealed && summonCard?.uid) {
+        savedSourceRect = savedRevealedCardRects.get(summonCard.uid) || null;
+        // NE PAS supprimer du cache ici Ã¢â‚¬â€ la carte reste cachÃƒÂ©e dans le DOM
+        // tant que l'animation n'est pas terminÃƒÂ©e (state updates peuvent re-render)
     }
 
-    // Pour les crÃ©atures non rÃ©vÃ©lÃ©es : prendre le dos de carte directement du DOM
-    // (renderOppHand est gelÃ© pendant les summons, donc les cartes sont encore lÃ )
-    // Filtrer les cartes visibles (les cachÃ©es ont dÃ©jÃ  Ã©tÃ© "prises" par une animation prÃ©cÃ©dente)
+    // Pour les crÃƒÂ©atures non rÃƒÂ©vÃƒÂ©lÃƒÂ©es : prendre le dos de carte directement du DOM
+    // (renderOppHand est gelÃƒÂ© pendant les summons, donc les cartes sont encore lÃƒÂ )
+    // Filtrer les cartes visibles (les cachÃƒÂ©es ont dÃƒÂ©jÃƒÂ  ÃƒÂ©tÃƒÂ© "prises" par une animation prÃƒÂ©cÃƒÂ©dente)
     if (!savedSourceRect && data.visualHandIndex >= 0) {
         const hp = document.getElementById('opp-hand');
         const allCards = hp ? hp.querySelectorAll('.opp-card-back') : [];
@@ -4509,10 +5094,10 @@ function animateSummon(data) {
     }
 
     // Phase 1 : carte vole de la main adverse vers le slot (300ms)
-    // Si rÃ©vÃ©lÃ©e, la carte vole face visible depuis sa position sauvegardÃ©e
-    flyFromOppHand(rect, 300, isRevealed ? data.card : null, savedSourceRect).then(() => {
+    // Si rÃƒÂ©vÃƒÂ©lÃƒÂ©e, la carte vole face visible depuis sa position sauvegardÃƒÂ©e
+    flyFromOppHand(rect, 300, isRevealed ? summonCard : null, savedSourceRect).then(() => {
         if (isRevealed) {
-            // Carte dÃ©jÃ  rÃ©vÃ©lÃ©e â†’ pas de flip, juste lever + poser face visible
+            // Carte dÃƒÂ©jÃƒÂ  rÃƒÂ©vÃƒÂ©lÃƒÂ©e Ã¢â€ â€™ pas de flip, juste lever + poser face visible
             const wrapper = document.createElement('div');
             wrapper.style.cssText = `
                 position: fixed; z-index: 2000; pointer-events: none;
@@ -4520,7 +5105,12 @@ function animateSummon(data) {
                 width: ${cw}px; height: ${ch}px;
             `;
 
-            const cardEl = makeCard(data.card, false);
+            const revealedCard = getRenderableSummonCard(true) || summonCard;
+            if (!revealedCard) {
+                finishOverlay(wrapper);
+                return;
+            }
+            const cardEl = makeCard(revealedCard, false);
             cardEl.classList.add('summon-anim-card');
             const bgImage = cardEl.style.backgroundImage;
             cardEl.style.position = 'absolute';
@@ -4551,7 +5141,7 @@ function animateSummon(data) {
                     wrapper.style.top = (startY - liftPx + liftPx * p) + 'px';
                 } else {
                     // Poser visuellement la carte puis attendre le state serveur avant unlock du slot.
-                    if (data.card && data.card.uid) savedRevealedCardRects.delete(data.card.uid);
+                    if (summonCard?.uid) savedRevealedCardRects.delete(summonCard.uid);
                     finishOverlay(wrapper);
                     return;
                 }
@@ -4560,7 +5150,7 @@ function animateSummon(data) {
             requestAnimationFrame(animate);
 
         } else {
-            // Carte cachÃ©e â†’ flip classique dos â†’ face
+            // Carte cachÃƒÂ©e Ã¢â€ â€™ flip classique dos Ã¢â€ â€™ face
             const wrapper = document.createElement('div');
             wrapper.style.cssText = `
                 position: fixed; z-index: 2000; pointer-events: none;
@@ -4588,18 +5178,34 @@ function animateSummon(data) {
             backImg.style.cssText = 'width: 100%; height: 100%; display: block;';
             backFace.appendChild(backImg);
 
-            const cardEl = makeCard(data.card, false);
-            cardEl.classList.add('summon-anim-card');
-            const bgImage = cardEl.style.backgroundImage;
-            cardEl.style.position = 'absolute';
-            cardEl.style.top = '0';
-            cardEl.style.left = '0';
-            cardEl.style.width = '100%';
-            cardEl.style.height = '100%';
-            cardEl.style.margin = '0';
-            cardEl.style.backfaceVisibility = 'hidden';
-            cardEl.style.transform = 'rotateY(180deg)';
-            if (bgImage) cardEl.style.backgroundImage = bgImage;
+            const faceCard = getRenderableSummonCard(true) || summonCard;
+            let cardEl;
+            if (faceCard) {
+                cardEl = makeCard(faceCard, false);
+                cardEl.classList.add('summon-anim-card');
+                const bgImage = cardEl.style.backgroundImage;
+                cardEl.style.position = 'absolute';
+                cardEl.style.top = '0';
+                cardEl.style.left = '0';
+                cardEl.style.width = '100%';
+                cardEl.style.height = '100%';
+                cardEl.style.margin = '0';
+                cardEl.style.backfaceVisibility = 'hidden';
+                cardEl.style.transform = 'rotateY(180deg)';
+                if (bgImage) cardEl.style.backgroundImage = bgImage;
+            } else {
+                // Safety fallback: never show "undefined" text on incomplete payloads.
+                cardEl = document.createElement('div');
+                cardEl.style.cssText = `
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0;
+                    border-radius: 6px; overflow: hidden; backface-visibility: hidden; transform: rotateY(180deg);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                `;
+                const faceImg = document.createElement('img');
+                faceImg.src = 'cardback/back_1.png';
+                faceImg.style.cssText = 'width: 100%; height: 100%; display: block;';
+                cardEl.appendChild(faceImg);
+            }
 
             flipInner.appendChild(backFace);
             flipInner.appendChild(cardEl);
@@ -4646,8 +5252,8 @@ function animateSummon(data) {
 }
 
 /**
- * Anime une carte face visible volant du cimetiÃ¨re vers une position cible.
- * MÃªme pattern que flyFromOppHand mais partant du cimetiÃ¨re, carte visible.
+ * Anime une carte face visible volant du cimetiÃƒÂ¨re vers une position cible.
+ * MÃƒÂªme pattern que flyFromOppHand mais partant du cimetiÃƒÂ¨re, carte visible.
  */
 function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetSlot = null) {
     return new Promise(resolve => {
@@ -4655,7 +5261,7 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
         const board = document.querySelector('.game-board');
         if (!graveEl || !board) { resolve(); return; }
 
-        // Position relative au board (coordonnÃ©es locales, dans le contexte 3D)
+        // Position relative au board (coordonnÃƒÂ©es locales, dans le contexte 3D)
         function getBoardOffset(el) {
             let x = 0, y = 0;
             while (el && el !== board) {
@@ -4683,7 +5289,7 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
         const startX = graveOff.x;
         const startY = graveOff.y;
 
-        // CrÃ©er la carte DANS le board â†’ hÃ©rite perspective + rotateX naturellement
+        // CrÃƒÂ©er la carte DANS le board Ã¢â€ â€™ hÃƒÂ©rite perspective + rotateX naturellement
         const flyCard = document.createElement('div');
         flyCard.style.cssText = `
             position: absolute; z-index: 1000; pointer-events: none; overflow: hidden;
@@ -4704,16 +5310,16 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
 
         // --- DEBUG REANIMATE ---
         if (window.DEBUG_LOGS) console.log(`[REANIMATE] card: ${card.name}, owner: ${owner}`);
-        if (window.DEBUG_LOGS) console.log(`[REANIMATE] IN BOARD â€” graveOff: (${startX}, ${startY}), cardSize: ${cardW}x${cardH}`);
+        if (window.DEBUG_LOGS) console.log(`[REANIMATE] IN BOARD Ã¢â‚¬â€ graveOff: (${startX}, ${startY}), cardSize: ${cardW}x${cardH}`);
         if (window.DEBUG_LOGS) console.log(`[REANIMATE] endOff: (${endOff.x}, ${endOff.y})`);
 
-        // === Ã‰TAPE 1 : Extraire vers le haut (350ms) ===
-        // Monte dans l'espace local du board (vers le hÃ©ros = Y dÃ©croissant)
+        // === Ãƒâ€°TAPE 1 : Extraire vers le haut (350ms) ===
+        // Monte dans l'espace local du board (vers le hÃƒÂ©ros = Y dÃƒÂ©croissant)
         const extractEndY = startY - cardH - 50;
         const extractDistance = startY - extractEndY;
         const extractDur = 350;
 
-        // Clip : masquer la partie encore "dans" le cimetiÃ¨re
+        // Clip : masquer la partie encore "dans" le cimetiÃƒÂ¨re
         flyCard.style.clipPath = `inset(0 0 ${cardH}px 0)`;
         if (window.DEBUG_LOGS) console.log(`[REANIMATE] EXTRACT: from Y=${startY} to Y=${extractEndY}, dist=${extractDistance}`);
 
@@ -4725,7 +5331,7 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
             const curY = startY - ep * extractDistance;
             flyCard.style.top = curY + 'px';
 
-            // Clip : tout ce qui dÃ©passe sous startY (= top du cimetiÃ¨re)
+            // Clip : tout ce qui dÃƒÂ©passe sous startY (= top du cimetiÃƒÂ¨re)
             const belowGrave = Math.max(0, (curY + cardH) - startY);
             flyCard.style.clipPath = belowGrave > 0.5 ? `inset(0 0 ${belowGrave}px 0)` : 'none';
 
@@ -4739,7 +5345,7 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
                 flyCard.style.clipPath = 'none';
                 if (window.DEBUG_LOGS) console.log(`[REANIMATE] EXTRACT done at Y=${curY.toFixed(0)}`);
 
-                // === Ã‰TAPE 2 : Voler vers le slot cible ===
+                // === Ãƒâ€°TAPE 2 : Voler vers le slot cible ===
                 const flyDur = Math.max(duration - extractDur, 350);
 
                 const scx = startX + cardW / 2;
@@ -4776,11 +5382,11 @@ function flyFromGraveyardFaceUp(owner, targetRect, card, duration = 500, targetS
     });
 }
 
-// Animation d'invocation par piÃ¨ge â€” apparition magique directement dans le slot (hÃ©rite de la perspective 3D)
-// SynchronisÃ©e avec createTrapSummonEffect (PixiJS VFX) :
+// Animation d'invocation par piÃƒÂ¨ge Ã¢â‚¬â€ apparition magique directement dans le slot (hÃƒÂ©rite de la perspective 3D)
+// SynchronisÃƒÂ©e avec createTrapSummonEffect (PixiJS VFX) :
 //   Phase 0: 0-400ms      Energy gathering (VFX only, card invisible)
 //   Phase 1: 400-800ms    Portal opens (VFX only, card invisible)
-//   Phase 2: 800-1000ms   Flash & card materializes (card scale 0â†’1, brightness 3â†’1)
+//   Phase 2: 800-1000ms   Flash & card materializes (card scale 0Ã¢â€ â€™1, brightness 3Ã¢â€ â€™1)
 //   Phase 3: 1000-1500ms  Card settles with easeOutBack (card stable, glow fades)
 //   Phase 4: 1500-2800ms  Idle shimmer (card done, VFX trails off)
 function animateTrapSummon(data) {
@@ -4966,8 +5572,8 @@ function animateReanimate(data) {
 
 function animateMove(data) {
     return new Promise((resolve) => {
-    // Animation de coup de vent pour ses propres crÃ©atures dÃ©placÃ©es
-    // DÃ©lai pour synchroniser la fin avec l'animation adverse (slide â‰ˆ 500ms, vent â‰ˆ 480ms)
+    // Animation de coup de vent pour ses propres crÃƒÂ©atures dÃƒÂ©placÃƒÂ©es
+    // DÃƒÂ©lai pour synchroniser la fin avec l'animation adverse (slide Ã¢â€°Ë† 500ms, vent Ã¢â€°Ë† 480ms)
     if (data.player === myNum) {
         setTimeout(() => {
             const toSlot = getSlot('me', data.toRow, data.toCol);
@@ -5003,14 +5609,14 @@ function animateMove(data) {
         return;
     }
 
-    // Forcer render() AVANT de bloquer les slots (pour afficher les mises Ã  jour en attente, ex: poison)
+    // Forcer render() AVANT de bloquer les slots (pour afficher les mises ÃƒÂ  jour en attente, ex: poison)
     render();
 
     // Bloquer les deux slots (origine et destination)
     animatingSlots.add(fromKey);
     animatingSlots.add(toKey);
 
-    // Vider les DEUX slots immÃ©diatement (pour Ã©viter le doublon visuel)
+    // Vider les DEUX slots immÃƒÂ©diatement (pour ÃƒÂ©viter le doublon visuel)
     const labelFrom = fromSlot.querySelector('.slot-label');
     fromSlot.innerHTML = '';
     if (labelFrom) fromSlot.appendChild(labelFrom.cloneNode(true));
@@ -5021,13 +5627,13 @@ function animateMove(data) {
     if (labelTo) toSlot.appendChild(labelTo.cloneNode(true));
     toSlot.classList.remove('has-card');
 
-    // RÃ©cupÃ©rer les positions
+    // RÃƒÂ©cupÃƒÂ©rer les positions
     const fromRect = fromSlot.getBoundingClientRect();
     const toRect = toSlot.getBoundingClientRect();
     const dx = toRect.left - fromRect.left;
     const dy = toRect.top - fromRect.top;
 
-    // CrÃ©er une carte overlay (makeCard met le backgroundImage en inline, on ne doit pas l'Ã©craser)
+    // CrÃƒÂ©er une carte overlay (makeCard met le backgroundImage en inline, on ne doit pas l'ÃƒÂ©craser)
     const movingCard = makeCard(data.card, false);
     movingCard.style.position = 'fixed';
     movingCard.style.left = fromRect.left + 'px';
@@ -5041,16 +5647,16 @@ function animateMove(data) {
 
     document.body.appendChild(movingCard);
 
-    // Forcer le reflow puis dÃ©clencher la transition via transform
+    // Forcer le reflow puis dÃƒÂ©clencher la transition via transform
     movingCard.getBoundingClientRect();
     requestAnimationFrame(() => {
         movingCard.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`;
     });
 
-    // Nettoyer aprÃ¨s l'animation (500ms transition + 100ms marge)
+    // Nettoyer aprÃƒÂ¨s l'animation (500ms transition + 100ms marge)
     setTimeout(() => {
-        // DÃ©bloquer et render AVANT de supprimer l'overlay
-        // pour Ã©viter un flash sans jeton buff
+        // DÃƒÂ©bloquer et render AVANT de supprimer l'overlay
+        // pour ÃƒÂ©viter un flash sans jeton buff
         animatingSlots.delete(fromKey);
         animatingSlots.delete(toKey);
         render();
