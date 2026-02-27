@@ -1993,12 +1993,8 @@ async function animateDeathTransform(data) {
         return;
     }
 
-    // Retirer la carte du slot (garder le label)
-    const slotLabel = slot.querySelector('.slot-label');
-    const children = [...slot.children];
-    for (const child of children) {
-        if (!child.classList.contains('slot-label')) child.remove();
-    }
+    // Retirer la carte du slot (garder la frame SVG + diamant central)
+    _clearSlotContent(slot);
     slot.classList.remove('has-card', 'has-flying');
 
     // Flip directement dans le slot Ã¢â‚¬â€ le tilt du board s'applique naturellement
@@ -2068,9 +2064,8 @@ async function animateDeathTransform(data) {
     slot.style.perspective = origPerspective;
     slot.style.overflow = origOverflow;
 
-    // Garder le label, placer la nouvelle carte
-    slot.innerHTML = '';
-    if (slotLabel) slot.appendChild(slotLabel);
+    // Nettoyer le slot (garder la frame SVG + diamant), placer la nouvelle carte
+    _clearSlotContent(slot);
     const placedCard = makeCard(data.toCard, false);
     slot.appendChild(placedCard);
     slot.classList.add('has-card');
@@ -3907,7 +3902,7 @@ async function animateTrap(data) {
         );
         setTimeout(() => {
             trapSlot.classList.remove('triggered', 'has-trap', 'mine');
-            trapSlot.innerHTML = '';
+            _clearTrapSlotContent(trapSlot);
         }, 600);
     }
 
@@ -4963,9 +4958,7 @@ function animateSummon(data) {
         if (!targetSlot) return false;
         if (targetSlot.querySelector('.card')) return true;
 
-        const label = targetSlot.querySelector('.slot-label');
-        targetSlot.innerHTML = '';
-        if (label) targetSlot.appendChild(label.cloneNode(true));
+        _clearSlotContent(targetSlot);
         targetSlot.classList.add('has-card');
         const cardEl = makeCard(renderCard, false);
         targetSlot.appendChild(cardEl);
@@ -5057,10 +5050,8 @@ function animateSummon(data) {
         return;
     }
 
-    // Vider le slot (au cas oÃƒÂ¹)
-    const label = slot.querySelector('.slot-label');
-    slot.innerHTML = '';
-    if (label) slot.appendChild(label.cloneNode(true));
+    // Vider le slot (au cas où) — garder la frame SVG + diamant
+    _clearSlotContent(slot);
     slot.classList.remove('has-card');
 
     const rect = slot.getBoundingClientRect();
@@ -5402,9 +5393,7 @@ function animateTrapSummon(data) {
             return;
         }
 
-        const label = slot.querySelector('.slot-label');
-        slot.innerHTML = '';
-        if (label) slot.appendChild(label.cloneNode(true));
+        _clearSlotContent(slot);
         slot.classList.remove('has-card');
 
         const rect = slot.getBoundingClientRect();
@@ -5520,9 +5509,7 @@ function animateReanimate(data) {
             return;
         }
 
-        const label = slot.querySelector('.slot-label');
-        slot.innerHTML = '';
-        if (label) slot.appendChild(label.cloneNode(true));
+        _clearSlotContent(slot);
         slot.classList.remove('has-card');
 
         const rect = slot.getBoundingClientRect();
@@ -5617,14 +5604,10 @@ function animateMove(data) {
     animatingSlots.add(toKey);
 
     // Vider les DEUX slots immÃƒÂ©diatement (pour ÃƒÂ©viter le doublon visuel)
-    const labelFrom = fromSlot.querySelector('.slot-label');
-    fromSlot.innerHTML = '';
-    if (labelFrom) fromSlot.appendChild(labelFrom.cloneNode(true));
+    _clearSlotContent(fromSlot);
     fromSlot.classList.remove('has-card');
 
-    const labelTo = toSlot.querySelector('.slot-label');
-    toSlot.innerHTML = '';
-    if (labelTo) toSlot.appendChild(labelTo.cloneNode(true));
+    _clearSlotContent(toSlot);
     toSlot.classList.remove('has-card');
 
     // RÃƒÂ©cupÃƒÂ©rer les positions

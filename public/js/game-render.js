@@ -340,10 +340,11 @@ function updateGraveTopCard(owner, graveyard) {
         cardEl.classList.add('grave-card', 'in-graveyard');
         container.appendChild(cardEl);
     } else {
-        if (container.classList.contains('empty') && container.children.length === 0) return;
+        if (container.classList.contains('empty') && container.querySelector('.slot-frame')) return;
         delete container.dataset.topCardUid;
         container.classList.add('empty');
-        container.innerHTML = '';
+        const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+        container.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
     }
 }
 
@@ -626,12 +627,13 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 continue;
             }
             deferredSlots.delete(slotKey);
-            const label = slot.querySelector('.slot-label');
-            slot.innerHTML = '';
-            if (label) slot.appendChild(label.cloneNode(true));
+            const oldCard = slot.querySelector('.card');
+            if (oldCard) oldCard.remove();
 
-            slot.classList.remove('has-card');
-            slot.classList.remove('has-flying');
+            if (!card) {
+                slot.classList.remove('has-card');
+                slot.classList.remove('has-flying');
+            }
 
             if (card) {
                 _traceInvalidCardStats('renderField:slow-before-makeCard', card, { owner, row: r, col: c });
@@ -1039,10 +1041,13 @@ function renderTraps() {
             if (hadTrap === hasTrap) return;
 
             slot.classList.remove('has-trap', 'mine', 'triggered');
+            const content = slot.querySelector('.trap-content');
             if (trap) {
                 slot.dataset.trapState = '1';
                 slot.classList.add('has-trap', 'mine');
-                slot.innerHTML = '<img class="trap-icon-img mine" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                if (content) {
+                    content.innerHTML = '<img class="trap-icon-img mine" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                }
                 const trapCard = state.me.trapCards ? state.me.trapCards[i] : null;
                 if (trapCard) {
                     slot.onmouseenter = (e) => showCardPreview(trapCard, e);
@@ -1051,7 +1056,7 @@ function renderTraps() {
                 }
             } else {
                 delete slot.dataset.trapState;
-                slot.innerHTML = '';
+                if (content) content.innerHTML = '';
                 slot.onmouseenter = null;
                 slot.onmouseleave = null;
                 slot.onmousemove = null;
@@ -1077,13 +1082,16 @@ function renderTraps() {
             if (hadTrap === hasTrap) return;
 
             slot.classList.remove('has-trap', 'mine', 'triggered');
+            const content = slot.querySelector('.trap-content');
             if (trap) {
                 slot.dataset.trapState = '1';
                 slot.classList.add('has-trap');
-                slot.innerHTML = '<img class="trap-icon-img enemy" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                if (content) {
+                    content.innerHTML = '<img class="trap-icon-img enemy" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                }
             } else {
                 delete slot.dataset.trapState;
-                slot.innerHTML = '';
+                if (content) content.innerHTML = '';
             }
         }
     });

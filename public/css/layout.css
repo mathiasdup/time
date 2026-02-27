@@ -187,7 +187,7 @@
             background: none;
         }
         .player-frame .player-title {
-            font-family: 'IM Fell English SC', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 9px;
             letter-spacing: 3px;
             color: var(--frame-subtitle, #9a9080);
@@ -948,7 +948,7 @@
             height: calc(var(--card-h) * 1.25);
             border-radius: 4px;
             background: rgba(255,255,255,0.05);
-            border: 2px solid rgba(255,255,255,0.3);
+            border: none;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -1219,13 +1219,22 @@
             cursor: pointer;
             position: relative;
         }
+        .deck-box::before,
+        .grave-box::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 152 200'%3E%3Cpath d='M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z' fill='none' stroke='rgba(255,255,255,0.7)' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z' fill='rgba(255,255,255,0.04)'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+            pointer-events: none;
+            z-index: 0;
+        }
         .deck-stack {
             position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
+            inset: 0;
+            margin: auto;
             width: var(--card-w);
             height: var(--card-h);
+            z-index: 5;
         }
         /* Tooltip du deck */
         .deck-tooltip, .grave-tooltip {
@@ -1269,64 +1278,64 @@
            ORDRE INVERSÃ‰ : nth-child(1) = fond (le plus dÃ©calÃ©), nth-child(5) = proche du dessus
            Ainsi quand on masque les derniers index, on enlÃ¨ve le "dessus" de l'Ã©paisseur */
         .side-panel.left .deck-card-layer:nth-child(1) {
-            transform: translate(12px, 4px);
+            transform: translate(0px, 4px);
             z-index: 1;
-            box-shadow: 3px 4px 10px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
             filter: brightness(0.8);
         }
         .side-panel.left .deck-card-layer:nth-child(2) {
-            transform: translate(9px, 3px);
+            transform: translate(0px, 3px);
             z-index: 2;
-            box-shadow: 2px 3px 7px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 7px rgba(0,0,0,0.35);
             filter: brightness(0.85);
         }
         .side-panel.left .deck-card-layer:nth-child(3) {
-            transform: translate(6px, 2px);
+            transform: translate(0px, 2px);
             z-index: 3;
-            box-shadow: 2px 3px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
             filter: brightness(0.9);
         }
         .side-panel.left .deck-card-layer:nth-child(4) {
-            transform: translate(3px, 1px);
+            transform: translate(0px, 1px);
             z-index: 4;
-            box-shadow: 2px 3px 5px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 5px rgba(0,0,0,0.35);
             filter: brightness(0.95);
         }
         .side-panel.left .deck-card-layer:nth-child(5) {
             transform: translate(0px, 0px);
             z-index: 5;
-            box-shadow: 2px 3px 4px rgba(0,0,0,0.4);
+            box-shadow: 0 3px 4px rgba(0,0,0,0.4);
         }
 
         /* Couches empilÃ©es vers la gauche pour l'adversaire (miroir) - effet 3D avec ombres */
         .side-panel.right .deck-card-layer:nth-child(1) {
-            transform: translate(-12px, 4px);
+            transform: translate(0px, 4px);
             z-index: 1;
-            box-shadow: -3px 4px 10px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
             filter: brightness(0.8);
         }
         .side-panel.right .deck-card-layer:nth-child(2) {
-            transform: translate(-9px, 3px);
+            transform: translate(0px, 3px);
             z-index: 2;
-            box-shadow: -2px 3px 7px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 7px rgba(0,0,0,0.35);
             filter: brightness(0.85);
         }
         .side-panel.right .deck-card-layer:nth-child(3) {
-            transform: translate(-6px, 2px);
+            transform: translate(0px, 2px);
             z-index: 3;
-            box-shadow: -2px 3px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
             filter: brightness(0.9);
         }
         .side-panel.right .deck-card-layer:nth-child(4) {
-            transform: translate(-3px, 1px);
+            transform: translate(0px, 1px);
             z-index: 4;
-            box-shadow: -2px 3px 5px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 5px rgba(0,0,0,0.35);
             filter: brightness(0.95);
         }
         .side-panel.right .deck-card-layer:nth-child(5) {
             transform: translate(0px, 0px);
             z-index: 5;
-            box-shadow: -2px 3px 4px rgba(0,0,0,0.4);
+            box-shadow: 0 3px 4px rgba(0,0,0,0.4);
         }
 
         /* Carte du dessus du deck avec ombre portÃ©e */
@@ -1343,29 +1352,6 @@
         }
 
         /* Ombre au sol sous le deck â€” taille proportionnelle au nombre de couches (--stack-layers) */
-        .deck-stack::after {
-            content: '';
-            position: absolute;
-            bottom: calc(-6px - var(--stack-layers, 1) * 2px);
-            left: 50%;
-            transform: translateX(-50%) rotateX(80deg);
-            width: calc(85% + var(--stack-layers, 1) * 3%);
-            height: calc(12px + var(--stack-layers, 1) * 6px);
-            background: radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, transparent 70%);
-            opacity: calc(0.4 + var(--stack-layers, 1) * 0.12);
-            pointer-events: none;
-            z-index: 0;
-            transition: width 0.3s, height 0.3s, opacity 0.3s, bottom 0.3s;
-        }
-        .side-panel.left .deck-stack::after {
-            left: calc(50% + 6px);
-        }
-        .side-panel.right .deck-stack::after {
-            left: calc(50% - 6px);
-        }
-        .deck-stack.empty::after {
-            opacity: 0;
-        }
 
         /* Deck vide */
         .deck-stack.empty .deck-card-layer { display: none; }
@@ -1388,11 +1374,11 @@
         }
         .grave-stack {
             position: absolute;
-            top: 3px;
-            left: 50%;
-            transform: translateX(-50%);
+            inset: 0;
+            margin: auto;
             width: var(--card-w);
             height: var(--card-h);
+            z-index: 5;
         }
         /* Cartes empilÃ©es du cimetiÃ¨re â€” vraies cartes */
         .grave-card-layer {
@@ -1411,41 +1397,41 @@
         }
         /* Couches empilÃ©es vers la droite pour le joueur - effet 3D */
         .side-panel.left .grave-card-layer:nth-child(1) {
-            transform: translate(8px, 3px);
+            transform: translate(0px, 3px);
             z-index: 1;
-            box-shadow: 2px 3px 8px rgba(0,0,0,0.4);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.4);
             filter: brightness(0.8);
         }
         .side-panel.left .grave-card-layer:nth-child(2) {
-            transform: translate(5px, 2px);
+            transform: translate(0px, 2px);
             z-index: 2;
-            box-shadow: 2px 3px 6px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.35);
             filter: brightness(0.9);
         }
         .side-panel.left .grave-card-layer:nth-child(3) {
-            transform: translate(2px, 1px);
+            transform: translate(0px, 1px);
             z-index: 3;
-            box-shadow: 2px 3px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 4px rgba(0,0,0,0.3);
             filter: brightness(0.95);
         }
 
         /* Couches empilÃ©es vers la gauche pour l'adversaire (miroir) - effet 3D */
         .side-panel.right .grave-card-layer:nth-child(1) {
-            transform: translate(-8px, 3px);
+            transform: translate(0px, 3px);
             z-index: 1;
-            box-shadow: -2px 3px 8px rgba(0,0,0,0.4);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.4);
             filter: brightness(0.8);
         }
         .side-panel.right .grave-card-layer:nth-child(2) {
-            transform: translate(-5px, 2px);
+            transform: translate(0px, 2px);
             z-index: 2;
-            box-shadow: -2px 3px 6px rgba(0,0,0,0.35);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.35);
             filter: brightness(0.9);
         }
         .side-panel.right .grave-card-layer:nth-child(3) {
-            transform: translate(-2px, 1px);
+            transform: translate(0px, 1px);
             z-index: 3;
-            box-shadow: -2px 3px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 4px rgba(0,0,0,0.3);
             filter: brightness(0.95);
         }
 
@@ -1460,14 +1446,11 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            background: linear-gradient(135deg, rgba(50,50,70,0.95), rgba(30,30,50,0.95));
-            border: 2px solid rgba(255,255,255,0.3);
             z-index: 5;
+        }
+        .grave-top-card.empty {
+            background: transparent;
+            border: none;
         }
         .grave-top-card:not(.empty) {
             background: transparent;
@@ -1492,10 +1475,10 @@
             transition: width 0.3s, height 0.3s, opacity 0.3s, bottom 0.3s;
         }
         .side-panel.left .grave-stack.has-cards::after {
-            left: calc(50% + 4px);
+            left: 50%;
         }
         .side-panel.right .grave-stack.has-cards::after {
-            left: calc(50% - 4px);
+            left: 50%;
         }
         .grave-top-card:not(.empty) .card {
             width: 100% !important;
@@ -1503,22 +1486,11 @@
             margin: 0 !important;
             font-size: 16px; /* Annuler le font-size: 0.75em du grave-box pour que les em dans .arena-name/.arena-stats soient cohÃ©rents avec le terrain */
         }
-        .grave-top-card.empty {
-            background: rgba(255,255,255,0.05);
-            border: 2px solid rgba(255,255,255,0.2);
-            transition: border-color 0.2s, background 0.2s;
+        .grave-top-card.empty:hover .slot-frame-outline {
+            stroke: rgba(255,255,255,1);
         }
-        .grave-top-card.empty:hover {
-            border-color: rgba(255,255,255,0.7);
-            background: rgba(255,255,255,0.15);
-        }
-        .grave-top-card.empty::after {
-            content: '';
-            width: 40px;
-            height: 40px;
-            background: url('../battlefield_elements/death.png') center/contain no-repeat;
-            opacity: 0.3;
-            filter: brightness(0) invert(1);
+        .grave-top-card.empty:hover .slot-frame-fill {
+            fill: rgba(255,255,255,0.08);
         }
         .grave-top-card .mini-card {
             width: 100%;
@@ -1567,122 +1539,237 @@
             perspective-origin: 50% 80%;
             padding-bottom: 50px;
         }
-        
+
         .game-board {
             position: relative;
             display: flex;
-            align-items: center;
+            align-items: stretch;
             justify-content: center;
+            gap: 60px;
             transform: rotateX(10deg);
         }
-        
+
+        .side-panel {
+            position: relative;
+            display: block;
+            width: 168px;
+            height: calc(var(--card-h) * 4 + 24px * 3);
+            margin: 0;
+        }
+        .side-panel.left,
+        .side-panel.right {
+            margin: 0;
+        }
+
+        .hero-card {
+            position: absolute;
+            left: 0;
+            top: calc(50% - 112px);
+            width: 168px;
+            height: 224px;
+            border-radius: 4px;
+            border: 2px solid rgba(200,180,140,0.6);
+            background: transparent;
+            box-shadow: none;
+            overflow: visible;
+            z-index: 12;
+        }
+        .hero-card-inner {
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .deck-grave-row {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0;
+            z-index: 8;
+        }
+        .side-panel.right .deck-grave-row {
+            flex-direction: column-reverse;
+        }
+
         .battlefield {
             position: relative;
             display: flex;
-            gap: 12px;
-            padding: 24px;
-            background: rgba(0,0,0,0.5);
-            border-radius: 12px;
-            border: 2px solid rgba(100,80,60,0.6);
-            box-shadow: 0 20px 60px rgb(0 0 0 / 20%), inset 0 0 10px rgba(0, 0, 0, 0.6);
+            align-items: stretch;
+            gap: 60px;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
         }
 
         .field-side {
             display: grid;
             grid-template-columns: repeat(2, var(--card-w));
             grid-template-rows: repeat(4, var(--card-h));
-            gap: 12px;
+            gap: 24px;
         }
 
-        .trap-center { display: flex; gap: 8px; }
-        .trap-col { display: grid; grid-template-rows: repeat(4, var(--card-h)); gap: 8px; }
-        
-        .card-slot {
+        .trap-center {
+            display: flex;
+            gap: 24px;
+            align-items: stretch;
+        }
+        .trap-col {
+            display: grid;
+            grid-template-rows: repeat(4, var(--card-h));
+            gap: 24px;
+        }
+
+        .card-slot,
+        .trap-slot {
             width: var(--card-w);
             height: var(--card-h);
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 4px;
-            background: rgba(255,255,255,0.05);
+            border: 0;
+            border-radius: 0;
+            background: transparent;
             cursor: pointer;
-            transition: border-color 0.2s, background-color 0.2s;
             position: relative;
             contain: layout style;
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: visible;
+            transition: transform 0.15s ease;
         }
-        /* Losange intÃ©rieur */
-        .card-slot::before {
-            content: '';
+
+        .slot-frame {
             position: absolute;
-            width: 53px;
-            height: 53px;
-            border: 2px solid rgba(255,255,255,0.25);
-            background: transparent;
-            transform: rotate(45deg);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 144px;
+            height: 192px;
+            overflow: visible;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .slot-frame-outline {
+            fill: none;
+            stroke: rgba(255,255,255,0.7);
+            stroke-width: 1.5;
+            stroke-linejoin: round;
+        }
+        .slot-frame-fill {
+            fill: rgba(255,255,255,0.04);
+            stroke: none;
+        }
+
+        .slot-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            z-index: -1;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-slot .slot-center {
+            transform: translate(-50%, -50%);
+        }
+
+        .trap-slot .slot-center {
+            transform: translate(-50%, -50%);
+        }
+
+        .grave-top-card .slot-center {
+            transform: translate(-50%, -50%);
+        }
+
+        .slot-icon {
+            width: 50px;
+            height: 50px;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
+            opacity: 0.7;
             pointer-events: none;
         }
-        .card-slot .slot-label { position: absolute; font-size: 0.65em; color: rgba(255,255,255,0.25); pointer-events: none; z-index: 1; }
-        .card-slot:not(.has-card):hover { border-color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.15); }
-        .card-slot:not(.has-card):hover::before { border-color: rgba(255,255,255,0.5); }
-        .card-slot.me-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
-        .card-slot.opp-slot { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
-        .card-slot.has-card {
-            padding: 0;
+        .slot-icon.mirrored {
+            transform: scaleX(-1);
         }
-        .card-slot.has-card::before { z-index: 0; }
+        .trap-content {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
         .card-slot.has-card .card {
+            position: absolute;
+            inset: 0;
+            margin: auto;
             width: var(--card-w);
             height: var(--card-h);
             cursor: default;
             transition: none;
+            z-index: 10;
         }
-        .card-slot.valid-target { border-color: transparent !important; background: rgba(98,215,255,0.25) !important; }
-        .card-slot.drag-over { border-color: transparent !important; background: rgba(241,196,15,0.35) !important; }
-        .card-slot.cross-target { border-color: transparent !important; background: rgba(243,156,18,0.3) !important; }
-        .card-slot.moveable { border-color: #3498db !important; background: rgba(52,152,219,0.25) !important; }
-        
-        .trap-slot {
-            width: 73px;
-            height: 73px;
-            margin: auto 0; 
-            border: 2px solid rgba(255,255,255,0.25); 
-            border-radius: 50%; 
-            background: rgba(255,255,255,0.05); 
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: border-color 0.2s, background-color 0.2s;
-            font-size: 0.6em; 
-            color: rgba(255,255,255,0.4);
-            position: relative;
-            overflow: visible;
+
+        .card-slot:not(.has-card):hover .slot-frame-outline,
+        .trap-slot:hover .slot-frame-outline {
+            stroke: rgba(255,255,255,1);
         }
-        /* IcÃ´ne piÃ¨ge Ã  ours */
-        .trap-slot::before {
-            content: '';
-            width: 28px;
-            height: 28px;
-            background-image: url('../battlefield_elements/beartrap.png');
-            background-repeat: no-repeat;
-            background-position: center;
-            background-size: contain;
-            opacity: 0.35;
-            filter: brightness(0) invert(1);
+        .card-slot:not(.has-card):hover .slot-frame-fill,
+        .trap-slot:hover .slot-frame-fill {
+            fill: rgba(255,255,255,0.09);
         }
-        /* Miroir pour les piÃ¨ges adverses (colonne de droite) */
+
+        .card-slot.valid-target .slot-frame-outline,
+        .trap-slot.valid-target .slot-frame-outline {
+            stroke: #62d7ff !important;
+        }
+        .card-slot.valid-target .slot-frame-fill,
+        .trap-slot.valid-target .slot-frame-fill {
+            fill: rgba(98,215,255,0.25) !important;
+        }
+        .card-slot.drag-over .slot-frame-outline,
+        .trap-slot.drag-over .slot-frame-outline {
+            stroke: #f1c40f !important;
+        }
+        .card-slot.drag-over .slot-frame-fill,
+        .trap-slot.drag-over .slot-frame-fill {
+            fill: rgba(241,196,15,0.35) !important;
+        }
+        .card-slot.cross-target .slot-frame-outline {
+            stroke: #f39c12 !important;
+        }
+        .card-slot.cross-target .slot-frame-fill {
+            fill: rgba(243,156,18,0.3) !important;
+        }
+        .card-slot.moveable .slot-frame-outline {
+            stroke: #3498db !important;
+        }
+        .card-slot.moveable .slot-frame-fill {
+            fill: rgba(52,152,219,0.25) !important;
+        }
+
+        .trap-slot::before,
         .trap-col:last-child .trap-slot::before {
-            transform: scaleX(-1);
+            display: none !important;
+            content: none !important;
         }
-        .trap-slot.has-trap::before {
-            display: none;
+
+        .trap-slot.has-trap.mine .slot-frame-outline {
+            stroke: rgba(46,204,113,0.9);
         }
-        .trap-slot:hover { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.15); }
-        .trap-slot.has-trap { border-style: solid; background: rgba(231,76,60,0.3); border-color: #e74c3c; display: flex; align-items: center; justify-content: center; }
-        .trap-slot.has-trap.mine { background: rgba(46,204,113,0.3); border-color: #27ae60; }
+        .trap-slot.has-trap .slot-frame-outline {
+            stroke: rgba(231,76,60,0.9);
+        }
+
         .trap-icon-img {
-            width: 42px;
+            width: 56px;
             pointer-events: none;
         }
         .trap-icon-img.mine {
@@ -1691,9 +1778,14 @@
         .trap-icon-img.enemy {
             filter: brightness(0) saturate(100%) invert(30%) sepia(90%) saturate(2000%) hue-rotate(340deg) brightness(90%);
         }
-        .trap-slot.valid-target { border-color: #62d7ff !important; background: rgba(98,215,255,0.3) !important; }
-        .trap-slot.drag-over { border-color: #f1c40f !important; background: rgba(241,196,15,0.4) !important; }
-        .trap-slot.triggered { animation: trapExplode 0.6s ease-out; }
-        @keyframes trapExplode { 0% { transform: scale(1); } 30% { transform: scale(1.3); background: rgba(255,100,0,0.8); } 100% { transform: scale(1); background: transparent; } }
+
+        .trap-slot.triggered {
+            animation: trapExplode 0.6s ease-out;
+        }
+        @keyframes trapExplode {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.08); }
+            100% { transform: scale(1); }
+        }
 
 

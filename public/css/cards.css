@@ -196,7 +196,7 @@
             overflow: hidden;
         }
         .card.arena-style .arena-name {
-            font-family: 'Bree Serif', serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 0.6em;
             color: #e5e5e5;
             -webkit-text-stroke: 2px #353535;
@@ -225,14 +225,14 @@
         }
         .card.arena-style .arena-type {
             margin-top: 3px;
-            font-family: 'Quicksand', sans-serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 4px;
             font-weight: 500;
             color: #ffd700;
             text-align: center;
         }
         .card.arena-style .arena-abilities {
-            font-family: 'Quicksand', sans-serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 6px;
             font-weight: 600;
             color: #e5e5e5;
@@ -240,7 +240,7 @@
             text-align: left;
         }
         .card.arena-style .arena-special {
-            font-family: 'Quicksand', sans-serif;
+            font-family: 'Glacial Indifference', sans-serif;
             font-size: 6px;
             font-weight: 500;
             color: #d0d0d0;
@@ -675,13 +675,13 @@
 
         /* Slots ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordures mono-couleur (comme les trap-slots) */
         .card-slot.valid-target {
-            border-color: #62d7ff !important;
-            background: rgba(98,215,255,0.15) !important;
+            border-color: transparent !important;
+            background: transparent !important;
         }
         .card-slot.cross-target,
         .card-slot.drag-over {
-            border-color: #f1c40f !important;
-            background: rgba(241,196,15,0.2) !important;
+            border-color: transparent !important;
+            background: transparent !important;
         }
 
         /* HÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ros ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bordures mono-couleur */
@@ -814,11 +814,11 @@
         .my-hand {
             position: absolute;
             bottom: -30px; /* Cache ~20% de la carte */
-            left: 185px;
-            display: flex; 
+            left: 35px;
+            display: flex;
             padding: 10px 15px 0 15px;
-            background: transparent; 
-            max-width: calc(50% - 150px); 
+            background: transparent;
+            max-width: calc(50% - 150px);
             z-index: 20;
         }
         .my-hand .card {
@@ -867,8 +867,8 @@
         .opp-hand {
             position: absolute;
             bottom: -60px; /* 50% cachÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e */
-            right: 185px;
-            display: flex; 
+            right: 35px;
+            display: flex;
             padding: 10px 15px 0 15px;
             background: transparent;
             z-index: 20;

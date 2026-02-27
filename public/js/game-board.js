@@ -5,6 +5,29 @@
 const _slotCache = {};
 const _trapSlotCache = {};
 
+const SLOT_FRAME_PATH = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+
+function _slotFrameSvg() {
+    return `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${SLOT_FRAME_PATH}" class="slot-frame-outline"/><path d="${SLOT_FRAME_PATH}" class="slot-frame-fill"/></svg>`;
+}
+
+// Retire tous les enfants d'un card-slot SAUF la frame SVG et le diamant central.
+// Utiliser à la place de slot.innerHTML = '' qui détruit la structure du slot.
+function _clearSlotContent(slot) {
+    const toRemove = [];
+    for (const child of slot.children) {
+        if (child.classList.contains('slot-frame') || child.classList.contains('slot-center')) continue;
+        toRemove.push(child);
+    }
+    toRemove.forEach(el => el.remove());
+}
+
+// Retire le contenu d'un trap-slot (icône piège) sans toucher à la frame SVG ni au cercle central.
+function _clearTrapSlotContent(trapSlot) {
+    const content = trapSlot.querySelector('.trap-content');
+    if (content) content.innerHTML = '';
+}
+
 function getSlot(owner, row, col) {
     const key = `${owner}-${row}-${col}`;
     return _slotCache[key] || null;
@@ -18,6 +41,9 @@ function getTrapSlot(owner, row) {
 function buildBattlefield() {
     const bf = document.getElementById('battlefield');
     bf.innerHTML = '<div class="global-spell-zone" id="global-spell-zone"></div>';
+
+    for (const k of Object.keys(_slotCache)) delete _slotCache[k];
+    for (const k of Object.keys(_trapSlotCache)) delete _trapSlotCache[k];
 
     const myField = document.createElement('div');
     myField.className = 'field-side';
@@ -88,7 +114,7 @@ function makeSlot(owner, row, col) {
     el.dataset.owner = owner;
     el.dataset.row = row;
     el.dataset.col = col;
-    el.innerHTML = `<span class="slot-label">${label}</span>`;
+    el.innerHTML = `${_slotFrameSvg()}<div class="slot-center"><img src="/battlefield_elements/epee.png" class="slot-icon" alt="" draggable="false"></div>`;
     // Synchroniser l'animation de bordure rotative
     el.style.setProperty('--anim-offset', `${(performance.now() / 1000) % 6}s`);
 
@@ -162,6 +188,8 @@ function makeTrapSlot(owner, row) {
     el.className = 'trap-slot';
     el.dataset.owner = owner;
     el.dataset.row = row;
+    const mirrorClass = owner === 'opp' ? ' mirrored' : '';
+    el.innerHTML = `${_slotFrameSvg()}<div class="slot-center" aria-hidden="true"><img src="/battlefield_elements/trap.png" class="slot-icon${mirrorClass}" alt="" draggable="false"></div><div class="trap-content"></div>`;
 
     // Enregistrer dans le cache DOM
     _trapSlotCache[`${owner}-${row}`] = el;

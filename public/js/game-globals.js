@@ -28,7 +28,7 @@ if (typeof window !== 'undefined' && typeof window.CLIENT_PACED_RESOLUTION === '
 }
 // Pixi card migration flags (opt-in). Keep disabled by default to preserve current DOM design.
 if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_HAND_OVERLAY === 'undefined') {
-    window.ENABLE_PIXI_HAND_OVERLAY = true;
+    window.ENABLE_PIXI_HAND_OVERLAY = false;
 }
 if (typeof window !== 'undefined' && typeof window.ENABLE_PIXI_BOARD_OVERLAY === 'undefined') {
     window.ENABLE_PIXI_BOARD_OVERLAY = false;
