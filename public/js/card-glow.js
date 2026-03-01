@@ -168,7 +168,8 @@ const CardGlow = (() => {
         const newTargets = [];
         const activeEls = new Set();
         const battlefieldEl = document.getElementById('battlefield');
-        const trapWarningMode = !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
+        // Keep normal glow behavior for non-target cards even in trap warning mode.
+        const trapWarningMode = false && !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
 
         // Cartes en main (playable, pas committed, pas cachée par custom-dragging)
         // Cache borderW/borderR par élément pour éviter getComputedStyle à chaque frame

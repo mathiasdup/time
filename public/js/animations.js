@@ -77,6 +77,30 @@ function shouldHideCardByUid(owner, uid) {
     return false;
 }
 
+function releaseHiddenCard(owner, handIndex = null, uid = null) {
+    const dropIndex = (idx) => {
+        pendingDrawAnimations[owner].delete(idx);
+        startedDrawAnimations[owner].delete(idx);
+        autoHiddenCards[owner].delete(idx);
+        pendingGraveyardReturns[owner].delete(idx);
+        pendingTokenSpawns[owner].delete(idx);
+    };
+
+    if (Number.isFinite(Number(handIndex))) {
+        dropIndex(Number(handIndex));
+    }
+
+    const uidKey = String(uid || '');
+    if (uidKey) {
+        for (const [idx, pendingCard] of Array.from(pendingDrawAnimations[owner].entries())) {
+            const pendingUid = String(pendingCard?.uid || pendingCard?.id || '');
+            if (pendingUid && pendingUid === uidKey) {
+                dropIndex(idx);
+            }
+        }
+    }
+}
+
 /**
  * Vérifie si des animations de pioche sont actives (pending ou started) pour un owner
  */
@@ -909,6 +933,7 @@ const GameAnimations = {
     // Vérifie si une carte doit être cachée
     shouldHideCard: shouldHideCard,
     shouldHideCardByUid: shouldHideCardByUid,
+    releaseHiddenCard: releaseHiddenCard,
 
     // Vérifie si des animations de pioche sont actives
     hasActiveDrawAnimation: hasActiveDrawAnimation,

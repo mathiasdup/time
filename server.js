@@ -3455,7 +3455,10 @@ async function startResolution(room) {
                     row: a.row,
                     col: a.col,
                     card: a.card,
-                    visualHandIndex
+                    visualHandIndex,
+                    handIndex: a.handIndex ?? null,
+                    originalHandIndex: a.handIndex ?? null,
+                    reconstructedHandIndex: a.originalHandIndexReconstructed ?? null
                 });
             }
             if (placesP2[i]) {
@@ -3477,7 +3480,10 @@ async function startResolution(room) {
                     row: a.row,
                     col: a.col,
                     card: a.card,
-                    visualHandIndex
+                    visualHandIndex,
+                    handIndex: a.handIndex ?? null,
+                    originalHandIndex: a.handIndex ?? null,
+                    reconstructedHandIndex: a.originalHandIndexReconstructed ?? null
                 });
             }
             // DÃƒÂ©lai pour laisser le client dÃƒÂ©marrer l'animation et bloquer les slots
@@ -3576,7 +3582,14 @@ async function startResolution(room) {
                 revealedOriginals[action.playerNum].push(action.originalHandIndexReconstructed);
             }
             emitStateToBoth(room);
-            emitAnimation(room, 'trapPlace', { player: action.playerNum, row: action.row, visualHandIndex });
+            emitAnimation(room, 'trapPlace', {
+                player: action.playerNum,
+                row: action.row,
+                visualHandIndex,
+                handIndex: action.handIndex ?? null,
+                originalHandIndex: action.handIndex ?? null,
+                reconstructedHandIndex: action.originalHandIndexReconstructed ?? null
+            });
             await sleep(ANIM_TIMING.trapPlace + ANIM_TIMING.margin);
         }
     }
@@ -3942,7 +3955,8 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                     attackerPlayer,
                     targets: trapPreviewTargets
                 });
-                await sleep(2200);
+                // Tempo trap reveal -> effect: keep a short readability beat, avoid long dead time.
+                await sleep(950);
 
                 const template = CardByIdMap.get(trap.summonId);
                 if (template) {
@@ -3990,7 +4004,8 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 attackerPlayer,
                 targets: trapPreviewTargets
             });
-            await sleep(2200);
+            // Tempo trap reveal -> effect: keep a short readability beat, avoid long dead time.
+            await sleep(950);
 
             if (trap.pattern === 'line') {
                 // === PIÃƒË†GE DE LIGNE : blesse toutes les crÃƒÂ©atures adverses sur la ligne ===
@@ -4178,7 +4193,10 @@ async function applySpell(room, action, log, sleep, options = {}) {
             row: action.row,
             col: action.col,
             spell: spell,
-            visualHandIndex: options.visualHandIndex
+            visualHandIndex: options.visualHandIndex,
+            handIndex: action.originalHandIndexReconstructed ?? action.originalHandIndex ?? null,
+            originalHandIndex: action.originalHandIndex ?? null,
+            reconstructedHandIndex: action.originalHandIndexReconstructed ?? null
         });
         await sleep(2100);
     }
@@ -7255,5 +7273,3 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Ã°Å¸Å½Â® Server on http://localhost:${PORT}`));
-
-

@@ -25,6 +25,27 @@ if (typeof window !== 'undefined') {
 if (typeof window !== 'undefined' && typeof window.DEBUG_LOGS === 'undefined') {
     window.DEBUG_LOGS = false;
 }
+// Dedicated debug channel for hand-index/bounce diagnostics.
+if (typeof window !== 'undefined' && typeof window.HAND_INDEX_DEBUG === 'undefined') {
+    // Enabled by default for current bounce/hand diagnostics.
+    window.HAND_INDEX_DEBUG = true;
+}
+if (typeof window !== 'undefined' && typeof window.setHandIndexDebug !== 'function') {
+    window.setHandIndexDebug = function setHandIndexDebug(enabled = true) {
+        const on = !!enabled;
+        window.HAND_INDEX_DEBUG = on;
+        if (on) {
+            // Pause legacy noisy channels while focused hand-index diagnostics are active.
+            window.VIS_TRACE_LOGS = false;
+            window.DEBUG_LOGS = false;
+        }
+        return {
+            HAND_INDEX_DEBUG: !!window.HAND_INDEX_DEBUG,
+            VIS_TRACE_LOGS: !!window.VIS_TRACE_LOGS,
+            DEBUG_LOGS: !!window.DEBUG_LOGS
+        };
+    };
+}
 if (typeof window !== 'undefined' && typeof window.CLIENT_PACED_RESOLUTION === 'undefined') {
     window.CLIENT_PACED_RESOLUTION = false;
 }
@@ -82,8 +103,8 @@ if (typeof window !== 'undefined') {
     }
 }
 if (typeof window !== 'undefined' && typeof window.VIS_TRACE_LOGS === 'undefined') {
-    // Enabled for visual-debug sessions. Set to false to reduce console noise.
-    window.VIS_TRACE_LOGS = true;
+    // Keep off by default to avoid console noise during gameplay debugging.
+    window.VIS_TRACE_LOGS = false;
 }
 if (typeof window !== 'undefined' && typeof window.__visTraceSeq === 'undefined') {
     window.__visTraceSeq = 0;
@@ -671,7 +692,7 @@ const ANIMATION_DELAYS = {
     discard: 800,      // DÃ©lai aprÃ¨s dÃ©fausse
     burn: 400,         // DÃ©lai aprÃ¨s burn (pioche vers cimetiÃ¨re)
     spell: 200,        // DÃ©lai aprÃ¨s animation de sort (le gros est dans animateSpellReveal)
-    trapTrigger: 500,  // DÃ©lai aprÃ¨s animation de piÃ¨ge (sÃ©paration entre piÃ¨ges consÃ©cutifs)
+    trapTrigger: 180,  // DÃ©lai court: effet du piÃ¨ge doit enchaîner vite après le flip
     lifesteal: 200,    // DÃ©lai aprÃ¨s animation lifesteal (le gros de l'anim est dans handleLifestealAnim)
     buildingActivate: 100, // DÃ©lai aprÃ¨s activation de bÃ¢timent (le gros est dans handleBuildingActivate)
     default: 300       // DÃ©lai par dÃ©faut

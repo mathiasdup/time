@@ -847,6 +847,79 @@ let powerBuffAtkOverrides = new Map(); // slotKey -> displayed ATK
 // PoisonDamage : bloquer render() HP pendant l'animation (geler le HP prÃ©-poison)
 let poisonHpOverrides = new Map(); // slotKey -> { hp: number, consumed: boolean, uid?: string|null, updatedAt?: number }
 
+function _isAnimHandIndexValue(value) {
+    if (value === null || value === undefined || value === '') return false;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 && Math.floor(n) === n;
+}
+
+function _pickOppAnimationSourceIndex(data) {
+    const candidates = [
+        data?.visualHandIndex,
+        data?.handIndex,
+        data?.reconstructedHandIndex,
+        data?.originalHandIndex
+    ];
+    for (const value of candidates) {
+        if (_isAnimHandIndexValue(value)) return Number(value);
+    }
+    return null;
+}
+
+function _captureOppAnimationSourceSnapshot(data) {
+    const panel = document.getElementById('opp-hand');
+    if (!panel) return null;
+    const cards = Array.from(panel.querySelectorAll('.opp-card-back'))
+        .filter((el) => el.style.width !== '0px');
+    if (cards.length === 0) return null;
+
+    const preferredUid = data?.spell?.uid || data?.spell?.id || data?.card?.uid || data?.card?.id || null;
+    const sourceIndex = _pickOppAnimationSourceIndex(data);
+    const strict = !!preferredUid || sourceIndex !== null;
+
+    let chosen = null;
+    let mode = 'snapshot-none';
+    if (preferredUid) {
+        chosen = cards.find((el) => (el.dataset?.uid || null) === preferredUid) || null;
+        if (chosen) mode = 'snapshot-uid';
+    }
+    if (!chosen && sourceIndex !== null && sourceIndex >= 0 && sourceIndex < cards.length) {
+        chosen = cards[sourceIndex];
+        mode = 'snapshot-index';
+    }
+    if (!chosen && !strict) {
+        chosen = cards[cards.length - 1] || null;
+        if (chosen) mode = 'snapshot-last-fallback';
+    }
+    if (!chosen) {
+        return {
+            rect: null,
+            mode: 'snapshot-miss',
+            strict,
+            preferredUid,
+            sourceIndex,
+            cardCount: cards.length
+        };
+    }
+
+    const rect = chosen.getBoundingClientRect();
+    return {
+        rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height
+        },
+        mode,
+        strict,
+        preferredUid,
+        sourceIndex,
+        chosenUid: chosen.dataset?.uid || null,
+        chosenIndex: cards.indexOf(chosen),
+        cardCount: cards.length
+    };
+}
+
 function handleAnimation(data) {
     const { type } = data;
     if (typeof window.visTrace === 'function') {
@@ -882,6 +955,36 @@ function handleAnimation(data) {
     const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn', 'combatRowStart', 'combatEnd', 'buildingActivate', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     if (queuedTypes.includes(type)) {
+        const needsOppHandSnapshot =
+            (type === 'summon' && data?.player !== myNum) ||
+            (type === 'spell' && data?.caster !== myNum) ||
+            (type === 'trapPlace' && data?.player !== myNum);
+        if (needsOppHandSnapshot) {
+            const snap = _captureOppAnimationSourceSnapshot(data);
+            if (snap) {
+                data._oppSourceRect = snap.rect || null;
+                data._oppSourceMode = snap.mode || null;
+                data._oppSourceStrict = !!snap.strict;
+                data._oppSourceUid = snap.preferredUid || snap.chosenUid || null;
+                data._oppSourceIndex = _isAnimHandIndexValue(snap.sourceIndex) ? Number(snap.sourceIndex) : null;
+                if (window.HAND_INDEX_DEBUG) {
+                    try {
+                        console.log(`[HAND-IDX][CORE][JSON] opp-source-snapshot ${JSON.stringify({
+                            type,
+                            rect: snap.rect || null,
+                            mode: snap.mode || null,
+                            strict: !!snap.strict,
+                            preferredUid: snap.preferredUid || null,
+                            sourceIndex: snap.sourceIndex ?? null,
+                            chosenUid: snap.chosenUid || null,
+                            chosenIndex: snap.chosenIndex ?? null,
+                            cardCount: snap.cardCount ?? null
+                        })}`);
+                    } catch (_) {}
+                }
+            }
+        }
+
         // Bloquer render() immÃ©diatement pour les animations trample (avant traitement de la queue)
         if (type === 'trampleHeroHit') {
             zdejebelAnimationInProgress = true;

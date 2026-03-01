@@ -1215,6 +1215,14 @@ function _updateHandInPlace(panel, hand, energy) {
         const card = hand[i];
         const el = existingCards[i];
         el.__cardData = card;
+        el.style.zIndex = i + 1;
+        // Nettoyer les restes de FLIP si un render interrompt une transition.
+        if (el.style.transform && el.style.transform.includes('translateX(')) {
+            el.style.transform = '';
+        }
+        if (el.style.transition && el.style.transition.includes('transform')) {
+            el.style.transition = '';
+        }
 
         // Recalculer le coût effectif
         let effectiveCost = card.cost;
@@ -1328,13 +1336,45 @@ function _updateHandInPlace(panel, hand, energy) {
 
 function renderHand(hand, energy) {
     const panel = document.getElementById('my-hand');
+    const _handIdxTrackBounce = !!(window.HAND_INDEX_DEBUG && pendingBounce && pendingBounce.owner === 'me');
+    if (_handIdxTrackBounce) {
+        _bounceRenderDbg('render:me:start', {
+            pendingBounce: pendingBounce ? {
+                owner: pendingBounce.owner,
+                handIndex: pendingBounce.handIndex ?? null,
+                targetUid: pendingBounce.targetUid || null,
+                targetIndex: pendingBounce.targetIndex ?? null,
+                expectAtEnd: !!pendingBounce.expectAtEnd,
+                resolved: !!pendingBounce.resolved,
+                completed: !!pendingBounce.completed,
+                cardUid: pendingBounce.card?.uid || pendingBounce.card?.id || null,
+                cardName: pendingBounce.card?.name || null
+            } : null,
+            stateHand: hand.map((c, i) => ({ i, uid: c?.uid || c?.id || null, name: c?.name || null })),
+            domBefore: _handIdxSnapshot(panel, '.card:not(.committed-spell)')
+        });
+    }
 
     //  Fast path : même main, mêmes committed spells, même phase   mise à jour in-place 
     const handSig = _computeHandSig(hand);
     const committedSig = _computeCommittedSig();
     const currentPhase = state?.phase || '';
-    if (handSig === _lastHandSig && committedSig === _lastCommittedSig && currentPhase === _lastHandPhase && handCardRemovedIndex < 0) {
+    if (
+        handSig === _lastHandSig &&
+        committedSig === _lastCommittedSig &&
+        currentPhase === _lastHandPhase &&
+        handCardRemovedIndex < 0 &&
+        !(pendingBounce && pendingBounce.owner === 'me')
+    ) {
         _updateHandInPlace(panel, hand, energy);
+        if (_handIdxTrackBounce) {
+            const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+            _bounceRenderDbg('render:me:fast-end', {
+                stateHand: hand.map((c, i) => ({ i, uid: c?.uid || c?.id || null, name: c?.name || null })),
+                domAfter: _snap
+            });
+            _handIdxEmitAnomalies('render:me:fast-end', _snap);
+        }
         _syncPixiHand(panel);
         return;
     }
@@ -1437,8 +1477,16 @@ function renderHand(hand, energy) {
         // Z-index incrémental pour éviter les saccades au hover
         el.style.zIndex = i + 1;
 
-        // Cacher si animation de pioche en attente (index/uid) OU pendingBounce sur la dernière carte
-        const isPBTarget = pendingBounce && pendingBounce.owner === 'me' && i === hand.length - 1;
+        // Cacher si animation de pioche en attente (index/uid) OU pendingBounce sur la cible exacte
+        const isPBTarget = (() => {
+            if (!pendingBounce || pendingBounce.owner !== 'me') return false;
+            const pbUid = pendingBounce.targetUid || pendingBounce.card?.uid || null;
+            if (pbUid && uid) return pbUid === uid;
+            if (pendingBounce.expectAtEnd) return i === hand.length - 1;
+            if (_isValidHandIndexValue(pendingBounce.targetIndex)) return Number(pendingBounce.targetIndex) === i;
+            if (_isValidHandIndexValue(pendingBounce.handIndex)) return Number(pendingBounce.handIndex) === i;
+            return i === hand.length - 1;
+        })();
         const shouldHideByIndex = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i);
         const shouldHideByUid = typeof GameAnimations !== 'undefined'
             && typeof GameAnimations.shouldHideCardByUid === 'function'
@@ -1600,14 +1648,62 @@ function renderHand(hand, energy) {
         if (pendingBounce.completed) {
             // Animation terminée  révéler la dernière carte et cleanup
             const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
-            const last = allCards[allCards.length - 1];
-            if (last) {
-                last.style.visibility = '';
-                last.style.transition = 'none';
+            if (!pendingBounce.resolved) {
+                checkPendingBounce('me', allCards);
+                if (_bounceIsWaitingForNewCard(allCards.length)) {
+                    _bounceRenderDbg('render:me-completed:wait-target', {
+                        cards: allCards.length,
+                        startHandCount: pendingBounce.startHandCount ?? null,
+                        resolved: !!pendingBounce.resolved,
+                        expectAtEnd: !!pendingBounce.expectAtEnd
+                    });
+                    return;
+                }
             }
+            let targetEl = null;
+            if (pendingBounce.targetUid) {
+                targetEl = panel.querySelector(`.card:not(.committed-spell)[data-uid="${pendingBounce.targetUid}"]`);
+            }
+            if (!targetEl && _isValidHandIndexValue(pendingBounce.targetIndex)) {
+                const idx = Number(pendingBounce.targetIndex);
+                if (idx >= 0 && idx < allCards.length) targetEl = allCards[idx];
+            }
+            if (!targetEl && pendingBounce.expectAtEnd) {
+                targetEl = allCards[allCards.length - 1] || null;
+            }
+            if (!targetEl) targetEl = allCards[allCards.length - 1];
+            if (targetEl) {
+                targetEl.style.visibility = '';
+                targetEl.style.transition = 'none';
+            }
+            const targetUid = pendingBounce.expectAtEnd
+                ? null
+                : (pendingBounce.targetUid || pendingBounce.card?.uid || targetEl?.dataset?.uid || null);
+            let targetIndex = _isValidHandIndexValue(pendingBounce.targetIndex)
+                ? Number(pendingBounce.targetIndex)
+                : (_isValidHandIndexValue(pendingBounce.handIndex) ? Number(pendingBounce.handIndex) : null);
+            if (!Number.isFinite(Number(targetIndex)) && targetEl) {
+                targetIndex = Array.from(allCards).indexOf(targetEl);
+            }
+            if (!Number.isFinite(Number(targetIndex)) && pendingBounce.expectAtEnd) {
+                targetIndex = allCards.length > 0 ? allCards.length - 1 : null;
+            }
+            if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                GameAnimations.releaseHiddenCard('me', targetIndex, targetUid || targetEl?.dataset?.uid || null);
+            }
+            const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+            _bounceRenderDbg('render:me-completed', {
+                targetUid,
+                targetIndex,
+                pendingHandIndex: pendingBounce.handIndex ?? null,
+                pendingTargetUid: pendingBounce.targetUid || null,
+                pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                hand: _snap
+            });
+            _handIdxEmitAnomalies('render:me-completed', _snap);
             const wrapper = pendingBounce.wrapper;
             pendingBounce = null;
-            revealBounceTargetWithBridge(panel, '.card:not(.committed-spell)', wrapper);
+            revealBounceTargetWithBridge(panel, '.card:not(.committed-spell)', wrapper, targetUid, targetIndex);
         } else {
             const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
             checkPendingBounce('me', allCards);
@@ -1663,6 +1759,14 @@ function renderHand(hand, energy) {
                 });
             });
         }
+    }
+    if (_handIdxTrackBounce) {
+        const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+        _bounceRenderDbg('render:me:end', {
+            stateHand: hand.map((c, i) => ({ i, uid: c?.uid || c?.id || null, name: c?.name || null })),
+            domAfter: _snap
+        });
+        _handIdxEmitAnomalies('render:me:end', _snap);
     }
 }
 
@@ -1741,17 +1845,174 @@ function createOppHandCard(revealedCard) {
     }
 }
 
-function revealBounceTargetWithBridge(panel, selector, wrapper) {
+function _bounceRenderDbg(stage, payload = {}) {
+    if (!window.HAND_INDEX_DEBUG) return;
+    try {
+        console.log(`[HAND-IDX][RENDER] ${stage}`, payload);
+        console.log(`[HAND-IDX][RENDER][JSON] ${stage} ${JSON.stringify(payload)}`);
+    } catch (_) {}
+}
+
+function _isValidHandIndexValue(value) {
+    if (value === null || value === undefined || value === '') return false;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 && Math.floor(n) === n;
+}
+
+function _bounceIsWaitingForNewCard(cardsLength) {
+    return !!(
+        pendingBounce &&
+        pendingBounce.queued &&
+        typeof pendingBounce.startHandCount === 'number' &&
+        cardsLength <= pendingBounce.startHandCount
+    );
+}
+
+function _handIdxSnapshot(panel, selector) {
+    if (!panel) return [];
+    return Array.from(panel.querySelectorAll(selector)).map((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const nameEl = el.querySelector('.arena-name');
+        const nameFs = nameEl ? parseFloat(getComputedStyle(nameEl).fontSize) : null;
+        const nameLh = nameEl ? parseFloat(getComputedStyle(nameEl).lineHeight) : null;
+        return {
+            i,
+            uid: el.dataset?.uid || null,
+            z: el.style.zIndex || null,
+            hidden: el.style.visibility === 'hidden',
+            w0: el.style.width === '0px',
+            rectW: Number(rect.width.toFixed(1)),
+            rectH: Number(rect.height.toFixed(1)),
+            tf: el.style.transform || '',
+            nameFs: Number.isFinite(nameFs) ? Number(nameFs.toFixed(2)) : null,
+            nameLh: Number.isFinite(nameLh) ? Number(nameLh.toFixed(2)) : null
+        };
+    });
+}
+
+function _handIdxEmitAnomalies(stage, snapshot) {
+    if (!window.HAND_INDEX_DEBUG || !Array.isArray(snapshot) || snapshot.length < 2) return;
+    const finite = (n) => n !== null && n !== '' && Number.isFinite(Number(n));
+    const median = (arr) => {
+        const xs = arr.filter(finite).map(Number).sort((a, b) => a - b);
+        if (!xs.length) return null;
+        const m = Math.floor(xs.length / 2);
+        return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2;
+    };
+    const medW = median(snapshot.map(x => x.rectW));
+    const medH = median(snapshot.map(x => x.rectH));
+    const medFs = median(snapshot.map(x => x.nameFs));
+    const sizeOutliers = snapshot.filter(x =>
+        finite(medW) && finite(medH) &&
+        (Math.abs(Number(x.rectW) - medW) > 1.2 || Math.abs(Number(x.rectH) - medH) > 1.2)
+    );
+    const typoOutliers = snapshot.filter(x =>
+        finite(medFs) && finite(x.nameFs) && Math.abs(Number(x.nameFs) - medFs) > 0.9
+    );
+    if (sizeOutliers.length > 0 || typoOutliers.length > 0) {
+        _bounceRenderDbg('alert:hand:anomaly', {
+            stage,
+            medW,
+            medH,
+            medFs,
+            sizeOutliers,
+            typoOutliers
+        });
+    }
+}
+
+const _bounceDetailRevealState = new WeakMap();
+
+function _setBounceDetailsHidden(el, hidden) {
+    if (!el || !el.classList) return;
+    if (hidden) el.classList.add('bounce-details-hidden');
+    else el.classList.remove('bounce-details-hidden');
+}
+
+function _revealBounceDetailsWhenStable(el) {
+    if (!el || !el.isConnected) return;
+
+    const prev = _bounceDetailRevealState.get(el);
+    if (prev) {
+        if (Number.isFinite(prev.rafId)) cancelAnimationFrame(prev.rafId);
+        if (Number.isFinite(prev.timeoutId)) clearTimeout(prev.timeoutId);
+    }
+
+    _setBounceDetailsHidden(el, true);
+
+    const requiredStableFrames = 4;
+    const threshold = 0.35;
+    const maxWaitMs = 700;
+    let stableFrames = 0;
+    let lastRect = null;
+    const t0 = performance.now();
+    let timeoutId = null;
+
+    const finalize = () => {
+        const cur = _bounceDetailRevealState.get(el);
+        if (cur && Number.isFinite(cur.timeoutId)) clearTimeout(cur.timeoutId);
+        _bounceDetailRevealState.delete(el);
+        if (el.isConnected) _setBounceDetailsHidden(el, false);
+    };
+
+    const step = () => {
+        if (!el.isConnected) {
+            _bounceDetailRevealState.delete(el);
+            return;
+        }
+        const r = el.getBoundingClientRect();
+        if (lastRect) {
+            const dx = Math.abs(r.left - lastRect.left);
+            const dy = Math.abs(r.top - lastRect.top);
+            const dw = Math.abs(r.width - lastRect.width);
+            const dh = Math.abs(r.height - lastRect.height);
+            if (dx <= threshold && dy <= threshold && dw <= threshold && dh <= threshold) stableFrames++;
+            else stableFrames = 0;
+        }
+        lastRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+
+        if (stableFrames >= requiredStableFrames || (performance.now() - t0) >= maxWaitMs) {
+            finalize();
+            return;
+        }
+        const nextRaf = requestAnimationFrame(step);
+        const cur = _bounceDetailRevealState.get(el) || {};
+        _bounceDetailRevealState.set(el, { ...cur, rafId: nextRaf, timeoutId });
+    };
+
+    const rafId = requestAnimationFrame(step);
+    timeoutId = setTimeout(finalize, maxWaitMs + 120);
+    _bounceDetailRevealState.set(el, { rafId, timeoutId });
+}
+
+function revealBounceTargetWithBridge(panel, selector, wrapper, targetUid = null, targetIndex = null) {
     if (!panel) {
         if (wrapper && wrapper.isConnected) wrapper.remove();
         return;
     }
 
     const cards = panel.querySelectorAll(selector);
-    const last = cards[cards.length - 1];
+    let last = null;
+    if (targetUid) {
+        last = panel.querySelector(`${selector}[data-uid="${targetUid}"]`);
+    }
+    if (!last && Number.isFinite(Number(targetIndex))) {
+        const idx = Number(targetIndex);
+        if (idx >= 0 && idx < cards.length) last = cards[idx];
+    }
+    if (!last) last = cards[cards.length - 1];
+    _bounceRenderDbg('render:bridge-target', {
+        selector,
+        targetUid,
+        targetIndex,
+        resolvedUid: last?.dataset?.uid || null,
+        resolvedIndex: last ? Array.from(cards).indexOf(last) : null,
+        cards: _handIdxSnapshot(panel, selector)
+    });
     let cover = null;
 
     if (last) {
+        _revealBounceDetailsWhenStable(last);
         const rect = last.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
             cover = last.cloneNode(true);
@@ -1767,6 +2028,10 @@ function revealBounceTargetWithBridge(panel, selector, wrapper) {
             cover.style.transform = 'none';
             cover.style.visibility = 'visible';
             document.body.appendChild(cover);
+            // Filet de securite: eviter un clone persistant au-dessus de la main.
+            setTimeout(() => {
+                if (cover && cover.isConnected) cover.remove();
+            }, 220);
         }
         last.style.visibility = '';
         last.style.transition = 'none';
@@ -1778,6 +2043,11 @@ function revealBounceTargetWithBridge(panel, selector, wrapper) {
             if (cover && cover.isConnected) cover.remove();
         });
     });
+    // Backup cleanup si un frame est saute.
+    setTimeout(() => {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
+        if (cover && cover.isConnected) cover.remove();
+    }, 220);
 }
 
 function renderOppHand(count, oppHand) {
@@ -1806,10 +2076,42 @@ function renderOppHand(count, oppHand) {
             }
         }
     }
+    if (window.HAND_INDEX_DEBUG && (purgedCount > 0 || hasPendingBounce)) {
+        _bounceRenderDbg('render:opp:post-purge', {
+            purgedCount,
+            hasPendingBounce: !!hasPendingBounce,
+            domAfterPurge: _handIdxSnapshot(panel, '.opp-card-back')
+        });
+    }
 
     const oldCards = panel.querySelectorAll('.opp-card-back');
     const oldCount = oldCards.length;
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
+    if (window.HAND_INDEX_DEBUG) {
+        _bounceRenderDbg('render:opp:start', {
+            count,
+            oldCount,
+            drawActive,
+            pendingBounce: hasPendingBounce ? {
+                owner: pendingBounce.owner,
+                handIndex: pendingBounce.handIndex ?? null,
+                targetUid: pendingBounce.targetUid || null,
+                targetIndex: pendingBounce.targetIndex ?? null,
+                expectAtEnd: !!pendingBounce.expectAtEnd,
+                resolved: !!pendingBounce.resolved,
+                completed: !!pendingBounce.completed,
+                cardUid: pendingBounce.card?.uid || pendingBounce.card?.id || null,
+                cardName: pendingBounce.card?.name || null
+            } : null,
+            stateOppHand: Array.isArray(oppHand) ? oppHand.map((c, i) => ({
+                i,
+                uid: c?.uid || c?.id || null,
+                name: c?.name || null,
+                revealed: !!c
+            })) : [],
+            domBefore: _handIdxSnapshot(panel, '.opp-card-back')
+        });
+    }
 
     const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
     if (typeof window.visTrace === 'function') {
@@ -1926,9 +2228,39 @@ function renderOppHand(count, oppHand) {
         if (pendingBounce && pendingBounce.owner === 'opp') {
             if (pendingBounce.completed) {
                 // Animation terminée  révéler la dernière carte et cleanup
+                const allCards = panel.querySelectorAll('.opp-card-back');
+                if (!pendingBounce.resolved) {
+                    checkPendingBounce('opp', allCards);
+                    if (_bounceIsWaitingForNewCard(allCards.length)) {
+                        _bounceRenderDbg('render:opp-completed-draw-mode:wait-target', {
+                            cards: allCards.length,
+                            startHandCount: pendingBounce.startHandCount ?? null,
+                            resolved: !!pendingBounce.resolved,
+                            expectAtEnd: !!pendingBounce.expectAtEnd
+                        });
+                        return;
+                    }
+                }
                 const wrapper = pendingBounce.wrapper;
+                const targetUid = pendingBounce.expectAtEnd ? null : (pendingBounce.targetUid || pendingBounce.card?.uid || null);
+                const targetIndex = pendingBounce.expectAtEnd
+                    ? (allCards.length > 0 ? allCards.length - 1 : null)
+                    : (_isValidHandIndexValue(pendingBounce.targetIndex)
+                        ? Number(pendingBounce.targetIndex)
+                        : (_isValidHandIndexValue(pendingBounce.handIndex) ? Number(pendingBounce.handIndex) : null));
+                if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                    GameAnimations.releaseHiddenCard('opp', targetIndex, targetUid);
+                }
+                _bounceRenderDbg('render:opp-completed-draw-mode', {
+                    targetUid,
+                    targetIndex,
+                    pendingHandIndex: pendingBounce.handIndex ?? null,
+                    pendingTargetUid: pendingBounce.targetUid || null,
+                    pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                    cards: _handIdxSnapshot(panel, '.opp-card-back')
+                });
                 pendingBounce = null;
-                revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper);
+                revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper, targetUid, targetIndex);
             } else {
                 const allCards = panel.querySelectorAll('.opp-card-back');
                 checkPendingBounce('opp', allCards);
@@ -1942,6 +2274,15 @@ function renderOppHand(count, oppHand) {
                 hidden: Array.from(panel.querySelectorAll('.opp-card-back')).filter((el) => el.style.visibility === 'hidden').length,
                 revealed: panel.querySelectorAll('.opp-revealed').length,
             });
+        }
+        if (window.HAND_INDEX_DEBUG) {
+            const _snap = _handIdxSnapshot(panel, '.opp-card-back');
+            _bounceRenderDbg('render:opp:end-draw-mode', {
+                count,
+                oldCount,
+                domAfter: _snap
+            });
+            _handIdxEmitAnomalies('render:opp:end-draw-mode', _snap);
         }
         return;
     }
@@ -2059,9 +2400,39 @@ function renderOppHand(count, oppHand) {
     if (pendingBounce && pendingBounce.owner === 'opp') {
         if (pendingBounce.completed) {
             // Animation terminée  révéler la dernière carte et cleanup
+            const allCards = panel.querySelectorAll('.opp-card-back');
+            if (!pendingBounce.resolved) {
+                checkPendingBounce('opp', allCards);
+                if (_bounceIsWaitingForNewCard(allCards.length)) {
+                    _bounceRenderDbg('render:opp-completed:wait-target', {
+                        cards: allCards.length,
+                        startHandCount: pendingBounce.startHandCount ?? null,
+                        resolved: !!pendingBounce.resolved,
+                        expectAtEnd: !!pendingBounce.expectAtEnd
+                    });
+                    return;
+                }
+            }
             const wrapper = pendingBounce.wrapper;
-                pendingBounce = null;
-                revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper);
+            const targetUid = pendingBounce.expectAtEnd ? null : (pendingBounce.targetUid || pendingBounce.card?.uid || null);
+            const targetIndex = pendingBounce.expectAtEnd
+                ? (allCards.length > 0 ? allCards.length - 1 : null)
+                : (_isValidHandIndexValue(pendingBounce.targetIndex)
+                    ? Number(pendingBounce.targetIndex)
+                    : (_isValidHandIndexValue(pendingBounce.handIndex) ? Number(pendingBounce.handIndex) : null));
+            if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                GameAnimations.releaseHiddenCard('opp', targetIndex, targetUid);
+            }
+            _bounceRenderDbg('render:opp-completed', {
+                targetUid,
+                targetIndex,
+                pendingHandIndex: pendingBounce.handIndex ?? null,
+                pendingTargetUid: pendingBounce.targetUid || null,
+                pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                cards: _handIdxSnapshot(panel, '.opp-card-back')
+            });
+            pendingBounce = null;
+            revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper, targetUid, targetIndex);
         } else {
             const allCards = panel.querySelectorAll('.opp-card-back');
             checkPendingBounce('opp', allCards);
@@ -2075,6 +2446,15 @@ function renderOppHand(count, oppHand) {
             hidden: Array.from(panel.querySelectorAll('.opp-card-back')).filter((el) => el.style.visibility === 'hidden').length,
             revealed: panel.querySelectorAll('.opp-revealed').length,
         });
+    }
+    if (window.HAND_INDEX_DEBUG) {
+        const _snap = _handIdxSnapshot(panel, '.opp-card-back');
+        _bounceRenderDbg('render:opp:end', {
+            count,
+            oldCount,
+            domAfter: _snap
+        });
+        _handIdxEmitAnomalies('render:opp:end', _snap);
     }
 }
 

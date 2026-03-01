@@ -474,13 +474,7 @@
             background: rgba(241,196,15,0.2) !important;
         }
 
-        /* Pre-signal piege : on coupe les glows terrain, seules les cibles gardent le glow orange existant. */
-        #battlefield.trap-warning-mode .card-slot .card:not(.spell-hover-target) .card-glow-canvas {
-            opacity: 0 !important;
-        }
-        #battlefield.trap-warning-mode .card-slot .card:not(.spell-hover-target) {
-            box-shadow: none !important;
-        }
+        /* Trap warning: keep non-target glows untouched; only targets receive orange glow via spell-hover-target. */
 
         /* Ghost card : pas de ::after gradient, le glow orange remplace */
 
@@ -669,6 +663,24 @@
             width: var(--card-w);
             height: var(--card-h);
             cursor: pointer;
+        }
+
+        /* Bounce reveal staging: show only art/border, delay text/stats until card is stable in hand */
+        .bounce-details-hidden .arena-title,
+        .bounce-details-hidden .arena-text-zone,
+        .bounce-details-hidden .arena-edition,
+        .bounce-details-hidden .arena-stat-atk,
+        .bounce-details-hidden .arena-stat-riposte,
+        .bounce-details-hidden .arena-stat-hp,
+        .bounce-details-hidden .arena-mana-group,
+        .bounce-details-hidden .img-cost,
+        .bounce-details-hidden .img-atk,
+        .bounce-details-hidden .img-hp,
+        .bounce-details-hidden .gaze-marker,
+        .bounce-details-hidden .poison-marker,
+        .bounce-details-hidden .entrave-marker,
+        .bounce-details-hidden .buff-marker {
+            opacity: 0 !important;
         }
 
         /* ========== MELODY LOCK & PETRIFICATION ========== */
