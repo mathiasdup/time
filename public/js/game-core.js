@@ -1249,15 +1249,48 @@ function animateShieldBreak(data) {
 function selectCard(i) {
     if (!canPlay()) return;
     const card = state.me.hand[i];
-    let cost = card.cost;
-    if (card.poisonCostReduction && state.me.totalPoisonCounters > 0) {
-        cost = Math.max(0, cost - state.me.totalPoisonCounters);
+
+    // Toggle : re-clic sur la même carte = déselection
+    if (selected && selected.fromHand && selected.idx === i) {
+        clearSel();
+        return;
     }
-    if (cost > state.me.energy) return;
+
+    // Calcul du coût effectif (Hyrule discount + poison reduction)
+    let effectiveCost = card.cost;
+    const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
+    const spellsCast = state.me.spellsCastThisTurn || 0;
+    if (isHyrule && spellsCast === 1 && state.phase === 'planning' && card.type === 'spell') {
+        effectiveCost = Math.max(0, effectiveCost - 1);
+    }
+    if (card.poisonCostReduction && state.me.totalPoisonCounters > 0) {
+        effectiveCost = Math.max(0, effectiveCost - state.me.totalPoisonCounters);
+    }
+    if (effectiveCost > state.me.energy) return;
+
+    // Vérifier les conditions de jeu
+    if ((card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) return;
+    if (card.requiresGraveyardCreatures) {
+        const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
+        if (graveyardCreatures < card.requiresGraveyardCreatures) return;
+    }
+    if (card.requiresGraveyardCreature) {
+        const available = (state.me.graveyard || []).filter(c =>
+            c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+        );
+        if (available.length === 0) return;
+    }
+    if (card.sacrifice && getValidSlots(card).length === 0) return;
+    if (card.targetSelfCreature) {
+        const hasCreature = state.me.field.some(row => row.some(c => c !== null));
+        if (!hasCreature) return;
+    }
 
     clearSel();
-    selected = { ...card, idx: i, fromHand: true };
+    selected = { ...card, idx: i, fromHand: true, effectiveCost };
     document.querySelectorAll('.my-hand .card')[i]?.classList.add('selected');
+    document.getElementById('my-hand')?.classList.add('has-selection');
+    hideCardPreview();
     highlightValidSlots(card);
 }
 
@@ -1283,6 +1316,9 @@ function clickSlot(owner, row, col) {
     if (!canPlay()) return;
 
     if (selected && selected.fromHand && selected.type === 'spell') {
+        // Vérifier que le slot est une cible valide
+        const slot = getSlot(owner, row, col);
+        if (!slot || !slot.classList.contains('valid-target')) return;
         const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
         // RÃ©animation : ouvrir sÃ©lection cimetiÃ¨re au lieu d'Ã©mettre
         if (selected.requiresGraveyardCreature) {
@@ -1334,6 +1370,12 @@ function clickTrap(owner, row) {
     if (!canPlay() || owner !== 'me') return;
     if (selected && selected.fromHand && selected.type === 'trap') {
         if (!state.me.traps[row]) {
+            // Sauvegarder la position de la carte pour l'animation de vol
+            const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
+            if (handCards[selected.idx]) {
+                savedTrapSourceRect = handCards[selected.idx].getBoundingClientRect();
+            }
+            handCardRemovedIndex = selected.idx;
             socket.emit('placeTrap', { handIndex: selected.idx, trapIndex: row });
             clearSel();
         }
@@ -1384,6 +1426,12 @@ function dropOnTrap(owner, row) {
     }
 
     if (dragged.type === 'trap' && !state.me.traps[row]) {
+        // Sauvegarder la position de la carte pour l'animation de vol
+        const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
+        if (handCards[dragged.idx]) {
+            savedTrapSourceRect = handCards[dragged.idx].getBoundingClientRect();
+        }
+        handCardRemovedIndex = dragged.idx;
         socket.emit('placeTrap', { handIndex: dragged.idx, trapIndex: row });
     }
     clearSel();
@@ -1428,8 +1476,13 @@ function openGraveyard(owner) {
             // Ajouter le preview au hover
             cardEl.onmouseenter = (e) => showCardPreview(card, e);
             cardEl.onmouseleave = hideCardPreview;
-            // Clic = zoom
+            // Clic = zoom (ou sélection en mode réanimation)
             cardEl.onclick = (e) => {
+                e.stopPropagation();
+                showCardZoom(card);
+            };
+            cardEl.oncontextmenu = (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 showCardZoom(card);
             };
@@ -1598,6 +1651,7 @@ function clearSel() {
         if (c) c.querySelectorAll('.card.selected, .card.field-selected').forEach(e => e.classList.remove('selected', 'field-selected'));
     }
     clearHighlights();
+    document.getElementById('my-hand')?.classList.remove('has-selection');
 }
 
 // ==================== PANNEAUX UI ====================
@@ -1733,6 +1787,7 @@ function log(msg, type = 'action') {
 let zoomCardData = null;
 
 function showCardZoom(card) {
+    if (selected && !(selected.fromHand && card && (card.uid || card.id) === (selected.uid || selected.id))) return;
     const overlay = document.getElementById('card-zoom-overlay');
     const container = document.getElementById('card-zoom-container');
 
@@ -1779,9 +1834,7 @@ function resizeGame() {
     const scaleY = window.innerHeight / REF_H;
     const scale = Math.min(scaleX, scaleY);
     scaler.style.zoom = scale;
-    // Centrage letterbox (bandes noires si ratio â‰  16:9)
-    scaler.style.left = `${(window.innerWidth - REF_W * scale) / 2}px`;
-    scaler.style.top = `${(window.innerHeight - REF_H * scale) / 2}px`;
+    // Centrage letterbox via CSS inset:0 + margin:auto (immune au zoom scaling)
     // Exposer le scale pour les Ã©lÃ©ments hors-scaler (drag ghost, animations)
     document.documentElement.style.setProperty('--game-scale', scale);
     // Synchroniser les stages PIXI avec le nouveau zoom/position
@@ -1816,7 +1869,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('settings-popup')?.classList.remove('active');
         }
         // DÃ©sÃ©lectionner les cartes
-        if (!e.target.closest('.card') && !e.target.closest('.card-slot') && !e.target.closest('.trap-slot')) {
+        if (!e.target.closest('.card') && !e.target.closest('.card-slot') && !e.target.closest('.trap-slot') && !e.target.closest('.hero-card') && !e.target.closest('.global-spell-zone')) {
+            clearSel();
+        }
+    });
+
+    // Clic droit global : annuler la sélection (si pas sur une carte)
+    document.addEventListener('contextmenu', (e) => {
+        if (USE_CLICK_TO_SELECT && selected) {
+            // Si clic droit sur une carte, le oncontextmenu de la carte gère le zoom
+            if (e.target.closest('.card')) return;
+            // Sinon, annuler la sélection
+            e.preventDefault();
             clearSel();
         }
     });

@@ -475,6 +475,25 @@ function confirmTestHand() {
     }
 }
 
+function _createHeroFrameSvg(faction, svgId) {
+    const theme = CARD_THEMES[faction] || CARD_THEMES.black;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'hero-frame-svg');
+    svg.setAttribute('viewBox', '10 10 505 680');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.innerHTML = `
+        <defs>
+            <linearGradient id="${svgId}_grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="${theme.borderDark}"/>
+                <stop offset="50%" stop-color="${theme.borderLight}"/>
+                <stop offset="100%" stop-color="${theme.borderDark}"/>
+            </linearGradient>
+        </defs>
+        <path d="${CARD_SVG_BORDER_PATH}" fill="url(#${svgId}_grad)" fill-rule="evenodd" stroke="${theme.borderDark}" stroke-width="0.5"/>
+    `;
+    return svg;
+}
+
 function setupHeroes() {
     // Setup hero backgrounds et titres
     const meHero = state.me.hero;
@@ -487,12 +506,22 @@ function setupHeroes() {
         meHeroInner.style.backgroundImage = `url('/cards/${meHero.image}')`;
         document.getElementById('me-hero-title').textContent = meHero.name;
         document.getElementById('me-hero-title').style.background = meHero.titleColor;
+        // Inject SVG frame
+        const heroEl = document.getElementById('hero-me');
+        if (!heroEl.querySelector('.hero-frame-svg')) {
+            heroEl.appendChild(_createHeroFrameSvg(meHero.faction || 'neutral', 'hero_me'));
+        }
     }
 
     if (oppHero && oppHero.image) {
         oppHeroInner.style.backgroundImage = `url('/cards/${oppHero.image}')`;
         document.getElementById('opp-hero-title').textContent = oppHero.name;
         document.getElementById('opp-hero-title').style.background = oppHero.titleColor;
+        // Inject SVG frame
+        const heroEl = document.getElementById('hero-opp');
+        if (!heroEl.querySelector('.hero-frame-svg')) {
+            heroEl.appendChild(_createHeroFrameSvg(oppHero.faction || 'neutral', 'hero_opp'));
+        }
     }
 
     // Stocker les héros pour réutilisation (AVANT les event listeners)
@@ -515,7 +544,7 @@ function setupHeroes() {
             // Si un sort est sélectionné et peut cibler ce héros, le lancer
             if (selected && selected.fromHand && selected.type === 'spell') {
                 const canTarget = selected.pattern === 'hero' || selected.canTargetHero;
-                if (canTarget && canPlay() && selected.cost <= state.me.energy) {
+                if (canTarget && canPlay() && (selected.effectiveCost || selected.cost) <= state.me.energy) {
                     const targetPlayer = owner === 'me' ? myNum : (myNum === 1 ? 2 : 1);
                     commitSpell(selected, 'hero', targetPlayer, -1, -1, selected.idx);
                     handCardRemovedIndex = selected.idx;
@@ -529,8 +558,13 @@ function setupHeroes() {
                     return;
                 }
             }
+        };
+    };
 
-            // Sinon, afficher le détail du héros
+    const handleHeroContextMenu = (owner) => {
+        return (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const hero = owner === 'me' ? window.heroData.me : window.heroData.opp;
             const hp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
             showHeroDetail(hero, hp);
@@ -541,16 +575,20 @@ function setupHeroes() {
         // Hover preview
         heroMe.onmouseenter = () => showHeroPreview(window.heroData.me, state?.me?.hp);
         heroMe.onmouseleave = hideCardPreview;
-        // Clic gauche
+        // Clic gauche = cast spell si sélectionné
         heroMe.onclick = handleHeroClick(heroMe, 'me');
+        // Clic droit = détail héros
+        heroMe.oncontextmenu = handleHeroContextMenu('me');
     }
 
     if (heroOpp) {
         // Hover preview
         heroOpp.onmouseenter = () => showHeroPreview(window.heroData.opp, state?.opponent?.hp);
         heroOpp.onmouseleave = hideCardPreview;
-        // Clic gauche
+        // Clic gauche = cast spell si sélectionné
         heroOpp.onclick = handleHeroClick(heroOpp, 'opp');
+        // Clic droit = détail héros
+        heroOpp.oncontextmenu = handleHeroContextMenu('opp');
     }
 
     // Drag/drop sur les héros pour les sorts

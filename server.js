@@ -4005,6 +4005,7 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 }
 
                 if (trap.damage) {
+                    let lineTrapGrantedPower = false;
                     for (const t of lineTargets) {
                         const actualDmg = applyCreatureDamage(t.card, trap.damage, room, log, attackerPlayer, row, t.col, undefined, defenderPlayer);
                         if (actualDmg > 0) {
@@ -4014,8 +4015,12 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                                 const powerBonus = t.card.powerX || 1;
                                 t.card.powerStacks = (t.card.powerStacks || 0) + powerBonus;
                                 log(`Ã°Å¸â€™Âª ${t.card.name} gagne +${powerBonus} ATK!`, 'buff');
+                                lineTrapGrantedPower = true;
                             }
                         }
+                    }
+                    if (lineTrapGrantedPower) {
+                        recalcDynamicAtk(room);
                     }
                     await sleep(500);
                 }
@@ -4116,6 +4121,7 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                         const powerBonus = firstAttacker.card.powerX || 1;
                         firstAttacker.card.powerStacks = (firstAttacker.card.powerStacks || 0) + powerBonus;
                         log(`Ã°Å¸â€™Âª ${firstAttacker.card.name} gagne +${powerBonus} ATK!`, 'buff');
+                        recalcDynamicAtk(room);
                     }
                 }
 
@@ -7249,6 +7255,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Ã°Å¸Å½Â® Server on http://localhost:${PORT}`));
-
 
 

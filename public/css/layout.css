@@ -12,9 +12,8 @@
 
         body {
             font-family: 'Glacial Indifference', sans-serif;
-            background: url('../battlefield/background_1.png') no-repeat center center fixed;
+            background: url('../battlefield/background_1.png') no-repeat center center;
             background-size: cover;
-            background-color: #000;
             min-height: 100vh;
             color: white;
             overflow: hidden;
@@ -25,8 +24,10 @@
             width: 1920px;
             height: 1080px;
             position: absolute;
-            top: 0;
             left: 0;
+            right: 0;
+            bottom: 0;
+            margin: 0 auto;
             overflow: hidden;
             will-change: transform;
         }
@@ -119,13 +120,14 @@
             transform: none !important;
         }
 
-        /* Art-only mode : cacher tous les overlays texte */
+        /* Art-only mode : cacher tous les overlays texte et stats */
         .card-zoom-container .card.art-only .arena-title,
         .card-zoom-container .card.art-only .arena-text-zone,
-        .card-zoom-container .card.art-only .arena-mana,
-        .card-zoom-container .card.art-only .arena-stats,
         .card-zoom-container .card.art-only .arena-edition,
-        .card-zoom-container .card.art-only .arena-hero-hp,
+        .card-zoom-container .card.art-only .arena-stat-atk,
+        .card-zoom-container .card.art-only .arena-stat-hp,
+        .card-zoom-container .card.art-only .arena-stat-riposte,
+        .card-zoom-container .card.art-only .arena-mana-group,
         .card-zoom-container .card.art-only .img-cost,
         .card-zoom-container .card.art-only .img-atk,
         .card-zoom-container .card.art-only .img-hp,
@@ -139,6 +141,19 @@
         .player-info-bar { display: flex; align-items: center; gap: 0; position: relative; }
         .player-info-bar.left { flex-direction: row; }
         .player-info-bar.right { flex-direction: row; }
+
+        /* Blocs joueurs positionnés au viewport (hors game-scaler) */
+        .player-info-bar.viewport-player {
+            position: fixed;
+            top: 10px;
+            z-index: 100;
+        }
+        .player-info-bar.viewport-player.left {
+            left: 10px;
+        }
+        .player-info-bar.viewport-player.right {
+            right: 10px;
+        }
         
         /* ===== Cadre joueur gold/legendary ===== */
         .player-frame {
@@ -957,9 +972,6 @@
             box-shadow: 0 8px 25px rgba(0,0,0,0.5), 0 20px 40px rgba(0,0,0,0.25);
             transition: border-color 0.3s, background-color 0.3s;
         }
-        .hero-card.hero-targetable {
-            border-color: transparent !important;
-        }
         /* Flash rouge DOM quand le hÃ©ros prend des dÃ©gÃ¢ts (hÃ©rite de la perspective 3D) */
         @keyframes heroHitFlash {
             0% { opacity: 0.45; }
@@ -1122,85 +1134,67 @@
         /* HP HÃ©ros â€” style arena (mÃªme design que les stats de crÃ©ature) */
         .hero-hp {
             position: absolute;
-            width: 60px;
-            height: 35px;
-            background: linear-gradient(135deg, #ef5350, #d32f2f, #a52a2a);
-            background-clip: padding-box;
-            border: 2px solid #ff440180;
-            box-sizing: border-box;
+            width: 40px;
+            height: 40px;
             z-index: 10;
             pointer-events: none;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            overflow: visible;
         }
-        .hero-hp-inner {
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        .hero-hp-svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
         }
-        .hero-hp-inner::before {
-            display: none;
-        }
-        .hero-hp-number {
-            font-family: 'Glacial Indifference', sans-serif;
-            font-size: 22px;
-            font-weight: 900;
-            color: #e5e5e5;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-            z-index: 2;
-        }
-        /* Mana hÃ©ros â€” style arena (mÃªme design que les stats de crÃ©ature) */
-        .hero-mana {
+        /* Mana pill sous le héros */
+        .side-panel .mana-counter {
             position: absolute;
-            width: 60px;
-            height: 35px;
-            background: #233793;
-            background-clip: padding-box;
-            border: 2px solid #5aa3d985;
-            border-radius: 10px 2px 10px 2px;
-            box-sizing: border-box;
-            z-index: 5;
-            pointer-events: none;
+            left: 50%;
+            transform: translateX(-50%);
+            top: calc(50% - 112px + 224px + 8px);
+            z-index: 12;
+            min-width: 60px;
+            height: 28px;
+            padding: 0 12px;
+            background: radial-gradient(ellipse at 40% 35%, #ececec, #d1d1d1 50%, #b0b0b0);
+            border: none;
+            outline: 3px solid rgba(255,255,255,0.25);
+            outline-offset: 0px;
+            border-radius: 14px;
             display: flex;
-            justify-content: center;
             align-items: center;
-        }
-        .hero-mana::before {
-            display: none;
-        }
-        .hero-mana-inner {
-            display: flex;
             justify-content: center;
-            align-items: center;
-        }
-        .hero-mana-number {
             font-family: 'Glacial Indifference', sans-serif;
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 900;
-            color: #e5e5e5;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-            z-index: 2;
+            color: #292929;
+            box-shadow:
+                0 2px 8px rgba(0,0,0,0.35),
+                inset 0 1px 3px rgba(255,255,255,0.3),
+                inset 0 -1px 2px rgba(0,0,0,0.1);
+            text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+            transition: all 0.3s ease;
         }
-        /* Notre hÃ©ros (side-panel left) â€” HP bas-droite, Mana haut-gauche */
+        .side-panel .mana-counter.empty {
+            background: radial-gradient(ellipse at 40% 35%, #383838, #2a2a2a 50%, #1e1e1e);
+            outline-color: rgba(255,255,255,0.04);
+            color: #444;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 2px rgba(255,255,255,0.03);
+            text-shadow: none;
+        }
+        .side-panel .mana-counter .slash {
+            font-weight: 400;
+            opacity: 0.3;
+            margin: 0 2px;
+        }
+        /* Notre héros (side-panel left) — HP bas-droite */
         .side-panel.left .hero-hp {
-            bottom: 2px;
-            right: 2px;
-            border-radius: 10px 2px 10px 2px;
+            bottom: 10px;
+            right: 10px;
         }
-        .side-panel.left .hero-mana {
-            top: 2px;
-            left: 2px;
-        }
-        /* HÃ©ros adverse (side-panel right) â€” HP bas-gauche, Mana haut-droite */
+        /* Héros adverse (side-panel right) — HP bas-droite */
         .side-panel.right .hero-hp {
-            bottom: 2px;
-            right: 2px;
-            border-radius: 10px 2px 10px 2px;
-        }
-        .side-panel.right .hero-mana {
-            top: 2px;
-            left: 2px;
+            bottom: 10px;
+            right: 10px;
         }
 
         .deck-grave-row {
@@ -1220,14 +1214,6 @@
             position: relative;
         }
         .deck-box::before,
-        .grave-box::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 152 200'%3E%3Cpath d='M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z' fill='none' stroke='rgba(255,255,255,0.7)' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z' fill='rgba(255,255,255,0.04)'/%3E%3C/svg%3E") center/100% 100% no-repeat;
-            pointer-events: none;
-            z-index: 0;
-        }
         .deck-stack {
             position: absolute;
             inset: 0;
@@ -1266,7 +1252,7 @@
         .grave-box:hover .grave-tooltip {
             opacity: 1;
         }
-        /* Cartes empilÃ©es style Magic Arena avec effet 3D */
+        /* Cartes empilées style Magic Arena avec effet 3D */
         .deck-card-layer {
             position: absolute;
             width: 100%;
@@ -1274,71 +1260,51 @@
             background: url('../cardback/back_1.png') center/cover no-repeat;
             border-radius: 6px;
         }
-        /* Couches empilÃ©es vers la droite pour le joueur - effet 3D avec ombres
-           ORDRE INVERSÃ‰ : nth-child(1) = fond (le plus dÃ©calÃ©), nth-child(5) = proche du dessus
-           Ainsi quand on masque les derniers index, on enlÃ¨ve le "dessus" de l'Ã©paisseur */
-        .side-panel.left .deck-card-layer:nth-child(1) {
-            transform: translate(0px, 4px);
-            z-index: 1;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-            filter: brightness(0.8);
-        }
-        .side-panel.left .deck-card-layer:nth-child(2) {
-            transform: translate(0px, 3px);
-            z-index: 2;
-            box-shadow: 0 3px 7px rgba(0,0,0,0.35);
-            filter: brightness(0.85);
-        }
-        .side-panel.left .deck-card-layer:nth-child(3) {
-            transform: translate(0px, 2px);
-            z-index: 3;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
-            filter: brightness(0.9);
-        }
-        .side-panel.left .deck-card-layer:nth-child(4) {
-            transform: translate(0px, 1px);
-            z-index: 4;
-            box-shadow: 0 3px 5px rgba(0,0,0,0.35);
-            filter: brightness(0.95);
-        }
-        .side-panel.left .deck-card-layer:nth-child(5) {
-            transform: translate(0px, 0px);
-            z-index: 5;
-            box-shadow: 0 3px 4px rgba(0,0,0,0.4);
-        }
-
-        /* Couches empilÃ©es vers la gauche pour l'adversaire (miroir) - effet 3D avec ombres */
+        /* Couches empilées — ORDRE INVERSÉ : nth-child(1) = fond (le plus décalé), nth-child(5) = proche du dessus
+           Décalage Y = 3px/couche pour épaisseur visible en perspective */
+        .side-panel.left .deck-card-layer:nth-child(1),
         .side-panel.right .deck-card-layer:nth-child(1) {
-            transform: translate(0px, 4px);
+            transform: translateY(12px);
             z-index: 1;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-            filter: brightness(0.8);
+            filter: brightness(0.65);
         }
+        .side-panel.left .deck-card-layer:nth-child(2),
         .side-panel.right .deck-card-layer:nth-child(2) {
-            transform: translate(0px, 3px);
+            transform: translateY(9px);
             z-index: 2;
-            box-shadow: 0 3px 7px rgba(0,0,0,0.35);
-            filter: brightness(0.85);
+            filter: brightness(0.72);
         }
+        .side-panel.left .deck-card-layer:nth-child(3),
         .side-panel.right .deck-card-layer:nth-child(3) {
-            transform: translate(0px, 2px);
+            transform: translateY(6px);
             z-index: 3;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
-            filter: brightness(0.9);
+            filter: brightness(0.80);
         }
+        .side-panel.left .deck-card-layer:nth-child(4),
         .side-panel.right .deck-card-layer:nth-child(4) {
-            transform: translate(0px, 1px);
+            transform: translateY(3px);
             z-index: 4;
-            box-shadow: 0 3px 5px rgba(0,0,0,0.35);
-            filter: brightness(0.95);
+            filter: brightness(0.90);
         }
+        .side-panel.left .deck-card-layer:nth-child(5),
         .side-panel.right .deck-card-layer:nth-child(5) {
-            transform: translate(0px, 0px);
+            transform: translateY(0px);
             z-index: 5;
-            box-shadow: 0 3px 4px rgba(0,0,0,0.4);
         }
 
-        /* Carte du dessus du deck avec ombre portÃ©e */
+        /* Ombre projetée par la pile — sur la couche du fond (la plus décalée) */
+        .side-panel.left .deck-card-layer:nth-child(1) {
+            box-shadow:
+                8px 10px 14px rgba(0,0,0,0.55),
+                4px 6px 8px rgba(0,0,0,0.35);
+        }
+        .side-panel.right .deck-card-layer:nth-child(1) {
+            box-shadow:
+                -8px 10px 14px rgba(0,0,0,0.55),
+                -4px 6px 8px rgba(0,0,0,0.35);
+        }
+
+        /* Carte du dessus du deck avec ombre portée */
         .deck-card-top {
             position: absolute;
             width: 100%;
@@ -1351,7 +1317,7 @@
                 0 4px 8px rgba(0,0,0,0.2);
         }
 
-        /* Ombre au sol sous le deck â€” taille proportionnelle au nombre de couches (--stack-layers) */
+        /* Ombre au sol sous le deck — taille proportionnelle au nombre de couches (--stack-layers) */
 
         /* Deck vide */
         .deck-stack.empty .deck-card-layer { display: none; }
@@ -1486,12 +1452,6 @@
             margin: 0 !important;
             font-size: 16px; /* Annuler le font-size: 0.75em du grave-box pour que les em dans .arena-name/.arena-stats soient cohÃ©rents avec le terrain */
         }
-        .grave-top-card.empty:hover .slot-frame-outline {
-            stroke: rgba(255,255,255,1);
-        }
-        .grave-top-card.empty:hover .slot-frame-fill {
-            fill: rgba(255,255,255,0.08);
-        }
         .grave-top-card .mini-card {
             width: 100%;
             height: 100%;
@@ -1567,16 +1527,25 @@
             top: calc(50% - 112px);
             width: 168px;
             height: 224px;
-            border-radius: 4px;
-            border: 2px solid rgba(200,180,140,0.6);
+            border-radius: 0;
+            border: none;
             background: transparent;
             box-shadow: none;
             overflow: visible;
             z-index: 12;
         }
         .hero-card-inner {
-            border-radius: 4px;
+            border-radius: 0;
             overflow: hidden;
+            clip-path: inset(1.76% 2.57% 1.76% 2.57%);
+        }
+        .hero-frame-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
         }
 
         .deck-grave-row {
@@ -1653,8 +1622,8 @@
         }
         .slot-frame-outline {
             fill: none;
-            stroke: rgba(255,255,255,0.7);
-            stroke-width: 1.5;
+            stroke: rgba(255,255,255,0.1);
+            stroke-width: 2;
             stroke-linejoin: round;
         }
         .slot-frame-fill {
@@ -1690,7 +1659,7 @@
             height: 50px;
             object-fit: contain;
             filter: brightness(0) invert(1);
-            opacity: 0.7;
+            opacity: 0.4;
             pointer-events: none;
         }
         .slot-icon.mirrored {
@@ -1718,12 +1687,19 @@
         }
 
         .card-slot:not(.has-card):hover .slot-frame-outline,
-        .trap-slot:hover .slot-frame-outline {
+        .trap-slot:hover .slot-frame-outline,
+        .grave-top-card.empty:hover .slot-frame-outline {
             stroke: rgba(255,255,255,1);
         }
         .card-slot:not(.has-card):hover .slot-frame-fill,
-        .trap-slot:hover .slot-frame-fill {
+        .trap-slot:hover .slot-frame-fill,
+        .grave-top-card.empty:hover .slot-frame-fill {
             fill: rgba(255,255,255,0.09);
+        }
+        .card-slot:not(.has-card):hover .slot-icon,
+        .trap-slot:hover .slot-icon,
+        .grave-top-card.empty:hover .slot-icon {
+            opacity: 0.9;
         }
 
         .card-slot.valid-target .slot-frame-outline,
@@ -1734,10 +1710,14 @@
         .trap-slot.valid-target .slot-frame-fill {
             fill: rgba(98,215,255,0.25) !important;
         }
+        .card-slot.valid-target:hover .slot-frame-outline,
+        .trap-slot.valid-target:hover .slot-frame-outline,
         .card-slot.drag-over .slot-frame-outline,
         .trap-slot.drag-over .slot-frame-outline {
             stroke: #f1c40f !important;
         }
+        .card-slot.valid-target:hover .slot-frame-fill,
+        .trap-slot.valid-target:hover .slot-frame-fill,
         .card-slot.drag-over .slot-frame-fill,
         .trap-slot.drag-over .slot-frame-fill {
             fill: rgba(241,196,15,0.35) !important;
@@ -1749,10 +1729,10 @@
             fill: rgba(243,156,18,0.3) !important;
         }
         .card-slot.moveable .slot-frame-outline {
-            stroke: #3498db !important;
+            stroke: #62d7ff !important;
         }
         .card-slot.moveable .slot-frame-fill {
-            fill: rgba(52,152,219,0.25) !important;
+            fill: rgba(98,215,255,0.25) !important;
         }
 
         .trap-slot::before,
@@ -1761,12 +1741,7 @@
             content: none !important;
         }
 
-        .trap-slot.has-trap.mine .slot-frame-outline {
-            stroke: rgba(46,204,113,0.9);
-        }
-        .trap-slot.has-trap .slot-frame-outline {
-            stroke: rgba(231,76,60,0.9);
-        }
+        /* Bordures trap slots : pas de changement de couleur */
 
         .trap-icon-img {
             width: 56px;
@@ -1777,6 +1752,15 @@
         }
         .trap-icon-img.enemy {
             filter: brightness(0) saturate(100%) invert(30%) sepia(90%) saturate(2000%) hue-rotate(340deg) brightness(90%);
+        }
+
+        .trap-card-back {
+            width: 100%;
+            height: 100%;
+            border-radius: 4px;
+            background: url('../cardback/back_1.png') center/cover no-repeat;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            pointer-events: none;
         }
 
         .trap-slot.triggered {

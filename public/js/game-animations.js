@@ -2191,8 +2191,12 @@ async function animateBurn(data) {
         graveX = gravePos.x + gtW / 2 - cardWidth / 2;
         graveY = gravePos.y + gtH / 2 - cardHeight / 2;
     }
-    const revealX = startX;
-    const revealY = startY - cardHeight - 20;
+    const boardRect = gameBoard.getBoundingClientRect();
+    const revealX = Math.max(0, window.innerWidth / 2 - boardRect.left - cardWidth / 2);
+    const revealY = Math.max(0, window.innerHeight / 2 - boardRect.top - cardHeight / 2 - 30);
+    const deckRect = deckEl.getBoundingClientRect();
+    const liftAmplitude = 30;
+    const liftDeltaY = deckRect.top < (liftAmplitude + 8) ? liftAmplitude : -liftAmplitude;
     const wrapper = document.createElement('div');
     wrapper.style.cssText =
         'position: absolute; z-index: 10000; pointer-events: none;' +
@@ -2288,7 +2292,7 @@ async function animateBurn(data) {
                 const p = progress / t1;
                 const ep = easeOutCubic(p);
                 x = startX;
-                y = startY - ep * 30;
+                y = startY + ep * liftDeltaY;
                 scale = 1 + ep * 0.05;
                 opacity = 0.3 + ep * 0.7;
                 flipDeg = 0;
@@ -2297,7 +2301,8 @@ async function animateBurn(data) {
                 const p = (progress - t1) / (t2 - t1);
                 const ep = easeInOutCubic(p);
                 x = startX + (revealX - startX) * ep;
-                y = (startY - 30) + (revealY - (startY - 30)) * ep;
+                const liftEndY = startY + liftDeltaY;
+                y = liftEndY + (revealY - liftEndY) * ep;
                 scale = 1.05 + (1.2 - 1.05) * ep;
                 opacity = 1;
                 flipDeg = easeInOutCubic(p) * 180;
@@ -3973,6 +3978,9 @@ async function animateBounceToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
     animatingSlots.add(slotKey);
+    let targetPromise = null;
+    let handPerspContainer = null;
+    let handStartTiltDeg = 0;
 
     const slot = getSlot(owner, data.row, data.col);
     if (!slot) {
@@ -4014,7 +4022,7 @@ async function animateBounceToHand(data) {
     cardFace.style.width = '100%';
     cardFace.style.height = '100%';
     cardFace.style.margin = '0';
-    cardFace.style.boxShadow = '0 0 20px rgba(100, 180, 255, 0.6)';
+    cardFace.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
     if (bgImage) cardFace.style.backgroundImage = bgImage;
 
     wrapper.appendChild(cardFace);
@@ -4024,20 +4032,32 @@ async function animateBounceToHand(data) {
     const bounceNameFit = cardFace.querySelector('.arena-name');
     if (bounceNameFit) fitArenaName(bounceNameFit);
 
+    // PrÃ©parer la cible main avant le lift: empÃªche l'apparition prÃ©maturÃ©e.
+    if (!data.toGraveyard) {
+        if (data._bounceTargetPromise) {
+            targetPromise = data._bounceTargetPromise;
+            if (pendingBounce) pendingBounce.wrapper = wrapper;
+        } else {
+            targetPromise = new Promise(resolve => {
+                pendingBounce = { owner, card: data.card, wrapper, resolveTarget: resolve };
+            });
+        }
+        render();
+    }
+
     // === PHASE 1 : LIFT (200ms) Ã¢â‚¬â€ carte se soulÃƒÂ¨ve du slot ===
-    const liftHeight = 40;
-    const liftScale = 1.08;
+    const liftHeight = 18;
+    const liftScale = 1.04;
 
     await new Promise(resolve => {
-        const dur = 200;
+        const dur = 140;
         const t0 = performance.now();
         function animate() {
             const p = Math.min((performance.now() - t0) / dur, 1);
             const ep = easeOutCubic(p);
             wrapper.style.top = (startY - ep * liftHeight) + 'px';
             wrapper.style.transform = `scale(${1 + ep * (liftScale - 1)})`;
-            const glow = ep * 25;
-            cardFace.style.boxShadow = `0 0 ${glow}px rgba(100, 180, 255, ${ep * 0.8}), 0 4px 12px rgba(0,0,0,0.4)`;
+            cardFace.style.boxShadow = '0 6px 14px rgba(0,0,0,0.38)';
             if (p < 1) requestAnimationFrame(animate); else resolve();
         }
         requestAnimationFrame(animate);
@@ -4193,21 +4213,38 @@ async function animateBounceToHand(data) {
 
     // === Main pas pleine Ã¢â€ â€™ voler vers la main (flow normal) ===
 
-    // Utiliser le pendingBounce prÃƒÂ©-enregistrÃƒÂ© au queue time, ou en crÃƒÂ©er un nouveau
-    let targetPromise;
-    if (data._bounceTargetPromise) {
-        targetPromise = data._bounceTargetPromise;
-        if (pendingBounce) pendingBounce.wrapper = wrapper;
-    } else {
-        targetPromise = new Promise(resolve => {
-            pendingBounce = { owner, card: data.card, wrapper, resolveTarget: resolve };
-        });
+    const gameBoard = document.querySelector('.game-board');
+    if (gameBoard) {
+        try {
+            const computedTransform = getComputedStyle(gameBoard).transform;
+            if (computedTransform && computedTransform !== 'none') {
+                const mat = new DOMMatrix(computedTransform);
+                const tilt = Math.atan2(mat.m23, mat.m22) * (180 / Math.PI);
+                if (Number.isFinite(tilt)) handStartTiltDeg = Math.max(-25, Math.min(25, tilt));
+            }
+        } catch (_) {}
+    }
+    const gameBoardWrapper = document.querySelector('.game-board-wrapper');
+    if (gameBoardWrapper) {
+        const gbwRect = gameBoardWrapper.getBoundingClientRect();
+        handPerspContainer = document.createElement('div');
+        handPerspContainer.style.cssText = `
+            position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+            z-index: 10000; pointer-events: none;
+            perspective: 1000px;
+            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height * 0.8}px;
+        `;
+        wrapper.remove();
+        handPerspContainer.appendChild(wrapper);
+        document.body.appendChild(handPerspContainer);
+        if (pendingBounce) pendingBounce.wrapper = handPerspContainer;
+    } else if (pendingBounce) {
+        pendingBounce.wrapper = wrapper;
     }
 
-    // Forcer un render() au cas oÃƒÂ¹ l'ÃƒÂ©tat est dÃƒÂ©jÃƒÂ  arrivÃƒÂ© pendant que la queue traitait
-    // une animation prÃƒÂ©cÃƒÂ©dente (ex: trapTrigger avant bounce). Sans ÃƒÂ§a, pendingBounce
-    // ne serait jamais rÃƒÂ©solu car render() a dÃƒÂ©jÃƒÂ  tournÃƒÂ© avant qu'on le dÃƒÂ©finisse.
-    render();
+    if (Math.abs(handStartTiltDeg) > 0.01) {
+        wrapper.style.transform = `rotateX(${handStartTiltDeg}deg)`;
+    }
 
     // Animation de flottement pendant l'attente
     let floating = true;
@@ -4215,10 +4252,12 @@ async function animateBounceToHand(data) {
     function floatLoop() {
         if (!floating) return;
         const elapsed = performance.now() - floatT0;
-        const bob = Math.sin(elapsed / 300) * 3;
-        const glowPulse = 20 + Math.sin(elapsed / 400) * 5;
+        const bob = Math.sin(elapsed / 320) * 1.5;
         wrapper.style.top = (floatY + bob) + 'px';
-        cardFace.style.boxShadow = `0 0 ${glowPulse}px rgba(100, 180, 255, 0.7), 0 4px 12px rgba(0,0,0,0.4)`;
+        if (Math.abs(handStartTiltDeg) > 0.01) {
+            wrapper.style.transform = `rotateX(${handStartTiltDeg}deg)`;
+        }
+        cardFace.style.boxShadow = '0 6px 14px rgba(0,0,0,0.38)';
         requestAnimationFrame(floatLoop);
     }
     requestAnimationFrame(floatLoop);
@@ -4240,9 +4279,9 @@ async function animateBounceToHand(data) {
         const endH = target.h;
 
         const ctrlX = (flyX0 + endX) / 2;
-        const ctrlY = Math.min(flyY0, endY) - 80;
+        const ctrlY = Math.min(flyY0, endY) - 36;
 
-        const flyDuration = 450;
+        const flyDuration = 360;
 
         await new Promise(resolve => {
             const t0 = performance.now();
@@ -4254,22 +4293,32 @@ async function animateBounceToHand(data) {
                 const y = (1-t)*(1-t)*flyY0 + 2*(1-t)*t*ctrlY + t*t*endY;
                 const w = flyW0 + (endW - flyW0) * t;
                 const h = flyH0 + (endH - flyH0) * t;
-                const glow = 20 * (1 - t);
 
                 wrapper.style.left = x + 'px';
                 wrapper.style.top = y + 'px';
                 wrapper.style.width = w + 'px';
                 wrapper.style.height = h + 'px';
-                cardFace.style.boxShadow = glow > 0
-                    ? `0 0 ${glow}px rgba(100, 180, 255, ${glow/25}), 0 4px 12px rgba(0,0,0,0.4)`
-                    : 'none';
+                if (Math.abs(handStartTiltDeg) > 0.01) {
+                    const tilt = handStartTiltDeg * (1 - t);
+                    wrapper.style.transform = `rotateX(${tilt}deg)`;
+                } else {
+                    wrapper.style.transform = 'none';
+                }
+                cardFace.style.boxShadow = '0 4px 10px rgba(0,0,0,0.3)';
 
                 if (p < 1) {
                     requestAnimationFrame(animate);
                 } else {
                     // Ne pas toucher la visibilitÃƒÂ© manuellement Ã¢â‚¬â€ laisser render() gÃƒÂ©rer
                     // Cela ÃƒÂ©vite un flash (diffÃƒÂ©rence de style entre wrapper board et carte hand)
-                    wrapper.remove();
+                    if (pendingBounce) {
+                        pendingBounce.completed = true;
+                        pendingBounce.wrapper = handPerspContainer || wrapper;
+                    } else if (handPerspContainer && handPerspContainer.isConnected) {
+                        handPerspContainer.remove();
+                    } else {
+                        wrapper.remove();
+                    }
                     resolve();
                 }
             }
@@ -4279,12 +4328,13 @@ async function animateBounceToHand(data) {
         wrapper.style.transition = 'opacity 0.2s';
         wrapper.style.opacity = '0';
         await new Promise(r => setTimeout(r, 200));
-        wrapper.remove();
+        if (handPerspContainer && handPerspContainer.isConnected) handPerspContainer.remove();
+        else wrapper.remove();
+        pendingBounce = null;
     }
 
-    pendingBounce = null;
     animatingSlots.delete(slotKey);
-    // render() va naturellement montrer la carte (pendingBounce est null)
+    // render() gÃ¨re la rÃ©vÃ©lation finale (pendingBounce.completed) et le cleanup visuel.
     render();
 }
 

@@ -51,6 +51,39 @@ const CardGlow = (() => {
     const NUM_CTRL = 36; // Points de contrôle (léger pour Canvas 2D)
     const GLOW_MARGIN = 1;
 
+    // ── Outer border path (SVG coords, first sub-path of CARD_SVG_BORDER_PATH) ──
+    // Used to clip glow to the exact SVG frame shape for arena-style cards
+    const OUTER_BORDER = [
+        ['M',15,10],['L',68,10],['L',84,16],['L',100,10],
+        ['L',425,10],['L',441,16],['L',457,10],['L',510,10],
+        ['Q',515,10,515,14],
+        ['L',515,65],['L',509,80],['L',515,95],
+        ['L',515,605],['L',509,620],['L',515,635],['L',515,686],
+        ['Q',515,690,510,690],
+        ['L',457,690],['L',441,684],['L',425,690],
+        ['L',100,690],['L',84,684],['L',68,690],['L',15,690],
+        ['Q',10,690,10,686],
+        ['L',10,635],['L',16,620],['L',10,605],
+        ['L',10,95],['L',16,80],['L',10,65],['L',10,14],
+        ['Q',10,10,15,10]
+    ];
+
+    // viewBox="10 10 505 680" → SVG (x,y) maps to canvas (pad + (x-10)/505*cw, pad + (y-10)/680*ch)
+    function traceOuterBorder(ctx, pad, cw, ch) {
+        const sx = cw / 505, sy = ch / 680;
+        for (const c of OUTER_BORDER) {
+            switch (c[0]) {
+                case 'M': ctx.moveTo(pad + (c[1]-10)*sx, pad + (c[2]-10)*sy); break;
+                case 'L': ctx.lineTo(pad + (c[1]-10)*sx, pad + (c[2]-10)*sy); break;
+                case 'Q': ctx.quadraticCurveTo(
+                    pad + (c[1]-10)*sx, pad + (c[2]-10)*sy,
+                    pad + (c[3]-10)*sx, pad + (c[4]-10)*sy
+                ); break;
+            }
+        }
+        ctx.closePath();
+    }
+
     // ── Cache DOM : recalculé uniquement quand dirty ──
     let _dirty = true;
     let _cachedTargets = []; // { el, layers, borderW, borderR }
@@ -157,8 +190,10 @@ const CardGlow = (() => {
             const isDragging = cardEl.classList.contains('arrow-dragging');
             const isHovered = cardEl.matches(':hover');
             const { borderW, borderR } = getCachedBorder(cardEl);
-            const layers = isDragging ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
-            newTargets.push({ el: cardEl, layers, borderW, borderR });
+            const isSelected = cardEl.classList.contains('selected');
+            const layers = (isDragging || isSelected) ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
+            const isArena = cardEl.classList.contains('arena-style');
+            newTargets.push({ el: cardEl, layers, borderW, borderR, isArena });
             activeEls.add(cardEl);
         }
 
@@ -166,7 +201,8 @@ const CardGlow = (() => {
         const ghostCard = document.querySelector('.drag-ghost-card');
         if (ghostCard) {
             const { borderW, borderR } = getCachedBorder(ghostCard);
-            newTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR });
+            const isArena = ghostCard.classList.contains('arena-style');
+            newTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
             activeEls.add(ghostCard);
         }
 
@@ -175,15 +211,51 @@ const CardGlow = (() => {
             const trapTargetCards = document.querySelectorAll('#battlefield .card-slot .card.spell-hover-target');
             for (const cardEl of trapTargetCards) {
                 const { borderW, borderR } = getCachedBorder(cardEl);
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR });
+                const isArena = cardEl.classList.contains('arena-style');
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
                 activeEls.add(cardEl);
             }
         } else {
+            // Cartes ciblées par un sort (hover sur sort commité) — glow orange, prioritaire
+            const spellHoverCards = document.querySelectorAll('.card-slot .card.spell-hover-target');
+            for (const cardEl of spellHoverCards) {
+                if (activeEls.has(cardEl)) continue;
+                const { borderW, borderR } = getCachedBorder(cardEl);
+                const isArena = cardEl.classList.contains('arena-style');
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+                activeEls.add(cardEl);
+            }
+
+            // Cartes ciblables par un sort sélectionné — glow bleu (ou orange si hover)
+            const spellTargetableCards = document.querySelectorAll('.card-slot .card.spell-targetable');
+            for (const cardEl of spellTargetableCards) {
+                if (activeEls.has(cardEl)) continue;
+                const { borderW, borderR } = getCachedBorder(cardEl);
+                const isArena = cardEl.classList.contains('arena-style');
+                const isHover = cardEl.closest('.card-slot')?.matches(':hover');
+                newTargets.push({ el: cardEl, layers: isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR, isArena });
+                activeEls.add(cardEl);
+            }
+
+            // Héros ciblables / ciblés par un sort
+            const heroCards = document.querySelectorAll('.hero-card.hero-targetable, .hero-card.hero-hover-target');
+            for (const heroEl of heroCards) {
+                if (activeEls.has(heroEl)) continue;
+                const { borderW, borderR } = getCachedBorder(heroEl);
+                const isHoverTarget = heroEl.classList.contains('hero-hover-target');
+                const isHover = heroEl.matches(':hover');
+                const layers = isHoverTarget ? LAYER_CONFIGS_ORANGE : (isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE);
+                newTargets.push({ el: heroEl, layers, borderW, borderR, isArena: true });
+                activeEls.add(heroEl);
+            }
+
             // Cartes en combat (glow violet) — prioritaire sur le glow vert
             const combatCards = document.querySelectorAll('.card-slot .card[data-in-combat="true"]');
             for (const cardEl of combatCards) {
+                if (activeEls.has(cardEl)) continue;
                 const { borderW, borderR } = getCachedBorder(cardEl);
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR });
+                const isArena = cardEl.classList.contains('arena-style');
+                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR, isArena });
                 activeEls.add(cardEl);
             }
 
@@ -192,9 +264,10 @@ const CardGlow = (() => {
             if (!spellDragging) {
                 const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
                 for (const cardEl of attackCards) {
-                    if (activeEls.has(cardEl)) continue; // déjà en combat (glow violet)
+                    if (activeEls.has(cardEl)) continue; // déjà ciblé ou en combat
                     const { borderW, borderR } = getCachedBorder(cardEl);
-                    newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR });
+                    const isArena = cardEl.classList.contains('arena-style');
+                    newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR, isArena });
                     activeEls.add(cardEl);
                 }
             }
@@ -234,9 +307,22 @@ const CardGlow = (() => {
 
         // Mettre à jour le glow hover à chaque frame (pas besoin de rebuild complet)
         for (const target of _cachedTargets) {
+            // Cartes en main : hover blanc / selected orange
             if (target.el.closest('.my-hand') && target.el.classList.contains('playable')
                 && !target.el.classList.contains('arrow-dragging')) {
-                target.layers = target.el.matches(':hover') ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
+                const isSelTarget = target.el.classList.contains('selected');
+                const handHasSel = target.el.closest('.has-selection');
+                target.layers = isSelTarget ? LAYER_CONFIGS_ORANGE
+                    : (handHasSel ? LAYER_CONFIGS_BLUE : (target.el.matches(':hover') ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE));
+            }
+            // Cartes ciblables sur le board : hover orange / sinon bleu
+            if (target.el.classList.contains('spell-targetable')) {
+                const isHover = target.el.closest('.card-slot')?.matches(':hover');
+                target.layers = isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE;
+            }
+            // Héros ciblables : hover orange / sinon bleu
+            if (target.el.classList.contains('hero-targetable') && !target.el.classList.contains('hero-hover-target')) {
+                target.layers = target.el.matches(':hover') ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE;
             }
         }
 
@@ -248,11 +334,6 @@ const CardGlow = (() => {
             // Vérifier que l'élément est toujours dans le DOM
             if (!cardEl.isConnected) continue;
 
-            // Masquer le glow si la carte est ciblée par un sort commité (hover)
-            if (cardEl.classList.contains('spell-hover-target') && !trapWarningMode) {
-                if (target._canvas) target._canvas.style.display = 'none';
-                continue;
-            }
             if (target._canvas && target._canvas.style.display === 'none') {
                 target._canvas.style.display = '';
             }
@@ -309,11 +390,18 @@ const CardGlow = (() => {
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, canvasW, canvasH);
 
-            // Clip : ne dessiner que en dehors de la zone visible de la carte (border-box)
+            // Clip : ne dessiner que en dehors de la zone visible de la carte
+            // Pour arena : le clip est rétréci de quelques px pour que le glow
+            // chevauche la bordure SVG (effet AAA, pas de gap visible)
             ctx.save();
             ctx.beginPath();
             ctx.rect(0, 0, canvasW, canvasH);
-            ctx.roundRect(PADDING, PADDING, cw, ch, borderR);
+            if (target.isArena) {
+                const inset = 3;
+                traceOuterBorder(ctx, PADDING + inset, cw - inset * 2, ch - inset * 2);
+            } else {
+                ctx.roundRect(PADDING, PADDING, cw, ch, borderR);
+            }
             ctx.clip('evenodd');
 
             // Dessiner les 4 layers centrées dans le canvas

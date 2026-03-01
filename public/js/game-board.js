@@ -25,7 +25,15 @@ function _clearSlotContent(slot) {
 // Retire le contenu d'un trap-slot (icône piège) sans toucher à la frame SVG ni au cercle central.
 function _clearTrapSlotContent(trapSlot) {
     const content = trapSlot.querySelector('.trap-content');
-    if (content) content.innerHTML = '';
+    if (!content) return;
+    content.innerHTML = '';
+    // Defensive reset: trap trigger flip uses inline 3D transforms.
+    // If we keep them, the next trap card can appear already flipped/flickering.
+    content.style.perspective = '';
+    content.style.transformStyle = '';
+    content.style.transition = '';
+    content.style.transform = '';
+    content.style.willChange = '';
 }
 
 function getSlot(owner, row, col) {
@@ -103,6 +111,29 @@ function buildBattlefield() {
         }
         clearSel();
     };
+
+    // Click-to-select : clic gauche sur la zone globale pour lancer un sort global
+    globalZone.onclick = () => {
+        if (!selected || !selected.fromHand || selected.type !== 'spell') return;
+        if (!['global', 'all'].includes(selected.pattern)) return;
+        if (!globalZone.classList.contains('active') || !canPlay()) return;
+        // Réanimation : ouvrir sélection cimetière
+        if (selected.requiresGraveyardCreature || selected.effect === 'graveyardToHand') {
+            pendingReanimation = {
+                card: { ...selected },
+                handIndex: selected.idx,
+                effectiveCost: selected.effectiveCost || selected.cost,
+                mode: selected.effect === 'graveyardToHand' ? 'graveyardToHand' : 'reanimate'
+            };
+            openGraveyardForSelection();
+            clearSel();
+            return;
+        }
+        commitSpell(selected, 'global', 0, -1, -1, selected.idx);
+        handCardRemovedIndex = selected.idx;
+        socket.emit('castGlobalSpell', { handIndex: selected.idx });
+        clearSel();
+    };
 }
 
 function makeSlot(owner, row, col) {
@@ -123,11 +154,16 @@ function makeSlot(owner, row, col) {
 
     el.onclick = () => clickSlot(owner, row, col);
 
-    // Prévisualisation du sort croix au survol
+    // Prévisualisation du sort au survol
     el.onmouseenter = () => {
-        if (selected && selected.fromHand && selected.type === 'spell' && selected.pattern === 'cross') {
-            if (el.classList.contains('valid-target')) {
+        if (selected && selected.fromHand && selected.type === 'spell') {
+            if (selected.pattern === 'cross' && el.classList.contains('valid-target')) {
                 previewCrossTargets(owner, row, col);
+            }
+            // Hover feedback : highlight la carte ciblée
+            if (el.classList.contains('valid-target')) {
+                const card = el.querySelector('.card');
+                if (card) card.classList.add('spell-hover-target');
             }
         }
     };
@@ -137,6 +173,9 @@ function makeSlot(owner, row, col) {
             if (card) card.classList.remove('spell-hover-target');
             s.classList.remove('cross-target');
         });
+        // Retirer le hover feedback
+        const card = el.querySelector('.card');
+        if (card) card.classList.remove('spell-hover-target');
     };
 
     el.ondragover = (e) => {
@@ -392,7 +431,7 @@ function highlightValidSlots(card, forceShow = false) {
     if (!card) return;
     // Si la carte est trop chère et qu'on ne force pas l'affichage, ne pas highlight
     // Mais si on drag, on veut montrer où ça irait (forceShow via le drag)
-    if (card.cost > state.me.energy && !forceShow && !dragged) return;
+    if (card.cost > state.me.energy && !forceShow && !dragged && !selected) return;
 
     const valid = getValidSlots(card);
     valid.forEach(v => {
@@ -401,7 +440,7 @@ function highlightValidSlots(card, forceShow = false) {
             const zone = document.querySelector('.global-spell-zone');
             if (zone) zone.classList.add('active');
         } else if (v.hero) {
-            // Highlight le héros ciblable
+            // Highlight le héros ciblable (glow bleu via card-glow)
             const heroId = v.owner === 'me' ? 'hero-me' : 'hero-opp';
             const hero = document.getElementById(heroId);
             if (hero) hero.classList.add('hero-targetable');
@@ -418,6 +457,7 @@ function highlightValidSlots(card, forceShow = false) {
             }
         }
     });
+    CardGlow.markDirty();
 }
 
 // Prévisualiser les cibles du sort croix au survol (centre + adjacents)
@@ -512,14 +552,15 @@ function clearHighlights() {
     document.querySelectorAll('.card-slot, .trap-slot').forEach(s => {
         s.classList.remove('valid-target', 'drag-over', 'moveable', 'cross-target');
         const cardEl = s.querySelector('.card');
-        if (cardEl) cardEl.classList.remove('spell-targetable');
+        if (cardEl) cardEl.classList.remove('spell-targetable', 'spell-hover-target');
     });
     // Enlever le highlight des héros
     document.querySelectorAll('.hero-card').forEach(h => {
-        h.classList.remove('hero-targetable', 'hero-drag-over');
+        h.classList.remove('hero-targetable', 'hero-drag-over', 'hero-hover-target');
     });
     const zone = document.querySelector('.global-spell-zone');
     if (zone) zone.classList.remove('active');
+    CardGlow.markDirty();
 }
 
 // ==========================================

@@ -183,7 +183,7 @@
         /* Card hover preview flottante */
         .card-preview {
             position: fixed;
-            top: 70px;
+            top: 100px;
             right: 20px;
             z-index: 10001;
             pointer-events: none;
@@ -208,7 +208,7 @@
         /* Preview hÃ©ros - wrapper pour une carte arena */
         .hero-preview {
             position: fixed;
-            top: 70px;
+            top: 100px;
             right: 20px;
             z-index: 10001;
             pointer-events: none;
@@ -388,6 +388,7 @@
             box-shadow: inset 0 0 30px rgba(98, 215, 255, 0.15);
             pointer-events: auto;
         }
+        .global-spell-zone.active:hover,
         .global-spell-zone.drag-over {
             border-color: #f1c40f !important;
             background: rgba(241, 196, 15, 0.35) !important;
@@ -885,15 +886,13 @@
 
         /* Sorts engagÃ©s dans la main (jouÃ©s pendant la planification) */
         .committed-spell {
-            filter: grayscale(80%) brightness(0.7);
-            opacity: 0.75;
+            filter: grayscale(100%) brightness(0.7);
             pointer-events: auto;
             position: relative;
-            transition: filter 0.2s, opacity 0.2s;
+            transition: filter 0.2s;
         }
         .committed-spell:hover {
-            filter: grayscale(50%) brightness(0.85);
-            opacity: 0.9;
+            filter: grayscale(100%) brightness(0.85);
         }
         .committed-spell::before {
             content: attr(data-order);
@@ -910,14 +909,8 @@
             justify-content: center;
             font-weight: bold;
             font-size: 13px;
-            z-index: 5;
+            z-index: 100;
             box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-        }
-
-        /* Highlight des cibles d'un sort engagÃ© (hover) */
-        .committed-target-highlight {
-            box-shadow: 0 0 12px 4px rgba(230, 126, 34, 0.7) !important;
-            border-color: #e67e22 !important;
         }
 
         /* ==================== ROUND BANNER ==================== */

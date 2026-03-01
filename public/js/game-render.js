@@ -28,8 +28,8 @@ function _getDomEls() {
         _cachedDomEls = {
             meHpNum: document.querySelector('#me-hp .hero-hp-number'),
             oppHpNum: document.querySelector('#opp-hp .hero-hp-number'),
-            meManaNum: document.querySelector('#me-energy .hero-mana-number'),
-            oppManaNum: document.querySelector('#opp-energy .hero-mana-number'),
+            meManaPill: document.getElementById('me-energy'),
+            oppManaPill: document.getElementById('opp-energy'),
             meDeckTooltip: document.getElementById('me-deck-tooltip'),
             oppDeckTooltip: document.getElementById('opp-deck-tooltip'),
             meGraveTooltip: document.getElementById('me-grave-tooltip'),
@@ -153,7 +153,41 @@ function render() {
             if (data.targetPlayer === oppPlayerNum) out.opp = true;
         }
     };
+
+    const _markHeroHpBlockFromQueue = (out) => {
+        if (!out || !Array.isArray(animationQueue)) return;
+        for (const item of animationQueue) {
+            if (!item) continue;
+            const t = item.type;
+            const d = item.data || {};
+            if (t === 'heroHit' || t === 'trampleHeroHit') {
+                if (d.defender === mePlayerNum) out.me = true;
+                if (d.defender === oppPlayerNum) out.opp = true;
+                continue;
+            }
+            if (t === 'zdejebel') {
+                if (d.targetPlayer === mePlayerNum) out.me = true;
+                if (d.targetPlayer === oppPlayerNum) out.opp = true;
+                continue;
+            }
+            if (t === 'heroHeal') {
+                if (d.player === mePlayerNum) out.me = true;
+                if (d.player === oppPlayerNum) out.opp = true;
+                continue;
+            }
+            if (t === 'lifesteal' && d.heroHeal) {
+                if (d.player === mePlayerNum) out.me = true;
+                if (d.player === oppPlayerNum) out.opp = true;
+                continue;
+            }
+            if (t === 'onDeathDamage' && d.targetRow === undefined) {
+                if (d.targetPlayer === mePlayerNum) out.me = true;
+                if (d.targetPlayer === oppPlayerNum) out.opp = true;
+            }
+        }
+    };
     _markHeroHpBlock(window.__activeAnimType, window.__activeAnimData, hpBlockedByActiveAnim);
+    _markHeroHpBlockFromQueue(hpBlockedByActiveAnim);
     // Ne pas geler globalement les HP pour lifesteal/heroHeal:
     // on bloque seulement pendant l'animation HP active pour éviter les retards visibles.
     const hpBlockedGlobal = !!zdejebelAnimationInProgress;
@@ -166,13 +200,13 @@ function render() {
     if (!hpBlockedOpp) {
         if (dom.oppHpNum) dom.oppHpNum.textContent = String(_clampHeroHp(opp.hp));
     }
-    if (dom.meManaNum) {
-        dom.meManaNum.textContent = `${me.energy}/${me.maxEnergy}`;
-        dom.meManaNum.style.fontSize = (me.energy >= 10 || me.maxEnergy >= 10) ? '1em' : '';
+    if (dom.meManaPill) {
+        dom.meManaPill.innerHTML = `${me.energy}<span class="slash">/</span>${me.maxEnergy}`;
+        dom.meManaPill.classList.toggle('empty', me.energy <= 0);
     }
-    if (dom.oppManaNum) {
-        dom.oppManaNum.textContent = `${opp.energy}/${opp.maxEnergy}`;
-        dom.oppManaNum.style.fontSize = (opp.energy >= 10 || opp.maxEnergy >= 10) ? '1em' : '';
+    if (dom.oppManaPill) {
+        dom.oppManaPill.innerHTML = `${opp.energy}<span class="slash">/</span>${opp.maxEnergy}`;
+        dom.oppManaPill.classList.toggle('empty', opp.energy <= 0);
     }
     // Mettre à jour les tooltips du deck
     if (dom.meDeckTooltip) dom.meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
@@ -478,6 +512,9 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                             atkEl.classList.remove('boosted');
                             atkEl.classList.remove('reduced');
                         }
+                        // Riposte = même valeur que ATK
+                        const riposteEl = existingCardEl.querySelector('.arena-riposte');
+                        if (riposteEl && riposteEl.textContent !== atkStr) riposteEl.textContent = atkStr;
                     }
                 }
                 // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
@@ -486,7 +523,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     if (abilitiesEl) {
                         const effectivePoison = _getPoisonDisplayValue(card);
                         const basePoison = _getPoisonBaseValue(card);
-                        const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
+                        const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : ' class="stat-value"';
                         abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
                             /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
                             `Poison <span${poisonClass}>${effectivePoison}</span>`
@@ -495,7 +532,15 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 }
                 // Rebind hover/click avec les données fraîches de la carte
                 existingCardEl.onmouseenter = (e) => showCardPreview(card, e);
-                existingCardEl.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
+                existingCardEl.onclick = (e) => {
+                    e.stopPropagation();
+                    if (USE_CLICK_TO_SELECT) {
+                        clickSlot(owner, r, c);
+                    } else {
+                        showCardZoom(card);
+                    }
+                };
+                existingCardEl.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showCardZoom(card); };
                 // Mettre à jour les classes d'état sur la carte
                 const isJustPlayed = card.turnsOnField === 0 && !card.canAttack;
                 existingCardEl.classList.toggle('just-played', isJustPlayed);
@@ -603,7 +648,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
                 }
                 // Custom drag pour redéploiement (fast path  réattacher si conditions remplies)
-                if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
+                if (!USE_CLICK_TO_SELECT && owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     if (!existingCardEl.dataset.draggable) {
                         existingCardEl.dataset.draggable = '1';
                         CustomDrag.makeDraggable(existingCardEl, {
@@ -670,7 +715,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 cardEl.onmousemove = (e) => moveCardPreview(e);
 
                 // Custom drag pour redéploiement (seulement mes cartes)
-                if (owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
+                if (!USE_CLICK_TO_SELECT && owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     CustomDrag.makeDraggable(cardEl, {
                         source: 'field',
                         card: card,
@@ -680,8 +725,18 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     });
                 }
 
-                // Clic gauche = zoom sur la carte (pour toutes les cartes)
+                // Clic gauche = clickSlot (click-to-select) ou zoom (drag mode)
                 cardEl.onclick = (e) => {
+                    e.stopPropagation();
+                    if (USE_CLICK_TO_SELECT) {
+                        clickSlot(owner, r, c);
+                    } else {
+                        showCardZoom(card);
+                    }
+                };
+                // Clic droit = zoom
+                cardEl.oncontextmenu = (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     showCardZoom(card);
                 };
@@ -920,29 +975,61 @@ function showCardBackPreview() {
 
 function makeHeroCard(hero, hp) {
     const faction = hero.faction || 'neutral';
+    const theme = CARD_THEMES[faction] || CARD_THEMES.black;
+    const uid = `cs${_cardSvgIdCounter++}`;
+
+    const el = document.createElement('div');
+    el.className = `card hero arena-style faction-${faction}`;
+
+    // Rareté star
     const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
     const rarityClass = rarityMap[hero.edition] || 'common';
-    const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
-    const el = document.createElement('div');
-    el.className = `card creature arena-style faction-${faction}`;
-    el.style.backgroundImage = `url('/cards/${hero.image}')`;
-    el.style.backgroundSize = 'cover';
-    el.style.backgroundPosition = 'center';
+    const rarity = CARD_RARITIES[rarityClass];
 
-    el.innerHTML = `
-        <div class="arena-title"><div class="arena-name">${hero.name}</div></div>
-        <div class="arena-hero-hp">
-            <div class="arena-hero-hp-border">
-                <div class="arena-hero-hp-inner">
-                    <span class="arena-hero-hp-number">${hp}</span>
-                </div>
-            </div>
-        </div>
+    // Taille de nom pré-calculée
+    const fitSize = getNameFitSize(hero.name, true);
+    const nameStyle = fitSize ? ` style="font-size:${fitSize}"` : '';
+
+    // Art SVG (background layer)
+    const artSvg = `<svg class="card-art-svg" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 505 680" preserveAspectRatio="none">
+        <defs><clipPath id="${uid}_clip"><rect x="21" y="20" width="483" height="660" rx="4"/></clipPath></defs>
+        <image href="/cards/${hero.image}" x="0" y="0" width="525" height="700" preserveAspectRatio="xMidYMin slice" clip-path="url(#${uid}_clip)"/>
+    </svg>`;
+
+    // Frame SVG (overlay layer — border + HP)
+    const frameSvg = `<svg class="card-svg" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 505 680" preserveAspectRatio="none">
+        <defs>
+            <linearGradient id="${uid}_grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="${theme.borderDark}"/>
+                <stop offset="50%" stop-color="${theme.borderLight}"/>
+                <stop offset="100%" stop-color="${theme.borderDark}"/>
+            </linearGradient>
+            <linearGradient id="${uid}_redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f472b6"/>
+                <stop offset="50%" stop-color="#e11d48"/>
+                <stop offset="100%" stop-color="#be123c"/>
+            </linearGradient>
+            <filter id="${uid}_statShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="7.5" flood-color="black" flood-opacity="0.1"/>
+                <feDropShadow dx="0" dy="1" stdDeviation="0.5" flood-color="black" flood-opacity="0.9"/>
+            </filter>
+        </defs>
+        <path d="${CARD_SVG_BORDER_PATH}" fill="url(#${uid}_grad)" fill-rule="evenodd" stroke="${theme.borderDark}" stroke-width="0.5"/>
+        <g class="arena-stat-hp" transform="translate(440, 615) scale(0.4)">
+            <circle cx="0" cy="0" r="116" fill="#dddddd75"/>
+            <circle cx="0" cy="0" r="100" fill="url(#${uid}_redGrad)"/>
+            <text class="arena-hp" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="150" font-weight="bold" fill="#efefef" filter="url(#${uid}_statShadow)">${hp}</text>
+        </g>
+    </svg>`;
+
+    el.innerHTML = `${artSvg}${frameSvg}
+        <div class="arena-title"><div class="arena-name"${nameStyle}>${hero.name}</div></div>
         <div class="arena-text-zone">
             <div class="arena-type">Héros</div>
+            <div class="arena-separator"></div>
             <div class="arena-special">${hero.ability}</div>
         </div>
-        ${rarityDiamond}`;
+        <div class="arena-edition"><span class="rarity-star" style="--rarity-color:${rarity.color};--rarity-bright:${rarity.bright};--rarity-glow:${rarity.glow}0.6);--rarity-duration:${rarity.duration}">&#10022;</span></div>`;
 
     autoFitCardName(el);
     return el;
@@ -1028,13 +1115,7 @@ function renderTraps() {
         if (slot) {
             const trapKey = `me-${i}`;
             const isProtected = animatingTrapSlots.has(trapKey);
-            if (isProtected) {
-                if (!trap) {
-                    animatingTrapSlots.delete(trapKey);
-                } else {
-                    return;
-                }
-            }
+            if (isProtected) return;
             // Fast path : si l'état du trap n'a pas changé, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
             const hasTrap = !!trap;
@@ -1046,7 +1127,7 @@ function renderTraps() {
                 slot.dataset.trapState = '1';
                 slot.classList.add('has-trap', 'mine');
                 if (content) {
-                    content.innerHTML = '<img class="trap-icon-img mine" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                    content.innerHTML = '<div class="trap-card-back mine"></div>';
                 }
                 const trapCard = state.me.trapCards ? state.me.trapCards[i] : null;
                 if (trapCard) {
@@ -1069,13 +1150,7 @@ function renderTraps() {
         if (slot) {
             const trapKey = `opp-${i}`;
             const isProtected = animatingTrapSlots.has(trapKey);
-            if (isProtected) {
-                if (!trap) {
-                    animatingTrapSlots.delete(trapKey);
-                } else {
-                    return;
-                }
-            }
+            if (isProtected) return;
             // Fast path : si l'état du trap n'a pas changé, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
             const hasTrap = !!trap;
@@ -1087,7 +1162,7 @@ function renderTraps() {
                 slot.dataset.trapState = '1';
                 slot.classList.add('has-trap');
                 if (content) {
-                    content.innerHTML = '<img class="trap-icon-img enemy" src="/battlefield_elements/beartraparmed.png" alt="trap">';
+                    content.innerHTML = '<div class="trap-card-back enemy"></div>';
                 }
             } else {
                 delete slot.dataset.trapState;
@@ -1183,7 +1258,7 @@ function _updateHandInPlace(panel, hand, energy) {
         el.classList.toggle('playable', playable);
 
         // Mettre à jour les données de drag (tooExpensive / effectiveCost)
-        if (el._dragData) {
+        if (!USE_CLICK_TO_SELECT && el._dragData) {
             el._dragData.tooExpensive = !playable;
             el._dragData.effectiveCost = effectiveCost;
         }
@@ -1216,7 +1291,7 @@ function _updateHandInPlace(panel, hand, energy) {
             if (abilitiesEl) {
                 const effectivePoison = _getPoisonDisplayValue(card);
                 const basePoison = _getPoisonBaseValue(card);
-                const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : '';
+                const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : ' class="stat-value"';
                 abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
                     /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
                     `Poison <span${poisonClass}>${effectivePoison}</span>`
@@ -1237,7 +1312,17 @@ function _updateHandInPlace(panel, hand, energy) {
 
         // Rebind hover/click avec les données fraîches
         el.onmouseenter = (e) => showCardPreview(card, e);
-        el.onclick = (e) => { e.stopPropagation(); showCardZoom(card); };
+        el.onclick = (e) => {
+            e.stopPropagation();
+            if (USE_CLICK_TO_SELECT) {
+                selectCard(i);
+            } else {
+                showCardZoom(card);
+            }
+        };
+        if (!el.oncontextmenu) {
+            el.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showCardZoom(card); };
+        }
     }
 }
 
@@ -1400,22 +1485,34 @@ function renderHand(hand, energy) {
             }
         }
 
-        // Custom drag
+        // Custom drag (disabled in click-to-select mode)
         const tooExpensive = effectiveCost > energy || cantSummon;
-        CustomDrag.makeDraggable(el, {
-            source: 'hand',
-            card: card,
-            idx: i,
-            effectiveCost: effectiveCost,
-            tooExpensive: tooExpensive
-        });
+        if (!USE_CLICK_TO_SELECT) {
+            CustomDrag.makeDraggable(el, {
+                source: 'hand',
+                card: card,
+                idx: i,
+                effectiveCost: effectiveCost,
+                tooExpensive: tooExpensive
+            });
+        }
 
         // Preview au survol
         el.onmouseenter = (e) => showCardPreview(card, e);
         el.onmouseleave = hideCardPreview;
 
-        // Clic gauche = zoom sur la carte
+        // Clic gauche = select (click-to-select) ou zoom (drag mode)
         el.onclick = (e) => {
+            e.stopPropagation();
+            if (USE_CLICK_TO_SELECT) {
+                selectCard(i);
+            } else {
+                showCardZoom(card);
+            }
+        };
+        // Clic droit = zoom
+        el.oncontextmenu = (e) => {
+            e.preventDefault();
             e.stopPropagation();
             showCardZoom(card);
         };
@@ -1472,6 +1569,11 @@ function renderHand(hand, energy) {
                 clearCommittedSpellHighlights();
             };
             el.onclick = (e) => {
+                e.stopPropagation();
+                showCardZoom(cs.card);
+            };
+            el.oncontextmenu = (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 showCardZoom(cs.card);
             };
@@ -1569,16 +1671,25 @@ function highlightCommittedSpellTargets(cs) {
     if (cs.targetType === 'hero') {
         const heroOwner = cs.targetPlayer === myNum ? 'me' : 'opp';
         const heroEl = document.getElementById(`hero-${heroOwner}`);
-        if (heroEl) heroEl.classList.add('committed-target-highlight');
+        if (heroEl) heroEl.classList.add('hero-hover-target');
     } else if (cs.targetType === 'global') {
-        const targetSide = cs.card.pattern === 'all' ? null : 'opp';
-        document.querySelectorAll('.card-slot').forEach(slot => {
-            if (!targetSide || slot.dataset.owner === targetSide) {
-                slot.classList.add('cross-target');
-                const card = slot.querySelector('.card');
-                if (card) card.classList.add('spell-hover-target');
+        if (cs.card.effect === 'summonZombieWall') {
+            for (let r = 0; r < 4; r++) {
+                const slot = getSlot('me', r, 1);
+                if (slot) {
+                    const card = slot.querySelector('.card');
+                    if (card) card.classList.add('spell-hover-target');
+                }
             }
-        });
+        } else {
+            const targetSide = cs.card.pattern === 'all' ? null : 'opp';
+            document.querySelectorAll('.card-slot').forEach(slot => {
+                if (!targetSide || slot.dataset.owner === targetSide) {
+                    const card = slot.querySelector('.card');
+                    if (card) card.classList.add('spell-hover-target');
+                }
+            });
+        }
     } else if (cs.targetType === 'field') {
         const owner = cs.targetPlayer === myNum ? 'me' : 'opp';
         if (cs.card.pattern === 'cross') {
@@ -1586,25 +1697,27 @@ function highlightCommittedSpellTargets(cs) {
         } else {
             const slot = getSlot(owner, cs.row, cs.col);
             if (slot) {
-                slot.classList.add('cross-target');
                 const card = slot.querySelector('.card');
                 if (card) card.classList.add('spell-hover-target');
             }
         }
     }
 
+    CardGlow.markDirty();
     _syncPixiHand(panel);
 }
 
 function clearCommittedSpellHighlights() {
-    document.querySelectorAll('.committed-target-highlight').forEach(el => {
-        el.classList.remove('committed-target-highlight');
+    document.querySelectorAll('.hero-hover-target').forEach(el => {
+        el.classList.remove('hero-hover-target');
+    });
+    document.querySelectorAll('.card-slot .card.spell-hover-target').forEach(card => {
+        card.classList.remove('spell-hover-target');
     });
     document.querySelectorAll('.card-slot.cross-target').forEach(s => {
         s.classList.remove('cross-target');
-        const card = s.querySelector('.card');
-        if (card) card.classList.remove('spell-hover-target');
     });
+    CardGlow.markDirty();
 }
 
 function createOppHandCard(revealedCard) {
@@ -1616,6 +1729,7 @@ function createOppHandCard(revealedCard) {
         el.onmouseenter = (e) => showCardPreview(revealedCard, e);
         el.onmouseleave = hideCardPreview;
         el.onclick = (e) => { e.stopPropagation(); showCardZoom(revealedCard); };
+        el.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showCardZoom(revealedCard); };
         return el;
     } else {
         // Carte cachée : dos de carte standard
@@ -2018,13 +2132,16 @@ function makeCard(card, inHand, discountedCost = null) {
         }
     }
 
-    // Carte style Arena (Magic Arena) : pilule stats en bas à droite, mana en rond bleu
+    // Carte style Arena — SVG frame + art clippé + stats SVG
     if (card.arenaStyle && card.image) {
         el.classList.add('arena-style');
         if (card.faction) {
             el.classList.add(`faction-${card.faction}`);
         }
-        el.style.backgroundImage = `url('/cards/${card.image}')`;
+        // Art is now inside SVG — no backgroundImage needed
+
+        const theme = CARD_THEMES[card.faction] || CARD_THEMES.black;
+        const uid = `cs${_cardSvgIdCounter++}`;
 
         // Taille de nom pré-calculée (évite le recalcul runtime)
         const fitSize = getNameFitSize(card.name, !!card.faction);
@@ -2042,22 +2159,22 @@ function makeCard(card, inHand, discountedCost = null) {
             .filter(a => a !== 'shooter' && a !== 'fly')
             .map(a => {
                 const isAdded = addedAbils.includes(a);
-                if (a === 'cleave') { const t = `Clivant ${card.cleaveX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'power') { const t = `Puissance ${card.powerX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'regeneration') { const t = `Régénération ${card.regenerationX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'spellBoost') { const t = `Sort renforcé ${card.spellBoostAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'enhance') { const t = `Amélioration ${card.enhanceAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'bloodthirst') { const t = `Soif de sang ${card.bloodthirstAmount || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'cleave') { const v = card.cleaveX || ''; return isAdded ? `<span class="boosted">Clivant ${v}</span>` : `Clivant <span class="stat-value">${v}</span>`; }
+                if (a === 'power') { const v = card.powerX || ''; return isAdded ? `<span class="boosted">Puissance ${v}</span>` : `Puissance <span class="stat-value">${v}</span>`; }
+                if (a === 'regeneration') { const v = card.regenerationX || ''; return isAdded ? `<span class="boosted">Régénération ${v}</span>` : `Régénération <span class="stat-value">${v}</span>`; }
+                if (a === 'spellBoost') { const v = card.spellBoostAmount || ''; return isAdded ? `<span class="boosted">Sort renforcé ${v}</span>` : `Sort renforcé <span class="stat-value">${v}</span>`; }
+                if (a === 'enhance') { const v = card.enhanceAmount || ''; return isAdded ? `<span class="boosted">Amélioration ${v}</span>` : `Amélioration <span class="stat-value">${v}</span>`; }
+                if (a === 'bloodthirst') { const v = card.bloodthirstAmount || ''; return isAdded ? `<span class="boosted">Soif de sang ${v}</span>` : `Soif de sang <span class="stat-value">${v}</span>`; }
                 if (a === 'poison') {
                     const basePoison = _getPoisonBaseValue(card);
                     const effectivePoison = _getPoisonDisplayValue(card);
                     const poisonBoosted = isAdded || effectivePoison > basePoison;
-                    const poisonClass = poisonBoosted ? ' class="boosted"' : '';
+                    const poisonClass = poisonBoosted ? ' class="boosted"' : ' class="stat-value"';
                     return isAdded ? `<span class="boosted">Poison</span> <span${poisonClass}>${effectivePoison}</span>` : `Poison <span${poisonClass}>${effectivePoison}</span>`;
                 }
-                if (a === 'entrave') { const t = `Entrave ${card.entraveX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'lifedrain') { const t = `Drain de vie ${card.lifedrainX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
-                if (a === 'lifelink') { const t = `Lien vital ${card.lifelinkX || ''}`.trim(); return isAdded ? `<span class="boosted">${t}</span>` : t; }
+                if (a === 'entrave') { const v = card.entraveX || ''; return isAdded ? `<span class="boosted">Entrave ${v}</span>` : `Entrave <span class="stat-value">${v}</span>`; }
+                if (a === 'lifedrain') { const v = card.lifedrainX || ''; return isAdded ? `<span class="boosted">Drain de vie ${v}</span>` : `Drain de vie <span class="stat-value">${v}</span>`; }
+                if (a === 'lifelink') { const v = card.lifelinkX || ''; return isAdded ? `<span class="boosted">Lien vital ${v}</span>` : `Lien vital <span class="stat-value">${v}</span>`; }
                 const name = commonAbilityNames[a] || a;
                 if (isAdded) return `<span class="boosted">${name}</span>`;
                 return name;
@@ -2105,11 +2222,6 @@ function makeCard(card, inHand, discountedCost = null) {
             }
         }
 
-        // Diamant de rareté basé sur l'édition
-        const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
-        const rarityClass = rarityMap[card.edition] || 'common';
-        const rarityDiamond = `<div class="arena-edition"><div class="rarity-icon ${rarityClass}"><div class="inner-shape"></div></div></div>`;
-
         // Ligne de type complète
         let typeLineText;
         if (card.isBuilding) {
@@ -2130,34 +2242,111 @@ function makeCard(card, inHand, discountedCost = null) {
         if (noStats) el.classList.add('card-spell');
         if (card.isBuilding) el.classList.add('card-building');
 
-        // Version allégée sur le terrain
+        // Rareté — étoile ✦ avec glow pulsé
+        const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+        const rarityClass = rarityMap[card.edition] || 'common';
+        const rarity = CARD_RARITIES[rarityClass];
+
+        // ============ Art SVG (background layer, z-index 0) ============
+        const artSvg = `<svg class="card-art-svg" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 505 680" preserveAspectRatio="none">
+            <defs><clipPath id="${uid}_clip"><rect x="21" y="20" width="483" height="660" rx="4"/></clipPath></defs>
+            <image href="/cards/${card.image}" x="0" y="0" width="525" height="700" preserveAspectRatio="xMidYMin slice" clip-path="url(#${uid}_clip)"/>
+        </svg>`;
+
+        // ============ Frame SVG defs (overlay layer, z-index 8) ============
+        const showCreatureStats = !noStats && !card.isBuilding;
+        const showBuildingHp = card.isBuilding;
+
+        let frameDefs = `<defs>
+            <linearGradient id="${uid}_grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="${theme.borderDark}"/>
+                <stop offset="50%" stop-color="${theme.borderLight}"/>
+                <stop offset="100%" stop-color="${theme.borderDark}"/>
+            </linearGradient>
+            <filter id="${uid}_statShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="7.5" flood-color="black" flood-opacity="0.1"/>
+                <feDropShadow dx="0" dy="1" stdDeviation="0.5" flood-color="black" flood-opacity="0.9"/>
+            </filter>`;
+        if (showCreatureStats) {
+            frameDefs += `
+            <linearGradient id="${uid}_starGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3a3a3a"/>
+                <stop offset="100%" stop-color="#1a1a1a"/>
+            </linearGradient>
+            <linearGradient id="${uid}_redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f472b6"/>
+                <stop offset="50%" stop-color="#e11d48"/>
+                <stop offset="100%" stop-color="#be123c"/>
+            </linearGradient>`;
+        } else if (showBuildingHp) {
+            frameDefs += `
+            <linearGradient id="${uid}_armorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#5a5e62"/>
+                <stop offset="50%" stop-color="#44484c"/>
+                <stop offset="100%" stop-color="#2e3236"/>
+            </linearGradient>`;
+        }
+        frameDefs += '</defs>';
+
+        // ============ SVG stats ============
+        let statsSvg = '';
+        if (showCreatureStats) {
+            statsSvg = `
+            <g class="arena-stat-atk" transform="translate(450, 435) scale(0.34)">
+                <path d="${CARD_SVG_SPIKED_CIRCLE}" fill="#dddddd75"/>
+                <circle cx="0" cy="0" r="95" fill="url(#${uid}_starGrad)"/>
+                <text class="arena-atk ${atkClass}" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="170" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${atkDisplay}</text>
+            </g>
+            <g class="arena-stat-riposte" transform="translate(450, 534) scale(0.36)">
+                <path d="${CARD_SVG_SPIKED_DIAMOND}" fill="#dddddd75"/>
+                <path d="${CARD_SVG_SPIKED_DIAMOND_INNER}" fill="url(#${uid}_starGrad)"/>
+                <text class="arena-riposte" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="160" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${atkDisplay}</text>
+            </g>
+            <g class="arena-stat-hp" transform="translate(450, 629) scale(0.34)">
+                <circle cx="0" cy="0" r="116" fill="#dddddd75"/>
+                <circle cx="0" cy="0" r="100" fill="url(#${uid}_redGrad)"/>
+                <text class="arena-hp ${hpClass}" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="170" font-weight="bold" fill="#efefef" filter="url(#${uid}_statShadow)">${hp}</text>
+            </g>`;
+        } else if (showBuildingHp) {
+            statsSvg = `
+            <g class="arena-stat-hp" transform="translate(450, 629) scale(0.34)">
+                <circle cx="0" cy="0" r="116" fill="#dddddd75"/>
+                <circle cx="0" cy="0" r="100" fill="url(#${uid}_armorGrad)"/>
+                <text class="arena-armor" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="180" font-weight="bold" fill="#efefef" filter="url(#${uid}_statShadow)">${hp}</text>
+            </g>`;
+        }
+
+        // ============ Frame SVG (border on top, then stats, then mana) ============
+        const frameSvg = `<svg class="card-svg" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 505 680" preserveAspectRatio="none">
+            ${frameDefs}
+            <path d="${CARD_SVG_BORDER_PATH}" fill="url(#${uid}_grad)" fill-rule="evenodd" stroke="${theme.borderDark}" stroke-width="0.5"/>
+            ${statsSvg}
+            <g class="arena-mana-group" transform="translate(68, 126)">
+                <circle cx="0" cy="0" r="32" fill="#d1d1d1" stroke="#d1d1d1" stroke-width="8" stroke-opacity="0.52"/>
+                <text class="arena-mana ${costClass}" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="58" font-weight="900" fill="#292929">${displayCost}</text>
+            </g>
+        </svg>`;
+
+        // ============ On-field rendering ============
         if (!inHand) {
             el.classList.add('on-field');
-            // Jetons compteurs  empilés verticalement sur le côté droit
+            // Jetons compteurs — empilés verticalement sur le côté droit
             let mkIdx = 0;
-            const mkBase = 2;
+            const mkBase = card.isBuilding ? 40 : 2;
             const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${mkBase + mkIdx++ * 28}px">${card.medusaGazeMarker}</div>` : '';
             const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
             const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
             const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
-            const melodyIcon = '';
-            if (noStats) {
-                el.innerHTML = `
-                    <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
-                    <div class="arena-mana">${card.cost}</div>
-                    ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
-            } else {
-                el.innerHTML = `
-                    <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
-                    <div class="arena-mana">${card.cost}</div>
-                    <div class="arena-stats">${card.isBuilding ? `<span class="arena-armor">${hp}</span>` : `<span class="arena-atk ${atkClass}">${atkDisplay}</span><span class="arena-hp ${hpClass}">${hp}</span>`}</div>
-                    ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${melodyIcon}`;
-            }
+            el.innerHTML = `${artSvg}${frameSvg}
+                <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
+                ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}`;
             autoFitCardName(el);
             return el;
         }
 
-        // Version complète (main, hover, cimetière)
+        // ============ In-hand rendering (full template) ============
+        const rarityHtml = rarity ? `<div class="arena-edition"><span class="rarity-star" style="--rarity-color:${rarity.color};--rarity-bright:${rarity.bright};--rarity-glow:${rarity.glow}0.6);--rarity-duration:${rarity.duration}">&#10022;</span></div>` : '';
+
         if (noStats) {
             let typeName = 'Sort';
             if (isTrap) {
@@ -2178,34 +2367,31 @@ function makeCard(card, inHand, discountedCost = null) {
                     `<span class="boosted">${boostedDmg}</span>$1`
                 );
             }
-            el.innerHTML = `
+            el.innerHTML = `${artSvg}${frameSvg}
                 <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeName}</div>
+                    <div class="arena-separator"></div>
                     ${spellDescription ? `<div class="arena-special">${spellDescription}</div>` : ''}
                 </div>
-                ${rarityDiamond}
-                <div class="arena-mana ${costClass}">${displayCost}</div>`;
+                ${rarityHtml}`;
         } else {
-            // Si pétrifié, remplacer capacités et description
+            // Créature/bâtiment en main — Si pétrifié, remplacer capacités et description
             const displayAbilities = card.petrified ? '' : abilitiesText;
             const displaySpecial = card.petrified ? (card.petrifiedDescription || 'Pétrifié - ne peut ni attaquer ni bloquer.') : specialAbility;
-            el.innerHTML = `
+            el.innerHTML = `${artSvg}${frameSvg}
                 <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
                 <div class="arena-text-zone">
                     <div class="arena-type">${typeLineText}</div>
+                    <div class="arena-separator"></div>
                     ${displayAbilities ? `<div class="arena-abilities">${displayAbilities}</div>` : ''}
                     ${displaySpecial ? `<div class="arena-special">${displaySpecial}</div>` : ''}
                 </div>
-                ${rarityDiamond}
-                <div class="arena-mana ${costClass}">${displayCost}</div>
-                <div class="arena-stats ${atkClass || hpClass ? 'modified' : ''}">${card.isBuilding ? `<span class="arena-armor">${hp}</span>` : `<span class="arena-atk ${atkClass}">${atkDisplay}</span><span class="arena-hp ${hpClass}">${hp}</span>`}</div>`;
+                ${rarityHtml}`;
         }
         autoFitCardName(el);
         return el;
     }
-
-
 
     autoFitCardName(el);
     return el;

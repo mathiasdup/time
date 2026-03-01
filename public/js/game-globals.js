@@ -5,6 +5,8 @@ let currentTimer = 90;
 let mulliganDone = false;
 let testModeSelection = [];
 let cardCatalog = null;
+let USE_CLICK_TO_SELECT = true; // true = click-to-select, false = drag (legacy)
+let savedTrapSourceRect = null;
 
 // Debug bridge for automation/bench tools (Playwright, local visual probes).
 // Keeps access explicit without relying on lexical globals from outside scripts.
@@ -600,6 +602,36 @@ if (typeof window !== 'undefined' && typeof window.PerfMon === 'undefined') {
 }
 
 const SLOT_NAMES = [['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H']];
+
+// ==================== SVG CARD TEMPLATE CONSTANTS ====================
+let _cardSvgIdCounter = 0;
+
+const CARD_THEMES = {
+    black: { border: "#5a5a6a", borderLight: "#7a7a8a", borderDark: "#3a3a4a", accent: "#a78bfa", titleColor: "#e0dce8", textColor: "#c0bcc8", accentDim: "rgba(167,139,250,0.2)", darkBase: "rgba(8,6,12,", keywordBg: "rgba(167,139,250,0.14)", keywordColor: "#b8a0f0", typeSep: "rgba(167,139,250,0.25)" },
+    green: { border: "#4a7a4a", borderLight: "#6a9a60", borderDark: "#2e5430", accent: "#4ade80", titleColor: "#c8f0cc", textColor: "#b4d8b8", accentDim: "rgba(74,222,128,0.25)", darkBase: "rgba(4,14,6,", keywordBg: "rgba(74,222,128,0.14)", keywordColor: "#7ce8a0", typeSep: "rgba(74,222,128,0.25)" },
+    white: { border: "#a89878", borderLight: "#ccbea0", borderDark: "#706248", accent: "#ede0c8", titleColor: "#f8f2e4", textColor: "#ddd4c0", accentDim: "rgba(237,224,200,0.2)", darkBase: "rgba(12,10,6,", keywordBg: "rgba(255,255,255,0.12)", keywordColor: "#ede0c8", typeSep: "rgba(237,224,200,0.25)" },
+    red: { border: "#c83030", borderLight: "#e04444", borderDark: "#8a1e1e", accent: "#fb923c", titleColor: "#ffdcc8", textColor: "#e0c0a4", accentDim: "rgba(251,146,60,0.25)", darkBase: "rgba(18,6,0,", keywordBg: "rgba(251,146,60,0.14)", keywordColor: "#f0a870", typeSep: "rgba(251,146,60,0.25)" },
+    blue: { border: "#4a9ac8", borderLight: "#6cb8e0", borderDark: "#2e6a8e", accent: "#38bdf8", titleColor: "#c8e8f8", textColor: "#a8c8dc", accentDim: "rgba(56,189,248,0.25)", darkBase: "rgba(0,6,14,", keywordBg: "rgba(56,189,248,0.14)", keywordColor: "#70c8f0", typeSep: "rgba(56,189,248,0.25)" },
+    neutral: { border: "#8a6040", borderLight: "#b08060", borderDark: "#5a3820", accent: "#d4a574", titleColor: "#f0dcc8", textColor: "#d0b89a", accentDim: "rgba(212,165,116,0.25)", darkBase: "rgba(16,8,2,", keywordBg: "rgba(212,165,116,0.14)", keywordColor: "#d4b088", typeSep: "rgba(212,165,116,0.25)" },
+};
+
+const CARD_RARITIES = {
+    common:   { color: "#c8c8c8", bright: "#ffffff", glow: "rgba(200,200,200,", duration: "4s" },
+    uncommon: { color: "#00ff66", bright: "#ccffdd", glow: "rgba(0,255,102,",   duration: "3s" },
+    rare:     { color: "#9933ff", bright: "#dd99ff", glow: "rgba(153,51,255,",  duration: "2.5s" },
+    mythic:   { color: "#ff5500", bright: "#ffcc00", glow: "rgba(255,85,0,",    duration: "2s" },
+    platinum: { color: "#ffffff", bright: "#ffffff", glow: "rgba(255,255,255,",  duration: "3s" },
+};
+
+const CARD_SVG_INNER_PATH = 'M 27,22 Q 23,22 23,26 L 23,65 L 29,80 L 23,95 L 23,605 L 29,620 L 23,635 L 23,674 Q 23,678 27,678 L 68,678 L 84,672 L 100,678 L 425,678 L 441,672 L 457,678 L 498,678 Q 502,678 502,674 L 502,635 L 496,620 L 502,605 L 502,95 L 496,80 L 502,65 L 502,26 Q 502,22 498,22 L 457,22 L 441,28 L 425,22 L 100,22 L 84,28 L 68,22 Z';
+
+const CARD_SVG_BORDER_PATH = 'M 15,10 L 68,10 L 84,16 L 100,10 L 425,10 L 441,16 L 457,10 L 510,10 Q 515,10 515,14 L 515,65 L 509,80 L 515,95 L 515,605 L 509,620 L 515,635 L 515,686 Q 515,690 510,690 L 457,690 L 441,684 L 425,690 L 100,690 L 84,684 L 68,690 L 15,690 Q 10,690 10,686 L 10,635 L 16,620 L 10,605 L 10,95 L 16,80 L 10,65 L 10,14 Q 10,10 15,10 Z M 27,22 Q 23,22 23,26 L 23,65 L 29,80 L 23,95 L 23,605 L 29,620 L 23,635 L 23,674 Q 23,678 27,678 L 68,678 L 84,672 L 100,678 L 425,678 L 441,672 L 457,678 L 498,678 Q 502,678 502,674 L 502,635 L 496,620 L 502,605 L 502,95 L 496,80 L 502,65 L 502,26 Q 502,22 498,22 L 457,22 L 441,28 L 425,22 L 100,22 L 84,28 L 68,22 Z';
+
+const CARD_SVG_SPIKED_CIRCLE = 'M 25,-108 A 110,110 0 0 1 108,-25 L 130,0 L 108,25 A 110,110 0 0 1 25,108 L 0,130 L -25,108 A 110,110 0 0 1 -108,25 L -130,0 L -108,-25 A 110,110 0 0 1 -25,-108 L 0,-130 L 25,-108 Z';
+
+const CARD_SVG_SPIKED_DIAMOND = 'M 0,-130 L 51,-77 L 83,-83 L 77,-51 L 130,0 L 77,51 L 83,83 L 51,77 L 0,130 L -51,77 L -83,83 L -77,51 L -130,0 L -77,-51 L -83,-83 L -51,-77 Z';
+
+const CARD_SVG_SPIKED_DIAMOND_INNER = 'M 0,-108 L 49,-56 L 56,-49 L 108,0 L 56,49 L 49,56 L 0,108 L -49,56 L -56,49 L -108,0 L -56,-49 L -49,-56 Z';
 
 // Tracking pour l'animation FLIP de la main (reflow fluide quand une carte est jouÃ©e)
 let handCardRemovedIndex = -1;
