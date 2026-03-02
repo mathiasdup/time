@@ -392,15 +392,15 @@ const CardDB = {
         },
         { id: 'vampire_sordide', name: 'Vampire sordide', atk: 1, hp: 1, cost: 2, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/vampire_sordide.png', arenaStyle: true, onAnySacrifice: { atkBuff: 1, hpBuff: 1 }, description: 'Quand une créature alliée ou ennemie est sacrifiée, gagne +1/+1.' },
         { id: 'chevaucheur_de_l_ombre', name: 'Chevaucheur de l\'ombre', atk: 2, hp: 4, cost: 3, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'human', faction: 'black', edition: 2, image: 'black/chevaucheur_de_lombre.png', arenaStyle: true, endOfCombat: { selfMill: 3 }, description: 'Fin du combat : mettez les 3 cartes du dessus de votre bibliothèque dans votre cimetière.' },
-        { id: 'cobra_cracheur', name: 'Cobra cracheur', atk: 1, hp: 3, cost: 3, type: 'creature', abilities: ['shooter', 'poison'], poisonX: 1, combatType: 'shooter', creatureType: 'serpent', faction: 'black', edition: 2, image: 'black/cobra_cracheur.png', arenaStyle: true },
+        { id: 'cobra_cracheur', name: 'Cobra cracheur', atk: 1, riposte: 0, hp: 3, cost: 3, type: 'creature', abilities: ['shooter', 'poison'], poisonX: 1, combatType: 'shooter', creatureType: 'serpent', faction: 'black', edition: 2, image: 'black/cobra_cracheur.png', arenaStyle: true },
         { id: 'nuee_de_moustique', name: 'Nuée de moustique', atk: 1, hp: 1, cost: 1, type: 'creature', abilities: ['fly', 'poison'], poisonX: 1, combatType: 'fly', creatureType: 'insect', faction: 'black', edition: 2, image: 'black/nuee_de_moustique.png', arenaStyle: true },
         { id: 'zobombie', name: 'Zobombie', atk: 2, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zobombie.png', arenaStyle: true, onDeath: { healHero: 1 }, description: 'Mort : soigne votre héros de 1 PV.' },
         { id: 'behemoth_fantomatique', name: 'Béhémoth fantomatique', atk: 8, hp: 4, cost: 7, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 2, image: 'black/behemoth_fantomatique.png', arenaStyle: true },
-        { id: 'demon_supreme', name: 'Démon Suprême', atk: 6, hp: 6, cost: 6, type: 'creature', abilities: ['fly', 'trample'], combatType: 'fly', creatureType: 'demon', faction: 'black', edition: 4, image: 'black/demon_supreme.png', arenaStyle: true, endOfCombat: { spawnAdjacentMelee: 'demon_superieur' }, description: 'Fin du combat : invoque un Démon supérieur sur une case mêlée adjacente vide.' },
+        { id: 'demon_supreme', name: 'Démon Suprême', atk: 6, riposte: 6, hp: 6, cost: 6, type: 'creature', abilities: ['fly', 'trample'], combatType: 'fly', creatureType: 'demon', faction: 'black', edition: 4, image: 'black/demon_supreme.png', arenaStyle: true, endOfCombat: { spawnAdjacentMelee: 'demon_superieur' }, description: 'Fin du combat : invoque un Démon supérieur sur une case mêlée adjacente vide.' },
         { id: 'paria_abysses', name: 'Paria des abysses', atk: 1, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/paria_des_abysses.png', arenaStyle: true, onDeath: { transformInto: 'zombie_paria' }, description: 'Mort : Se transforme en Zombie.' },
         { id: 'zombie_paria', name: 'Zombie', atk: 2, hp: 2, cost: 1, type: 'creature', abilities: ['dissipation'], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zombie.png', arenaStyle: true, isToken: true },
         { id: 'squelette_colossal', name: 'Squelette colossal', atk: 4, hp: 4, cost: 3, type: 'creature', abilities: ['dissipation', 'antitoxin'], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, rarity: 1, image: 'black/squelette_colossal.png', arenaStyle: true },
-        { id: 'titan_des_charniers', name: 'Titan des charniers', atk: 4, hp: 4, cost: 5, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'golem', faction: 'black', edition: 3, rarity: 3, image: 'black/titan_des_charniers.png', arenaStyle: true, onDeath: { summonIfPoisoned: 'squelette_colossal' }, description: 'Mort : si le Titan des charniers avait un marqueur poison ou plus, invoque un Squelette colossal 4/4 à sa place.' },
+        { id: 'titan_des_charniers', name: 'Titan des charniers', atk: 4, riposte: 4, hp: 4, cost: 5, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'golem', faction: 'black', edition: 3, rarity: 3, image: 'black/titan_des_charniers.png', arenaStyle: true, onDeath: { summonIfPoisoned: 'squelette_colossal' }, description: 'Mort : si le Titan des charniers avait un marqueur poison ou plus, invoque un Squelette colossal 4/4 à sa place.' },
         { id: 'damne', name: 'Damné', atk: 1, hp: 1, cost: 1, type: 'creature', abilities: ['dissipation'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/damne.png', arenaStyle: true, isToken: true },
         { id: 'blaireau_contamine', name: 'Blaireau contaminé', atk: 5, hp: 4, cost: 4, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'beast', faction: 'black', edition: 2, image: 'black/blaireau_contamine.png', arenaStyle: true, onReanimate: { atkBuff: 2, hpBuff: 2, addAbility: 'trample' }, description: 'Quand le Blaireau contaminé est réanimé, il gagne +2/+2 et Piétinement.' },
         { id: 'ver_des_tombes', name: 'Ver des tombes', atk: 1, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'parasite', faction: 'black', edition: 2, image: 'black/ver_des_tombes.png', arenaStyle: true, onAllyMillToGraveyard: true, description: 'Quand une carte de créature est mise dans le cimetière depuis la bibliothèque, gagne +1/+1.' },
@@ -450,6 +450,11 @@ const CardDB = {
         { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' }
     ]
 };
+
+for (const creature of CardDB.creatures) {
+    const rawRiposte = Number(creature.riposte);
+    creature.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
+}
 
 const HERO_NAMES = ['Aldric', 'Lyra', 'Theron', 'Seraphine', 'Kael', 'Mira', 'Draven', 'Elena'];
 
@@ -507,6 +512,9 @@ function resetCardForGraveyard(card) {
     if (reset.type === 'creature') {
         reset.baseAtk = reset.atk;
         reset.baseHp = reset.hp;
+        const rawRiposte = Number(reset.riposte);
+        reset.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
+        reset.baseRiposte = reset.riposte;
     }
     // Nettoyer les propriétés dynamiques de combat
     delete reset.poisonCounters;
@@ -540,9 +548,12 @@ function createDeck() {
             uid: `${Date.now()}-${Math.random()}-${i}`
         };
         if (card.type === 'creature') {
+            const rawRiposte = Number(card.riposte);
+            card.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
             card.currentHp = card.hp;
             card.baseAtk = card.atk;
             card.baseHp = card.hp;
+            card.baseRiposte = card.riposte;
             card.canAttack = false;
             card.turnsOnField = 0;
             card.movedThisTurn = false;

@@ -828,12 +828,34 @@ async function applySlotPoisonDamage(room, row, col, attackedSlots, log, sleep, 
     const poisonEffects = [];
     const poisonPowerCandidates = [];
     const sameSlotTickKey = `${room.gameState.turn}:${row}:${col}`;
+    const slotsToTick = [];
+    const slotsToTickSet = new Set();
 
-    if (!Array.isArray(attackedSlots) || attackedSlots.length === 0) {
-        return { gameEnded: false, poisonPowerCandidates };
+    const addSlotToTick = (playerNum, slotRow, slotCol) => {
+        if (playerNum !== 1 && playerNum !== 2) return;
+        if (slotRow !== row || slotCol !== col) return;
+        const key = `${playerNum}:${slotRow}:${slotCol}`;
+        if (slotsToTickSet.has(key)) return;
+        slotsToTickSet.add(key);
+        slotsToTick.push({ playerNum, row: slotRow, col: slotCol });
+    };
+
+    // Le tick poison se déclenche en fin de tour du slot, même sans attaque.
+    for (let p = 1; p <= 2; p++) {
+        addSlotToTick(p, row, col);
     }
 
-    for (const slot of attackedSlots) {
+    // Conserver aussi les slots attaquants explicites (déduplication incluse).
+    if (Array.isArray(attackedSlots)) {
+        for (const slot of attackedSlots) {
+            const playerNum = Number(slot?.playerNum);
+            const slotRow = Number(slot?.row);
+            const slotCol = Number(slot?.col);
+            addSlotToTick(playerNum, slotRow, slotCol);
+        }
+    }
+
+    for (const slot of slotsToTick) {
         const playerNum = Number(slot?.playerNum);
         const slotRow = Number(slot?.row);
         const slotCol = Number(slot?.col);
@@ -1088,6 +1110,15 @@ function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sou
                     byUid: srcCard.uid || null
                 });
                 log(`Ã¢ËœÂ Ã¯Â¸Â Poison : ${srcCard.name} inflige ${poisonAmount} compteur(s) poison ÃƒÂ  ${card.name} (total: ${card.poisonCounters})`, 'damage');
+                // Feedback immédiat du marqueur poison au hit (avant le tick poison de fin de slot).
+                emitAnimation(room, 'poisonApply', {
+                    player: ownerPlayer,
+                    row,
+                    col,
+                    amount: poisonAmount,
+                    totalPoisonCounters: card.poisonCounters,
+                    source: 'combat.onHit.poison'
+                });
             }
         }
     }
@@ -1297,6 +1328,12 @@ function getEffectiveCombatDamage(card, damage) {
         return Math.floor(damage / 2);
     }
     return damage;
+}
+
+function getCreatureRiposte(card) {
+    const rawRiposte = Number(card?.riposte);
+    if (!Number.isFinite(rawRiposte)) return 0;
+    return Math.max(0, Math.floor(rawRiposte));
 }
 
 /**
@@ -5566,7 +5603,6 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
         }
     }
     
-    if (attacks.length === 0) return false;
     const enterPhase = createCombatPhaseTracker(log, row, col);
     enterPhase('pre_hit', `attacks=${attacks.length}`);
 
@@ -5833,8 +5869,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                                 targetCard1.powerStacks = (targetCard1.powerStacks || 0) + powerBonus;
                                 log(`Ã°Å¸â€™Âª ${targetCard1.name} gagne +${powerBonus} ATK!`, 'buff');
                             }
-                            if (!atk1.isShooter && targetCard1.atk > 0) {
-                                const riposteDmg = targetCard1.atk;
+                            const riposteDmg1 = getCreatureRiposte(targetCard1);
+                            if (!atk1.isShooter && riposteDmg1 > 0) {
+                                const riposteDmg = riposteDmg1;
                                 const actualRip1 = applyCreatureDamage(attackerCard1, riposteDmg, room, log, atk1.attackerPlayer, atk1.attackerRow, atk1.attackerCol, { player: atk1.targetPlayer, row: atk1.targetRow, col: atk1.targetCol, uid: targetCard1.uid, isRiposte: true });
                                 if (actualRip1 > 0) {
                                     log(`Ã¢â€ Â©Ã¯Â¸Â ${targetCard1.name} riposte Ã¢â€ â€™ ${attackerCard1.name} (-${actualRip1})`, 'damage');
@@ -5878,8 +5915,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                                 targetCard2.powerStacks = (targetCard2.powerStacks || 0) + powerBonus;
                                 log(`Ã°Å¸â€™Âª ${targetCard2.name} gagne +${powerBonus} ATK!`, 'buff');
                             }
-                            if (!atk2.isShooter && targetCard2.atk > 0) {
-                                const riposteDmg = targetCard2.atk;
+                            const riposteDmg2 = getCreatureRiposte(targetCard2);
+                            if (!atk2.isShooter && riposteDmg2 > 0) {
+                                const riposteDmg = riposteDmg2;
                                 const actualRip2 = applyCreatureDamage(attackerCard2, riposteDmg, room, log, atk2.attackerPlayer, atk2.attackerRow, atk2.attackerCol, { player: atk2.targetPlayer, row: atk2.targetRow, col: atk2.targetCol, uid: targetCard2.uid, isRiposte: true });
                                 if (actualRip2 > 0) {
                                     log(`Ã¢â€ Â©Ã¯Â¸Â ${targetCard2.name} riposte Ã¢â€ â€™ ${attackerCard2.name} (-${actualRip2})`, 'damage');
@@ -5982,8 +6020,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                 const damage = Math.max(0, attackerCard.atk);
 
                 // PrÃƒÂ©-calculer la riposte pour l'intÃƒÂ©grer dans l'animation
-                const hasRiposte = !atk.isShooter && targetCard.atk > 0;
-                const ripostePreview = hasRiposte ? getEffectiveCombatDamage(attackerCard, targetCard.atk) : undefined;
+                const riposteDmg = getCreatureRiposte(targetCard);
+                const hasRiposte = !atk.isShooter && riposteDmg > 0;
+                const ripostePreview = hasRiposte ? getEffectiveCombatDamage(attackerCard, riposteDmg) : undefined;
 
                 // Animation d'attaque avec dÃƒÂ©gÃƒÂ¢ts + riposte intÃƒÂ©grÃƒÂ©s
                 emitAnimation(room, 'attack', {
@@ -6015,10 +6054,9 @@ async function processCombatSlotV2(room, row, col, log, sleep, checkVictory, slo
                     emitPowerBuffAnim(room, atk.targetPlayer, atk.targetRow, atk.targetCol, powerBonus);
                 }
 
-                // RIPOSTE - toutes les crÃƒÂ©atures ripostent sauf si l'attaquant est un tireur ou la cible n'a pas d'ATK
-                if (!atk.isShooter && targetCard.atk > 0) {
+                // RIPOSTE - toutes les creatures ripostent sauf si l'attaquant est un tireur ou la cible n'a pas de riposte
+                if (!atk.isShooter && riposteDmg > 0) {
                     enterPhase('riposte');
-                    const riposteDmg = targetCard.atk;
                     const actualSeqRip = applyCreatureDamage(attackerCard, riposteDmg, room, log, atk.attackerPlayer, atk.attackerRow, atk.attackerCol, { player: atk.targetPlayer, row: atk.targetRow, col: atk.targetCol, uid: targetCard.uid, isRiposte: true });
                     enterPhase('on_hit_riposte');
                     if (actualSeqRip > 0) {

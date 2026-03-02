@@ -135,6 +135,46 @@ function _setHeroHpText(hpElement, value) {
     hpElement.textContent = String(_clampHeroHpValue(value));
 }
 
+function _debugHpSeq(label, payload = null) {
+    if (!(window.DEBUG_LOGS || window.HP_SEQ_TRACE || window.HP_TRACE === true)) return;
+    if (payload === null || payload === undefined) {
+        console.log('[HP-SEQ-DBG]', label);
+        return;
+    }
+    console.log('[HP-SEQ-DBG]', label, payload);
+}
+
+function _debugSlotState(owner, row, col) {
+    const slotKey = `${owner}-${row}-${col}`;
+    const slot = typeof getSlot === 'function' ? getSlot(owner, row, col) : null;
+    const cardEl = slot?.querySelector('.card') || null;
+    const hpEl = cardEl?.querySelector('.arena-armor') || cardEl?.querySelector('.arena-hp') || cardEl?.querySelector('.img-hp');
+    const domHpRaw = hpEl ? parseInt(hpEl.textContent || '', 10) : NaN;
+    const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
+    const side = owner === 'me' ? 'me' : 'opponent';
+    const stateCard = state?.[side]?.field?.[row]?.[col] || null;
+    const override = (typeof poisonHpOverrides !== 'undefined' && poisonHpOverrides?.get)
+        ? (poisonHpOverrides.get(slotKey) || null)
+        : null;
+    return {
+        slotKey,
+        owner,
+        row,
+        col,
+        domHp,
+        domUid: cardEl?.dataset?.uid || null,
+        stateHp: stateCard?.currentHp ?? null,
+        stateMaxHp: stateCard?.hp ?? null,
+        statePoison: stateCard?.poisonCounters ?? null,
+        stateName: stateCard?.name || null,
+        overrideHp: override?.hp ?? null,
+        overrideConsumed: override?.consumed ?? null,
+        overrideUid: override?.uid ?? null,
+        animBlocked: animatingSlots?.has?.(slotKey) || false,
+        queueHead: _queuePreview(10)
+    };
+}
+
 function _getPixiAnimRoot() {
     const shared = window.__PixiCardOverlayShared;
     if (!shared || !shared.app || !shared.ready || !window.PIXI) return null;
@@ -538,6 +578,11 @@ function queueAnimation(type, data) {
         data._preHp = preCard?.currentHp;
         data._preMaxHp = preCard?.hp;
         if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] queue ${type} owner=${owner} slot=${data.row},${data.col} amount=${data.amount ?? '-'} preHp=${data._preHp ?? '-'} preMaxHp=${data._preMaxHp ?? '-'} card=${preCard?.name || '-'}`);
+        _debugHpSeq('queue-slot-block', {
+            type,
+            amount: data.amount ?? null,
+            ..._debugSlotState(owner, data.row, data.col)
+        });
     }
 
     // Pour attack, bloquer le(s) slot(s) de l'attaquant pour que render() ne recrÃƒÆ’Ã‚Â©e pas
@@ -576,6 +621,11 @@ function queueAnimation(type, data) {
         for (const sk of data._attackerSlots) {
             animatingSlots.add(sk);
         }
+        _debugHpSeq('queue-attack-slot-block', {
+            combatType: data.combatType || null,
+            blockedSlots: data._attackerSlots,
+            queueHead: _queuePreview(10)
+        });
     }
 
     // Keep combat readability: play queued damage/poison/spellDamage before later combat actions.
@@ -689,6 +739,31 @@ function queueAnimation(type, data) {
                 }
             }
         }
+    }
+
+    if (type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') {
+        const owner = data.player === myNum ? 'me' : 'opp';
+        _debugHpSeq('queue-insert', {
+            type,
+            insertAt,
+            qLenBefore: animationQueue.length,
+            amount: data.amount ?? null,
+            ..._debugSlotState(owner, data.row, data.col)
+        });
+    } else if (type === 'attack') {
+        _debugHpSeq('queue-insert-attack', {
+            type,
+            combatType: data.combatType || null,
+            insertAt,
+            qLenBefore: animationQueue.length,
+            attacker: data.attacker ?? null,
+            row: data.row ?? null,
+            col: data.col ?? null,
+            targetPlayer: data.targetPlayer ?? null,
+            targetRow: data.targetRow ?? null,
+            targetCol: data.targetCol ?? null,
+            queueHead: _queuePreview(10)
+        });
     }
 
     animationQueue.splice(insertAt, 0, { type, data });
@@ -880,6 +955,13 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'damage') {
                 damageBatch.push(animationQueue.shift().data);
             }
+            for (const d of damageBatch) {
+                const owner = d.player === myNum ? 'me' : 'opp';
+                _debugHpSeq('batch-damage-start', {
+                    amount: d.amount ?? null,
+                    ..._debugSlotState(owner, d.row, d.col)
+                });
+            }
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:batch:damage', {
                     processorId,
@@ -902,6 +984,11 @@ async function processAnimationQueue(processorId = null) {
                 if (!hasPendingDeath) {
                     animatingSlots.delete(dmgSlotKey);
                 }
+                _debugHpSeq('batch-damage-end', {
+                    amount: d.amount ?? null,
+                    hasPendingDeath,
+                    ..._debugSlotState(dmgOwner, d.row, d.col)
+                });
             }
             render();
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
@@ -962,6 +1049,15 @@ async function processAnimationQueue(processorId = null) {
             while (animationQueue.length > 0 && animationQueue[0].type === 'poisonDamage') {
                 batch.push(animationQueue.shift().data);
             }
+            for (const d of batch) {
+                const owner = d.player === myNum ? 'me' : 'opp';
+                _debugHpSeq('batch-poison-start', {
+                    amount: d.amount ?? null,
+                    source: d.source ?? null,
+                    poisonCounters: d.poisonCounters ?? null,
+                    ..._debugSlotState(owner, d.row, d.col)
+                });
+            }
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:batch:poisonDamage', {
                     processorId,
@@ -973,6 +1069,14 @@ async function processAnimationQueue(processorId = null) {
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handlePoisonDamage(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
+            for (const d of batch) {
+                const owner = d.player === myNum ? 'me' : 'opp';
+                _debugHpSeq('batch-poison-end', {
+                    amount: d.amount ?? null,
+                    source: d.source ?? null,
+                    ..._debugSlotState(owner, d.row, d.col)
+                });
+            }
             processAnimationQueue(processorId);
             return;
         }
@@ -1177,7 +1281,7 @@ async function processAnimationQueue(processorId = null) {
         if (type === 'attack' && data._attackerSlots) {
             for (const sk of data._attackerSlots) {
                 const hasPending = animationQueue.some(item =>
-                    (item.type === 'damage' || item.type === 'death' || item.type === 'spellDamage') && item.data &&
+                    (item.type === 'damage' || item.type === 'death' || item.type === 'spellDamage' || item.type === 'poisonDamage') && item.data &&
                     `${(item.data.player === myNum ? 'me' : 'opp')}-${item.data.row}-${item.data.col}` === sk
                 );
                 if (window.DEBUG_LOGS) console.log(`[POISON-HP] post-attack slot=${sk} hasPending=${hasPending} animatingSlots.has=${animatingSlots.has(sk)} poisonOv=${!!poisonHpOverrides.get(sk)} queue=[${animationQueue.map(i=>i.type).join(',')}]`);
@@ -1185,6 +1289,12 @@ async function processAnimationQueue(processorId = null) {
                     animatingSlots.delete(sk);
                 } else {
                 }
+                const [owner, rr, cc] = String(sk).split('-');
+                _debugHpSeq('post-attack-slot', {
+                    slotKey: sk,
+                    hasPending,
+                    ..._debugSlotState(owner, Number(rr), Number(cc))
+                });
             }
             render(); // Mettre ÃƒÆ’Ã‚Â  jour les stats visuellement aprÃƒÆ’Ã‚Â¨s l'attaque (dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts mutuels simultanÃƒÆ’Ã‚Â©s)
         }
@@ -1194,9 +1304,10 @@ async function processAnimationQueue(processorId = null) {
         if (type === 'damage' || type === 'spellDamage') {
             const dmgOwner = data.player === myNum ? 'me' : 'opp';
             const dmgSlotKey = `${dmgOwner}-${data.row}-${data.col}`;
-            // Garder le slot bloquÃƒÆ’Ã‚Â© si death en attente (lifesteal n'a plus besoin de bloquer)
+            // Garder le slot bloqué si une animation dépendante du même slot est encore en attente
+            // (death pour conserver le DOM de la carte, poisonDamage pour préserver l'ordre visuel).
             const hasPendingBlock = animationQueue.some(item =>
-                item.type === 'death' && item.data &&
+                (item.type === 'death' || item.type === 'poisonDamage') && item.data &&
                 (item.data.player === myNum ? 'me' : 'opp') === dmgOwner &&
                 item.data.row === data.row && item.data.col === data.col
             );
@@ -1471,6 +1582,22 @@ async function handlePixiAttack(data) {
     const attackerOwner = data.attacker === myNum ? 'me' : 'opp';
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
     const attackEventTs = data._queuedAt;
+    _debugHpSeq('attack-handler-start', {
+        combatType: data.combatType || null,
+        attacker: data.attacker ?? null,
+        row: data.row ?? null,
+        col: data.col ?? null,
+        targetPlayer: data.targetPlayer ?? null,
+        targetRow: data.targetRow ?? null,
+        targetCol: data.targetCol ?? null,
+        queueHead: _queuePreview(10)
+    });
+    if (data.row !== undefined && data.col !== undefined && data.col !== -1) {
+        _debugHpSeq('attack-handler-attacker-slot', _debugSlotState(attackerOwner, data.row, data.col));
+    }
+    if (data.targetRow !== undefined && data.targetCol !== undefined && data.targetCol !== -1) {
+        _debugHpSeq('attack-handler-target-slot', _debugSlotState(targetOwner, data.targetRow, data.targetCol));
+    }
 
     // Cas spÃƒÆ’Ã‚Â©cial : Tireur vs Volant (simultanÃƒÆ’Ã‚Â© - projectile touche le volant en mouvement)
     if (data.combatType === 'shooter_vs_flyer') {
@@ -1591,9 +1718,20 @@ async function handlePixiDamage(data) {
 async function handlePoisonDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
+    _debugHpSeq('poison-handler-start', {
+        amount: data?.amount ?? null,
+        source: data?.source ?? null,
+        poisonCounters: data?.poisonCounters ?? null,
+        ..._debugSlotState(owner, data.row, data.col)
+    });
     const slot = getSlot(owner, data.row, data.col);
     if (!slot) {
         poisonHpOverrides.delete(slotKey);
+        _debugHpSeq('poison-handler-missing-slot', {
+            slotKey,
+            amount: data?.amount ?? null,
+            queueHead: _queuePreview(10)
+        });
         return;
     }
 
@@ -1635,10 +1773,25 @@ async function handlePoisonDamage(data) {
     const domHpRaw = hpEl ? parseInt(hpEl.textContent, 10) : NaN;
     const domHp = Number.isFinite(domHpRaw) ? domHpRaw : 0;
     const overrideHp = Number(override?.hp);
-    const currentHp = Number.isFinite(overrideHp) ? overrideHp : domHp;
+    const hasOverrideHp = Number.isFinite(overrideHp);
+    const hasDomHp = Number.isFinite(domHpRaw);
+    let currentHp = hasOverrideHp ? overrideHp : domHp;
+    // En cas de décalage state/DOM, ne jamais "remonter" visuellement les PV avant le tick poison.
+    if (hasOverrideHp && hasDomHp && domHp > 0 && overrideHp > domHp) {
+        currentHp = domHp;
+    }
     const safePoisonAmount = Number.isFinite(poisonAmount) && poisonAmount > 0 ? poisonAmount : 0;
     const newHp = Math.max(0, currentHp - safePoisonAmount);
     if (window.DEBUG_LOGS) console.log(`[POISON-HP] handlePoisonDamage: slot=${slotKey} override=${JSON.stringify(override)} domHp=${domHp} currentHp=${currentHp} amount=${safePoisonAmount} rawAmount=${rawAmount} newHp=${newHp}`);
+    _debugHpSeq('poison-handler-calc', {
+        slotKey,
+        rawAmount: rawAmount ?? null,
+        resolvedAmount: safePoisonAmount,
+        domHp,
+        overrideHp: Number.isFinite(overrideHp) ? overrideHp : null,
+        currentHp,
+        newHp
+    });
 
     // S'assurer que le HP affichÃƒÆ’Ã‚Â© est le prÃƒÆ’Ã‚Â©-poison avant le VFX
     if (hpEl) hpEl.textContent = String(currentHp);
@@ -1681,6 +1834,10 @@ async function handlePoisonDamage(data) {
     // DÃƒÆ’Ã‚Â©bloquer le slot et rafraÃƒÆ’Ã‚Â®chir le rendu
     animatingSlots.delete(slotKey);
     render();
+    _debugHpSeq('poison-handler-end', {
+        amount: data?.amount ?? null,
+        ..._debugSlotState(owner, data.row, data.col)
+    });
 }
 
 async function handlePixiHeroHit(data) {
@@ -3576,7 +3733,9 @@ function prepareGraveyardReturnDraw(data, options = {}) {
 
 function animateSpellReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    if (window.HAND_TRACE) {
+        console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    }
     if (owner === 'me') {
         const hp = document.getElementById('my-hand');
         if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'spellReturn:BEFORE-prep');
@@ -3586,7 +3745,9 @@ function animateSpellReturnToHand(data) {
 
 function animateGraveyardReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    if (window.HAND_TRACE) {
+        console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    }
     if (owner === 'me') {
         const hp = document.getElementById('my-hand');
         if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'graveReturn:BEFORE-prep');

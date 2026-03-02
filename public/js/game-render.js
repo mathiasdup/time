@@ -3,6 +3,7 @@
 
 // [DOM-VIS] Snapshot du DOM de la main tel qu'un humain le verrait
 function _domVisSnapshot(panel, label) {
+    if (!window.HAND_TRACE) return;
     if (!panel) return;
     const all = Array.from(panel.querySelectorAll('.card'));
     const snap = all.map((el, i) => {
@@ -452,8 +453,38 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     const ovAge = typeof poisonOv.updatedAt === 'number' ? (Date.now() - poisonOv.updatedAt) : 0;
                     const staleConsumed = poisonOv.consumed && ovAge > 2600;
                     if (ovUidMismatch || (poisonOv.consumed && hpVal <= poisonOv.hp) || staleConsumed) {
+                        if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                            console.log('[HP-SEQ-DBG] render-poison-override-clear', {
+                                slotKey,
+                                owner,
+                                row: r,
+                                col: c,
+                                cardUid: card.uid || null,
+                                stateHp: hpVal,
+                                ovHp: poisonOv.hp ?? null,
+                                ovConsumed: poisonOv.consumed ?? null,
+                                ovUid: poisonOv.uid ?? null,
+                                ovAge,
+                                reason: ovUidMismatch ? 'uid_mismatch' : ((poisonOv.consumed && hpVal <= poisonOv.hp) ? 'consumed_caught_up' : 'stale_consumed')
+                            });
+                        }
                         poisonHpOverrides.delete(slotKey);
                     } else {
+                        if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                            console.log('[HP-SEQ-DBG] render-poison-override-apply', {
+                                slotKey,
+                                owner,
+                                row: r,
+                                col: c,
+                                cardUid: card.uid || null,
+                                domHp: parseInt(hpEl?.textContent || '', 10),
+                                stateHp: hpVal,
+                                appliedHp: poisonOv.hp ?? null,
+                                ovConsumed: poisonOv.consumed ?? null,
+                                ovUid: poisonOv.uid ?? null,
+                                ovAge
+                            });
+                        }
                         hpVal = poisonOv.hp;
                     }
                 }
@@ -527,9 +558,14 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                             atkEl.classList.remove('boosted');
                             atkEl.classList.remove('reduced');
                         }
-                        // Riposte = même valeur que ATK
+                        // Riposte affiche la valeur card.riposte
                         const riposteEl = existingCardEl.querySelector('.arena-riposte');
-                        if (riposteEl && riposteEl.textContent !== atkStr) riposteEl.textContent = atkStr;
+                        if (riposteEl) {
+                            let riposteVal = _toFiniteNumberOrNull(card.riposte);
+                            if (riposteVal === null) riposteVal = 0;
+                            const riposteStr = String(riposteVal);
+                            if (riposteEl.textContent !== riposteStr) riposteEl.textContent = riposteStr;
+                        }
                     }
                 }
                 // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
@@ -639,7 +675,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     buffMarker.remove();
                 }
                 // Positionner les marqueurs verticalement (empilés sur le côté droit)
-                const markerBase = card.isBuilding ? 40 : 2;
+                const markerBase = 2;
                 let markerIdx = 0;
                 if (gazeMarker && gazeCount > 0) gazeMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
                 if (poisonMarker && poisonCount > 0) poisonMarker.style.top = `${markerBase + markerIdx++ * 28}px`;
@@ -1598,7 +1634,9 @@ function renderHand(hand, energy) {
     // [HAND-TRACK] Log server vs DOM order after reconciliation
     const _htServer = hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
     const _htDom = Array.from(panel.querySelectorAll('.card:not(.committed-spell)')).map((el, i) => `${i}:${el.dataset.uid?.slice(-4)}`).join(', ');
-    console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
+    if (window.HAND_TRACE) {
+        console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
+    }
 
     // Sorts engagés : toujours afficher à leur position d'origine dans la main.
     // animateSpell les retire un par un du DOM quand ils sont joués.
@@ -2668,12 +2706,16 @@ function makeCard(card, inHand, discountedCost = null) {
 
     const hpNum = _toFiniteNumberOrNull(card.currentHp ?? card.hp);
     const atkNum = _toFiniteNumberOrNull(card.atk);
+    const riposteNum = _toFiniteNumberOrNull(card.riposte);
     const hp = card.type === 'creature'
         ? (hpNum !== null ? hpNum : 0)
         : (card.currentHp ?? card.hp ?? '');
     const atkDisplay = card.type === 'creature'
         ? (atkNum !== null ? atkNum : 0)
         : (card.atk ?? '');
+    const riposteDisplay = card.type === 'creature'
+        ? (riposteNum !== null ? riposteNum : 0)
+        : (card.riposte ?? '');
 
     // Coût affiché (réduit si Hyrule actif)
     const displayCost = discountedCost !== null ? discountedCost : card.cost;
@@ -2870,7 +2912,7 @@ function makeCard(card, inHand, discountedCost = null) {
             <g class="arena-stat-riposte" transform="translate(450, 534) scale(0.36)">
                 <path d="${CARD_SVG_SPIKED_DIAMOND}" fill="#dddddd75"/>
                 <path d="${CARD_SVG_SPIKED_DIAMOND_INNER}" fill="url(#${uid}_starGrad)"/>
-                <text class="arena-riposte" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="160" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${atkDisplay}</text>
+                <text class="arena-riposte" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="160" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${riposteDisplay}</text>
             </g>
             <g class="arena-stat-hp" transform="translate(450, 629) scale(0.34)">
                 <circle cx="0" cy="0" r="116" fill="#dddddd75"/>
@@ -2902,7 +2944,7 @@ function makeCard(card, inHand, discountedCost = null) {
             el.classList.add('on-field');
             // Jetons compteurs — empilés verticalement sur le côté droit
             let mkIdx = 0;
-            const mkBase = card.isBuilding ? 40 : 2;
+            const mkBase = 2;
             const gazeMarker = card.medusaGazeMarker >= 1 ? `<div class="gaze-marker" style="top:${mkBase + mkIdx++ * 28}px">${card.medusaGazeMarker}</div>` : '';
             const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
             const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';

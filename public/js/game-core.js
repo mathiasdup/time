@@ -90,6 +90,108 @@ function _toFiniteAnimNumberOrNull(value) {
     return Number.isFinite(n) ? n : null;
 }
 
+function _hpTrace(label, payload = {}) {
+    if (typeof window === 'undefined') return;
+    if (window.HP_TRACE !== true) return;
+    try {
+        console.warn(`[HP-TRACE] ${label}`, payload);
+    } catch (_) {}
+}
+
+function _hpTraceSlot(playerNum, row, col) {
+    if (row === undefined || col === undefined || col < 0) {
+        return {
+            player: playerNum ?? null,
+            row: row ?? null,
+            col: col ?? null,
+            owner: null,
+            domHp: null,
+            domUid: null,
+            stateHp: null,
+            stateMaxHp: null,
+            statePoison: null,
+            stateName: null
+        };
+    }
+    const owner = playerNum === myNum ? 'me' : 'opp';
+    const side = owner === 'me' ? 'me' : 'opponent';
+    const slot = typeof getSlot === 'function' ? getSlot(owner, row, col) : null;
+    const cardEl = slot?.querySelector('.card') || null;
+    const hpEl = cardEl?.querySelector('.arena-armor') || cardEl?.querySelector('.arena-hp') || cardEl?.querySelector('.img-hp');
+    const domHpRaw = hpEl ? parseInt(hpEl.textContent || '', 10) : NaN;
+    const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
+    const stateCard = state?.[side]?.field?.[row]?.[col] || null;
+    return {
+        player: playerNum ?? null,
+        row,
+        col,
+        owner,
+        domHp,
+        domUid: cardEl?.dataset?.uid || null,
+        stateHp: stateCard?.currentHp ?? null,
+        stateMaxHp: stateCard?.hp ?? null,
+        statePoison: stateCard?.poisonCounters ?? null,
+        stateName: stateCard?.name || null
+    };
+}
+
+function _recomputeClientTotalPoisonCounters() {
+    if (!state?.me?.field || !state?.opponent?.field) return;
+    let total = 0;
+    for (const side of ['me', 'opponent']) {
+        const field = state?.[side]?.field;
+        if (!Array.isArray(field)) continue;
+        for (let r = 0; r < field.length; r++) {
+            for (let c = 0; c < (field[r]?.length || 0); c++) {
+                const card = field[r][c];
+                if (!card || Number(card.currentHp) <= 0) continue;
+                const poison = Number(card.poisonCounters);
+                if (Number.isFinite(poison) && poison > 0) total += poison;
+            }
+        }
+    }
+    if (state.me) state.me.totalPoisonCounters = total;
+    if (state.opponent) state.opponent.totalPoisonCounters = total;
+}
+
+function _applyClientPoisonApply(anim, context = 'unknown') {
+    if (!anim || !state) return;
+    const playerNum = Number(anim.player);
+    const row = Number(anim.row);
+    const col = Number(anim.col);
+    if ((playerNum !== 1 && playerNum !== 2) || !Number.isFinite(row) || !Number.isFinite(col)) return;
+    const side = playerNum === myNum ? 'me' : 'opponent';
+    const card = state?.[side]?.field?.[row]?.[col];
+    if (!card || Number(card.currentHp) <= 0) return;
+
+    const before = Number(card.poisonCounters) || 0;
+    let after = before;
+
+    const totalRaw = Number(anim.totalPoisonCounters ?? anim.total ?? anim.poisonCounters);
+    if (Number.isFinite(totalRaw) && totalRaw >= 0) {
+        after = Math.max(after, Math.floor(totalRaw));
+    }
+
+    const amountRaw = Number(anim.amount);
+    if (after === before && Number.isFinite(amountRaw) && amountRaw > 0) {
+        after = before + Math.floor(amountRaw);
+    }
+
+    if (after !== before) {
+        card.poisonCounters = after;
+        _recomputeClientTotalPoisonCounters();
+        _hpTrace(`client poisonApply ${context}`, {
+            amount: anim.amount ?? null,
+            totalPoisonCounters: anim.totalPoisonCounters ?? null,
+            source: anim.source ?? null,
+            before,
+            after,
+            target: _hpTraceSlot(playerNum, row, col)
+        });
+        render();
+    }
+}
+
 function _traceBuffApplyPayload(context, data) {
     if (!data || typeof window?.visTrace !== 'function') return;
     const atkBuff = _toFiniteAnimNumberOrNull(data.atkBuff);
@@ -468,7 +570,9 @@ function initSocket() {
         // [HAND-TRACK] Log hand state from server on every gameStateUpdate
         if (s.me?.hand) {
             const _ht = s.me.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
-            console.log(`[HAND-TRACK] stateUpdate phase=${s.phase} turn=${s.turn} | hand=[${_ht}]`);
+            if (window.HAND_TRACE) {
+                console.log(`[HAND-TRACK] stateUpdate phase=${s.phase} turn=${s.turn} | hand=[${_ht}]`);
+            }
         }
 
         const logRadjawakState = (sideLabel, sideState) => {
@@ -1001,6 +1105,13 @@ function handleAnimation(data) {
     const isRadjawak = (card) => !!(card && typeof card.name === 'string' && card.name.toLowerCase().includes('radjawak'));
 
     if (type === 'attack') {
+        _hpTrace('recv attack', {
+            combatType: data.combatType || null,
+            amount: data.damage ?? null,
+            qLenBefore: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+            attacker: _hpTraceSlot(data.attacker, data.row, data.col),
+            target: _hpTraceSlot(data.targetPlayer, data.targetRow, data.targetCol)
+        });
         const attackerCard = getAnimFieldCard(data.attacker, data.row, data.col);
         const targetCard = getAnimFieldCard(data.targetPlayer, data.targetRow, data.targetCol);
         if (isRadjawak(attackerCard) || isRadjawak(targetCard)) {
@@ -1010,10 +1121,31 @@ function handleAnimation(data) {
         }
     }
     if (type === 'damage') {
+        _hpTrace('recv damage', {
+            amount: data.amount ?? null,
+            qLenBefore: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+            target: _hpTraceSlot(data.player, data.row, data.col)
+        });
         const targetCard = getAnimFieldCard(data.player, data.row, data.col);
         if (isRadjawak(targetCard)) {
             if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] anim-damage target=${targetCard.name} pos=${data.row},${data.col} amount=${data.amount} skipScratch=${!!data.skipScratch}`);
         }
+    }
+    if (type === 'spellDamage') {
+        _hpTrace('recv spellDamage', {
+            amount: data.amount ?? null,
+            qLenBefore: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+            target: _hpTraceSlot(data.player, data.row, data.col)
+        });
+    }
+    if (type === 'poisonDamage') {
+        _hpTrace('recv poisonDamage', {
+            amount: data.amount ?? null,
+            source: data.source ?? null,
+            poisonCounters: data.poisonCounters ?? null,
+            qLenBefore: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+            target: _hpTraceSlot(data.player, data.row, data.col)
+        });
     }
 
     // Les animations de combat utilisent la file d'attente.
@@ -1096,20 +1228,72 @@ function handleAnimation(data) {
             const card = state?.[side]?.field?.[data.row]?.[data.col];
             const existing = poisonHpOverrides.get(pdKey);
             const cardUid = card?.uid || null;
+            const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, data.row, data.col) : null;
+            const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
+            const domHpRaw = pdHpEl ? parseInt(pdHpEl.textContent || '', 10) : NaN;
+            const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
 
             if (!card) {
                 if (existing) poisonHpOverrides.delete(pdKey);
+                if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                    console.log('[HP-SEQ-DBG] core-poison-override-clear:no-card', {
+                        key: pdKey,
+                        owner: pdOwner,
+                        row: data.row,
+                        col: data.col,
+                        amount: data.amount ?? null,
+                        existingHp: existing?.hp ?? null,
+                        existingConsumed: existing?.consumed ?? null,
+                        domHp
+                    });
+                }
             } else {
                 const shouldReplace =
                     !existing ||
                     existing.consumed === true ||
                     (existing.uid && cardUid && existing.uid !== cardUid);
                 if (shouldReplace) {
+                    const stateHpNum = Number(card.currentHp);
+                    const stateHp = Number.isFinite(stateHpNum) ? stateHpNum : null;
+                    const prePoisonHp = (domHp !== null && stateHp !== null)
+                        ? Math.min(domHp, stateHp)
+                        : (domHp !== null ? domHp : (stateHp !== null ? stateHp : 0));
                     poisonHpOverrides.set(pdKey, {
-                        hp: card.currentHp,
+                        hp: prePoisonHp,
                         consumed: false,
                         uid: cardUid,
                         updatedAt: Date.now()
+                    });
+                    if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                        console.log('[HP-SEQ-DBG] core-poison-override-set:single', {
+                            key: pdKey,
+                            owner: pdOwner,
+                            row: data.row,
+                            col: data.col,
+                            amount: data.amount ?? null,
+                            domHp,
+                            stateHp: card.currentHp ?? null,
+                            prePoisonHp,
+                            stateMaxHp: card.hp ?? null,
+                            statePoison: card.poisonCounters ?? null,
+                            existingHp: existing?.hp ?? null,
+                            existingConsumed: existing?.consumed ?? null,
+                            existingUid: existing?.uid ?? null,
+                            newUid: cardUid
+                        });
+                    }
+                } else if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                    console.log('[HP-SEQ-DBG] core-poison-override-keep:single', {
+                        key: pdKey,
+                        owner: pdOwner,
+                        row: data.row,
+                        col: data.col,
+                        amount: data.amount ?? null,
+                        domHp,
+                        stateHp: card.currentHp ?? null,
+                        existingHp: existing?.hp ?? null,
+                        existingConsumed: existing?.consumed ?? null,
+                        existingUid: existing?.uid ?? null
                     });
                 }
             }
@@ -1138,6 +1322,17 @@ function handleAnimation(data) {
             animatingTrapSlots.add(`${owner}-${data.row}`);
         }
         queueAnimation(type, data);
+        if (type === 'attack' || type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') {
+            _hpTrace(`queued ${type}`, {
+                qLenAfter: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+                amount: data.amount ?? data.damage ?? null,
+                target: _hpTraceSlot(
+                    type === 'attack' ? data.targetPlayer : data.player,
+                    type === 'attack' ? data.targetRow : data.row,
+                    type === 'attack' ? data.targetCol : data.col
+                )
+            });
+        }
         if (typeof window.visTrace === 'function') {
             window.visTrace('anim:handle:queued', {
                 type,
@@ -1153,11 +1348,15 @@ function handleAnimation(data) {
         switch(type) {
             case 'spellMiss': animateSpellMiss(data); break;
             case 'spellReturnToHand':
-                console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                if (window.HAND_TRACE) {
+                    console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                }
                 animateSpellReturnToHand(data);
                 break;
             case 'graveyardReturn':
-                console.log(`[HAND-TRACK] graveyardReturn | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                if (window.HAND_TRACE) {
+                    console.log(`[HAND-TRACK] graveyardReturn | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                }
                 animateGraveyardReturnToHand(data);
                 break;
             case 'heal': animateHeal(data); break;
@@ -1183,6 +1382,17 @@ function handleAnimation(data) {
                 }
                 break;
             }
+            case 'poisonApply': {
+                _applyClientPoisonApply(data, 'single');
+                const poisonOwner = data.player === myNum ? 'me' : 'opp';
+                const poisonSlot = getSlot(poisonOwner, data.row, data.col);
+                if (poisonSlot) {
+                    const rect = poisonSlot.getBoundingClientRect();
+                    const v = _vfxRect(rect);
+                    CombatVFX.createPoisonCloudEffect(v.x, v.y, v.w, v.h);
+                }
+                break;
+            }
             case 'summon': animateSummon(data); break;
             case 'trapSummon': animateTrapSummon(data); break;
             case 'reanimate': animateReanimate(data); break;
@@ -1195,7 +1405,9 @@ function handleAnimation(data) {
             case 'draw':
                 if (data.cards) {
                     const _draws = data.cards.map(d => `${d.card?.name || '?'}(${(d.card?.uid||d.card?.id||'').slice(-4)}) idx=${d.handIndex} p=${d.player}`).join(', ');
-                    console.log(`[HAND-TRACK] draw | cards=[${_draws}] isMe=${data.cards.some(d => d.player === myNum)}`);
+                    if (window.HAND_TRACE) {
+                        console.log(`[HAND-TRACK] draw | cards=[${_draws}] isMe=${data.cards.some(d => d.player === myNum)}`);
+                    }
                 }
                 if (typeof GameAnimations !== 'undefined') {
                     GameAnimations.prepareDrawAnimation(data);
@@ -1299,6 +1511,13 @@ function handleAnimationBatch(animations) {
             const displayedHp = document.querySelector(`#${target === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`)?.textContent;
             immediatePromises.push(animateZdejebelDamage(anim));
         } else if (anim.type === 'poisonDamage') {
+            _hpTrace('batch recv poisonDamage', {
+                amount: anim.amount ?? null,
+                source: anim.source ?? null,
+                poisonCounters: anim.poisonCounters ?? null,
+                qLenBefore: (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0,
+                target: _hpTraceSlot(anim.player, anim.row, anim.col)
+            });
             const poisonAmount = Number(anim.amount);
             if (!Number.isFinite(poisonAmount) && typeof window.visTrace === 'function') {
                 window.visTrace('poisonDamage:payload-invalid', {
@@ -1335,25 +1554,78 @@ function handleAnimationBatch(animations) {
             const card = state?.[side]?.field?.[anim.row]?.[anim.col];
             const existing = poisonHpOverrides.get(pdKey);
             const cardUid = card?.uid || null;
+            const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, anim.row, anim.col) : null;
+            const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
+            const domHpRaw = pdHpEl ? parseInt(pdHpEl.textContent || '', 10) : NaN;
+            const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
             if (!card) {
                 if (existing) poisonHpOverrides.delete(pdKey);
+                if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                    console.log('[HP-SEQ-DBG] core-poison-override-clear:batch', {
+                        key: pdKey,
+                        owner: pdOwner,
+                        row: anim.row,
+                        col: anim.col,
+                        amount: anim.amount ?? null,
+                        existingHp: existing?.hp ?? null,
+                        existingConsumed: existing?.consumed ?? null,
+                        domHp
+                    });
+                }
             } else {
                 const shouldReplace =
                     !existing ||
                     existing.consumed === true ||
                     (existing.uid && cardUid && existing.uid !== cardUid);
                 if (shouldReplace) {
+                    const stateHpNum = Number(card.currentHp);
+                    const stateHp = Number.isFinite(stateHpNum) ? stateHpNum : null;
+                    const prePoisonHp = (domHp !== null && stateHp !== null)
+                        ? Math.min(domHp, stateHp)
+                        : (domHp !== null ? domHp : (stateHp !== null ? stateHp : 0));
                     poisonHpOverrides.set(pdKey, {
-                        hp: card.currentHp,
+                        hp: prePoisonHp,
                         consumed: false,
                         uid: cardUid,
                         updatedAt: Date.now()
+                    });
+                    if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                        console.log('[HP-SEQ-DBG] core-poison-override-set:batch', {
+                            key: pdKey,
+                            owner: pdOwner,
+                            row: anim.row,
+                            col: anim.col,
+                            amount: anim.amount ?? null,
+                            domHp,
+                            stateHp: card.currentHp ?? null,
+                            prePoisonHp,
+                            stateMaxHp: card.hp ?? null,
+                            statePoison: card.poisonCounters ?? null,
+                            existingHp: existing?.hp ?? null,
+                            existingConsumed: existing?.consumed ?? null,
+                            existingUid: existing?.uid ?? null,
+                            newUid: cardUid
+                        });
+                    }
+                } else if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
+                    console.log('[HP-SEQ-DBG] core-poison-override-keep:batch', {
+                        key: pdKey,
+                        owner: pdOwner,
+                        row: anim.row,
+                        col: anim.col,
+                        amount: anim.amount ?? null,
+                        domHp,
+                        stateHp: card.currentHp ?? null,
+                        existingHp: existing?.hp ?? null,
+                        existingConsumed: existing?.consumed ?? null,
+                        existingUid: existing?.uid ?? null
                     });
                 }
             }
             // Animation de poison : passer par la file d'attente pour le batch processing
             queueAnimation(anim.type, anim);
         } else if (anim.type === 'poisonApply') {
+            _applyClientPoisonApply(anim, 'batch');
             // VFX nuage toxique sur la carte ciblÃ©e
             const poisonOwner = anim.player === myNum ? 'me' : 'opp';
             const poisonSlot = getSlot(poisonOwner, anim.row, anim.col);
