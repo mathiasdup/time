@@ -416,14 +416,20 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+        const sourceSlot = getSlot(owner, data.row, data.col);
+        const sourceCardEl = sourceSlot?.querySelector?.('.card');
+        const sourceUid = sourceCardEl?.dataset?.uid || sourceCardEl?.__cardData?.uid || null;
+        const bounceCard = data.card ? { ...data.card } : {};
+        if (sourceUid) bounceCard.uid = sourceUid;
         _bounceDbg('queue:bounce', {
             owner,
             handIndex: data.handIndex ?? null,
-            cardUid: data.card?.uid || data.card?.id || null,
+            cardUid: bounceCard.uid || bounceCard.id || null,
             cardName: data.card?.name || null,
             row: data.row,
             col: data.col,
-            toGraveyard: !!data.toGraveyard
+            toGraveyard: !!data.toGraveyard,
+            sourceUid: sourceUid || null
         });
 
         // PrÃƒÆ’Ã‚Â©-enregistrer pendingBounce au moment du queue (mÃƒÆ’Ã‚Âªme technique que graveyardReturn)
@@ -435,14 +441,18 @@ function queueAnimation(type, data) {
             const startHandCount = handPanel
                 ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
                 : 0;
+            const startHandUids = _bounceHandSnapshot(owner)
+                .map((c) => c.uid)
+                .filter((uid) => !!uid);
             data._bounceTargetPromise = new Promise(resolve => {
                 pendingBounce = {
                     owner,
-                    card: data.card,
+                    card: bounceCard,
                     handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
-                    expectAtEnd: owner === 'me',
+                    expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex, bounceCard.uid || bounceCard.id || null),
                     resolveTarget: resolve,
                     startHandCount,
+                    startHandUids,
                     queued: true
                 };
                 _bounceDbg('queue:bounce:pending-created', {
@@ -526,7 +536,7 @@ function queueAnimation(type, data) {
                     owner,
                     card: data.card,
                     handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
-                    expectAtEnd: owner === 'me',
+                    expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex),
                     resolveTarget: resolve,
                     startHandCount,
                     queued: true
@@ -3350,6 +3360,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 const spellId = card.uid || card.id;
                 if (pendingSpellReturns.has(spellId)) {
                     pendingSpellReturns.delete(spellId);
+                    console.log(`[GRAVE-LOG] pendingSpellReturns branch: graveRenderBlocked.delete("${side}")`);
                     graveRenderBlocked.delete(side);
                     if (state) {
                         const graveyard = side === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
@@ -3383,6 +3394,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                     const capturedSide = side;
                     const spellUid = card.uid || card.id;
                     setTimeout(() => {
+                        console.log(`[GRAVE-LOG] setTimeout branch: graveRenderBlocked.delete("${capturedSide}")`);
                         graveRenderBlocked.delete(capturedSide);
                         if (state) {
                             const graveyard = capturedSide === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
@@ -3448,13 +3460,14 @@ async function animateSpell(data) {
                     }
                 );
                 if (resolved.el && resolved.rect) {
-                    savedRect = resolved.rect;
+                    if (!savedRect) {
+                        // Pas de snapshot pré-capturé → utiliser le DOM live
+                        savedRect = resolved.rect;
+                        sourceMode = resolved.mode;
+                    }
+                    // Toujours cacher la carte + fermer le gap (side-effects DOM)
                     resolved.el.style.visibility = 'hidden';
                     smoothCloseOppHandGap(resolved.el);
-                    sourceMode = resolved.mode;
-                } else if (!savedRect && savedOppHandRects && oppAnimIndex !== null && oppAnimIndex < savedOppHandRects.length) {
-                    savedRect = savedOppHandRects[oppAnimIndex];
-                    sourceMode = 'saved-cache-index';
                 }
             }
             // Pas de flyFromOppHand ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â animateSpellReveal gÃƒÆ’Ã‚Â¨re tout le trajet mainÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢showcase avec scale progressif + flip
@@ -3564,17 +3577,10 @@ function animateSpellReturnToHand(data) {
     // nettoyer immÃƒÆ’Ã‚Â©diatement le visuel du cimetiÃƒÆ’Ã‚Â¨re
     const graveTopContainer = document.getElementById(owner + '-grave-top');
     if (graveTopContainer && graveTopContainer.dataset.topCardUid === spellId) {
-        if (window.DEBUG_LOGS) console.log(`[BLAST-RET] race-cleanup grave top already had spellId=${spellId} owner=${owner}`);
-        graveRenderBlocked.delete(owner);
         pendingSpellReturns.delete(spellId);
-        if (state) {
-            const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
-            if (graveyard) {
-                updateGraveDisplay(owner, graveyard);
-                updateGraveTopCard(owner, graveyard);
-            }
-        }
     }
+    // Bloquer le cimetiere jusqu'a ce que animateCardDraw prenne le relais
+    graveRenderBlocked.add(owner);
     // Marquer cet index comme retour depuis le cimetiÃƒÆ’Ã‚Â¨re
     const beforeReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
     GameAnimations.pendingGraveyardReturns[owner].add(data.handIndex);
@@ -3939,9 +3945,6 @@ function animateTrapPlace(data) {
                     resolved.el.style.visibility = 'hidden';
                     smoothCloseOppHandGap(resolved.el);
                     sourceMode = resolved.mode;
-                } else if (!savedRect && savedOppHandRects && oppAnimIndex !== null && oppAnimIndex < savedOppHandRects.length) {
-                    savedRect = savedOppHandRects[oppAnimIndex];
-                    sourceMode = 'saved-cache-index';
                 }
             }
             _oppPlayDbg('trapPlace:resolve-source:end', {
@@ -4397,6 +4400,11 @@ function _isValidHandIndex(value) {
     return Number.isFinite(n) && n >= 0 && Math.floor(n) === n;
 }
 
+function _shouldExpectAtEnd(owner, handIndex, cardUid = null) {
+    const hasUid = !!String(cardUid || '');
+    return owner === 'me' && !_isValidHandIndex(handIndex) && !hasUid;
+}
+
 function _pickOppAnimIndex(data) {
     if (_isValidHandIndex(data?.visualHandIndex)) return Number(data.visualHandIndex);
     if (_isValidHandIndex(data?.handIndex)) return Number(data.handIndex);
@@ -4479,22 +4487,26 @@ function _resolveOppHandSourceByIndexAndUid(visualHandIndex = null, preferredUid
 
     const idx = _isValidHandIndex(visualHandIndex) ? Number(visualHandIndex) : null;
     if (!el && idx !== null && idx >= 0) {
-        if (idx < logical.length) {
-            el = logical[idx];
-            mode = 'logical-index';
-        }
-        if ((!el || el.style.width === '0px') && idx < visible.length) {
+        // visualHandIndex should target what the user sees first.
+        if (idx < visible.length) {
             el = visible[idx];
             mode = 'visible-index';
         }
+        if ((!el || el.style.width === '0px') && idx < logical.length) {
+            el = logical[idx];
+            mode = 'logical-index';
+        }
     }
 
-    // Si un index explicite est fourni, ne pas dÃ©grader vers la "derniÃ¨re carte":
-    // c'est prÃ©cisÃ©ment ce fallback qui crÃ©e l'effet "part de la fin de main".
+    // Never fallback to "last card" when an explicit source is expected:
+    // this is the root cause of the "teleport to hand end" bug.
+    const hasExplicitSourceHint = (idx !== null) || !!preferredUid || strictIndex || strictNoFallback;
     if (!el && strictNoFallback) {
         mode = 'strict-no-fallback-miss';
     } else if (!el && strictIndex && idx !== null) {
         mode = 'index-miss';
+    } else if (!el && hasExplicitSourceHint) {
+        mode = 'explicit-source-miss';
     } else if (!el && visible.length > 0) {
         el = visible[visible.length - 1];
         mode = 'visible-last-fallback';
@@ -4579,13 +4591,22 @@ function checkPendingBounce(owner, cardElements) {
         if (idx >= 0 && idx < cards.length) target = cards[idx];
     }
 
+    if (!target && !forceEndTarget && panel && Array.isArray(pendingBounce.startHandUids) && pendingBounce.startHandUids.length > 0) {
+        const seen = new Set(pendingBounce.startHandUids);
+        const cards = Array.from(panel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back'));
+        target = cards.find((el) => {
+            const uid = el?.dataset?.uid || null;
+            return !!uid && !seen.has(uid) && el.style.width !== '0px';
+        }) || null;
+    }
+
     if (!target) {
         if (forceEndTarget && panel) {
             const cards = Array.from(panel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back'))
                 .filter((el) => el.style.width !== '0px');
             target = cards[cards.length - 1] || null;
         } else {
-            target = cardElements[cardElements.length - 1];
+            return;
         }
     }
     if (!target) return;
@@ -4629,6 +4650,295 @@ async function animateBounceToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
     animatingSlots.add(slotKey);
+
+    // Helper: tente de résoudre la cible bounce depuis le DOM courant
+    const tryResolveBounceTargetNow = () => {
+        if (!pendingBounce || pendingBounce.owner !== owner || pendingBounce.resolved) return false;
+        const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+        if (!panel) return false;
+        const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
+        const cards = panel.querySelectorAll(selector);
+        if (!cards || cards.length === 0) return false;
+        const preferEndForOppUnknownIndex = owner === 'opp' && !_isValidHandIndex(pendingBounce.handIndex);
+        if (pendingBounce.queued && typeof pendingBounce.startHandCount === 'number') {
+            if (cards.length <= pendingBounce.startHandCount) return false;
+        }
+        const forceEndTarget = !!pendingBounce.expectAtEnd || preferEndForOppUnknownIndex;
+        let target = null;
+        const uid = pendingBounce.card?.uid || null;
+        if (uid && !preferEndForOppUnknownIndex) {
+            target = panel.querySelector(`${selector}[data-uid="${uid}"]`);
+        }
+        if (!target && !forceEndTarget && _isValidHandIndex(pendingBounce.handIndex)) {
+            const idx = Number(pendingBounce.handIndex);
+            if (idx >= 0 && idx < cards.length) target = cards[idx];
+        }
+        if (!target && !forceEndTarget && Array.isArray(pendingBounce.startHandUids) && pendingBounce.startHandUids.length > 0) {
+            const seen = new Set(pendingBounce.startHandUids);
+            target = Array.from(cards).find((el) => {
+                const cardUid = el?.dataset?.uid || null;
+                return !!cardUid && !seen.has(cardUid) && el.style.width !== '0px';
+            }) || null;
+        }
+        if (!target) {
+            if (forceEndTarget) {
+                const logicalCards = Array.from(cards).filter((el) => el.style.width !== '0px');
+                target = logicalCards[logicalCards.length - 1] || cards[cards.length - 1];
+            } else {
+                return false;
+            }
+        }
+        if (!target) return false;
+        target.style.visibility = 'hidden';
+        pendingBounce.targetUid = target.dataset?.uid || uid || null;
+        pendingBounce.targetIndex = Array.from(cards).indexOf(target);
+        const rect = target.getBoundingClientRect();
+        pendingBounce.resolveTarget({
+            el: target, x: rect.left, y: rect.top, w: rect.width, h: rect.height
+        });
+        pendingBounce.resolved = true;
+        return true;
+    };
+
+    // Bounce to hand uses the draw pipeline (same feel/stability as draw animation),
+    // but starts from the board slot instead of the deck.
+    if (!data.toGraveyard) {
+        const slot = getSlot(owner, data.row, data.col);
+        if (!slot) {
+            animatingSlots.delete(slotKey);
+            return;
+        }
+        const cardInSlot = slot.querySelector('.card');
+        const sourceUid = cardInSlot?.dataset?.uid || cardInSlot?.__cardData?.uid || null;
+        const bounceCard = data.card ? { ...data.card } : {};
+        if (sourceUid && !bounceCard.uid) bounceCard.uid = sourceUid;
+
+        let targetPromise = null;
+        if (data._bounceTargetPromise) {
+            targetPromise = data._bounceTargetPromise;
+            if (pendingBounce && pendingBounce.owner === owner && (!pendingBounce.card || (!pendingBounce.card.uid && !pendingBounce.card.id))) {
+                pendingBounce.card = { ...(pendingBounce.card || {}), ...bounceCard };
+                pendingBounce.expectAtEnd = _shouldExpectAtEnd(owner, pendingBounce.handIndex, bounceCard.uid || bounceCard.id || null);
+            }
+        } else {
+            targetPromise = new Promise(resolve => {
+                const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+                const startHandCount = handPanel
+                    ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
+                    : 0;
+                const startHandUids = _bounceHandSnapshot(owner)
+                    .map((c) => c.uid)
+                    .filter((uid) => !!uid);
+                pendingBounce = {
+                    owner,
+                    card: bounceCard,
+                    handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
+                    expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex, bounceCard.uid || bounceCard.id || null),
+                    resolveTarget: resolve,
+                    startHandCount,
+                    startHandUids,
+                    queued: true
+                };
+            });
+        }
+
+        render();
+
+        // Fallback resolver: if no extra render occurs, resolve target from current DOM.
+        let pollCount = 0;
+        const pollMax = 90;
+        const pollResolve = () => {
+            if (!pendingBounce || pendingBounce.owner !== owner || pendingBounce.resolved) return;
+            tryResolveBounceTargetNow();
+            pollCount++;
+            if ((!pendingBounce || pendingBounce.owner !== owner || pendingBounce.resolved) || pollCount >= pollMax) return;
+            requestAnimationFrame(pollResolve);
+        };
+        requestAnimationFrame(pollResolve);
+
+        const target = await Promise.race([
+            targetPromise,
+            new Promise(resolve => setTimeout(() => resolve(null), 1500))
+        ]);
+
+        // Hide source only when animation is about to start, so the lift transition stays continuous.
+        if (cardInSlot && cardInSlot.isConnected) cardInSlot.style.visibility = 'hidden';
+
+        const targetCard = target?.el || null;
+        if (targetCard) targetCard.style.visibility = 'hidden';
+        const fallbackRect = (() => {
+            const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            if (!panel) return null;
+
+            const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
+            const allCards = Array.from(panel.querySelectorAll(selector))
+                .filter((el) => el.style.width !== '0px');
+            const refCard = allCards[allCards.length - 1] || allCards[0] || null;
+            if (refCard) {
+                const rr = refCard.getBoundingClientRect();
+                if (rr.width > 0 && rr.height > 0) {
+                    return { left: rr.left, top: rr.top, width: rr.width, height: rr.height };
+                }
+            }
+
+            const r = panel.getBoundingClientRect();
+            const rs = getComputedStyle(document.documentElement);
+            const baseW = parseFloat(rs.getPropertyValue('--card-w')) || 144;
+            const baseH = parseFloat(rs.getPropertyValue('--card-h')) || 192;
+            const gs = parseFloat(rs.getPropertyValue('--game-scale'));
+            const gameScale = Number.isFinite(gs) && gs > 0 ? gs : 1;
+            const w = baseW * gameScale;
+            const h = baseH * gameScale;
+            const x = owner === 'me'
+                ? (r.left + r.width - w - 10)
+                : (r.left + 10);
+            const y = r.top + Math.max(0, (r.height - h) * 0.5);
+            return { left: x, top: y, width: w, height: h };
+        })();
+        const targetRect = targetCard
+            ? targetCard.getBoundingClientRect()
+            : (fallbackRect || { left: 0, top: 0, width: 92, height: 124 });
+        const endX = targetRect.left;
+        const endY = targetRect.top;
+        const cardWidth = targetRect.width;
+        const cardHeight = targetRect.height;
+
+        const slotRect = slot.getBoundingClientRect();
+        const startX = slotRect.left + slotRect.width / 2 - cardWidth / 2;
+        const startY = slotRect.top + slotRect.height / 2 - cardHeight / 2;
+
+        const _rs = getComputedStyle(document.documentElement);
+        const designW = parseFloat(_rs.getPropertyValue('--card-w'));
+        const faceScale = cardWidth / Math.max(1, designW);
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = `
+            position: fixed;
+            z-index: 10000;
+            pointer-events: none;
+            left: ${startX}px;
+            top: ${startY}px;
+            width: ${cardWidth}px;
+            height: ${cardHeight}px;
+            transform-origin: center center;
+            transform: scale(1);
+            opacity: 0;
+            perspective: 800px;
+        `;
+
+        const finish = () => {
+            const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
+            let finalTarget = null;
+            if (panel) {
+                if (pendingBounce?.targetUid) {
+                    finalTarget = panel.querySelector(`${selector}[data-uid="${pendingBounce.targetUid}"]`);
+                }
+                if (!finalTarget && _isValidHandIndex(pendingBounce?.targetIndex)) {
+                    const idx = Number(pendingBounce.targetIndex);
+                    const cards = panel.querySelectorAll(selector);
+                    if (idx >= 0 && idx < cards.length) finalTarget = cards[idx];
+                }
+                if (!finalTarget && _isValidHandIndex(pendingBounce?.handIndex) && !pendingBounce?.expectAtEnd) {
+                    const idx = Number(pendingBounce.handIndex);
+                    const cards = panel.querySelectorAll(selector);
+                    if (idx >= 0 && idx < cards.length) finalTarget = cards[idx];
+                }
+            } else if (targetCard && targetCard.isConnected) {
+                finalTarget = targetCard;
+            }
+            if (finalTarget) {
+                const nameEl = finalTarget.querySelector?.('.arena-name');
+                if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+                finalTarget.style.visibility = 'visible';
+                if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                    const targetUid = pendingBounce?.targetUid || finalTarget?.dataset?.uid || null;
+                    const cards = panel ? panel.querySelectorAll(selector) : null;
+                    const targetIndex = cards && finalTarget ? Array.from(cards).indexOf(finalTarget) : null;
+                    GameAnimations.releaseHiddenCard(owner, targetIndex, targetUid);
+                }
+                if (pendingBounce && pendingBounce.owner === owner) pendingBounce = null;
+            } else if (pendingBounce && pendingBounce.owner === owner) {
+                // State/target can arrive slightly after the fly: keep pending marker for next render pass.
+                pendingBounce.completed = true;
+                pendingBounce.wrapper = wrapper;
+                render();
+            }
+            animatingSlots.delete(slotKey);
+        };
+
+        if (owner === 'me' && typeof animateDrawForMeNoFlip === 'function') {
+            const revealScale = 1.35;
+            const revealFaceScale = faceScale * revealScale;
+
+            const scalerCss = `
+                position: absolute; top: 0; left: 0;
+                width: ${designW}px; height: ${parseFloat(_rs.getPropertyValue('--card-h'))}px;
+                transform: scale(${revealFaceScale});
+                transform-origin: top left;
+            `;
+
+            const faceScaler = document.createElement('div');
+            faceScaler.style.cssText = scalerCss;
+            const frontFace = makeCard(data.card, true);
+            const bgImage = frontFace.style.backgroundImage;
+            frontFace.style.position = 'absolute';
+            frontFace.style.top = '0';
+            frontFace.style.left = '0';
+            frontFace.style.width = '100%';
+            frontFace.style.height = '100%';
+            frontFace.style.margin = '0';
+            frontFace.style.boxShadow = 'none';
+            frontFace.style.filter = 'none';
+            if (bgImage) frontFace.style.backgroundImage = bgImage;
+            const nameEl = frontFace.querySelector('.arena-name');
+            if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+            faceScaler.appendChild(frontFace);
+            wrapper.appendChild(faceScaler);
+            document.body.appendChild(wrapper);
+
+            animateDrawForMeNoFlip(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, finish);
+        } else if (typeof animateDrawForMeNoFlip === 'function') {
+            // Bounce adverse : même animation face visible (pas de flip, la carte est connue)
+            const revealScale = 1.35;
+            const revealFaceScale = faceScale * revealScale;
+
+            const faceScaler = document.createElement('div');
+            faceScaler.style.cssText = `
+                position: absolute; top: 0; left: 0;
+                width: ${designW}px; height: ${parseFloat(_rs.getPropertyValue('--card-h'))}px;
+                transform: scale(${revealFaceScale});
+                transform-origin: top left;
+            `;
+            const frontFace = makeCard(data.card, true);
+            const bgImage = frontFace.style.backgroundImage;
+            frontFace.style.position = 'absolute';
+            frontFace.style.top = '0';
+            frontFace.style.left = '0';
+            frontFace.style.width = '100%';
+            frontFace.style.height = '100%';
+            frontFace.style.margin = '0';
+            frontFace.style.boxShadow = 'none';
+            frontFace.style.filter = 'none';
+            if (bgImage) frontFace.style.backgroundImage = bgImage;
+            const nameEl = frontFace.querySelector('.arena-name');
+            if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+            faceScaler.appendChild(frontFace);
+            wrapper.appendChild(faceScaler);
+            document.body.appendChild(wrapper);
+
+            animateDrawForMeNoFlip(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, finish);
+        } else {
+            // Safety fallback if draw helpers are unavailable.
+            if (cardInSlot && cardInSlot.isConnected) cardInSlot.style.visibility = '';
+            targetCard.style.visibility = 'visible';
+            if (pendingBounce && pendingBounce.owner === owner) pendingBounce = null;
+            animatingSlots.delete(slotKey);
+            render();
+        }
+        return;
+    }
+
     _bounceDbg('anim:start', {
         owner,
         handIndex: data.handIndex ?? null,
@@ -4651,6 +4961,25 @@ async function animateBounceToHand(data) {
 
     const cardInSlot = slot.querySelector('.card');
     const slotRect = slot.getBoundingClientRect();
+    const rootStyle = getComputedStyle(document.documentElement);
+    const gameScaleRaw = parseFloat(rootStyle.getPropertyValue('--game-scale'));
+    const gameScale = Number.isFinite(gameScaleRaw) && gameScaleRaw > 0 ? gameScaleRaw : 1;
+    const applyGameScaleToFace = (el) => {
+        if (!el) return;
+        if (gameScale >= 0.999) {
+            el.style.transform = 'none';
+            el.style.transformOrigin = 'center center';
+            el.style.width = '100%';
+            el.style.height = '100%';
+            return;
+        }
+        // Keep outer card size constant while matching in-hand visual text scale.
+        el.style.transformOrigin = 'top left';
+        el.style.transform = `scale(${gameScale})`;
+        const inv = 100 / gameScale;
+        el.style.width = `${inv}%`;
+        el.style.height = `${inv}%`;
+    };
 
     // Dimensions de la carte sur le board
     const cardWidth = 144;
@@ -4677,18 +5006,13 @@ async function animateBounceToHand(data) {
     // Carte face visible ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â prÃƒÆ’Ã‚Â©server le backgroundImage
     // Pendant le trajet, utiliser le skin board pour eviter l'effet
     // de typo agrandie observe avec le template "in-hand".
-    const cardFace = makeCard(data.card, false);
+    let cardFace = makeCard(data.card, false);
+    // Lift phase: keep board-readable combat info (stats), remove only heavy text/details.
     const stripSelectors = [
-        '.arena-title',
         '.arena-text-zone',
         '.arena-edition',
-        '.arena-stat-atk',
-        '.arena-stat-hp',
-        '.arena-stat-riposte',
         '.arena-mana-group',
         '.img-cost',
-        '.img-atk',
-        '.img-hp',
         '.gaze-marker',
         '.poison-marker',
         '.entrave-marker',
@@ -4705,68 +5029,36 @@ async function animateBounceToHand(data) {
     cardFace.style.height = '100%';
     cardFace.style.margin = '0';
     cardFace.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
+    applyGameScaleToFace(cardFace);
     if (bgImage) cardFace.style.backgroundImage = bgImage;
 
     wrapper.appendChild(cardFace);
+
+    // Prepare full hand-face early (hidden) so all inner elements can appear at once
+    // right after lift, without progressive paint latency.
+    let stagedDetailedFace = null;
+    if (!data.toGraveyard) {
+        stagedDetailedFace = makeCard(data.card, true);
+        stagedDetailedFace.style.position = 'absolute';
+        stagedDetailedFace.style.top = '0';
+        stagedDetailedFace.style.left = '0';
+        stagedDetailedFace.style.width = '100%';
+        stagedDetailedFace.style.height = '100%';
+        stagedDetailedFace.style.margin = '0';
+        stagedDetailedFace.style.boxShadow = cardFace.style.boxShadow || '0 4px 12px rgba(0,0,0,0.35)';
+        stagedDetailedFace.style.pointerEvents = 'none';
+        stagedDetailedFace.style.visibility = 'hidden';
+        stagedDetailedFace.style.opacity = '0';
+        stagedDetailedFace.style.transition = 'none';
+        applyGameScaleToFace(stagedDetailedFace);
+        wrapper.appendChild(stagedDetailedFace);
+        const stagedNameEl = stagedDetailedFace.querySelector('.arena-name');
+        if (stagedNameEl && typeof fitArenaName === 'function') fitArenaName(stagedNameEl);
+    }
     document.body.appendChild(wrapper);
 
     // Auto-fit du nom (les noms longs dÃƒÆ’Ã‚Â©bordent pendant l'animation)
     // no-op: art-only card during bounce travel
-
-    // PrÃƒÂ©parer la cible main avant le lift: empÃƒÂªche l'apparition prÃƒÂ©maturÃƒÂ©e.
-    const tryResolveBounceTargetNow = () => {
-        if (!pendingBounce || pendingBounce.owner !== owner || pendingBounce.resolved) return false;
-        const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
-        if (!panel) return false;
-        const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
-        const cards = panel.querySelectorAll(selector);
-        if (!cards || cards.length === 0) return false;
-        const preferEndForOppUnknownIndex = owner === 'opp' && !_isValidHandIndex(pendingBounce.handIndex);
-
-        // Tant que la nouvelle carte n'est pas rÃ©ellement entrÃ©e en main,
-        // ne surtout pas rÃ©soudre la cible (sinon on vise une carte existante).
-        if (pendingBounce.queued && typeof pendingBounce.startHandCount === 'number') {
-            if (cards.length <= pendingBounce.startHandCount) return false;
-        }
-
-        const forceEndTarget = !!pendingBounce.expectAtEnd || preferEndForOppUnknownIndex;
-        let target = null;
-        const uid = pendingBounce.card?.uid || null;
-        if (uid && !preferEndForOppUnknownIndex) {
-            target = panel.querySelector(`${selector}[data-uid="${uid}"]`);
-        }
-        if (!target && !forceEndTarget && _isValidHandIndex(pendingBounce.handIndex)) {
-            const idx = Number(pendingBounce.handIndex);
-            if (idx >= 0 && idx < cards.length) target = cards[idx];
-        }
-        if (!target) {
-            const logicalCards = Array.from(cards).filter((el) => el.style.width !== '0px');
-            target = logicalCards[logicalCards.length - 1] || cards[cards.length - 1];
-        }
-        if (!target) return false;
-
-        target.style.visibility = 'hidden';
-        pendingBounce.targetUid = target.dataset?.uid || uid || null;
-        pendingBounce.targetIndex = Array.from(cards).indexOf(target);
-        const rect = target.getBoundingClientRect();
-        _bounceDbg('anim:poll-resolved-target', {
-            owner,
-            handIndex: pendingBounce.handIndex ?? null,
-            resolvedUid: pendingBounce.targetUid || null,
-            resolvedIndex: pendingBounce.targetIndex ?? null,
-            rect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
-            hand: _bounceHandSnapshot(owner)
-        });
-        pendingBounce.resolveTarget({
-            el: target,
-            x: rect.left,
-            y: rect.top,
-            w: rect.width,
-            h: rect.height
-        });
-        pendingBounce.resolved = true;
-        return true;
-    };
 
     if (!data.toGraveyard) {
         if (data._bounceTargetPromise) {
@@ -4787,7 +5079,7 @@ async function animateBounceToHand(data) {
                     owner,
                     card: data.card,
                     handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
-                    expectAtEnd: owner === 'me',
+                    expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex),
                     wrapper,
                     resolveTarget: resolve,
                     startHandCount,
@@ -4843,7 +5135,7 @@ async function animateBounceToHand(data) {
     }
 
     const liftHeight = 18;
-    const liftScale = 1.04;
+    const liftScale = 1;
     let _liftLoggedStart = false;
     let _liftLoggedMid = false;
     let _liftLoggedEnd = false;
@@ -4922,6 +5214,16 @@ async function animateBounceToHand(data) {
         wrapper.style.transform = `rotateX(${handStartTiltDeg}deg)`;
     } else {
         wrapper.style.transform = 'none';
+    }
+
+    // Show full in-hand details right after lift, before descending to hand.
+    if (!data.toGraveyard && stagedDetailedFace && stagedDetailedFace.parentNode === wrapper) {
+        stagedDetailedFace.style.visibility = 'visible';
+        stagedDetailedFace.style.opacity = '1';
+        if (cardFace && cardFace.parentNode === wrapper) {
+            wrapper.removeChild(cardFace);
+        }
+        cardFace = stagedDetailedFace;
     }
 
     // === Main pleine ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ voler vers le cimetiÃƒÆ’Ã‚Â¨re avec teinte rouge ===
@@ -5145,9 +5447,8 @@ async function animateBounceToHand(data) {
         function animateSettle() {
             const elapsed = performance.now() - t0;
             const p = Math.min(elapsed / settleDuration, 1);
-            const bob = Math.sin(p * Math.PI) * 2.2;
             wrapper.style.left = floatX + 'px';
-            wrapper.style.top = (floatY - bob) + 'px';
+            wrapper.style.top = floatY + 'px';
             const live = findResolvedTargetElement();
             if (!resolvedTarget && live) {
                 const r = live.getBoundingClientRect();
@@ -5391,6 +5692,7 @@ async function animateBounceToHand(data) {
 // emitAnimation et emitStateToBoth arrivent quasi-simultanÃƒÆ’Ã‚Â©ment du serveur.
 async function animateGraveyardReturn(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
+    const fromBoardBounce = data?._sourceMode === 'board-bounce';
     const logPrefix = '[GRAVE-AXIS]';
     const rectStr = (r) => `x=${r.left.toFixed(1)} y=${r.top.toFixed(1)} w=${r.width.toFixed(1)} h=${r.height.toFixed(1)}`;
     const toDeg = (rad) => rad * (180 / Math.PI);
@@ -5405,12 +5707,16 @@ async function animateGraveyardReturn(data) {
         }
     }
 
-    // Retirer la carte de la popup cimetiÃƒÆ’Ã‚Â¨re si ouverte
-    removeCardFromGraveyardPopup(owner, data.card);
+    // Retirer la carte de la popup cimetiÃƒÆ’Ã‚Â¨re si ouverte (graveyard return only)
+    if (!fromBoardBounce) {
+        removeCardFromGraveyardPopup(owner, data.card);
+    }
 
     const graveEl = document.getElementById(owner + '-grave-box');
     const graveTopEl = document.getElementById(owner + '-grave-top');
-    if (!graveEl) return;
+    const boardSourceSlot = fromBoardBounce ? getSlot(owner, data.row, data.col) : null;
+    if (!fromBoardBounce && !graveEl) return;
+    if (fromBoardBounce && !boardSourceSlot) return;
 
     // Utiliser le pendingBounce prÃƒÆ’Ã‚Â©-enregistrÃƒÆ’Ã‚Â© au queue time, ou en crÃƒÆ’Ã‚Â©er un nouveau
     let targetPromise;
@@ -5426,7 +5732,7 @@ async function animateGraveyardReturn(data) {
                 owner,
                 card: data.card,
                 handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
-                expectAtEnd: owner === 'me',
+                expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex),
                 resolveTarget: resolve,
                 startHandCount,
                 queued: true
@@ -5436,12 +5742,15 @@ async function animateGraveyardReturn(data) {
 
     // RÃƒÆ’Ã‚Â©fÃƒÆ’Ã‚Â©rence de gÃƒÆ’Ã‚Â©omÃƒÆ’Ã‚Â©trie: le slot du cimetiÃƒÆ’Ã‚Â¨re (stable), pas la carte interne
     // qui peut avoir un ratio/style diffÃƒÆ’Ã‚Â©rent (source d'effet "tassÃƒÆ’Ã‚Â©").
-    const graveTopCardEl = graveTopEl ? graveTopEl.querySelector('.card') : null;
-    const sourceSlotEl = graveTopEl || graveEl;
+    const sourceCardEl = fromBoardBounce
+        ? boardSourceSlot.querySelector('.card')
+        : (graveTopEl ? graveTopEl.querySelector('.card') : null);
+    const sourceSlotEl = fromBoardBounce ? boardSourceSlot : (graveTopEl || graveEl);
     const sourceRect = sourceSlotEl.getBoundingClientRect();
-    const sourceCardRect = graveTopCardEl ? graveTopCardEl.getBoundingClientRect() : null;
+    const sourceCardRect = sourceCardEl ? sourceCardEl.getBoundingClientRect() : null;
     const sourceTransform = getComputedStyle(sourceSlotEl).transform;
     const sourceTiltDeg = extractRotateXDeg(sourceTransform);
+    if (fromBoardBounce && sourceCardEl) sourceCardEl.style.visibility = 'hidden';
 
     // Prendre la taille d'une carte de main existante pour garder exactement
     // le mÃƒÆ’Ã‚Âªme axe/look pendant toute l'animation (pas de reconfiguration visuelle).
@@ -5764,7 +6073,7 @@ async function animateGraveyardReturn(data) {
     // pendingBounce sera null aprÃƒÆ’Ã‚Â¨s le cleanup (render ou safety timeout/rAF)
 
     // Forcer la mise ÃƒÆ’Ã‚Â  jour du cimetiÃƒÆ’Ã‚Â¨re depuis le state actuel
-    if (state) {
+    if (!fromBoardBounce && state) {
         const graveyard = owner === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
         if (graveyard) {
             updateGraveTopCard(owner, graveyard);
@@ -6241,9 +6550,6 @@ function animateSummon(data) {
         } else if (!savedSourceRect && revealedCacheRect) {
             savedSourceRect = revealedCacheRect;
             sourceMode = 'saved-revealed-cache';
-        } else if (!strictSummonSource && savedOppHandRects && oppAnimIndex !== null && oppAnimIndex < savedOppHandRects.length) {
-            savedSourceRect = savedOppHandRects[oppAnimIndex];
-            sourceMode = 'saved-cache-index';
         }
         _oppPlayDbg('summon:resolve-source:end', {
             visualHandIndex: Number.isFinite(Number(data.visualHandIndex)) ? Number(data.visualHandIndex) : null,

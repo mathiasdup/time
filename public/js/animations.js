@@ -454,7 +454,9 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
 
     if (owner === 'me') {
         if (fromGraveyard) {
-            // Retour du cimetière : carte déjà face visible, pas de flip
+            // Retour du cimetière : carte face visible, reveal au centre puis main
+            const revealScale = 1.4;
+            const revealFaceScale = faceScale * revealScale;
             const frontFace = (typeof makeCard === 'function')
                 ? makeCard(card, true)
                 : createCardElement(card);
@@ -462,41 +464,96 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             frontFace.style.cssText = `
                 margin: 0; position: relative;
                 border-radius: 6px;
-                transform: scale(${faceScale});
+                transform: scale(${revealFaceScale});
                 transform-origin: top left;
             `;
             if (bgImage) frontFace.style.backgroundImage = bgImage;
             wrapper.appendChild(frontFace);
             document.body.appendChild(wrapper);
 
-            // Vider le cimetière dans le même frame que la création du wrapper
-            // (le wrapper couvre la position du cimetière, pas de flash visible)
             const cardUid = card.uid || card.id;
             const meGraveTop = document.getElementById('me-grave-top');
-            if (meGraveTop && meGraveTop.dataset.topCardUid === cardUid) {
-                const meGrave = state?.me?.graveyard;
-                meGraveTop.innerHTML = '';
-                // Restaurer la vraie carte du dessus depuis le state (le sort retourné n'y est plus)
-                if (meGrave && meGrave.length > 0) {
-                    const actualTop = meGrave[meGrave.length - 1];
-                    meGraveTop.dataset.topCardUid = actualTop.uid || actualTop.id;
-                    meGraveTop.classList.remove('empty');
-                    const graveCardEl = makeCard(actualTop, false);
-                    graveCardEl.classList.remove('just-played', 'can-attack');
-                    graveCardEl.classList.add('grave-card', 'in-graveyard');
-                    meGraveTop.appendChild(graveCardEl);
-                    const nameEl = graveCardEl.querySelector('.arena-name');
-                    if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
-                } else {
-                    meGraveTop.classList.add('empty');
-                    delete meGraveTop.dataset.topCardUid;
-                }
-                // Débloquer et mettre à jour les layers du cimetière
-                graveRenderBlocked.delete('me');
-                updateGraveDisplay('me', meGrave || []);
+            // Flag dédié — indépendant du compteur graveRenderBlocked
+            // Empêche render()/updateGraveTopCard/updateGraveDisplay de toucher
+            // au cimetière pendant toute la durée de l'animation de retour.
+            console.log('[GRAVE-LOG] graveReturnAnimActive.add("me") — animation START');
+            graveReturnAnimActive.add('me');
+            // Remplacer IMMÉDIATEMENT la carte par le cadre vide du cimetière
+            // (pas juste opacity:0, sinon le slot est visuellement vide pendant l'animation)
+            if (meGraveTop) {
+                delete meGraveTop.dataset.topCardUid;
+                meGraveTop.classList.add('empty');
+                const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+                meGraveTop.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
+                console.log('[GRAVE-LOG] meGraveTop replaced with empty frame immediately');
+            }
+            // Aussi mettre à jour le stack
+            const meGraveStack = document.getElementById('me-grave-stack');
+            if (meGraveStack) {
+                meGraveStack.classList.toggle('has-cards', false);
+                const layers = meGraveStack.querySelectorAll('.grave-card-layer');
+                meGraveStack.style.setProperty('--stack-layers', 0);
+                layers.forEach(layer => { layer.style.display = 'none'; });
             }
 
-            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+            animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+                console.log('[GRAVE-LOG] animation CALLBACK — graveReturnAnimActive still active, doing DOM cleanup directly');
+                // GARDER graveReturnAnimActive actif pendant le nettoyage DOM
+                // pour empêcher render() d'interférer. On ne passe PAS par les
+                // fonctions updateGraveTopCard/updateGraveDisplay car elles sont
+                // bloquées par graveRenderBlocked (compteur > 1 à ce stade).
+
+                // Nettoyage direct du DOM — réplique la logique de updateGraveTopCard
+                const currentMeGrave = state?.me?.graveyard || [];
+                const graveTopNow = document.getElementById('me-grave-top');
+                if (graveTopNow) {
+                    delete graveTopNow.dataset.topCardUid;
+                    if (currentMeGrave.length > 0) {
+                        const topCard = currentMeGrave[currentMeGrave.length - 1];
+                        graveTopNow.dataset.topCardUid = topCard.uid || topCard.id;
+                        graveTopNow.classList.remove('empty');
+                        graveTopNow.innerHTML = '';
+                        const cardEl = makeCard(topCard, false);
+                        cardEl.classList.remove('just-played', 'can-attack');
+                        cardEl.classList.add('grave-card', 'in-graveyard');
+                        graveTopNow.appendChild(cardEl);
+                    } else {
+                        graveTopNow.classList.add('empty');
+                        const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+                        graveTopNow.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
+                    }
+                }
+
+                // Nettoyage direct du grave-stack — réplique updateGraveDisplay
+                const graveStackNow = document.getElementById('me-grave-stack');
+                if (graveStackNow) {
+                    const count = currentMeGrave.length;
+                    graveStackNow.classList.toggle('has-cards', count > 0);
+                    const layers = graveStackNow.querySelectorAll('.grave-card-layer');
+                    const visibleLayers = count <= 1 ? 0 : Math.min(layers.length, Math.ceil(count / 6));
+                    graveStackNow.style.setProperty('--stack-layers', visibleLayers);
+                    layers.forEach((layer, i) => {
+                        const show = i >= layers.length - visibleLayers;
+                        layer.style.display = show ? 'block' : 'none';
+                        const cardIndex = count - (3 - i) - 1;
+                        const card = (cardIndex >= 0 && currentMeGrave) ? currentMeGrave[cardIndex] : null;
+                        const cardId = card ? (card.uid || card.id) : '';
+                        if (layer.dataset.cardUid === cardId) return;
+                        layer.dataset.cardUid = cardId;
+                        layer.innerHTML = '';
+                        if (card) {
+                            const cardEl = makeCard(card, false);
+                            cardEl.classList.add('grave-card', 'in-graveyard');
+                            layer.appendChild(cardEl);
+                        }
+                    });
+                }
+
+                console.log('[GRAVE-LOG] DOM cleanup done, now removing flags');
+                // MAINTENANT retirer les flags
+                graveReturnAnimActive.delete('me');
+                graveRenderBlocked.delete('me');
+
                 if (onComplete) onComplete(resolvedIndex);
             });
         } else {
@@ -566,18 +623,18 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
         }
     } else {
         if (fromGraveyard) {
-            // Adversaire retour du cimetière : carte face visible (déjà révélée)
+            // Adversaire retour du cimetière : carte face visible, reveal au centre puis main
+            const revealScale = 1.4;
+            const revealFaceScale = faceScale * revealScale;
             const frontFace = (typeof makeCard === 'function')
                 ? makeCard(card, true)
                 : createCardElement(card);
-            // Appliquer les classes opp-revealed pour que les sous-éléments (mana, stats)
-            // aient la même taille que dans la main adverse (pas de shrink à l'arrivée)
             frontFace.classList.add('opp-card-back', 'opp-revealed');
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.cssText = `
                 margin: 0; position: relative;
                 border-radius: 6px;
-                transform: scale(${faceScale});
+                transform: scale(${revealFaceScale});
                 transform-origin: top left;
             `;
             if (bgImage) frontFace.style.backgroundImage = bgImage;
@@ -604,15 +661,17 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                 } else {
                     oppGraveTop.classList.add('empty');
                     delete oppGraveTop.dataset.topCardUid;
+                    const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+                    oppGraveTop.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
                 }
                 // Débloquer et mettre à jour les layers du cimetière
                 graveRenderBlocked.delete('opp');
                 updateGraveDisplay('opp', oppGrave || []);
             }
 
-            animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
+            animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
                 if (onComplete) onComplete(resolvedIndex);
-            });
+            }, true);
         } else {
             // Adversaire pioche normale : dos de carte
             const backCard = createCardBackElement();
@@ -741,7 +800,82 @@ function animateDrawForMe(wrapper, flipper, startX, startY, endX, endY, cardW, c
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            targetCard.style.visibility = 'visible';
+            if (targetCard) targetCard.style.visibility = 'visible';
+            wrapper.remove();
+            if (onComplete) onComplete();
+        }
+    }
+
+    requestAnimationFrame(animate);
+}
+
+/**
+ * Variante draw pour bounce: meme trajectoire globale mais sans flip.
+ */
+function animateDrawForMeNoFlip(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
+    // Keep draw feel (lift), then go directly to hand (no center reveal, no zigzag).
+    const revealScale = 1.35;
+    const handScale = 1 / revealScale;
+    const revealW = cardW * revealScale;
+    const revealH = cardH * revealScale;
+
+    const offsetX = (revealW - cardW) / 2;
+    const offsetY = (revealH - cardH) / 2;
+    wrapper.style.width = revealW + 'px';
+    wrapper.style.height = revealH + 'px';
+    wrapper.style.left = (startX - offsetX) + 'px';
+    wrapper.style.top = (startY - offsetY) + 'px';
+    wrapper.style.transform = `scale(${handScale})`;
+
+    const adjStartX = startX - offsetX;
+    const adjStartY = startY - offsetY;
+    const adjEndX = endX - offsetX;
+    const adjEndY = endY - offsetY;
+
+    const liftDuration = 160;
+    const flyToHandDuration = 560;
+    const totalDuration = liftDuration + flyToHandDuration;
+    const startTime = performance.now();
+
+    function animate() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / totalDuration, 1);
+
+        const t1 = liftDuration / totalDuration;
+        let x, y, scale, opacity;
+
+        if (progress <= t1) {
+            const p = progress / t1;
+            const ep = easeOutCubic(p);
+            x = adjStartX;
+            y = adjStartY - ep * 26;
+            scale = handScale * (1 + ep * 0.045);
+            opacity = 0.35 + ep * 0.65;
+        } else {
+            const p = (progress - t1) / (1 - t1);
+            const ep = easeOutCubic(p);
+            const liftEndY = adjStartY - 26;
+            const ctrlX = (adjStartX + adjEndX) / 2;
+            const ctrlY = Math.min(liftEndY, adjEndY) - 36;
+            const t = easeInOutCubic(p);
+            x = (1 - t) * (1 - t) * adjStartX + 2 * (1 - t) * t * ctrlX + t * t * adjEndX;
+            y = (1 - t) * (1 - t) * liftEndY + 2 * (1 - t) * t * ctrlY + t * t * adjEndY;
+            // Settle the tiny lift zoom early, then keep a stable scale until landing.
+            const settleP = Math.min(1, p / 0.25);
+            const settleE = easeOutCubic(settleP);
+            scale = handScale * 1.045 + (handScale - handScale * 1.045) * settleE;
+            opacity = 1;
+        }
+
+        wrapper.style.left = x + 'px';
+        wrapper.style.top = y + 'px';
+        wrapper.style.opacity = opacity;
+        wrapper.style.transform = `scale(${scale})`;
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            if (targetCard) targetCard.style.visibility = 'visible';
             wrapper.remove();
             if (onComplete) onComplete();
         }
@@ -776,7 +910,7 @@ function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, ta
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            targetCard.style.visibility = 'visible';
+            if (targetCard) targetCard.style.visibility = 'visible';
             wrapper.remove();
             if (onComplete) onComplete();
         }
@@ -789,33 +923,158 @@ function animateDrawForOpp(wrapper, startX, startY, endX, endY, cardW, cardH, ta
  * Animation de retour du cimetière pour le joueur - arc simple, carte face visible
  */
 function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete) {
-    const duration = 550;
+    const liftDuration = 160;
+    const flyDuration = 500;
+    const totalDuration = liftDuration + flyDuration;
     const startTime = performance.now();
-    const controlX = (startX + endX) / 2;
-    const controlY = Math.min(startY, endY) - 80;
 
+    // Tilt initial : carte couchée sur le cimetière, se redresse pendant le vol
+    const startTilt = 25;
     wrapper.style.opacity = '1';
+    wrapper.style.transformOrigin = 'center center';
+    wrapper.style.transform = `perspective(800px) rotateX(${startTilt}deg)`;
 
     function animate() {
         const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const t = easeOutCubic(progress);
+        const progress = Math.min(elapsed / totalDuration, 1);
 
-        const x = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
-        const y = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+        const t1 = liftDuration / totalDuration;
+        let x, y, tiltDeg;
 
-        // Rétrécir légèrement au fur et à mesure (de 1.2 à 1.0)
-        const scale = 1.2 - 0.2 * t;
+        if (progress <= t1) {
+            // LIFT : carte se soulève du cimetière, commence à se redresser
+            const p = progress / t1;
+            const ep = easeOutCubic(p);
+            x = startX;
+            y = startY - ep * 25;
+            tiltDeg = startTilt * (1 - ep * 0.3);
+        } else {
+            // FLY : arc Bézier vers la main, finit de se redresser
+            const p = (progress - t1) / (1 - t1);
+            const liftEndY = startY - 25;
+            const ctrlX = (startX + endX) / 2;
+            const ctrlY = Math.min(liftEndY, endY) - 60;
+            const t = easeInOutCubic(p);
+            x = (1-t)*(1-t)*startX + 2*(1-t)*t*ctrlX + t*t*endX;
+            y = (1-t)*(1-t)*liftEndY + 2*(1-t)*t*ctrlY + t*t*endY;
+            tiltDeg = startTilt * 0.7 * (1 - easeOutCubic(p));
+        }
 
         wrapper.style.left = x + 'px';
         wrapper.style.top = y + 'px';
-        wrapper.style.opacity = '1';
-        wrapper.style.transform = `scale(${scale})`;
+        wrapper.style.transform = `perspective(800px) rotateX(${tiltDeg}deg)`;
 
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            targetCard.style.visibility = 'visible';
+            if (targetCard) targetCard.style.visibility = 'visible';
+            wrapper.remove();
+            if (onComplete) onComplete();
+        }
+    }
+
+    requestAnimationFrame(animate);
+}
+
+/**
+ * Animation de retour du cimetière via le centre du board (comme la pioche).
+ *
+ * Phase 1 - Slide:  Carte glisse du cimetière vers le centre (garde le tilt)
+ * Phase 2 - Hold:   Pause au centre, la carte se redresse (tilt → 0)
+ * Phase 3 - ToHand: Carte rétrécit et glisse vers la main (identique à draw phase 4)
+ */
+function animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete, isOpp) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const revealScale = 1.4;
+    const handScale = 1 / revealScale; // ~0.714
+    const revealW = cardW * revealScale;
+    const revealH = cardH * revealScale;
+
+    // Redimensionner le wrapper à la taille reveal (contenu rendu à cette résolution)
+    const offsetX = (revealW - cardW) / 2;
+    const offsetY = (revealH - cardH) / 2;
+    wrapper.style.width = revealW + 'px';
+    wrapper.style.height = revealH + 'px';
+    wrapper.style.left = (startX - offsetX) + 'px';
+    wrapper.style.top = (startY - offsetY) + 'px';
+
+    // Positions ajustées pour le wrapper agrandi
+    const adjStartX = startX - offsetX;
+    const adjStartY = startY - offsetY;
+    const adjEndX = endX - offsetX;
+    const adjEndY = endY - offsetY;
+
+    // Position reveal : centre de l'écran (comme animateDrawForMe)
+    const revealX = (vw - revealW) / 2;
+    const revealY = (vh - revealH) / 2 - 30;
+
+    // Tilt initial : carte couchée sur le cimetière
+    // Joueur: +20° (cimetière en bas, tilt vers l'arrière)
+    // Adversaire: -20° (cimetière en haut, tilt inversé)
+    const startTilt = isOpp ? -20 : 20;
+
+    // Durées des phases (ms)
+    const slideDuration = 400;
+    const holdDuration = 300;
+    const flyToHandDuration = 350;
+    const totalDuration = slideDuration + holdDuration + flyToHandDuration;
+
+    // État initial : carte visible au cimetière, à taille main, avec tilt
+    wrapper.style.opacity = '1';
+    wrapper.style.transform = `scale(${handScale}) perspective(800px) rotateX(${startTilt}deg)`;
+
+    const startTime = performance.now();
+
+    function animate() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / totalDuration, 1);
+
+        const t1 = slideDuration / totalDuration;
+        const t2 = (slideDuration + holdDuration) / totalDuration;
+
+        let x, y, scale, tiltDeg;
+
+        if (progress <= t1) {
+            // === PHASE 1: SLIDE cimetière → centre (garde tilt, grandit) ===
+            const p = progress / t1;
+            const ep = easeInOutCubic(p);
+
+            x = adjStartX + (revealX - adjStartX) * ep;
+            y = adjStartY + (revealY - adjStartY) * ep;
+            scale = handScale + (1.0 - handScale) * ep;
+            tiltDeg = startTilt;
+
+        } else if (progress <= t2) {
+            // === PHASE 2: HOLD au centre + redressement (tilt → 0) ===
+            const p = (progress - t1) / (t2 - t1);
+            const ep = easeOutCubic(p);
+
+            x = revealX;
+            y = revealY;
+            scale = 1.0;
+            tiltDeg = startTilt * (1 - ep);
+
+        } else {
+            // === PHASE 3: FLY TO HAND (identique à draw phase 4) ===
+            const p = (progress - t2) / (1 - t2);
+            const ep = easeOutCubic(p);
+
+            x = revealX + (adjEndX - revealX) * ep;
+            y = revealY + (adjEndY - revealY) * ep;
+            scale = 1.0 + (handScale - 1.0) * ep;
+            tiltDeg = 0;
+        }
+
+        wrapper.style.left = x + 'px';
+        wrapper.style.top = y + 'px';
+        wrapper.style.transform = `scale(${scale}) perspective(800px) rotateX(${tiltDeg}deg)`;
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            if (targetCard) targetCard.style.visibility = 'visible';
             wrapper.remove();
             if (onComplete) onComplete();
         }
@@ -912,7 +1171,7 @@ function animateTokenSpawn(card, owner, endX, endY, cardW, cardH, targetCard, on
         if (progress < 1) {
             requestAnimationFrame(animate);
         } else {
-            targetCard.style.visibility = 'visible';
+            if (targetCard) targetCard.style.visibility = 'visible';
             wrapper.remove();
             if (onComplete) onComplete();
         }
@@ -952,6 +1211,7 @@ const GameAnimations = {
     
     // Pour compatibilité (ne fait plus rien directement)
     animateDraw: (card, owner, handIndex = 0) => Promise.resolve(),
+    animateDrawForMeNoFlip: animateDrawForMeNoFlip,
     
     clear: () => {
         pendingDrawAnimations.me.clear();

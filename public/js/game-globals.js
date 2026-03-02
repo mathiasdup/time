@@ -28,7 +28,7 @@ if (typeof window !== 'undefined' && typeof window.DEBUG_LOGS === 'undefined') {
 // Dedicated debug channel for hand-index/bounce diagnostics.
 if (typeof window !== 'undefined' && typeof window.HAND_INDEX_DEBUG === 'undefined') {
     // Enabled by default for current bounce/hand diagnostics.
-    window.HAND_INDEX_DEBUG = true;
+    window.HAND_INDEX_DEBUG = false;
 }
 if (typeof window !== 'undefined' && typeof window.setHandIndexDebug !== 'function') {
     window.setHandIndexDebug = function setHandIndexDebug(enabled = true) {

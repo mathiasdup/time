@@ -4083,9 +4083,10 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 emitAnimation(room, 'bounce', {
                     player: attackerPlayer, row: row, col: firstAttacker.col,
                     card: firstAttacker.card,
-                    toGraveyard: handFull
+                    toGraveyard: handFull,
+                    handIndex: handFull ? undefined : attackerState.hand.length
                 });
-                await sleep(800);
+                await sleep(50);
 
                 // RÃƒÂ©initialiser la carte ÃƒÂ  ses stats de base
                 const bouncedCard = resetCardForGraveyard(firstAttacker.card);

@@ -870,7 +870,7 @@ function _captureOppAnimationSourceSnapshot(data) {
     const panel = document.getElementById('opp-hand');
     if (!panel) return null;
     const cards = Array.from(panel.querySelectorAll('.opp-card-back'))
-        .filter((el) => el.style.width !== '0px');
+        .filter((el) => el.style.width !== '0px' && el.style.visibility !== 'hidden');
     if (cards.length === 0) return null;
 
     const preferredUid = data?.spell?.uid || data?.spell?.id || data?.card?.uid || data?.card?.id || null;
@@ -879,13 +879,14 @@ function _captureOppAnimationSourceSnapshot(data) {
 
     let chosen = null;
     let mode = 'snapshot-none';
-    if (preferredUid) {
-        chosen = cards.find((el) => (el.dataset?.uid || null) === preferredUid) || null;
-        if (chosen) mode = 'snapshot-uid';
-    }
+    // Priority: visible index (what players actually see), then UID (revealed cards).
     if (!chosen && sourceIndex !== null && sourceIndex >= 0 && sourceIndex < cards.length) {
         chosen = cards[sourceIndex];
-        mode = 'snapshot-index';
+        mode = 'snapshot-visible-index';
+    }
+    if (!chosen && preferredUid) {
+        chosen = cards.find((el) => (el.dataset?.uid || null) === preferredUid) || null;
+        if (chosen) mode = 'snapshot-uid';
     }
     if (!chosen && !strict) {
         chosen = cards[cards.length - 1] || null;
@@ -954,36 +955,37 @@ function handleAnimation(data) {
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
     const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn', 'combatRowStart', 'combatEnd', 'buildingActivate', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
-    if (queuedTypes.includes(type)) {
-        const needsOppHandSnapshot =
-            (type === 'summon' && data?.player !== myNum) ||
-            (type === 'spell' && data?.caster !== myNum) ||
-            (type === 'trapPlace' && data?.player !== myNum);
-        if (needsOppHandSnapshot) {
-            const snap = _captureOppAnimationSourceSnapshot(data);
-            if (snap) {
-                data._oppSourceRect = snap.rect || null;
-                data._oppSourceMode = snap.mode || null;
-                data._oppSourceStrict = !!snap.strict;
-                data._oppSourceUid = snap.preferredUid || snap.chosenUid || null;
-                data._oppSourceIndex = _isAnimHandIndexValue(snap.sourceIndex) ? Number(snap.sourceIndex) : null;
-                if (window.HAND_INDEX_DEBUG) {
-                    try {
-                        console.log(`[HAND-IDX][CORE][JSON] opp-source-snapshot ${JSON.stringify({
-                            type,
-                            rect: snap.rect || null,
-                            mode: snap.mode || null,
-                            strict: !!snap.strict,
-                            preferredUid: snap.preferredUid || null,
-                            sourceIndex: snap.sourceIndex ?? null,
-                            chosenUid: snap.chosenUid || null,
-                            chosenIndex: snap.chosenIndex ?? null,
-                            cardCount: snap.cardCount ?? null
-                        })}`);
-                    } catch (_) {}
-                }
+    const needsOppHandSnapshot =
+        (type === 'summon' && data?.player !== myNum) ||
+        (type === 'spell' && data?.caster !== myNum) ||
+        (type === 'trapPlace' && data?.player !== myNum);
+    if (needsOppHandSnapshot) {
+        const snap = _captureOppAnimationSourceSnapshot(data);
+        if (snap) {
+            data._oppSourceRect = snap.rect || null;
+            data._oppSourceMode = snap.mode || null;
+            data._oppSourceStrict = !!snap.strict;
+            data._oppSourceUid = snap.preferredUid || snap.chosenUid || null;
+            data._oppSourceIndex = _isAnimHandIndexValue(snap.sourceIndex) ? Number(snap.sourceIndex) : null;
+            if (window.HAND_INDEX_DEBUG) {
+                try {
+                    console.log(`[HAND-IDX][CORE][JSON] opp-source-snapshot ${JSON.stringify({
+                        type,
+                        rect: snap.rect || null,
+                        mode: snap.mode || null,
+                        strict: !!snap.strict,
+                        preferredUid: snap.preferredUid || null,
+                        sourceIndex: snap.sourceIndex ?? null,
+                        chosenUid: snap.chosenUid || null,
+                        chosenIndex: snap.chosenIndex ?? null,
+                        cardCount: snap.cardCount ?? null
+                    })}`);
+                } catch (_) {}
             }
         }
+    }
+
+    if (queuedTypes.includes(type)) {
 
         // Bloquer render() immÃ©diatement pour les animations trample (avant traitement de la queue)
         if (type === 'trampleHeroHit') {
@@ -1391,6 +1393,7 @@ function selectCard(i) {
 
     clearSel();
     selected = { ...card, idx: i, fromHand: true, effectiveCost };
+    console.log(`[SELECT-LOG] selectCard(${i}) | card=${card.name} uid=${card.uid || card.id} type=${card.type} | hand=[${state.me.hand.map((c,j) => j+'='+c.name).join(', ')}]`);
     document.querySelectorAll('.my-hand .card')[i]?.classList.add('selected');
     document.getElementById('my-hand')?.classList.add('has-selection');
     hideCardPreview();
@@ -1437,6 +1440,7 @@ function clickSlot(owner, row, col) {
         }
         commitSpell(selected, 'field', targetPlayer, row, col, selected.idx);
         handCardRemovedIndex = selected.idx;
+        console.log(`[SELECT-LOG] castSpell | handIndex=${selected.idx} card=${selected.name} uid=${selected.uid || selected.id} target=${targetPlayer},${row},${col}`);
         socket.emit('castSpell', { handIndex: selected.idx, targetPlayer, row, col });
         clearSel();
         return;
