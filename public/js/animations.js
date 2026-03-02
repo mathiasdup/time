@@ -476,28 +476,60 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             // Flag dédié — indépendant du compteur graveRenderBlocked
             // Empêche render()/updateGraveTopCard/updateGraveDisplay de toucher
             // au cimetière pendant toute la durée de l'animation de retour.
-            console.log('[GRAVE-LOG] graveReturnAnimActive.add("me") — animation START');
             graveReturnAnimActive.add('me');
-            // Remplacer IMMÉDIATEMENT la carte par le cadre vide du cimetière
-            // (pas juste opacity:0, sinon le slot est visuellement vide pendant l'animation)
+            // Rendre IMMÉDIATEMENT l'état "après retour" (cimetière sans la carte qui remonte),
+            // au lieu de vider visuellement le cimetière pendant l'animation.
+            const stateMeGrave = state?.me?.graveyard || [];
+            const previewMeGrave = [...stateMeGrave];
+            const topIdx = previewMeGrave.length - 1;
+            if (topIdx >= 0) {
+                const topUid = previewMeGrave[topIdx]?.uid || previewMeGrave[topIdx]?.id || null;
+                if (topUid && cardUid && topUid === cardUid) {
+                    previewMeGrave.pop();
+                }
+            }
             if (meGraveTop) {
                 delete meGraveTop.dataset.topCardUid;
-                meGraveTop.classList.add('empty');
-                const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
-                meGraveTop.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
-                console.log('[GRAVE-LOG] meGraveTop replaced with empty frame immediately');
+                if (previewMeGrave.length > 0) {
+                    const topCard = previewMeGrave[previewMeGrave.length - 1];
+                    meGraveTop.dataset.topCardUid = topCard.uid || topCard.id;
+                    meGraveTop.classList.remove('empty');
+                    meGraveTop.innerHTML = '';
+                    const cardEl = makeCard(topCard, false);
+                    cardEl.classList.remove('just-played', 'can-attack');
+                    cardEl.classList.add('grave-card', 'in-graveyard');
+                    meGraveTop.appendChild(cardEl);
+                } else {
+                    meGraveTop.classList.add('empty');
+                    const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
+                    meGraveTop.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
+                }
             }
-            // Aussi mettre à jour le stack
             const meGraveStack = document.getElementById('me-grave-stack');
             if (meGraveStack) {
-                meGraveStack.classList.toggle('has-cards', false);
+                const count = previewMeGrave.length;
+                meGraveStack.classList.toggle('has-cards', count > 0);
                 const layers = meGraveStack.querySelectorAll('.grave-card-layer');
-                meGraveStack.style.setProperty('--stack-layers', 0);
-                layers.forEach(layer => { layer.style.display = 'none'; });
+                const visibleLayers = count <= 1 ? 0 : Math.min(layers.length, Math.ceil(count / 6));
+                meGraveStack.style.setProperty('--stack-layers', visibleLayers);
+                layers.forEach((layer, i) => {
+                    const show = i >= layers.length - visibleLayers;
+                    layer.style.display = show ? 'block' : 'none';
+                    const cardIndex = count - (3 - i) - 1;
+                    const cardInLayer = (cardIndex >= 0) ? previewMeGrave[cardIndex] : null;
+                    const layerUid = cardInLayer ? (cardInLayer.uid || cardInLayer.id) : '';
+                    if (layer.dataset.cardUid === layerUid) return;
+                    layer.dataset.cardUid = layerUid;
+                    layer.innerHTML = '';
+                    if (cardInLayer) {
+                        const cardEl = makeCard(cardInLayer, false);
+                        cardEl.classList.add('grave-card', 'in-graveyard');
+                        layer.appendChild(cardEl);
+                    }
+                });
             }
 
             animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, cardWidth, cardHeight, targetCard, () => {
-                console.log('[GRAVE-LOG] animation CALLBACK — graveReturnAnimActive still active, doing DOM cleanup directly');
                 // GARDER graveReturnAnimActive actif pendant le nettoyage DOM
                 // pour empêcher render() d'interférer. On ne passe PAS par les
                 // fonctions updateGraveTopCard/updateGraveDisplay car elles sont
@@ -549,7 +581,6 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                     });
                 }
 
-                console.log('[GRAVE-LOG] DOM cleanup done, now removing flags');
                 // MAINTENANT retirer les flags
                 graveReturnAnimActive.delete('me');
                 graveRenderBlocked.delete('me');

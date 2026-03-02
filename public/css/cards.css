@@ -612,19 +612,24 @@
             visibility: hidden !important;
         }
         .my-hand .card:first-child { margin-left: 0; }
-        .my-hand .card:hover:not(.dragging), .my-hand .card.dragging {
+        .my-hand .card:not(.committed-spell):hover:not(.dragging), .my-hand .card:not(.committed-spell).dragging {
             transform: translateY(-50px);
             z-index: 100 !important;
             animation: none !important;
         }
+        .my-hand .card.committed-spell:hover {
+            transform: translateY(-50px);
+            z-index: calc(var(--hand-z, 1) + 120) !important;
+            animation: none !important;
+        }
         /* Quand une carte est sélectionnée, les autres ignorent la souris */
-        .my-hand.has-selection .card:not(.selected) {
+        .my-hand.has-selection .card:not(.selected):not(.committed-spell) {
             pointer-events: none;
         }
         .my-hand .card.playable:hover:not(.dragging) {
             border-color: #353535 !important;
         }
-        .my-hand .card.selected {
+        .my-hand .card.selected:not(.committed-spell) {
             transform: translateY(-50px);
             z-index: 101 !important;
         }

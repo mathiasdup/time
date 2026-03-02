@@ -441,9 +441,35 @@ function initSocket() {
             }
             return;
         }
+        // Pre-shrink snapshot: capture opponent hand card rects BEFORE render
+        // During resolution, when opp hand count drops, a phantom is removed and
+        // a spell animation will arrive next. Capture positions now while DOM is correct.
+        if (s.phase === 'resolution' && state?.opponent) {
+            const prevOppHandCount = state.opponent.handCount || 0;
+            const newOppHandCount = s.opponent?.handCount || 0;
+            if (newOppHandCount < prevOppHandCount) {
+                const panel = document.getElementById('opp-hand');
+                if (panel) {
+                    const cards = Array.from(panel.querySelectorAll('.opp-card-back'))
+                        .filter(el => el.style.width !== '0px' && el.style.visibility !== 'hidden');
+                    window._preShrinkOppRects = cards.map(el => {
+                        const r = el.getBoundingClientRect();
+                        return { left: r.left, top: r.top, width: r.width, height: r.height, uid: el.dataset?.uid || null };
+                    });
+                    window._preShrinkOppRectsTime = Date.now();
+                }
+            }
+        }
+
         // DÃ©tecter si le hÃ©ros a changÃ© (mode complet force Erebeth)
         const heroChanged = window.heroData && s.me.hero && s.me.hero.id !== window.heroData.me?.id;
         state = s;
+
+        // [HAND-TRACK] Log hand state from server on every gameStateUpdate
+        if (s.me?.hand) {
+            const _ht = s.me.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+            console.log(`[HAND-TRACK] stateUpdate phase=${s.phase} turn=${s.turn} | hand=[${_ht}]`);
+        }
 
         const logRadjawakState = (sideLabel, sideState) => {
             const field = sideState?.field;
@@ -665,6 +691,11 @@ function initSocket() {
 
         resetAnimationStates();
         committedSpells = [];
+        // Forcer le nettoyage des committed spells orphelins dans le DOM
+        // (le render slow-path devrait les retirer, mais si le fast-path est pris
+        //  à cause d'un _lastCommittedSig déjà vide, ils resteraient fantômes)
+        const _hp = document.getElementById('my-hand');
+        if (_hp) _hp.querySelectorAll('.committed-spell').forEach(el => el.remove());
         if (pendingReanimation) cancelReanimation();
         committedGraveyardUids = [];
         committedReanimationSlots = [];
@@ -867,19 +898,55 @@ function _pickOppAnimationSourceIndex(data) {
 }
 
 function _captureOppAnimationSourceSnapshot(data) {
+    const preferredUid = data?.spell?.uid || data?.spell?.id || data?.card?.uid || data?.card?.id || null;
+    const sourceIndex = _pickOppAnimationSourceIndex(data);
+    const strict = !!preferredUid || sourceIndex !== null;
+
+    // Use pre-shrink snapshot if available and recent (captured before DOM re-render)
+    const preShrink = window._preShrinkOppRects;
+    const preShrinkAge = window._preShrinkOppRectsTime ? (Date.now() - window._preShrinkOppRectsTime) : Infinity;
+    if (preShrink && preShrink.length > 0 && preShrinkAge < 5000) {
+        let rect = null;
+        let mode = 'pre-shrink-none';
+        // Priority: sourceIndex, then UID, then last fallback
+        if (sourceIndex !== null && sourceIndex >= 0 && sourceIndex < preShrink.length) {
+            rect = preShrink[sourceIndex];
+            mode = 'pre-shrink-index';
+        }
+        if (!rect && preferredUid) {
+            const match = preShrink.find(r => r.uid === preferredUid);
+            if (match) { rect = match; mode = 'pre-shrink-uid'; }
+        }
+        if (!rect && !strict) {
+            rect = preShrink[preShrink.length - 1];
+            mode = 'pre-shrink-last-fallback';
+        }
+        if (rect) {
+            // Consume the snapshot (one-time use per animation)
+            window._preShrinkOppRects = null;
+            window._preShrinkOppRectsTime = null;
+            return {
+                rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+                mode,
+                strict,
+                preferredUid,
+                sourceIndex,
+                chosenUid: rect.uid || null,
+                chosenIndex: sourceIndex,
+                cardCount: preShrink.length
+            };
+        }
+    }
+
+    // Fallback: use live DOM
     const panel = document.getElementById('opp-hand');
     if (!panel) return null;
     const cards = Array.from(panel.querySelectorAll('.opp-card-back'))
         .filter((el) => el.style.width !== '0px' && el.style.visibility !== 'hidden');
     if (cards.length === 0) return null;
 
-    const preferredUid = data?.spell?.uid || data?.spell?.id || data?.card?.uid || data?.card?.id || null;
-    const sourceIndex = _pickOppAnimationSourceIndex(data);
-    const strict = !!preferredUid || sourceIndex !== null;
-
     let chosen = null;
     let mode = 'snapshot-none';
-    // Priority: visible index (what players actually see), then UID (revealed cards).
     if (!chosen && sourceIndex !== null && sourceIndex >= 0 && sourceIndex < cards.length) {
         chosen = cards[sourceIndex];
         mode = 'snapshot-visible-index';
@@ -1085,7 +1152,10 @@ function handleAnimation(data) {
         }
         switch(type) {
             case 'spellMiss': animateSpellMiss(data); break;
-            case 'spellReturnToHand': animateSpellReturnToHand(data); break;
+            case 'spellReturnToHand':
+                console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                animateSpellReturnToHand(data);
+                break;
             case 'heal': animateHeal(data); break;
             case 'searchSpell': {
                 const ssOwner = data.player === myNum ? 'me' : 'opp';
@@ -1119,6 +1189,10 @@ function handleAnimation(data) {
                 }
                 break;
             case 'draw':
+                if (data.cards) {
+                    const _draws = data.cards.map(d => `${d.card?.name || '?'}(${(d.card?.uid||d.card?.id||'').slice(-4)}) idx=${d.handIndex} p=${d.player}`).join(', ');
+                    console.log(`[HAND-TRACK] draw | cards=[${_draws}] isMe=${data.cards.some(d => d.player === myNum)}`);
+                }
                 if (typeof GameAnimations !== 'undefined') {
                     GameAnimations.prepareDrawAnimation(data);
                 }
@@ -1393,8 +1467,7 @@ function selectCard(i) {
 
     clearSel();
     selected = { ...card, idx: i, fromHand: true, effectiveCost };
-    console.log(`[SELECT-LOG] selectCard(${i}) | card=${card.name} uid=${card.uid || card.id} type=${card.type} | hand=[${state.me.hand.map((c,j) => j+'='+c.name).join(', ')}]`);
-    document.querySelectorAll('.my-hand .card')[i]?.classList.add('selected');
+    document.querySelectorAll('#my-hand .card:not(.committed-spell)')[i]?.classList.add('selected');
     document.getElementById('my-hand')?.classList.add('has-selection');
     hideCardPreview();
     highlightValidSlots(card);
@@ -1440,7 +1513,6 @@ function clickSlot(owner, row, col) {
         }
         commitSpell(selected, 'field', targetPlayer, row, col, selected.idx);
         handCardRemovedIndex = selected.idx;
-        console.log(`[SELECT-LOG] castSpell | handIndex=${selected.idx} card=${selected.name} uid=${selected.uid || selected.id} target=${targetPlayer},${row},${col}`);
         socket.emit('castSpell', { handIndex: selected.idx, targetPlayer, row, col });
         clearSel();
         return;

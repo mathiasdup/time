@@ -309,6 +309,7 @@ const ANIM_TIMING = {
     margin: 200,       // marge de sÃƒÂ©curitÃƒÂ© entre paires
     phaseIntro: 600,   // temps d'affichage du nom de phase
 };
+const SPELL_RETURN_TO_HAND_WAIT_MS = 1200;
 
 // ==================== COMBAT PIPELINE (CANONIQUE) ====================
 const COMBAT_PHASE_TRACE = process.env.BATAILLE_PHASE_TRACE === '1';
@@ -550,12 +551,20 @@ function getPublicGameState(room, forPlayer) {
                 }
                 const baseHand = opp.hand.map(c => c.revealedToOpponent ? c : null);
                 const bonusCards = opp.handBonusCards || Array(opp.handCountBonus || 0).fill(null);
-                if (bonusCards.length > 0 && opp.preResolutionHandLen !== undefined) {
-                    // Interleaver les sorts en attente ÃƒÂ  leur position originale (avant les tokens ajoutÃƒÂ©s)
-                    const insertIdx = Math.min(opp.preResolutionHandLen, baseHand.length);
-                    return [...baseHand.slice(0, insertIdx), ...bonusCards, ...baseHand.slice(insertIdx)];
+                if (bonusCards.length > 0 && opp.handBonusPositions && opp.handBonusPositions.length === bonusCards.length) {
+                    // Interleaver chaque fantome a sa position originale reconstruite
+                    const result = [...baseHand];
+                    const insertions = opp.handBonusPositions
+                        .map((pos, i) => ({ pos, card: bonusCards[i] }))
+                        .sort((a, b) => a.pos - b.pos);
+                    for (const { pos, card } of insertions) {
+                        result.splice(Math.min(pos, result.length), 0, card);
+                    }
+                    return result;
+                } else if (bonusCards.length > 0) {
+                    return [...baseHand, ...bonusCards];
                 }
-                return [...baseHand, ...bonusCards];
+                return baseHand;
             })(),
             deckCount: opp.deck.length,
             field: oppField,
@@ -667,15 +676,41 @@ function removeFromConfirmedHand(player, card) {
 function removeHandBonus(player, card) {
     player.handCountBonus = Math.max(0, (player.handCountBonus || 0) - 1);
     if (player.handBonusCards && player.handBonusCards.length > 0) {
-        // Si la carte est revealed, retirer l'entrÃƒÂ©e correspondante par uid
+        let removedIdx = -1;
+        let removedPos = -1;
+        // Si la carte est revealed, retirer l'entree correspondante par uid
         if (card && card.uid && card.revealedToOpponent) {
             const idx = player.handBonusCards.findIndex(c => c && c.uid === card.uid);
-            if (idx !== -1) { player.handBonusCards.splice(idx, 1); return; }
+            if (idx !== -1) {
+                removedPos = (player.handBonusPositions && player.handBonusPositions[idx]) ?? -1;
+                player.handBonusCards.splice(idx, 1);
+                if (player.handBonusPositions) player.handBonusPositions.splice(idx, 1);
+                removedIdx = idx;
+            }
         }
-        // Sinon retirer le premier null (carte cachÃƒÂ©e)
-        const nullIdx = player.handBonusCards.indexOf(null);
-        if (nullIdx !== -1) player.handBonusCards.splice(nullIdx, 1);
-        else player.handBonusCards.pop(); // fallback
+        if (removedIdx === -1) {
+            // Sinon retirer le premier null (carte cachee)
+            const nullIdx = player.handBonusCards.indexOf(null);
+            if (nullIdx !== -1) {
+                removedPos = (player.handBonusPositions && player.handBonusPositions[nullIdx]) ?? -1;
+                player.handBonusCards.splice(nullIdx, 1);
+                if (player.handBonusPositions) player.handBonusPositions.splice(nullIdx, 1);
+            } else {
+                const lastIdx = player.handBonusCards.length - 1;
+                removedPos = (player.handBonusPositions && player.handBonusPositions[lastIdx]) ?? -1;
+                player.handBonusCards.pop();
+                if (player.handBonusPositions) player.handBonusPositions.pop();
+            }
+        }
+        // Decrementer les positions restantes > removedPos car la main visuelle
+        // a perdu un slot a cette position (les indices au-dessus glissent vers le bas)
+        if (removedPos >= 0 && player.handBonusPositions) {
+            for (let i = 0; i < player.handBonusPositions.length; i++) {
+                if (player.handBonusPositions[i] > removedPos) {
+                    player.handBonusPositions[i]--;
+                }
+            }
+        }
     }
 }
 
@@ -2135,6 +2170,8 @@ async function drawCards(room, playerNum, count, log, sleep, source) {
     }
 
     if (drawnCards.length > 0) {
+        const _htHand = player.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+        console.log(`[HAND-TRACK-SRV] drawCards p${playerNum} | drew=${drawnCards.map(d=>d.card.name).join(',')} | hand=[${_htHand}]`);
         log(`  Ã°Å¸Å½Â´ ${source} - pioche ${drawnCards.length} carte(s)`, 'action');
         emitAnimation(room, 'draw', { cards: drawnCards });
         await sleep(20);
@@ -3309,6 +3346,10 @@ async function startResolution(room) {
             removedOriginals.push(originalIdx);
             removedOriginals.sort((a, b) => a - b);
         }
+
+        // Stocker les positions originales des fantômes pour l'interleaving
+        // (chaque bonus card à sa position reconstruite dans la main pré-tour)
+        player.handBonusPositions = bonusActions.map(a => a.originalHandIndexReconstructed ?? -1);
     }
 
     // Initialiser le snapshot des cimetiÃƒÂ¨res pour syncGraveyardWatchers (Ver des tombes)
@@ -3659,6 +3700,7 @@ async function startResolution(room) {
     for (let p = 1; p <= 2; p++) {
         delete room.gameState.players[p].handCountBonus;
         delete room.gameState.players[p].handBonusCards;
+        delete room.gameState.players[p].handBonusPositions;
         delete room.gameState.players[p].preResolutionHandLen;
         delete room.gameState.players[p].confirmedOppHand;
     }
@@ -5414,11 +5456,19 @@ async function applySpell(room, action, log, sleep, options = {}) {
         spell.revealedToOpponent = true;
         // Sort retournÃƒÂ© Ã¢â€ â€™ va ÃƒÂ  la fin de la main (aprÃƒÂ¨s les tokens ajoutÃƒÂ©s pendant la rÃƒÂ©solution)
         player.hand.push(spell);
+        const _htHand = player.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+        console.log(`[HAND-TRACK-SRV] spellReturn p${playerNum} | pushed=${spell.name} | hand=[${_htHand}]`);
         emitAnimation(room, 'spellReturnToHand', { player: playerNum, card: spell, handIndex: player.hand.length - 1 });
     }
 
     emitStateToBoth(room);
-    await sleep(600);
+    if (spellReturned) {
+        // For returnOnMiss, wait for the graveyard->hand animation to complete
+        // before resolving the next spell.
+        await new Promise((resolve) => setTimeout(resolve, SPELL_RETURN_TO_HAND_WAIT_MS));
+    } else {
+        await sleep(600);
+    }
 }
 
 // Ãƒâ€°mettre l'animation visuelle de buff Power (+X ATK)
@@ -7119,6 +7169,10 @@ io.on('connection', (socket) => {
         player.energy -= effectiveCost;
         player.spellsCastThisTurn++;
         player.hand.splice(handIndex, 1);
+        {
+            const _htHand = player.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+            console.log(`[HAND-TRACK-SRV] castSpell p${info.playerNum} | removed=${spell.name} at idx=${handIndex} | hand=[${_htHand}]`);
+        }
         player.inDeployPhase = true;
 
         player.pendingActions.push({

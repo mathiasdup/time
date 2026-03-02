@@ -1728,6 +1728,12 @@
         .card-slot.cross-target .slot-frame-fill {
             fill: rgba(243,156,18,0.3) !important;
         }
+        .card-slot.committed-hover-target .slot-frame-outline {
+            stroke: #f39c12 !important;
+        }
+        .card-slot.committed-hover-target .slot-frame-fill {
+            fill: rgba(243,156,18,0.22) !important;
+        }
         .card-slot.moveable .slot-frame-outline {
             stroke: #62d7ff !important;
         }

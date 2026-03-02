@@ -3360,7 +3360,6 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 const spellId = card.uid || card.id;
                 if (pendingSpellReturns.has(spellId)) {
                     pendingSpellReturns.delete(spellId);
-                    console.log(`[GRAVE-LOG] pendingSpellReturns branch: graveRenderBlocked.delete("${side}")`);
                     graveRenderBlocked.delete(side);
                     if (state) {
                         const graveyard = side === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
@@ -3394,7 +3393,6 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                     const capturedSide = side;
                     const spellUid = card.uid || card.id;
                     setTimeout(() => {
-                        console.log(`[GRAVE-LOG] setTimeout branch: graveRenderBlocked.delete("${capturedSide}")`);
                         graveRenderBlocked.delete(capturedSide);
                         if (state) {
                             const graveyard = capturedSide === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
@@ -3465,9 +3463,16 @@ async function animateSpell(data) {
                         savedRect = resolved.rect;
                         sourceMode = resolved.mode;
                     }
-                    // Toujours cacher la carte + fermer le gap (side-effects DOM)
-                    resolved.el.style.visibility = 'hidden';
-                    smoothCloseOppHandGap(resolved.el);
+                    // Side-effects DOM (cacher + fermer gap) si la source est fiable:
+                    // - uid-match
+                    // - index explicite résolu sur visible/logical index
+                    const resolvedByIndex =
+                        oppAnimIndex !== null &&
+                        (resolved.mode === 'visible-index' || resolved.mode === 'logical-index');
+                    if (resolved.mode === 'uid-match' || resolvedByIndex) {
+                        resolved.el.style.visibility = 'hidden';
+                        smoothCloseOppHandGap(resolved.el);
+                    }
                 }
             }
             // Pas de flyFromOppHand ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â animateSpellReveal gÃƒÆ’Ã‚Â¨re tout le trajet mainÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢showcase avec scale progressif + flip
@@ -3504,6 +3509,7 @@ async function animateSpell(data) {
             if (foundEl) {
                 // ÃƒÆ’Ã¢â‚¬Â°lÃƒÆ’Ã‚Â©ment trouvÃƒÆ’Ã‚Â© dans le DOM ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â rÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer sa position et le retirer
                 startRect = foundEl.getBoundingClientRect();
+                if (typeof _domVisSnapshot === 'function') _domVisSnapshot(handPanel, 'animateSpell:BEFORE-remove-committed');
 
                 // FLIP : capturer les positions des cartes voisines AVANT de retirer le sort
                 const siblings = handPanel.querySelectorAll('.card');
@@ -3526,6 +3532,7 @@ async function animateSpell(data) {
                         toAnimate.push(card);
                     }
                 }
+                if (typeof _domVisSnapshot === 'function') _domVisSnapshot(handPanel, 'animateSpell:AFTER-remove-committed');
                 if (toAnimate.length > 0) {
                     handPanel.getBoundingClientRect(); // force reflow
                     requestAnimationFrame(() => {
@@ -3570,7 +3577,11 @@ function animateSpellMiss(data) {
 function animateSpellReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const spellId = data.card.uid || data.card.id;
-    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] spellReturnToHand event owner=${owner} card=${data.card?.name || data.card?.id || '-'} spellId=${spellId} handIndex=${data.handIndex}`);
+    console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    if (owner === 'me') {
+        const hp = document.getElementById('my-hand');
+        if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'spellReturn:BEFORE-prep');
+    }
     // Marquer ce sort comme devant retourner en main (pas au cimetiÃƒÆ’Ã‚Â¨re)
     pendingSpellReturns.set(spellId, { owner, handIndex: data.handIndex });
     // Si l'animation du sort a dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  terminÃƒÆ’Ã‚Â© et placÃƒÆ’Ã‚Â© la carte dans le cimetiÃƒÆ’Ã‚Â¨re (race condition),
@@ -7132,7 +7143,6 @@ function animateMove(data) {
     }, 600);
     });
 }
-
 
 
 

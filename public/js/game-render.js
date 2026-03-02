@@ -1,29 +1,21 @@
 // ==================== RENDU DU JEU ====================
 // Render principal, champ de bataille, main, cartes, preview, cimetière
 
-// ─── DEBUG: MutationObserver sur le cimetière me ───
-setTimeout(() => {
-    const graveTop = document.getElementById('me-grave-top');
-    const graveStack = document.getElementById('me-grave-stack');
-    function watchEl(el, name) {
-        if (!el) return;
-        new MutationObserver((mutations) => {
-            for (const m of mutations) {
-                if (m.type === 'childList' && (m.addedNodes.length || m.removedNodes.length)) {
-                    const removed = Array.from(m.removedNodes).map(n => n.nodeName + (n.className ? '.' + n.className.split(' ')[0] : '')).join(',');
-                    const added = Array.from(m.addedNodes).map(n => n.nodeName + (n.className ? '.' + n.className.split(' ')[0] : '')).join(',');
-                    console.log(`[GRAVE-DOM] ${name} childList | removed=[${removed}] added=[${added}] | children=${el.children.length}`, new Error().stack.split('\n').slice(2,5).join(' <- '));
-                }
-                if (m.type === 'attributes') {
-                    console.log(`[GRAVE-DOM] ${name} attr "${m.attributeName}"="${el.getAttribute(m.attributeName)}" | children=${el.children.length}`);
-                }
-            }
-        }).observe(el, { childList: true, attributes: true, attributeFilter: ['class', 'style'] });
-    }
-    watchEl(graveTop, 'me-grave-top');
-    watchEl(graveStack, 'me-grave-stack');
-    console.log('[GRAVE-LOG] MutationObserver installed on me-grave-top and me-grave-stack');
-}, 1000);
+// [DOM-VIS] Snapshot du DOM de la main tel qu'un humain le verrait
+function _domVisSnapshot(panel, label) {
+    if (!panel) return;
+    const all = Array.from(panel.querySelectorAll('.card'));
+    const snap = all.map((el, i) => {
+        const r = el.getBoundingClientRect();
+        const name = el.__cardData?.name || el.dataset?.cardId || '?';
+        const uid = (el.dataset?.uid || el.__cardData?.uid || el.__cardData?.id || '').slice(-4);
+        const isCommitted = el.classList.contains('committed-spell');
+        const vis = el.style.visibility === 'hidden' ? 'HID' : 'vis';
+        const tx = el.style.transform || 'none';
+        return `${i}:${name}(${uid})${isCommitted?'[C]':''} x=${Math.round(r.left)} ${vis} ${tx !== 'none' ? tx : ''}`.trim();
+    });
+    console.log(`[DOM-VIS] ${label} | phase=${state?.phase||'?'} | ${all.length} cards | ${snap.join(' | ')}`);
+}
 
 // Safety cleanup : retirer les wrappers d'animation DIV orphelins (> 10s)
 // Exclure les CANVAS (PixiJS CombatVFX permanent) qui ont aussi fixed+z-index élevé
@@ -338,11 +330,7 @@ const pendingSpellReturns = new Map(); // spellId   { handIndex, player } pour s
 const graveReturnAnimActive = new Set(); // 'me'|'opp' — bloque le render cimetière pendant l'animation de retour de sort
 
 function updateGraveDisplay(owner, graveyard) {
-    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) {
-        console.log(`[GRAVE-LOG] updateGraveDisplay BLOCKED for ${owner} | graveRenderBlocked=${graveRenderBlocked.has(owner)} graveReturnAnimActive=${graveReturnAnimActive.has(owner)}`);
-        return;
-    }
-    console.log(`[GRAVE-LOG] updateGraveDisplay RUNNING for ${owner} | graveyard.length=${graveyard?.length}`, new Error().stack.split('\n').slice(1,4).join(' <- '));
+    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) return;
     const stack = document.getElementById(`${owner}-grave-stack`);
     if (!stack) return;
 
@@ -385,11 +373,7 @@ function updateGraveDisplay(owner, graveyard) {
 }
 
 function updateGraveTopCard(owner, graveyard) {
-    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) {
-        console.log(`[GRAVE-LOG] updateGraveTopCard BLOCKED for ${owner} | graveRenderBlocked=${graveRenderBlocked.has(owner)} graveReturnAnimActive=${graveReturnAnimActive.has(owner)}`);
-        return;
-    }
-    console.log(`[GRAVE-LOG] updateGraveTopCard RUNNING for ${owner} | graveyard.length=${graveyard?.length}`, new Error().stack.split('\n').slice(1,4).join(' <- '));
+    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) return;
     const container = document.getElementById(`${owner}-grave-top`);
     if (!container) return;
 
@@ -1399,6 +1383,7 @@ function renderHand(hand, energy) {
         !(pendingBounce && pendingBounce.owner === 'me')
     ) {
         _updateHandInPlace(panel, hand, energy);
+        _domVisSnapshot(panel, 'renderHand:FAST-PATH');
         if (_handIdxTrackBounce) {
             const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
             _bounceRenderDbg('render:me:fast-end', {
@@ -1414,7 +1399,8 @@ function renderHand(hand, energy) {
     _lastCommittedSig = committedSig;
     _lastHandPhase = currentPhase;
 
-    //  Slow path : réconciliation (réutilise les éléments existants pour préserver les glow) 
+    //  Slow path : réconciliation (réutilise les éléments existants pour préserver les glow)
+    _domVisSnapshot(panel, 'renderHand:BEFORE-slow-path');
 
     // FLIP step 1 : snapshot des positions par UID avant de modifier le DOM
     // Fonctionne pour les retraits joueur (drag) ET serveur (résolution de sorts)
@@ -1609,10 +1595,16 @@ function renderHand(hand, energy) {
         }
     });
 
+    // [HAND-TRACK] Log server vs DOM order after reconciliation
+    const _htServer = hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+    const _htDom = Array.from(panel.querySelectorAll('.card:not(.committed-spell)')).map((el, i) => `${i}:${el.dataset.uid?.slice(-4)}`).join(', ');
+    console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
+
     // Sorts engagés : toujours afficher à leur position d'origine dans la main.
     // animateSpell les retire un par un du DOM quand ils sont joués.
     // L'insertion par insertBefore garantit qu'ils restent en place même quand des tokens arrivent.
     if (committedSpells.length > 0) {
+        const committedById = new Map();
         // Calculer les indices d'origine (les sorts sont retirés de la main un par un,
         // donc chaque handIndex est relatif à la main réduite  on reconstruit la position absolue)
         const origIndices = [];
@@ -1634,6 +1626,7 @@ function renderHand(hand, energy) {
         indexed.sort((a, b) => a.origIdx - b.origIdx);
 
         for (const { cs, csIdx, origIdx } of indexed) {
+            committedById.set(Number(cs.commitId), cs);
             const el = makeCard(cs.card, false);
             el.classList.add('committed-spell');
             el.dataset.commitId = cs.commitId;
@@ -1666,13 +1659,20 @@ function renderHand(hand, energy) {
                 panel.appendChild(el);
             }
         }
+        panel.__committedSpellByCommitId = committedById;
+    } else {
+        panel.__committedSpellByCommitId = new Map();
     }
+    _ensureCommittedSpellHoverFallback(panel);
+
+    _domVisSnapshot(panel, 'renderHand:AFTER-committed-insert');
 
     // Réindexer toute la main après insertion des committed spells.
     // Sans ça, les committed gardent un z-index bas et passent derrière les cartes voisines.
     const handChildren = panel.querySelectorAll('.card');
     handChildren.forEach((el, i) => {
         el.style.zIndex = i + 1;
+        el.style.setProperty('--hand-z', String(i + 1));
     });
 
     // Bounce : cacher la dernière carte si un bounce est en attente
@@ -1795,6 +1795,52 @@ function renderHand(hand, energy) {
         });
         _handIdxEmitAnomalies('render:me:end', _snap);
     }
+    _domVisSnapshot(panel, 'renderHand:END');
+}
+
+function _markCommittedHoverSlot(slot) {
+    if (!slot) return;
+    slot.classList.add('committed-hover-target');
+    const card = slot.querySelector('.card');
+    if (card) card.classList.add('spell-hover-target');
+}
+
+function _ensureCommittedSpellHoverFallback(panel) {
+    if (!panel || panel.__committedHoverFallbackBound) return;
+    panel.__committedHoverFallbackBound = true;
+    panel.__activeCommittedHoverId = null;
+
+    const getCommittedById = (id) => {
+        if (!panel.__committedSpellByCommitId || typeof panel.__committedSpellByCommitId.get !== 'function') return null;
+        return panel.__committedSpellByCommitId.get(Number(id)) || null;
+    };
+
+    panel.addEventListener('mousemove', (e) => {
+        const el = e.target?.closest?.('.committed-spell');
+        if (!el || !panel.contains(el)) {
+            if (panel.__activeCommittedHoverId !== null) {
+                panel.__activeCommittedHoverId = null;
+                hideCardPreview();
+                clearCommittedSpellHighlights();
+            }
+            return;
+        }
+        const id = Number(el.dataset.commitId);
+        const cs = getCommittedById(id);
+        if (!cs) return;
+
+        if (panel.__activeCommittedHoverId !== id) {
+            panel.__activeCommittedHoverId = id;
+            highlightCommittedSpellTargets(cs);
+        }
+        showCardPreview(cs.card, e);
+    });
+
+    panel.addEventListener('mouseleave', () => {
+        panel.__activeCommittedHoverId = null;
+        hideCardPreview();
+        clearCommittedSpellHighlights();
+    });
 }
 
 function highlightCommittedSpellTargets(cs) {
@@ -1807,17 +1853,13 @@ function highlightCommittedSpellTargets(cs) {
         if (cs.card.effect === 'summonZombieWall') {
             for (let r = 0; r < 4; r++) {
                 const slot = getSlot('me', r, 1);
-                if (slot) {
-                    const card = slot.querySelector('.card');
-                    if (card) card.classList.add('spell-hover-target');
-                }
+                _markCommittedHoverSlot(slot);
             }
         } else {
             const targetSide = cs.card.pattern === 'all' ? null : 'opp';
             document.querySelectorAll('.card-slot').forEach(slot => {
                 if (!targetSide || slot.dataset.owner === targetSide) {
-                    const card = slot.querySelector('.card');
-                    if (card) card.classList.add('spell-hover-target');
+                    _markCommittedHoverSlot(slot);
                 }
             });
         }
@@ -1827,20 +1869,23 @@ function highlightCommittedSpellTargets(cs) {
             previewCrossTargets(owner, cs.row, cs.col);
         } else {
             const slot = getSlot(owner, cs.row, cs.col);
-            if (slot) {
-                const card = slot.querySelector('.card');
-                if (card) card.classList.add('spell-hover-target');
-            }
+            _markCommittedHoverSlot(slot);
         }
     }
 
     CardGlow.markDirty();
-    _syncPixiHand(panel);
+    if (typeof _syncPixiHand === 'function') {
+        const handPanel = document.getElementById('my-hand');
+        _syncPixiHand(handPanel);
+    }
 }
 
 function clearCommittedSpellHighlights() {
     document.querySelectorAll('.hero-hover-target').forEach(el => {
         el.classList.remove('hero-hover-target');
+    });
+    document.querySelectorAll('.card-slot.committed-hover-target').forEach(slot => {
+        slot.classList.remove('committed-hover-target');
     });
     document.querySelectorAll('.card-slot .card.spell-hover-target').forEach(card => {
         card.classList.remove('spell-hover-target');
@@ -1946,6 +1991,100 @@ function _handIdxEmitAnomalies(stage, snapshot) {
             typoOutliers
         });
     }
+}
+
+function _oppHandSigFromDomCard(el) {
+    if (!el) return { revealed: false, uid: null };
+    const revealed = el.classList.contains('opp-revealed');
+    const uid = revealed ? (el.dataset?.uid || null) : null;
+    return { revealed, uid };
+}
+
+function _oppHandSigFromStateCard(card) {
+    if (!card) return { revealed: false, uid: null };
+    return { revealed: true, uid: card.uid || card.id || null };
+}
+
+function _oppHandSigMatches(oldSig, newSig) {
+    if (!!oldSig?.revealed !== !!newSig?.revealed) return false;
+    if (!oldSig?.revealed && !newSig?.revealed) return true;
+    const oldUid = oldSig?.uid || null;
+    const newUid = newSig?.uid || null;
+    if (oldUid && newUid) return oldUid === newUid;
+    return true;
+}
+
+function _pickOppResolutionShrinkIndices(oldCards, oppHand, targetCount) {
+    const oldArr = Array.from(oldCards || []);
+    const oldCount = oldArr.length;
+    const target = Math.max(0, Number(targetCount) || 0);
+    const diff = oldCount - target;
+    if (diff <= 0) return [];
+    if (!Array.isArray(oppHand) || oppHand.length < target) return [];
+
+    const oldSig = oldArr.map(_oppHandSigFromDomCard);
+    const newSig = oppHand.slice(0, target).map(_oppHandSigFromStateCard);
+    const removed = [];
+    let i = 0;
+    let j = 0;
+
+    while (i < oldCount && j < target) {
+        if (_oppHandSigMatches(oldSig[i], newSig[j])) {
+            i++;
+            j++;
+            continue;
+        }
+        if (removed.length >= diff) break;
+        removed.push(i);
+        i++;
+    }
+
+    while (removed.length < diff && i < oldCount) {
+        removed.push(i);
+        i++;
+    }
+
+    if (removed.length !== diff) return [];
+    return removed;
+}
+
+function _pickOppQueuedRemovalIndices(diff, oldCount) {
+    if (!Number.isFinite(Number(diff)) || diff <= 0) return [];
+    if (!Array.isArray(animationQueue) || animationQueue.length === 0) return [];
+    const picks = [];
+    const seen = new Set();
+    const getIdx = (data) => {
+        if (!data) return null;
+        const candidates = [
+            data.visualHandIndex,
+            data.handIndex,
+            data.reconstructedHandIndex,
+            data.originalHandIndex,
+            data._oppSourceIndex
+        ];
+        for (const c of candidates) {
+            if (!_isValidHandIndexValue(c)) continue;
+            const n = Number(c);
+            if (n >= 0 && n < oldCount) return n;
+        }
+        return null;
+    };
+    const isOppRemovalAnim = (item) => {
+        if (!item || !item.type || !item.data) return false;
+        if (item.type === 'spell') return item.data.caster !== myNum;
+        if (item.type === 'summon' || item.type === 'trapPlace') return item.data.player !== myNum;
+        return false;
+    };
+
+    for (const item of animationQueue) {
+        if (!isOppRemovalAnim(item)) continue;
+        const idx = getIdx(item.data);
+        if (idx === null || seen.has(idx)) continue;
+        picks.push(idx);
+        seen.add(idx);
+        if (picks.length >= diff) break;
+    }
+    return picks;
 }
 
 const _bounceDetailRevealState = new WeakMap();
@@ -2329,17 +2468,40 @@ function renderOppHand(count, oppHand) {
         if (!savedOppHandRects) {
             savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
         }
-        for (let i = oldCount - 1; i >= count; i--) {
-            const stale = oldCards[i];
-            if (!stale) continue;
-            stale.style.visibility = 'hidden';
-            if (stale.style.width !== '0px') smoothCloseOppHandGap(stale);
+
+        const diff = oldCount - count;
+        const detectedRemoval = _pickOppResolutionShrinkIndices(oldCards, oppHand, count);
+        const queuedRemoval = detectedRemoval.length === diff ? [] : _pickOppQueuedRemovalIndices(diff, oldCount);
+        const removalIndices = detectedRemoval.length === diff
+            ? detectedRemoval
+            : (queuedRemoval.length === diff ? queuedRemoval : []);
+        const sortedRemoval = [...removalIndices].sort((a, b) => b - a);
+
+        if (window.HAND_INDEX_DEBUG) {
+            _bounceRenderDbg('render:opp:resolution-shrink-targets', {
+                count,
+                oldCount,
+                diff,
+                removalIndices: sortedRemoval,
+                detectedRemoval,
+                queuedRemoval
+            });
+        }
+
+        if (sortedRemoval.length > 0) {
+            for (const i of sortedRemoval) {
+                const stale = oldCards[i];
+                if (!stale) continue;
+                stale.style.visibility = 'hidden';
+                if (stale.style.width !== '0px') smoothCloseOppHandGap(stale);
+            }
         }
         if (typeof window.visTrace === 'function') {
             window.visTrace('oppHand:render:skip-resolution-shrink', {
                 count,
                 oldCount,
                 savedRectCount: savedOppHandRects ? savedOppHandRects.length : 0,
+                shrinkApplied: sortedRemoval.length > 0
             });
         }
         return;
