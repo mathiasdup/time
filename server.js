@@ -2124,7 +2124,7 @@ async function processOnSummonAbility(room, card, playerNum, row, col, log, slee
             gc.revealedToOpponent = true;
             player.hand.push(gc);
             log(`  Ã°Å¸ÂªÂ¦ ${heroName}: ${card.name} Ã¢â€ â€™ ${gc.name} revient du cimetiÃƒÂ¨re en main!`, 'special');
-            emitAnimation(room, 'graveyardReturn', { player: playerNum, card: gc });
+            emitAnimation(room, 'graveyardReturn', { player: playerNum, card: gc, handIndex: player.hand.length - 1 });
             emitStateToBoth(room);
             await sleep(900);
             anyReturned = true;
@@ -3923,7 +3923,7 @@ async function startResolution(room) {
                     card.revealedToOpponent = true;
                     player.hand.push(card);
                     log(`Ã°Å¸ÂªÂ¦ ${card.name} revient du cimetiÃƒÂ¨re dans la main de ${player.heroName}! (${creatureCount} crÃƒÂ©atures au cimetiÃƒÂ¨re)`, 'action');
-                    emitAnimation(room, 'graveyardReturn', { player: playerNum, card });
+                    emitAnimation(room, 'graveyardReturn', { player: playerNum, card, handIndex: player.hand.length - 1 });
                     emitStateToBoth(room);
                     await sleep(900);
                     anyGraveyardReturn = true;
@@ -4459,7 +4459,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
             creature.revealedToOpponent = true;
             player.hand.push(creature);
             log(`  Ã°Å¸ÂªÂ¦ ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${creature.name} revient du cimetiÃƒÂ¨re en main!`, 'special');
-            emitAnimation(room, 'graveyardReturn', { player: playerNum, card: creature });
+            emitAnimation(room, 'graveyardReturn', { player: playerNum, card: creature, handIndex: player.hand.length - 1 });
             await sleep(900);
             recalcDynamicAtk(room);
             emitStateToBoth(room);

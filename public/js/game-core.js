@@ -1020,7 +1020,7 @@ function handleAnimation(data) {
     // En mode client-paced, on ajoute aussi les reveals (summon/move/trapPlace)
     // pour eviter les chevauchements quand le serveur n'attend plus entre les phases.
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'graveyardReturn', 'combatRowStart', 'combatEnd', 'buildingActivate', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     const needsOppHandSnapshot =
         (type === 'summon' && data?.player !== myNum) ||
@@ -1155,6 +1155,10 @@ function handleAnimation(data) {
             case 'spellReturnToHand':
                 console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
                 animateSpellReturnToHand(data);
+                break;
+            case 'graveyardReturn':
+                console.log(`[HAND-TRACK] graveyardReturn | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                animateGraveyardReturnToHand(data);
                 break;
             case 'heal': animateHeal(data); break;
             case 'searchSpell': {

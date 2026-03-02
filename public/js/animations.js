@@ -1010,9 +1010,9 @@ function animateGraveyardReturnArc(wrapper, startX, startY, endX, endY, cardW, c
 /**
  * Animation de retour du cimetière via le centre du board (comme la pioche).
  *
- * Phase 1 - Slide:  Carte glisse du cimetière vers le centre (garde le tilt)
- * Phase 2 - Hold:   Pause au centre, la carte se redresse (tilt → 0)
- * Phase 3 - ToHand: Carte rétrécit et glisse vers la main (identique à draw phase 4)
+ * Phase 1 - Slide:  Carte glisse du cimetière vers le centre (garde le tilt cimetière)
+ * Phase 2 - Hold:   Pause au centre (garde encore le tilt cimetière)
+ * Phase 3 - ToHand: Carte rétrécit et glisse vers la main, puis se redresse (tilt → 0)
  */
 function animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, cardW, cardH, targetCard, onComplete, isOpp) {
     const vw = window.innerWidth;
@@ -1068,7 +1068,7 @@ function animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, ca
         let x, y, scale, tiltDeg;
 
         if (progress <= t1) {
-            // === PHASE 1: SLIDE cimetière → centre (garde tilt, grandit) ===
+            // === PHASE 1: SLIDE cimetière → centre (garde tilt cimetière, grandit) ===
             const p = progress / t1;
             const ep = easeInOutCubic(p);
 
@@ -1078,24 +1078,21 @@ function animateGraveyardReturnViaCenter(wrapper, startX, startY, endX, endY, ca
             tiltDeg = startTilt;
 
         } else if (progress <= t2) {
-            // === PHASE 2: HOLD au centre + redressement (tilt → 0) ===
-            const p = (progress - t1) / (t2 - t1);
-            const ep = easeOutCubic(p);
-
+            // === PHASE 2: HOLD au centre (garde tilt cimetière) ===
             x = revealX;
             y = revealY;
             scale = 1.0;
-            tiltDeg = startTilt * (1 - ep);
+            tiltDeg = startTilt;
 
         } else {
-            // === PHASE 3: FLY TO HAND (identique à draw phase 4) ===
+            // === PHASE 3: FLY TO HAND + redressement vers la perspective main ===
             const p = (progress - t2) / (1 - t2);
             const ep = easeOutCubic(p);
 
             x = revealX + (adjEndX - revealX) * ep;
             y = revealY + (adjEndY - revealY) * ep;
             scale = 1.0 + (handScale - 1.0) * ep;
-            tiltDeg = 0;
+            tiltDeg = startTilt + (0 - startTilt) * ep;
         }
 
         wrapper.style.left = x + 'px';

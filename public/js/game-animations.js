@@ -515,42 +515,6 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour graveyardReturn, prÃƒÆ’Ã‚Â©-enregistrer pendingBounce au moment du queue
-    // pour que render() cache la carte AVANT que l'animation ne commence ÃƒÆ’Ã‚Â  jouer
-    // (sinon la carte flash visible entre l'arrivÃƒÆ’Ã‚Â©e du state et le dÃƒÆ’Ã‚Â©but de l'animation)
-    if (type === 'graveyardReturn' && data.player !== undefined) {
-        const owner = data.player === myNum ? 'me' : 'opp';
-        _bounceDbg('queue:graveyardReturn', {
-            owner,
-            handIndex: data.handIndex ?? null,
-            cardUid: data.card?.uid || data.card?.id || null,
-            cardName: data.card?.name || null
-        });
-        if (!pendingBounce) {
-            const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
-            const startHandCount = handPanel
-                ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
-                : 0;
-            data._bounceTargetPromise = new Promise(resolve => {
-                pendingBounce = {
-                    owner,
-                    card: data.card,
-                    handIndex: _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null,
-                    expectAtEnd: _shouldExpectAtEnd(owner, data.handIndex),
-                    resolveTarget: resolve,
-                    startHandCount,
-                    queued: true
-                };
-                _bounceDbg('queue:graveyardReturn:pending-created', {
-                    owner,
-                    handIndex: pendingBounce.handIndex,
-                    startHandCount,
-                    cardUid: pendingBounce.card?.uid || pendingBounce.card?.id || null
-                });
-            });
-        }
-    }
-
     // Pour healOnDeath, capturer les HP ACTUELS (avant le heal) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mÃƒÆ’Ã‚Âªme technique que lifesteal
     if (type === 'healOnDeath' && data.row !== undefined && data.col !== undefined) {
         const owner = data.player === myNum ? 'me' : 'opp';
@@ -1401,7 +1365,7 @@ async function executeAnimationAsync(type, data) {
             await animateBounceToHand(data);
             break;
         case 'graveyardReturn':
-            await animateGraveyardReturn(data);
+            // Géré en immédiat dans game-core (même pipeline que spellReturnToHand/blast).
             break;
         case 'lifesteal':
             await handleLifestealAnim(data);
@@ -3574,34 +3538,60 @@ function animateSpellMiss(data) {
     }
 }
 
+function prepareGraveyardReturnDraw(data, options = {}) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const trackSpellReturn = !!options.trackSpellReturn;
+    const debugTag = options.debugTag || 'GRAVE-RET';
+    const returnId = data.card?.uid || data.card?.id || null;
+    const handIndex = _isValidHandIndex(data.handIndex) ? Number(data.handIndex) : null;
+    if (handIndex === null) {
+        if (window.DEBUG_LOGS) console.warn(`[${debugTag}] missing handIndex owner=${owner} card=${data.card?.name || data.card?.id || '-'}`);
+        return;
+    }
+
+    if (trackSpellReturn && returnId) {
+        // Marquer ce sort comme devant retourner en main (pas au cimetiÃƒÂ¨re)
+        pendingSpellReturns.set(returnId, { owner, handIndex });
+        // Si l'animation du sort a dÃƒÂ©jÃƒÂ  terminÃƒÂ© et placÃƒÂ© la carte dans le cimetiÃƒÂ¨re (race condition),
+        // nettoyer immÃƒÂ©diatement le visuel du cimetiÃƒÂ¨re
+        const graveTopContainer = document.getElementById(owner + '-grave-top');
+        if (graveTopContainer && graveTopContainer.dataset.topCardUid === returnId) {
+            pendingSpellReturns.delete(returnId);
+        }
+    }
+
+    // Bloquer le cimetiÃ¨re jusqu'Ã  ce que animateCardDraw prenne le relais
+    graveRenderBlocked.add(owner);
+    // Marquer cet index comme retour depuis le cimetiÃ¨re
+    const beforeReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
+    GameAnimations.pendingGraveyardReturns[owner].add(handIndex);
+    const afterReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
+    if (window.DEBUG_LOGS) console.log(`[${debugTag}] mark pendingGraveyardReturns owner=${owner} before=[${beforeReturns.join(',')}] after=[${afterReturns.join(',')}]`);
+    // RÃƒÂ©utiliser le systÃƒÂ¨me de pioche standard (carte cachÃƒÂ©e au render, animation, reveal)
+    if (window.DEBUG_LOGS) console.log(`[${debugTag}] queue draw-prep owner=${owner} handIndex=${handIndex} card=${data.card?.name || data.card?.id || '-'}`);
+    GameAnimations.prepareDrawAnimation({
+        cards: [{ player: data.player, handIndex, card: data.card }]
+    });
+}
+
 function animateSpellReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const spellId = data.card.uid || data.card.id;
     console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
     if (owner === 'me') {
         const hp = document.getElementById('my-hand');
         if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'spellReturn:BEFORE-prep');
     }
-    // Marquer ce sort comme devant retourner en main (pas au cimetiÃƒÆ’Ã‚Â¨re)
-    pendingSpellReturns.set(spellId, { owner, handIndex: data.handIndex });
-    // Si l'animation du sort a dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  terminÃƒÆ’Ã‚Â© et placÃƒÆ’Ã‚Â© la carte dans le cimetiÃƒÆ’Ã‚Â¨re (race condition),
-    // nettoyer immÃƒÆ’Ã‚Â©diatement le visuel du cimetiÃƒÆ’Ã‚Â¨re
-    const graveTopContainer = document.getElementById(owner + '-grave-top');
-    if (graveTopContainer && graveTopContainer.dataset.topCardUid === spellId) {
-        pendingSpellReturns.delete(spellId);
+    prepareGraveyardReturnDraw(data, { trackSpellReturn: true, debugTag: 'BLAST-RET' });
+}
+
+function animateGraveyardReturnToHand(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+    if (owner === 'me') {
+        const hp = document.getElementById('my-hand');
+        if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'graveReturn:BEFORE-prep');
     }
-    // Bloquer le cimetiere jusqu'a ce que animateCardDraw prenne le relais
-    graveRenderBlocked.add(owner);
-    // Marquer cet index comme retour depuis le cimetiÃƒÆ’Ã‚Â¨re
-    const beforeReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
-    GameAnimations.pendingGraveyardReturns[owner].add(data.handIndex);
-    const afterReturns = [...GameAnimations.pendingGraveyardReturns[owner]];
-    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] mark pendingGraveyardReturns owner=${owner} before=[${beforeReturns.join(',')}] after=[${afterReturns.join(',')}]`);
-    // RÃƒÆ’Ã‚Â©utiliser le systÃƒÆ’Ã‚Â¨me de pioche standard (carte cachÃƒÆ’Ã‚Â©e au render, animation, reveal)
-    if (window.DEBUG_LOGS) console.log(`[BLAST-RET] queue draw-prep owner=${owner} handIndex=${data.handIndex} spellId=${spellId}`);
-    GameAnimations.prepareDrawAnimation({
-        cards: [{ player: data.player, handIndex: data.handIndex, card: data.card }]
-    });
+    prepareGraveyardReturnDraw(data, { trackSpellReturn: false, debugTag: 'GRAVE-RET' });
 }
 
 function animateHeal(data) {
@@ -7143,8 +7133,3 @@ function animateMove(data) {
     }, 600);
     });
 }
-
-
-
-
-
