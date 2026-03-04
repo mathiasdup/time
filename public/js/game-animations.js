@@ -424,9 +424,25 @@ function queueAnimation(type, data) {
     }
 
     // Pour burn, death, sacrifice, spell, trapTrigger, bloquer le render du cimetiÃƒÆ’Ã‚Â¨re IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT
-    if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger') {
+    if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger' || type === 'buildingDiscard') {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
+    }
+    // Pour buildingDiscard, capturer la position de la carte dans la main (sans la cacher — render() recréerait le DOM)
+    if (type === 'buildingDiscard' && data.handIndex !== undefined) {
+        const bdIsMine = data.player === myNum;
+        const handId = bdIsMine ? 'my-hand' : 'opp-hand';
+        const handContainer = document.getElementById(handId);
+        if (handContainer) {
+            const selector = bdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
+            const cardEls = handContainer.querySelectorAll(selector);
+            const targetCard = cardEls[data.handIndex];
+            console.log(`[BLDG-DISCARD][QUEUE] isMine=${bdIsMine}, handIndex=${data.handIndex}, selector=${selector}, cardEls=${cardEls.length}, found=${!!targetCard}, card=${data.card?.name}`);
+            if (targetCard) {
+                data._sourceRect = targetCard.getBoundingClientRect();
+                console.log(`[BLDG-DISCARD][QUEUE] captured rect: left=${data._sourceRect.left.toFixed(0)} top=${data._sourceRect.top.toFixed(0)} w=${data._sourceRect.width.toFixed(0)} h=${data._sourceRect.height.toFixed(0)}`);
+            }
+        }
     }
     // Pour death/sacrifice, bloquer aussi le slot du terrain pour que render() ne retire pas
     // la carte avant que l'animation ne la prenne en charge
@@ -1492,6 +1508,9 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'buildingDiscard':
             await handleBuildingDiscard(data);
+            break;
+        case 'buildingMiss':
+            await handleBuildingMiss(data);
             break;
         case 'heroHeal':
             await handleHeroHealAnim(data);
@@ -3856,11 +3875,65 @@ async function handleBuildingActivate(data) {
     }
 }
 
-async function handleBuildingDiscard(data) {
-    // Réutilise animateSpellReveal pour montrer la carte en grand puis l'envoyer au cimetière
-    if (data.card) {
-        await animateSpellReveal(data.card, data.player);
+async function handleBuildingMiss(data) {
+    // Croix sur le batiment quand aucune creature en main
+    const owner = data.player === myNum ? 'me' : 'opp';
+    const slot = getSlot(owner, data.row, data.col);
+    if (slot) {
+        const rect = slot.getBoundingClientRect();
+        CombatVFX.createSpellMissEffect(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2
+        );
     }
+    await new Promise(r => setTimeout(r, 700));
+}
+
+async function handleBuildingDiscard(data) {
+    if (!data.card) {
+        graveRenderBlocked.delete(data.player === myNum ? 'me' : 'opp');
+        return;
+    }
+    // Chercher la carte dans la main et la cacher MAINTENANT (même frame que le ghost)
+    const bdIsMine = data.player === myNum;
+    const handId = bdIsMine ? 'my-hand' : 'opp-hand';
+    const handContainer = document.getElementById(handId);
+    let startRect = data._sourceRect || null;
+    if (handContainer) {
+        const selector = bdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
+        const cardEls = handContainer.querySelectorAll(selector);
+        let found = null;
+        if (bdIsMine) {
+            // Chercher par UID pour les propres cartes
+            const cardUid = data.card.uid || data.card.id;
+            for (const el of cardEls) {
+                if (el.dataset.uid === cardUid || el.dataset.cardId === cardUid) {
+                    found = el;
+                    break;
+                }
+            }
+        }
+        // Fallback par index (seul moyen pour les cartes adverses)
+        if (!found && data.handIndex !== undefined && cardEls[data.handIndex]) {
+            found = cardEls[data.handIndex];
+        }
+        console.log(`[BLDG-DISCARD][HANDLER] isMine=${bdIsMine}, cardEls=${cardEls.length}, found=${!!found}, handIndex=${data.handIndex}, hasQueueRect=${!!startRect}`);
+        if (found) {
+            startRect = found.getBoundingClientRect();
+            console.log(`[BLDG-DISCARD][HANDLER] hiding card, rect: left=${startRect.left.toFixed(0)} top=${startRect.top.toFixed(0)}`);
+            found.style.visibility = 'hidden';
+            if (bdIsMine) {
+                const wrapper = found.closest('.hand-card-wrapper') || found;
+                wrapper.style.display = 'none';
+            } else {
+                smoothCloseOppHandGap(found);
+            }
+        } else {
+            console.log(`[BLDG-DISCARD][HANDLER] card NOT in hand DOM — using fallback rect=${!!startRect}`);
+        }
+    }
+    // Même animation qu'un sort : main → showcase → cimetière
+    await animateSpellReveal(data.card, data.player, startRect);
 }
 
 async function handleLifestealAnim(data) {

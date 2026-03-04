@@ -1153,7 +1153,7 @@ function handleAnimation(data) {
     // En mode client-paced, on ajoute aussi les reveals (summon/move/trapPlace)
     // pour eviter les chevauchements quand le serveur n'attend plus entre les phases.
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     const needsOppHandSnapshot =
         (type === 'summon' && data?.player !== myNum) ||

@@ -695,6 +695,7 @@ const ANIMATION_DELAYS = {
     trapTrigger: 180,  // DÃ©lai court: effet du piÃ¨ge doit enchaîner vite après le flip
     lifesteal: 200,    // DÃ©lai aprÃ¨s animation lifesteal (le gros de l'anim est dans handleLifestealAnim)
     buildingActivate: 100, // DÃ©lai aprÃ¨s activation de bÃ¢timent (le gros est dans handleBuildingActivate)
-    buildingDiscard: 200,  // DÃ©lai aprÃ¨s dÃ©fausse bÃ¢timent (le gros est dans animateSpellReveal)
+    buildingDiscard: 200,  // DÃ©lai aprÃ¨s dÃ©fausse bÃ¢timent
+    buildingMiss: 100,     // DÃ©lai aprÃ¨s miss bÃ¢timent (croix)
     default: 300       // DÃ©lai par dÃ©faut
 };

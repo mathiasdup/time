@@ -721,6 +721,7 @@ function emitAnimation(room, type, data) {
 
 function addPoisonCounters(card, amount, meta = {}) {
     if (!card) return 0;
+    if (card.isBuilding) return 0;
     const incNum = Number(amount);
     if (!Number.isFinite(incNum) || incNum <= 0) return 0;
     const inc = Math.floor(incNum);
@@ -1353,6 +1354,7 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
                 currentHp: template.hp,
                 baseAtk: template.atk,
                 baseHp: template.hp,
+                baseRiposte: template.riposte ?? template.atk,
                 canAttack: !!(template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))),
                 turnsOnField: 0,
                 movedThisTurn: false,
@@ -1428,15 +1430,20 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
         if (neighbor && neighbor.currentHp > 0 && neighbor.onAdjacentAllyDeath) {
             const atkGain = neighbor.onAdjacentAllyDeath.atk || 0;
             const hpGain = neighbor.onAdjacentAllyDeath.hp || 0;
+            const riposteGain = neighbor.onAdjacentAllyDeath.riposte || 0;
             // Sauvegarder les stats de base AVANT le buff (pour affichage boosted en vert)
             if (neighbor.baseAtk === undefined) neighbor.baseAtk = neighbor.atk;
             if (neighbor.baseHp === undefined) neighbor.baseHp = neighbor.hp;
+            if (neighbor.baseRiposte === undefined) neighbor.baseRiposte = neighbor.riposte ?? 0;
             if (atkGain > 0) {
                 neighbor.buffCounters = (neighbor.buffCounters || 0) + atkGain;
             }
             if (hpGain > 0) {
                 neighbor.hp += hpGain;
                 neighbor.currentHp += hpGain;
+            }
+            if (riposteGain > 0) {
+                neighbor.riposte = (neighbor.riposte || 0) + riposteGain;
             }
             log(`  Ã°Å¸â€˜Â© ${neighbor.name} gagne +${atkGain}/+${hpGain} (mort de ${card.name})`, 'buff');
             emitAnimation(room, 'buffApply', { player: playerNum, row: nr, col: nc, atkBuff: atkGain, hpBuff: hpGain });
@@ -1850,6 +1857,7 @@ function applyOnAnySacrifice(room, sacrificeCount, log) {
                     card.buffCounters = (card.buffCounters || 0) + gain;
                     card.hp += gain;
                     card.currentHp += gain;
+                    card.riposte = (card.riposte || 0) + gain;
                     log(`  Ã°Å¸Â§â€º ${card.name} gagne +${gain}/+${gain} marqueurs (sacrifice)`, 'buff');
                     emitAnimation(room, 'buffApply', { player: p, row: r, col: c, atkBuff: gain, hpBuff: gain });
                 }
@@ -2326,7 +2334,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
         switch (effect.type) {
             case 'heroHeal': {
                 const hero = room.gameState.players[effect.player];
-                hero.hp = Math.min(hero.hp + effect.amount, hero.maxHp || 30);
+                hero.hp = Math.min(20, hero.hp + effect.amount);
                 log(`Ã°Å¸â€™Å¡ ${effect.source} - CapacitÃƒÂ© de mort: soigne ${effect.amount} PV ÃƒÂ  votre hÃƒÂ©ros!`, 'heal');
                 maxSleepTime = Math.max(maxSleepTime, 800);
                 break;
@@ -2480,7 +2488,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 const enemyField = room.gameState.players[enemyPlayerNum].field;
                 for (let c = 0; c < 2; c++) {
                     const target = enemyField[effect.row][c];
-                    if (target && target.currentHp > 0) {
+                    if (target && target.currentHp > 0 && !target.isBuilding) {
                         addPoisonCounters(target, effect.poisonAmount, {
                             source: 'onDeath.poisonRow',
                             turn: room.gameState.turn,
@@ -2509,6 +2517,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                         for (let c = 0; c < 2; c++) {
                             const target = room.gameState.players[p].field[r][c];
                             if (!target || target.currentHp <= 0) continue;
+                            if (target.isBuilding) continue;
                             if (target.abilities?.includes('antitoxin')) continue;
                             addPoisonCounters(target, effect.poisonAmount, {
                                 source: 'onDeath.poisonAll',
@@ -2648,6 +2657,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     currentHp: template.hp,
                     baseAtk: template.atk,
                     baseHp: template.hp,
+                    baseRiposte: template.riposte ?? template.atk,
                     canAttack: !!(template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))),
                     turnsOnField: 0,
                     movedThisTurn: false
@@ -2739,6 +2749,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     currentHp: template.hp,
                     baseAtk: template.atk,
                     baseHp: template.hp,
+                    baseRiposte: template.riposte ?? template.atk,
                     canAttack: !!(template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))),
                     turnsOnField: 0,
                     movedThisTurn: false
@@ -2940,6 +2951,7 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                 for (let c = 0; c < 2; c++) {
                     const target = room.gameState.players[p].field[r][c];
                     if (!target || target.currentHp <= 0) continue;
+                    if (target.isBuilding) continue;
                     if (target.abilities?.includes('antitoxin')) continue;
                     addPoisonCounters(target, 1, {
                         source: 'building.poisonAll',
@@ -2971,7 +2983,7 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
         const creatureIndices = [];
         for (let i = 0; i < player.hand.length; i++) {
             const c = player.hand[i];
-            if (c.type === 'creature') {
+            if (c.type === 'creature' && !c.isBuilding) {
                 const cCost = c.cost ?? 0;
                 if (cCost > highestCost) {
                     highestCost = cCost;
@@ -2985,13 +2997,15 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
 
         if (creatureIndices.length === 0) {
             log(`🏛️ ${card.name} : aucune créature en main à défausser`, 'info');
+            emitAnimation(room, 'buildingMiss', { player: playerNum, row, col });
+            await sleep(800);
         } else {
             const chosenIdx = creatureIndices[Math.floor(Math.random() * creatureIndices.length)];
             const discarded = player.hand.splice(chosenIdx, 1)[0];
             addToGraveyard(player, discarded);
 
             log(`🏛️ ${card.name} : ${discarded.name} (coût ${discarded.cost}) défaussé`, 'action');
-            emitAnimation(room, 'buildingDiscard', { player: playerNum, card: discarded });
+            emitAnimation(room, 'buildingDiscard', { player: playerNum, card: discarded, handIndex: chosenIdx });
             await sleep(1400);
 
             let drawnIdx = -1;
@@ -3012,8 +3026,10 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                 } else {
                     player.hand.push(drawn);
                     log(`🏛️ ${card.name} : ${drawn.name} piochée depuis le deck`, 'special');
-                    emitAnimation(room, 'draw', { player: playerNum, card: drawn });
-                    await sleep(500);
+                    emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: drawn, handIndex: player.hand.length - 1 }] });
+                    await sleep(20);
+                    emitStateToBoth(room);
+                    await sleep(1400);
                 }
             } else {
                 log(`🏛️ ${card.name} : aucune créature dans le deck à piocher`, 'info');
@@ -3077,7 +3093,7 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
         for (const [key, totalPoison] of Object.entries(poisonAccum)) {
             const [enemyNum, r, c] = key.split('-').map(Number);
             const target = room.gameState.players[enemyNum].field[r][c];
-            if (target && target.currentHp > 0) {
+            if (target && target.currentHp > 0 && !target.isBuilding) {
                 addPoisonCounters(target, totalPoison, {
                     source: 'onDeath.poisonExplosion',
                     turn: room.gameState.turn,
@@ -3133,9 +3149,11 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
                 if (ally && ally.currentHp > 0 && ally.buffOnEnemyPoisonDeath) {
                     if (ally.baseAtk === undefined) ally.baseAtk = ally.atk;
                     if (ally.baseHp === undefined) ally.baseHp = ally.hp;
+                    if (ally.baseRiposte === undefined) ally.baseRiposte = ally.riposte ?? 0;
                     ally.buffCounters = (ally.buffCounters || 0) + count;
                     ally.hp += count;
                     ally.currentHp += count;
+                    ally.riposte = (ally.riposte || 0) + count;
                     log(`Ã°Å¸â€™Âª ${ally.name} gagne +${count}/+${count} (${count} mort(s) poison)`, 'buff');
                     if (ally.trampleAtBuffCounters && ally.buffCounters >= ally.trampleAtBuffCounters && !ally.abilities.includes('trample')) {
                         ally.abilities.push('trample');
@@ -3181,6 +3199,7 @@ async function syncGraveyardWatchers(room, log, sleep) {
                                 currentHp: template.hp,
                                 baseAtk: template.atk,
                                 baseHp: template.hp,
+                                baseRiposte: template.riposte ?? template.atk,
                                 canAttack: false,
                                 turnsOnField: 0,
                                 movedThisTurn: false,
@@ -3221,6 +3240,7 @@ async function syncMillWatchers(room, playerNum, milledCreatureCount, log, sleep
                 card.atk += milledCreatureCount;
                 card.hp += milledCreatureCount;
                 card.currentHp += milledCreatureCount;
+                card.riposte = (card.riposte || 0) + milledCreatureCount;
                 log(`  Ã°Å¸â€™Âª ${card.name} gagne +${milledCreatureCount}/+${milledCreatureCount} ! (${card.atk}/${card.currentHp})`, 'buff');
                 emitAnimation(room, 'buffApply', { player: playerNum, row: r, col: c, atkBuff: milledCreatureCount, hpBuff: milledCreatureCount });
                 recalcDynamicAtk(room);
@@ -3281,6 +3301,7 @@ async function resolveSpectreReanimates(room, log, sleep) {
             currentHp: template.hp,
             baseAtk: template.atk,
             baseHp: template.hp,
+            baseRiposte: template.riposte ?? template.atk,
             canAttack: false,
             turnsOnField: 0,
             movedThisTurn: false
@@ -4186,6 +4207,7 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                         currentHp: template.hp,
                         baseAtk: template.atk,
                         baseHp: template.hp,
+                        baseRiposte: template.riposte ?? template.atk,
                         canAttack: !!(template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))),
                         turnsOnField: 0,
                         movedThisTurn: false
@@ -4453,6 +4475,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                             currentHp: template.hp,
                             baseAtk: template.atk,
                             baseHp: template.hp,
+                            baseRiposte: template.riposte ?? template.atk,
                             canAttack: false,
                             turnsOnField: 0,
                             movedThisTurn: false
@@ -4485,6 +4508,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         currentHp: template.hp,
                         baseAtk: template.atk,
                         baseHp: template.hp,
+                        baseRiposte: template.riposte ?? template.atk,
                         canAttack: false,
                         turnsOnField: 0,
                         movedThisTurn: false,
@@ -4595,6 +4619,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         target.hp += hpBuff;
                         target.currentHp += hpBuff;
                     }
+                    target.riposte = (target.riposte || 0) + 1;
                     buffAnims.push({ type: 'buffApply', player: playerNum, row: r, col: c, atkBuff, hpBuff });
                 }
             }
@@ -4615,7 +4640,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
             action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
             const candidate = player.graveyard[action.graveyardIndex];
-            if (candidate && candidate.type === 'creature') {
+            if (candidate && candidate.type === 'creature' && !candidate.isBuilding) {
                 if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
                     creatureIdx = action.graveyardIndex;
                 }
@@ -4623,7 +4648,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         }
         if (creatureIdx === -1 && action.graveyardCreatureUid) {
             creatureIdx = player.graveyard.findIndex(c =>
-                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+                c.type === 'creature' && !c.isBuilding && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
             );
         }
 
@@ -4735,7 +4760,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                     for (const [key, totalPoison] of Object.entries(poisonAccum)) {
                         const [enemyNum, r, c] = key.split('-').map(Number);
                         const target = room.gameState.players[enemyNum].field[r][c];
-                        if (target && target.currentHp > 0) {
+                        if (target && target.currentHp > 0 && !target.isBuilding) {
                             addPoisonCounters(target, totalPoison, {
                                 source: 'onDeath.poisonExplosion',
                                 turn: room.gameState.turn,
@@ -4772,9 +4797,11 @@ async function applySpell(room, action, log, sleep, options = {}) {
                             if (ally && ally.currentHp > 0 && ally.buffOnEnemyPoisonDeath) {
                                 if (ally.baseAtk === undefined) ally.baseAtk = ally.atk;
                                 if (ally.baseHp === undefined) ally.baseHp = ally.hp;
+                                if (ally.baseRiposte === undefined) ally.baseRiposte = ally.riposte ?? 0;
                                 ally.buffCounters = (ally.buffCounters || 0) + count;
                                 ally.hp += count;
                                 ally.currentHp += count;
+                                ally.riposte = (ally.riposte || 0) + count;
                                 log(`Ã°Å¸â€™Âª ${ally.name} gagne +${count}/+${count} (${count} mort(s) poison)`, 'buff');
                                 // PiÃƒÂ©tinement conditionnel (trampleAtBuffCounters)
                                 if (ally.trampleAtBuffCounters && ally.buffCounters >= ally.trampleAtBuffCounters && !ally.abilities.includes('trample')) {
@@ -4811,7 +4838,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         for (let r = 0; r < 4; r++) {
             for (let c = 0; c < 2; c++) {
                 const target = opponent.field[r][c];
-                if (target && target.currentHp > 0) {
+                if (target && target.currentHp > 0 && !target.isBuilding) {
                     addPoisonCounters(target, amount, {
                         source: 'spell.poisonAllEnemies',
                         turn: room.gameState.turn,
@@ -4853,6 +4880,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         target.buffCounters = (target.buffCounters || 0) - atkDebuff;
                         target.hp = Math.max(1, target.hp - hpDebuff);
                         target.currentHp -= hpDebuff;
+                        target.riposte = Math.max(0, (target.riposte || 0) - atkDebuff);
                         debuffAnims.push({ type: 'buffApply', player: p, row: r, col: c, atkBuff: -atkDebuff, hpBuff: -hpDebuff });
                         if (target.currentHp <= 0) {
                             deaths.push({ player: targetPlayer, p, r, c, target });
@@ -5013,42 +5041,37 @@ async function applySpell(room, action, log, sleep, options = {}) {
             }
             emitStateToBoth(room);
         } else if (spell.effect === 'triSelectif') {
-            // Tri selectif : pioche 5, garde les sorts, envoie le reste au cimetiere
+            // Tri selectif : pioche 5 une par une, garde les sorts, envoie le reste au cimetiere
             const drawCount = 5;
-            const burnedCards = [];
-            const drawnCards = [];
+            let spellsKept = 0;
             for (let i = 0; i < drawCount; i++) {
                 if (targetHero.deck.length === 0) break;
                 const card = targetHero.deck.shift();
-                if (card.type === 'spell') {
-                    if (targetHero.hand.length < 9) {
-                        targetHero.hand.push(card);
-                        drawnCards.push({ player: action.targetPlayer, card, handIndex: targetHero.hand.length - 1 });
-                    } else {
-                        addToGraveyard(targetHero, card);
-                        burnedCards.push(card);
-                    }
+                if (card.type === 'spell' && targetHero.hand.length < 9) {
+                    // Sort => va dans la main
+                    targetHero.hand.push(card);
+                    spellsKept++;
+                    emitAnimation(room, 'draw', { cards: [{ player: action.targetPlayer, card, handIndex: targetHero.hand.length - 1 }] });
+                    await sleep(20);
+                    emitStateToBoth(room);
+                    await sleep(1200);
                 } else {
+                    // Creature/batiment/piege ou main pleine => burn au cimetiere
                     addToGraveyard(targetHero, card);
-                    burnedCards.push(card);
+                    emitAnimation(room, 'burn', { player: action.targetPlayer, card });
+                    await sleep(20);
+                    emitStateToBoth(room);
+                    await sleep(1000);
                 }
             }
-            // Animations de burn
-            for (const card of burnedCards) {
-                emitAnimation(room, 'burn', { player: action.targetPlayer, card });
-                await sleep(400);
-            }
-            // Animations de pioche
-            for (const d of drawnCards) {
-                emitAnimation(room, 'draw', { player: d.player, card: d.card, handIndex: d.handIndex });
-                await sleep(300);
-            }
-            // Perte de HP : 2 par carte en main
-            const hpLoss = targetHero.hand.length * 2;
+            // Perte de HP : 2 par sort ajoute en main
+            const hpLoss = spellsKept * 2;
             if (hpLoss > 0) {
                 targetHero.hp -= hpLoss;
-                log(`  ${action.heroName}: Tri selectif - perd ${hpLoss} HP (${targetHero.hand.length} cartes en main)`, 'action');
-                emitAnimation(room, 'heroDamage', { player: action.targetPlayer, damage: hpLoss });
+                log(`  ${action.heroName}: Tri selectif - perd ${hpLoss} HP (${spellsKept} sort(s) en main)`, 'action');
+                emitAnimation(room, 'heroHit', { defender: action.targetPlayer, damage: hpLoss });
+                await sleep(20);
+                emitStateToBoth(room);
                 await sleep(600);
             }
             emitStateToBoth(room);
@@ -5116,6 +5139,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         currentHp: template.hp,
                         baseAtk: template.atk,
                         baseHp: template.hp,
+                        baseRiposte: template.riposte ?? template.atk,
                         canAttack: false,
                         turnsOnField: 0,
                         movedThisTurn: false,
@@ -5230,7 +5254,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
             action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
             const candidate = player.graveyard[action.graveyardIndex];
-            if (candidate && candidate.type === 'creature') {
+            if (candidate && candidate.type === 'creature' && !candidate.isBuilding) {
                 if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
                     creatureIdx = action.graveyardIndex;
                 }
@@ -5238,7 +5262,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         }
         if (creatureIdx === -1 && action.graveyardCreatureUid) {
             creatureIdx = player.graveyard.findIndex(c =>
-                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+                c.type === 'creature' && !c.isBuilding && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
             );
         }
 
@@ -5257,6 +5281,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 currentHp: template.hp,
                 baseAtk: template.atk,
                 baseHp: template.hp,
+                baseRiposte: template.riposte ?? template.atk,
                 canAttack: (template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))) ? true : false,
                 turnsOnField: 0,
                 movedThisTurn: false
@@ -5273,6 +5298,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 const reanBuff = placed.onReanimate;
                 if (reanBuff.atkBuff) placed.buffCounters = (placed.buffCounters || 0) + reanBuff.atkBuff;
                 if (reanBuff.hpBuff) { placed.hp += reanBuff.hpBuff; placed.currentHp += reanBuff.hpBuff; }
+                if (reanBuff.riposteBuff) { placed.riposte = (placed.riposte || 0) + reanBuff.riposteBuff; }
                 if (reanBuff.addAbility && !placed.abilities.includes(reanBuff.addAbility)) {
                     placed.abilities.push(reanBuff.addAbility);
                     placed.addedAbilities = placed.addedAbilities || [];
@@ -5302,7 +5328,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
             action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
             const candidate = player.graveyard[action.graveyardIndex];
-            if (candidate && candidate.type === 'creature') {
+            if (candidate && candidate.type === 'creature' && !candidate.isBuilding) {
                 if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
                     creatureIdx = action.graveyardIndex;
                 }
@@ -5310,7 +5336,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         }
         if (creatureIdx === -1 && action.graveyardCreatureUid) {
             creatureIdx = player.graveyard.findIndex(c =>
-                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+                c.type === 'creature' && !c.isBuilding && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
             );
         }
 
@@ -5329,6 +5355,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 currentHp: 1,
                 baseAtk: template.atk,
                 baseHp: template.hp,
+                baseRiposte: template.riposte ?? template.atk,
                 canAttack: (template.abilities && (template.abilities.includes('haste') || template.abilities.includes('superhaste'))) ? true : false,
                 turnsOnField: 0,
                 movedThisTurn: false
@@ -5345,6 +5372,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 const reanBuff = placed.onReanimate;
                 if (reanBuff.atkBuff) placed.buffCounters = (placed.buffCounters || 0) + reanBuff.atkBuff;
                 if (reanBuff.hpBuff) { placed.hp += reanBuff.hpBuff; placed.currentHp += reanBuff.hpBuff; }
+                if (reanBuff.riposteBuff) { placed.riposte = (placed.riposte || 0) + reanBuff.riposteBuff; }
                 if (reanBuff.addAbility && !placed.abilities.includes(reanBuff.addAbility)) {
                     placed.abilities.push(reanBuff.addAbility);
                     placed.addedAbilities = placed.addedAbilities || [];
@@ -5374,7 +5402,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
             action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
             const candidate = player.graveyard[action.graveyardIndex];
-            if (candidate && candidate.type === 'creature') {
+            if (candidate && candidate.type === 'creature' && !candidate.isBuilding) {
                 if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
                     creatureIdx = action.graveyardIndex;
                 }
@@ -5382,7 +5410,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         }
         if (creatureIdx === -1 && action.graveyardCreatureUid) {
             creatureIdx = player.graveyard.findIndex(c =>
-                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+                c.type === 'creature' && !c.isBuilding && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
             );
         }
 
@@ -5401,6 +5429,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 currentHp: template.hp,
                 baseAtk: template.atk,
                 baseHp: template.hp,
+                baseRiposte: template.riposte ?? template.atk,
                 canAttack: false,
                 turnsOnField: 0,
                 movedThisTurn: false,
@@ -5433,7 +5462,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
             action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
             const candidate = player.graveyard[action.graveyardIndex];
-            if (candidate && candidate.type === 'creature') {
+            if (candidate && candidate.type === 'creature' && !candidate.isBuilding) {
                 if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
                     creatureIdx = action.graveyardIndex;
                 }
@@ -5441,7 +5470,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
         }
         if (creatureIdx === -1 && action.graveyardCreatureUid) {
             creatureIdx = player.graveyard.findIndex(c =>
-                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+                c.type === 'creature' && !c.isBuilding && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
             );
         }
 
@@ -5460,6 +5489,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 currentHp: template.hp,
                 baseAtk: template.atk,
                 baseHp: template.hp,
+                baseRiposte: template.riposte ?? template.atk,
                 canAttack: true,
                 turnsOnField: 0,
                 movedThisTurn: false
@@ -5491,6 +5521,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 const reanBuff = placed.onReanimate;
                 if (reanBuff.atkBuff) placed.buffCounters = (placed.buffCounters || 0) + reanBuff.atkBuff;
                 if (reanBuff.hpBuff) { placed.hp += reanBuff.hpBuff; placed.currentHp += reanBuff.hpBuff; }
+                if (reanBuff.riposteBuff) { placed.riposte = (placed.riposte || 0) + reanBuff.riposteBuff; }
                 if (reanBuff.addAbility && !placed.abilities.includes(reanBuff.addAbility)) {
                     placed.abilities.push(reanBuff.addAbility);
                     placed.addedAbilities = placed.addedAbilities || [];
@@ -6675,6 +6706,7 @@ async function resolveSpawnAdjacentMeleeEndOfCombat(room, card, playerNum, row, 
         currentHp: template.hp,
         baseAtk: template.atk,
         baseHp: template.hp,
+        baseRiposte: template.riposte ?? template.atk,
         canAttack: false,
         turnsOnField: 0,
         movedThisTurn: false
@@ -7281,6 +7313,9 @@ io.on('connection', (socket) => {
             movedThisTurn: false
         };
         if (card.isBuilding) placed.atk = 0;
+        placed.baseAtk = placed.baseAtk ?? placed.atk;
+        placed.baseHp = placed.baseHp ?? placed.hp;
+        placed.baseRiposte = placed.baseRiposte ?? placed.riposte ?? placed.atk;
         placed.summonOrder = ++room.gameState.summonCounter;
         player.field[row][col] = placed;
         player.hand.splice(handIndex, 1);
@@ -7303,7 +7338,13 @@ io.on('connection', (socket) => {
                 placed.buffCounters = (placed.buffCounters || 0) + bc;
                 placed.hp += bc;
                 placed.currentHp += bc;
+                placed.riposte = (placed.riposte || 0) + bc;
             }
+        }
+
+        // Self-poison on summon (ex: Rat geant pustuleux)
+        if (placed.selfPoisonOnSummon) {
+            placed.poisonCounters = (placed.poisonCounters || 0) + placed.selfPoisonOnSummon;
         }
 
         // Recalculer les ATK dynamiques (ex: Lance gobelin compte les gobelins)
@@ -7314,7 +7355,7 @@ io.on('connection', (socket) => {
 
         emitStateToPlayer(room, info.playerNum);
     });
-    
+
     socket.on('moveCard', (data) => {
         const info = playerRooms.get(socket.id);
         if (!info) return;
@@ -7518,10 +7559,10 @@ io.on('connection', (socket) => {
             let found = false;
             if (graveyardIndex !== undefined && graveyardIndex >= 0 && graveyardIndex < player.graveyard.length) {
                 const c = player.graveyard[graveyardIndex];
-                if (c && c.type === 'creature') found = true;
+                if (c && c.type === 'creature' && !c.isBuilding) found = true;
             }
             if (!found && graveyardCreatureUid) {
-                found = player.graveyard.some(c => c.type === 'creature' && (c.uid === graveyardCreatureUid || c.id === graveyardCreatureUid));
+                found = player.graveyard.some(c => c.type === 'creature' && !c.isBuilding && (c.uid === graveyardCreatureUid || c.id === graveyardCreatureUid));
             }
             if (!found) return;
         }

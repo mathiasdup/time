@@ -264,7 +264,7 @@ function renderPickerGrid(tab) {
         t.classList.toggle('active', t.dataset.tab === tab);
     });
 
-    const cards = cardCatalog[tab] || [];
+    const cards = (cardCatalog[tab] || []).slice().sort((a, b) => (a.cost || 0) - (b.cost || 0));
 
     cards.forEach(cardTemplate => {
         const wrapper = document.createElement('div');
