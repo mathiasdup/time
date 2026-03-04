@@ -162,6 +162,41 @@ const RenderLock = (() => {
 // game-animations.js uses old APIs (Set.add/delete, Map.get/set, booleans).
 // These shims proxy to RenderLock so both systems stay in sync.
 
+// Set-like shims: use internal Set to preserve idempotent add/delete semantics
+// (old code does .add() in queueAnimation AND in handler — must not double-count)
+const animatingSlots = (() => {
+    const _s = new Set();
+    return {
+        add(key) { if (!_s.has(key)) { _s.add(key); RenderLock.lock('slot', key, 'anim'); } },
+        delete(key) { if (_s.has(key)) { _s.delete(key); RenderLock.unlock('slot', key, 'anim'); } },
+        has(key) { return _s.has(key); },
+        get size() { return _s.size; },
+        [Symbol.iterator]() { return _s[Symbol.iterator](); }
+    };
+})();
+
+const activeDeathTransformSlots = (() => {
+    const _s = new Set();
+    return {
+        add(key) { if (!_s.has(key)) { _s.add(key); RenderLock.lock('slot', key, 'deathTransform'); } },
+        delete(key) { if (_s.has(key)) { _s.delete(key); RenderLock.unlock('slot', key, 'deathTransform'); } },
+        has(key) { return _s.has(key); },
+        get size() { return _s.size; },
+        [Symbol.iterator]() { return _s[Symbol.iterator](); }
+    };
+})();
+
+const animatingTrapSlots = (() => {
+    const _s = new Set();
+    return {
+        add(key) { if (!_s.has(key)) { _s.add(key); RenderLock.lock('trap', key, 'anim'); } },
+        delete(key) { if (_s.has(key)) { _s.delete(key); RenderLock.unlock('trap', key, 'anim'); } },
+        has(key) { return _s.has(key); },
+        get size() { return _s.size; },
+        [Symbol.iterator]() { return _s[Symbol.iterator](); }
+    };
+})();
+
 const graveRenderBlocked = {
     add(key) { RenderLock.lock('grave', key, 'anim'); },
     delete(key) { RenderLock.unlock('grave', key, 'anim'); },

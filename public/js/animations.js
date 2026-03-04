@@ -1251,5 +1251,11 @@ const GameAnimations = {
         pendingTokenSpawns.opp.clear();
     },
     
+    // Vérifie si la queue d'animations est vide et non en cours
+    isQueueEmpty: () => {
+        return (typeof animationQueue !== 'undefined' ? animationQueue.length === 0 : true)
+            && (typeof isAnimating !== 'undefined' ? !isAnimating : true);
+    },
+
     get isReady() { return true; }
 };

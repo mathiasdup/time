@@ -723,6 +723,52 @@ function emitAnimation(room, type, data) {
     io.to(room.code).emit('animation', { type, ...data });
 }
 
+// Attend que les deux clients aient fini de jouer leurs animations en queue.
+// Envoie 'awaitAnimationsDone' aux deux joueurs, attend leur 'animationsDone' en retour.
+// Timeout de sécurité pour éviter un blocage si un client ne répond pas.
+const ANIMATIONS_DONE_TIMEOUT = 8000;
+function waitForClientsAnimationsDone(room) {
+    return new Promise((resolve) => {
+        const sid1 = room.players[1];
+        const sid2 = room.players[2];
+        if (!sid1 || !sid2) { resolve(); return; }
+        const sock1 = io.sockets.sockets.get(sid1);
+        const sock2 = io.sockets.sockets.get(sid2);
+        if (!sock1 || !sock2) { resolve(); return; }
+
+        let got1 = false, got2 = false;
+        let resolved = false;
+
+        function tryResolve() {
+            if (resolved) return;
+            if (got1 && got2) {
+                resolved = true;
+                clearTimeout(timer);
+                sock1.removeListener('animationsDone', onAck1);
+                sock2.removeListener('animationsDone', onAck2);
+                resolve();
+            }
+        }
+
+        function onAck1() { got1 = true; tryResolve(); }
+        function onAck2() { got2 = true; tryResolve(); }
+
+        sock1.once('animationsDone', onAck1);
+        sock2.once('animationsDone', onAck2);
+
+        const timer = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                sock1.removeListener('animationsDone', onAck1);
+                sock2.removeListener('animationsDone', onAck2);
+                resolve();
+            }
+        }, ANIMATIONS_DONE_TIMEOUT);
+
+        io.to(room.code).emit('awaitAnimationsDone');
+    });
+}
+
 function addPoisonCounters(card, amount, meta = {}) {
     if (!card) return 0;
     if (card.isBuilding) return 0;
@@ -1337,6 +1383,9 @@ function getEffectiveCombatDamage(card, damage) {
 
 function getCreatureRiposte(card) {
     const rawRiposte = Number(card?.riposte);
+    if (card?.isBuilding) {
+        console.log(`[RIPOSTE-DBG] Building ${card.name}: riposte=${card.riposte}, rawRiposte=${rawRiposte}, baseRiposte=${card.baseRiposte}, atk=${card.atk}`, new Error().stack?.split('\n').slice(1,4).join(' <- '));
+    }
     if (!Number.isFinite(rawRiposte)) return 0;
     return Math.max(0, Math.floor(rawRiposte));
 }
@@ -2728,8 +2777,9 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     }
                     // Une seule animation avec toutes les cartes (défausse simultanée)
                     emitAnimation(room, 'massDiscard', { player: p, cards: discardedCards });
-                    emitStateToBoth(room);
                     await sleep(1800);
+                    // State envoyé APRÈS le sleep pour que le client garde la main visible pendant l'animation
+                    emitStateToBoth(room);
 
                     await drawCards(room, p, handSize, log, sleep, `${effect.source}`);
                 }
@@ -3987,7 +4037,8 @@ async function startResolution(room) {
 
         // Fin de la phase de combat Ã¢â‚¬â€ retirer les glows violet
         emitAnimation(room, 'combatEnd', {});
-        await sleep(1000); // Laisser les derniÃƒÂ¨res animations de combat se terminer
+        await sleep(300); // Laisser combatEnd arriver
+        await waitForClientsAnimationsDone(room);
     }
 
     // Mettre ÃƒÂ  jour les crÃƒÂ©atures pour le prochain tour
@@ -7315,6 +7366,9 @@ io.on('connection', (socket) => {
         placed.baseAtk = placed.baseAtk ?? placed.atk;
         placed.baseHp = placed.baseHp ?? placed.hp;
         placed.baseRiposte = placed.baseRiposte ?? placed.riposte ?? placed.atk;
+        if (card.isBuilding) {
+            console.log(`[RIPOSTE-DBG] PLACEMENT ${placed.name}: riposte=${placed.riposte}, baseRiposte=${placed.baseRiposte}, atk=${placed.atk}, card.riposte=${card.riposte}, card.atk=${card.atk}`);
+        }
         placed.summonOrder = ++room.gameState.summonCounter;
         player.field[row][col] = placed;
         player.hand.splice(handIndex, 1);

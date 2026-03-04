@@ -892,6 +892,11 @@ async function processAnimationQueue(processorId = null) {
             if (typeof GameAnimations !== 'undefined') {
                 GameAnimations.startPendingDrawAnimations();
             }
+            // ACK au serveur si celui-ci attend la fin des animations
+            if (window._pendingAnimationsDoneAck && typeof socket !== 'undefined') {
+                window._pendingAnimationsDoneAck = false;
+                socket.emit('animationsDone');
+            }
             return;
         }
 
@@ -6385,11 +6390,11 @@ async function animateGraveyardReturn(data) {
 }
 
 // Slots en cours d'animation - render() ne doit pas les toucher
-let animatingSlots = new Set();
-// Trap slots en cours d'animation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â renderTraps() ne doit pas y toucher
-let animatingTrapSlots = new Set();
-// Slots avec deathTransform EN COURS D'EXÃƒÆ’Ã¢â‚¬Â°CUTION (protÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â©s contre resetAnimationStates)
-let activeDeathTransformSlots = new Set();
+// Slots en cours d animation - render() ne doit pas les toucher
+// animatingSlots, animatingTrapSlots, activeDeathTransformSlots sont definis dans render-lock.js (shims -> RenderLock)
+
+
+
 
 /**
  * RÃƒÆ’Ã‚Â©initialise tous les ÃƒÆ’Ã‚Â©tats d'animation pour ÃƒÆ’Ã‚Â©viter les bugs de persistance

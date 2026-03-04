@@ -515,18 +515,8 @@ function initSocket() {
                 isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
             });
         }
-        // Traiter les blockSlots atomiquement AVANT le render (Ã©vite la race condition)
+        // blockSlots-inline removed: animatingSlots shim handles slot locking via queueAnimation
         if (s._blockSlots) {
-            s._blockSlots.forEach(slot => {
-                const owner = slot.player === myNum ? 'me' : 'opp';
-                RenderLock.lock('slot', `${owner}-${slot.row}-${slot.col}`, 'blockSlots-inline');
-            });
-            if (typeof window.visTrace === 'function') {
-                window.visTrace('gsu:blockSlots-inline', {
-                    count: s._blockSlots.length,
-                    slots: s._blockSlots.map((x) => `${x.player}:${x.row},${x.col}`),
-                });
-            }
             delete s._blockSlots;
         }
 
@@ -932,6 +922,16 @@ function initSocket() {
         render();
     });
 
+    // Le serveur demande au client de confirmer que sa queue d'animations est vide
+    socket.on('awaitAnimationsDone', () => {
+        if (typeof GameAnimations !== 'undefined' && GameAnimations.isQueueEmpty()) {
+            socket.emit('animationsDone');
+        } else {
+            // La queue tourne encore — on enregistre un callback pour quand elle se vide
+            window._pendingAnimationsDoneAck = true;
+        }
+    });
+
 // Highlight des cases pour les sorts
     socket.on('spellHighlight', (data) => {
         data.targets.forEach((t, index) => {
@@ -1234,11 +1234,7 @@ function handleAnimation(data) {
         if (type === 'trampleHeroHit') {
             RenderLock.lock('heroHp', 'all', 'heroAnim');
         }
-        if (type === 'trampleDamage') {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            const slotKey = `${owner}-${data.row}-${data.col}`;
-            RenderLock.lock('slot', slotKey, 'trampleDamage');
-        }
+        // trampleDamage slot lock handled by animatingSlots shim in queueAnimation
         // Bloquer render() immÃ©diatement pour onDeathDamage hÃ©ros (Dragon CrÃ©pitant)
         if (type === 'onDeathDamage' && data.targetRow === undefined) {
             RenderLock.lock('heroHp', 'all', 'heroAnim');
@@ -1343,29 +1339,8 @@ function handleAnimation(data) {
                 }
             }
         }
-        // Bloquer renderTraps() immÃ©diatement pour les piÃ¨ges (avant traitement de la queue)
-        if (type === 'trapTrigger') {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            const trapKey = `${owner}-${data.row}`;
-            RenderLock.lock('trap', trapKey, 'anim');
-        }
-        if (type === 'summon' && data.row !== undefined && data.col !== undefined) {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            RenderLock.lock('slot', `${owner}-${data.row}-${data.col}`, 'summon');
-        }
-        if (type === 'move') {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            if (data.fromRow !== undefined && data.fromCol !== undefined) {
-                RenderLock.lock('slot', `${owner}-${data.fromRow}-${data.fromCol}`, 'move-from');
-            }
-            if (data.toRow !== undefined && data.toCol !== undefined) {
-                RenderLock.lock('slot', `${owner}-${data.toRow}-${data.toCol}`, 'move-to');
-            }
-        }
-        if (type === 'trapPlace' && data.row !== undefined) {
-            const owner = data.player === myNum ? 'me' : 'opp';
-            RenderLock.lock('trap', `${owner}-${data.row}`, 'trapPlace');
-        }
+        // trapTrigger lock handled by animatingTrapSlots shim in queueAnimation
+        // summon/move/trapPlace slot locks handled by animatingSlots/animatingTrapSlots shims in queueAnimation
         queueAnimation(type, data);
         if (type === 'attack' || type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') {
             _hpTrace(`queued ${type}`, {
@@ -1529,14 +1504,8 @@ function handleAnimationBatch(animations) {
         });
     }
 
-    // Bloquer immÃ©diatement les slots des deathTransform pour que render() ne les Ã©crase pas
-    for (const anim of animations) {
-        if (anim.type === 'deathTransform') {
-            const owner = anim.player === myNum ? 'me' : 'opp';
-            const slotKey = `${owner}-${anim.row}-${anim.col}`;
-            RenderLock.lock('slot', slotKey, 'deathTransform');
-        }
-    }
+    // deathTransform slots are locked by queueAnimation via animatingSlots + activeDeathTransformSlots shims
+    // No additional RenderLock.lock needed here (would cause counter leak)
 
     // SÃ©parer les animations : death/deathTransform passent par la file d'attente, le reste joue immÃ©diatement
     const immediatePromises = [];

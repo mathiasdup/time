@@ -253,36 +253,18 @@ const CardDB = {
             image: 'black/demon_superieur.png', arenaStyle: true, isToken: true
         },
         { id: 'escamoteur_ruelles', name: 'Escamoteur des ruelles', atk: 4, riposte: 1, hp: 2, cost: 2, type: 'creature', abilities: ['camouflage'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/escamoteur_des_ruelles.png', arenaStyle: true },
-        { id: 'assassin_cour', name: 'Assassin de la cour', atk: 2, riposte: 1, hp: 2, cost: 3, type: 'creature', abilities: ['camouflage', 'lethal'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 4, image: 'black/assassin_de_la_cour.png', arenaStyle: true },
+        { id: 'assassin_cour', name: 'Assassin de la cour', atk: 2, riposte: 1, hp: 2, cost: 3, type: 'creature', abilities: ['camouflage', 'lethal'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, image: 'black/assassin_de_la_cour.png', arenaStyle: true },
         { id: 'eternel', name: "L'éternel", atk: 0, hp: 5, cost: 0, type: 'creature', abilities: ['immovable', 'wall'], combatType: 'melee', creatureType: 'demon', faction: 'red', edition: 4, image: 'red/leternel.png', arenaStyle: true, onDeath: { destroyAll: true }, description: 'Mort : Détruisez toutes les créatures sur le terrain.' },
         { id: 'guerriere_solitaire', name: 'Guerrière solitaire', atk: 4, hp: 4, cost: 0, type: 'creature', abilities: ['trample'], combatType: 'melee', creatureType: 'human', faction: 'red', edition: 2, image: 'red/guerriere_solitaire.png', arenaStyle: true },
         { id: 'esprit_furieux', name: 'Esprit furieux', atk: 3, hp: 8, cost: 0, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'spirit', faction: 'red', edition: 3, image: 'red/esprit_furieux.png', arenaStyle: true, manaCap: 3, description: 'Tant que l\'Esprit furieux est en jeu, vous ne pouvez produire que 3 mana maximum.' },
         { id: 'liche_affaiblie', name: 'Liche affaiblie', atk: 2, riposte: 1, hp: 2, cost: 2, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 1, image: 'black/liche_affaiblie.png', arenaStyle: true },
-        { id: 'zombie_delabre', name: 'Zombie délabré', atk: 1, riposte: 1, hp: 4, cost: 3, type: 'creature', abilities: ['poison'], poisonX: 1, combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 2, image: 'black/zombie_delabre.png', arenaStyle: true, onDeath: { poisonRow: 1 }, description: 'Mort : inflige 1 compteur poison à chaque créature adverse sur la ligne.' },
+        { id: 'zombie_delabre', name: 'Zombie délabré', atk: 2, riposte: 1, hp: 3, cost: 3, type: 'creature', abilities: ['poison'], poisonX: 1, combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 2, image: 'black/zombie_delabre.png', arenaStyle: true, onDeath: { poisonRow: 1 }, description: 'Mort : inflige 1 compteur poison à chaque créature adverse sur la ligne.' },
         { id: 'chevalier_pavois', name: 'Chevalier au pavois', atk: 3, hp: 5, cost: 0, type: 'creature', abilities: ['untargetable'], combatType: 'melee', creatureType: 'human', faction: 'white', edition: 2, image: 'white/chevalier_au_pavois.png', arenaStyle: true, description: 'Inciblable : cette créature ne peut pas être ciblée par les sorts.' },
         { id: 'cavalier_pegase', name: 'Cavalier de pégase', atk: 5, hp: 2, cost: 5, type: 'creature', abilities: ['fly', 'protection', 'trample'], combatType: 'fly', creatureType: 'human', faction: 'red', edition: 4, image: 'red/cavalier_de_pegase.png', arenaStyle: true, spellMagnet: true, description: 'Les sorts offensifs ciblés de l\'adversaire doivent cibler cette créature si possible.' },
         { id: 'dragon_squelette', name: 'Dragon squelette', atk: 0, riposte: 0, hp: 7, cost: 6, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'undead', faction: 'black', edition: 3, image: 'black/dragon_squelette.png', arenaStyle: true, atkPerGraveyard: true, description: 'Pour chaque créature dans votre cimetière, le Dragon squelette gagne +1 ATK et +1 DEF.' },
         { id: 'araignee_tireuse', name: 'Araignée tireuse', atk: 2, riposte: 1, hp: 4, cost: 4, type: 'creature', abilities: ['shooter', 'entrave'], entraveX: 1, combatType: 'shooter', creatureType: 'spider', faction: 'black', edition: 1, image: 'black/araignee_tireuse.png', arenaStyle: true },
-        { id: 'gueule_geante', name: 'Gueule géante', atk: 0, riposte: 2, hp: 6, cost: 4, type: 'creature', abilities: ['provocation', 'immovable'], combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 2, image: 'black/gueule_geante.png', arenaStyle: true },
+        { id: 'gueule_geante', name: 'Gueule géante', atk: 0, riposte: 2, hp: 6, cost: 4, type: 'creature', abilities: ['provocation', 'immovable'], combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 1, image: 'black/gueule_geante.png', arenaStyle: true },
         { id: 'protecteur_divin', name: 'Protecteur divin', atk: 3, hp: 4, cost: 0, type: 'creature', abilities: ['lifelink'], lifelinkX: 2, combatType: 'melee', creatureType: 'undead', faction: 'white', edition: 2, image: 'white/protecteur_divin.png', arenaStyle: true },
-        {
-            id: 'banshee_sauvage',
-            name: 'Banshee sauvage',
-            atk: 2,
-            hp: 2,
-            cost: 3,
-            abilities: ['fly', 'spectral'],
-            type: 'creature',
-            image: 'black/banshee_sauvage.png',
-            arenaStyle: true,
-            faction: 'black',
-            creatureType: 'spirit',
-            combatType: 'fly',
-            edition: 3,
-            rarity: 3,
-            endOfCombat: { damageAllEnemies: 1 },
-            description: 'Fin du combat : inflige 1 dégât à toutes les créatures ennemies.'
-        },
         {
             id: 'arcaniste_maladroit',
             name: 'Arcaniste maladroit',
@@ -394,14 +376,14 @@ const CardDB = {
             faction: 'black',
             creatureType: 'undead',
             combatType: 'fly',
-            edition: 2
+            edition: 1
         },
         { id: 'vampire_sordide', name: 'Vampire sordide', atk: 1, riposte: 1, hp: 1, cost: 1, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/vampire_sordide.png', arenaStyle: true, onAnySacrifice: { atkBuff: 1, riposteBuff: 1, hpBuff: 1 }, description: 'Quand une créature alliée ou ennemie est sacrifiée, gagne 1 marqueur renforcement.' },
         { id: 'chevaucheur_de_l_ombre', name: 'Chevaucheur de l\'ombre', atk: 2, hp: 4, cost: 3, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'human', faction: 'black', edition: 2, image: 'black/chevaucheur_de_lombre.png', arenaStyle: true, endOfCombat: { selfMill: 3 }, description: 'Fin du combat : mettez les 3 cartes du dessus de votre bibliothèque dans votre cimetière.' },
-        { id: 'cobra_cracheur', name: 'Cobra cracheur', atk: 1, riposte: 0, hp: 3, cost: 3, type: 'creature', abilities: ['shooter', 'poison', 'antitoxin'], poisonX: 1, combatType: 'shooter', creatureType: 'serpent', faction: 'black', edition: 2, image: 'black/cobra_cracheur.png', arenaStyle: true },
+        { id: 'cobra_cracheur', name: 'Cobra cracheur', atk: 1, riposte: 0, hp: 3, cost: 3, type: 'creature', abilities: ['shooter', 'poison', 'antitoxin'], poisonX: 1, combatType: 'shooter', creatureType: 'serpent', faction: 'black', edition: 1, image: 'black/cobra_cracheur.png', arenaStyle: true },
         { id: 'nuee_de_moustique', name: 'Nuée de moustique', atk: 1, riposte: 1, hp: 1, cost: 1, type: 'creature', abilities: ['fly', 'poison'], poisonX: 1, combatType: 'fly', creatureType: 'insect', faction: 'black', edition: 2, image: 'black/nuee_de_moustique.png', arenaStyle: true },
         { id: 'zobombie', name: 'Zobombie', atk: 2, riposte: 0, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zobombie.png', arenaStyle: true, onDeath: { damageKiller: 2 }, description: 'Mort : Inflige 2 dégâts à la créature qui l\'a détruite.' },
-        { id: 'behemoth_fantomatique', name: 'Béhémoth fantomatique', atk: 8, riposte: 8, hp: 4, cost: 7, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 2, image: 'black/behemoth_fantomatique.png', arenaStyle: true },
+        { id: 'behemoth_fantomatique', name: 'Béhémoth fantomatique', atk: 8, riposte: 8, hp: 4, cost: 7, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 1, image: 'black/behemoth_fantomatique.png', arenaStyle: true },
         { id: 'demon_supreme', name: 'Démon Suprême', atk: 6, riposte: 6, hp: 6, cost: 6, type: 'creature', abilities: ['fly', 'trample'], combatType: 'fly', creatureType: 'demon', faction: 'black', edition: 4, image: 'black/demon_supreme.png', arenaStyle: true, endOfCombat: { spawnAdjacentMelee: 'demon_superieur' }, description: 'Fin du combat : invoque un Démon supérieur sur une case mêlée adjacente vide.' },
         { id: 'paria_abysses', name: 'Paria des abysses', atk: 1, riposte: 1, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/paria_des_abysses.png', arenaStyle: true, onDeath: { transformInto: 'zombie_paria' }, description: 'Mort : Se transforme en Zombie.' },
         { id: 'zombie_paria', name: 'Zombie', atk: 2, hp: 2, cost: 2, type: 'creature', abilities: ['dissipation'], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zombie.png', arenaStyle: true, isToken: true },
@@ -418,12 +400,12 @@ const CardDB = {
         { id: 'rosalia_demonicus', name: 'Rosalia démonicus', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/rosalia_demonicus.png', arenaStyle: true, activeAbility: 'poisonAll', description: 'Active : inflige 1 marqueur poison à toutes les créatures.' },
         { id: 'mausole_sinistre', name: 'Mausolée sinistre', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/mausole_sinistre.png', arenaStyle: true, activeAbility: 'discardHighestDrawCreature', description: 'Active : Défaussez la carte de créature avec le plus haut coût en mana de votre main. Si vous vous êtes défaussé d\'une carte, piochez une carte de créature depuis votre deck.' },
         { id: 'serpent_emeraude', name: 'Serpent d\'émeraude', atk: 2, riposte: 2, hp: 2, cost: 2, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'serpent', faction: 'black', edition: 3, image: 'black/serpent_demeraude.png', arenaStyle: true, buffOnEnemyPoisonDeath: true, trampleAtBuffCounters: 3, description: 'Quand une créature ennemie meurt du poison, gagne 1 marqueur renforcement. Acquiert Piétinement à 3 marqueurs renforcement.' },
-        { id: 'porteur_de_peste', name: 'Porteur de peste', atk: 1, riposte: 1, hp: 4, cost: 3, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, image: 'black/porteur_peste.png', arenaStyle: true, onDeath: { poisonAll: 1 }, description: 'Quand le Porteur de peste meurt, met 1 marqueur poison à toutes les créatures.' },
+        { id: 'porteur_de_peste', name: 'Porteur de peste', atk: 1, riposte: 0, hp: 3, cost: 3, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 2, image: 'black/porteur_peste.png', arenaStyle: true, onDeath: { poisonAll: 1 }, description: 'Quand le Porteur de peste meurt, met 1 marqueur poison à toutes les créatures.' },
         { id: 'spectre_recurrent', name: 'Spectre récurrent', atk: 2, hp: 1, cost: 2, type: 'creature', abilities: ['fly', 'dissipation'], combatType: 'fly', creatureType: 'spirit', faction: 'black', edition: 2, image: 'black/spectre_recurrent.png', arenaStyle: true, graveyardTrigger: 'reanimateOnAllyDeath', description: 'Quand une créature alliée va au cimetière, si le Spectre est dans votre cimetière, il se réanime sur l\'emplacement de la créature morte.' },
         { id: 'excavateur_stratege', name: 'Excavateur stratège', atk: 2, riposte: 1, hp: 3, cost: 5, type: 'creature', abilities: [], combatType: 'shooter', creatureType: 'human', faction: 'black', edition: 3, rarity: 3, image: 'black/excavateur_stratege.png', arenaStyle: true, onDeath: { returnGraveCost1ToHand: true }, description: 'Mort : Renvoyez dans votre main toutes les créatures depuis votre cimetière qui coûtent 1 mana.' },
         { id: 'liche_blasteuse', name: 'Liche blasteuse', atk: 3, riposte: 1, hp: 7, cost: 7, type: 'creature', abilities: ['shooter', 'regeneration', 'entrave'], regenerationX: 2, entraveX: 2, combatType: 'shooter', creatureType: 'undead', faction: 'black', edition: 2, rarity: 2, image: 'black/liche_blasteuse.png', arenaStyle: true },
-        { id: 'eveque_corrompu', name: 'Évêque corrompu', atk: 3, riposte: 3, hp: 4, cost: 6, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, rarity: 3, image: 'black/eveque_corrompu.png', arenaStyle: true, onDeath: { healHero: 4, damageHero: 3 }, description: 'Mort : Votre héros se soigne de 4 PV et l\'adversaire perd 3 PV.' },
-        { id: 'limon_mephitique', name: 'Limon méphitique', atk: 4, riposte: 3, hp: 4, cost: 4, type: 'creature', abilities: ['trepas'], combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 1, rarity: 1, image: 'black/limon_mephitique.png', arenaStyle: true, trepasBuffCounters: 2, description: 'Lorsque vous jouez cette créature, si vous avez trépas, elle arrive avec 2 marqueurs renforcement sur elle.' },
+        { id: 'eveque_corrompu', name: 'Évêque corrompu', atk: 3, riposte: 3, hp: 4, cost: 6, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 2, rarity: 2, image: 'black/eveque_corrompu.png', arenaStyle: true, onDeath: { healHero: 4, damageHero: 3 }, description: 'Mort : Votre héros se soigne de 4 PV et l\'adversaire perd 3 PV.' },
+        { id: 'limon_mephitique', name: 'Limon méphitique', atk: 4, riposte: 2, hp: 4, cost: 4, type: 'creature', abilities: ['trepas'], combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 2, rarity: 2, image: 'black/limon_mephitique.png', arenaStyle: true, trepasBuffCounters: 2, description: 'Lorsque vous jouez cette créature, si vous avez trépas, elle arrive avec 2 marqueurs renforcement sur elle.' },
         { id: 'bahamut', name: 'Bahamut', atk: 9, riposte: 9, hp: 9, cost: 9, type: 'creature', abilities: ['fly', 'cleave'], cleaveX: 9, combatType: 'fly', creatureType: 'dragon', faction: 'black', edition: 4, rarity: 4, image: 'black/bahamut.png', arenaStyle: true, onDeath: { discardHandAndRedraw: true }, description: 'Mort : Les deux joueurs défaussent leur main et piochent le même nombre de cartes.' },
         { id: 'rat_geant_pustuleux', name: 'Rat géant pustuleux', atk: 4, riposte: 3, hp: 6, cost: 4, type: 'creature', abilities: ['poison'], poisonAmount: 1, combatType: 'melee', creatureType: 'beast', faction: 'black', edition: 1, rarity: 1, image: 'black/rat_geant_pustuleux.png', arenaStyle: true, selfPoisonOnSummon: 2, description: 'Le Rat géant pustuleux arrive avec 2 marqueurs poison sur lui.' }
     ],
@@ -467,7 +449,7 @@ const CardDB = {
 
 for (const creature of CardDB.creatures) {
     const rawRiposte = Number(creature.riposte);
-    creature.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
+    creature.riposte = creature.isBuilding ? 0 : (Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2);
 }
 
 const HERO_NAMES = ['Aldric', 'Lyra', 'Theron', 'Seraphine', 'Kael', 'Mira', 'Draven', 'Elena'];
@@ -527,7 +509,7 @@ function resetCardForGraveyard(card) {
         reset.baseAtk = reset.atk;
         reset.baseHp = reset.hp;
         const rawRiposte = Number(reset.riposte);
-        reset.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
+        reset.riposte = reset.isBuilding ? 0 : (Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2);
         reset.baseRiposte = reset.riposte;
     }
     // Nettoyer les propriétés dynamiques de combat
@@ -563,7 +545,7 @@ function createDeck() {
         };
         if (card.type === 'creature') {
             const rawRiposte = Number(card.riposte);
-            card.riposte = Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2;
+            card.riposte = card.isBuilding ? 0 : (Number.isFinite(rawRiposte) ? Math.max(0, Math.floor(rawRiposte)) : 2);
             card.currentHp = card.hp;
             card.baseAtk = card.atk;
             card.baseHp = card.hp;
