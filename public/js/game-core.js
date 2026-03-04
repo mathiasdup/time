@@ -30,25 +30,67 @@ function _cancelPendingResolutionStateRender() {
 }
 
 function _renderFromStateUpdate(phase) {
-    if (phase !== 'resolution') {
+    console.log(`[MAUSOLE-DBG][_renderFromState] phase=${phase} oppHandCount=${state?.opponent?.handCount} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
+    // Fallback debug: window.FORCE_FULL_RENDER = true pour désactiver le delta render
+    if (window.FORCE_FULL_RENDER) {
         _cancelPendingResolutionStateRender();
         render();
+        if (typeof StateDiff !== 'undefined') StateDiff.remember(state);
         return;
     }
+
+    const hasDiff = typeof StateDiff !== 'undefined';
+    const prev = hasDiff ? StateDiff.getPrev() : null;
+
+    if (phase !== 'resolution' || !prev) {
+        _cancelPendingResolutionStateRender();
+        render();
+        if (hasDiff) StateDiff.remember(state);
+        return;
+    }
+
+    // Résolution avec state précédent : delta render
+    const d = StateDiff.diff(prev, state);
+
+    // Trop de changements ou phase change → full render
+    if (d.full || d.phaseChanged || (d.fieldChanges && d.fieldChanges.length > 6)) {
+        if (_pendingResolutionStateRender) return;
+        _pendingResolutionStateRender = true;
+        if (typeof requestAnimationFrame === 'function') {
+            _pendingResolutionStateRenderRaf = requestAnimationFrame(() => {
+                _pendingResolutionStateRenderRaf = 0;
+                _pendingResolutionStateRender = false;
+                render();
+                if (hasDiff) StateDiff.remember(state);
+            });
+            return;
+        }
+        _pendingResolutionStateRenderRaf = setTimeout(() => {
+            _pendingResolutionStateRenderRaf = 0;
+            _pendingResolutionStateRender = false;
+            render();
+            if (hasDiff) StateDiff.remember(state);
+        }, 16);
+        return;
+    }
+
+    // Delta render (batché par RAF)
     if (_pendingResolutionStateRender) return;
     _pendingResolutionStateRender = true;
     if (typeof requestAnimationFrame === 'function') {
         _pendingResolutionStateRenderRaf = requestAnimationFrame(() => {
             _pendingResolutionStateRenderRaf = 0;
             _pendingResolutionStateRender = false;
-            render();
+            renderDelta(d);
+            if (hasDiff) StateDiff.remember(state);
         });
         return;
     }
     _pendingResolutionStateRenderRaf = setTimeout(() => {
         _pendingResolutionStateRenderRaf = 0;
         _pendingResolutionStateRender = false;
-        render();
+        renderDelta(d);
+        if (hasDiff) StateDiff.remember(state);
     }, 16);
 }
 
@@ -458,6 +500,7 @@ function initSocket() {
     });
 
     socket.on('gameStateUpdate', (s) => {
+        console.log(`[MAUSOLE-DBG][GSU] phase=${s.phase} oppHandCount=${s.opponent?.handCount} isAnimating=${typeof isAnimating !== 'undefined' ? isAnimating : '?'} qLen=${typeof animationQueue !== 'undefined' ? animationQueue.length : '?'} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
         const __perfGsuStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const prevStateSig = typeof window.visBuildStateSig === 'function' ? window.visBuildStateSig(state) : null;
         if (s.features && typeof s.features.clientPacedResolution === 'boolean') {
@@ -476,7 +519,7 @@ function initSocket() {
         if (s._blockSlots) {
             s._blockSlots.forEach(slot => {
                 const owner = slot.player === myNum ? 'me' : 'opp';
-                animatingSlots.add(`${owner}-${slot.row}-${slot.col}`);
+                RenderLock.lock('slot', `${owner}-${slot.row}-${slot.col}`, 'blockSlots-inline');
             });
             if (typeof window.visTrace === 'function') {
                 window.visTrace('gsu:blockSlots-inline', {
@@ -500,9 +543,9 @@ function initSocket() {
         const oppGrave = s.opponent?.graveyard || [];
         const prevMeGrave = state?.me?.graveyard?.length || 0;
         const prevOppGrave = state?.opponent?.graveyard?.length || 0;
-        if (meGrave.length > prevMeGrave && !graveRenderBlocked.has('me')) {
+        if (meGrave.length > prevMeGrave && !RenderLock.isLocked('grave', 'me')) {
         }
-        if (oppGrave.length > prevOppGrave && !graveRenderBlocked.has('opp')) {
+        if (oppGrave.length > prevOppGrave && !RenderLock.isLocked('grave', 'opp')) {
         }
         // Auto-cacher les nouvelles cartes adverses si le count augmente pendant la rÃ©solution
         // (sÃ©curitÃ© anti-flash si l'Ã©tat arrive avant l'event draw)
@@ -862,7 +905,7 @@ function initSocket() {
         slots.forEach(s => {
             const owner = s.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${s.row}-${s.col}`;
-            animatingSlots.add(slotKey);
+            RenderLock.lock('slot', slotKey, 'socket:blockSlots');
         });
         if (typeof window.visTrace === 'function') {
             window.visTrace('socket:blockSlots', {
@@ -876,7 +919,7 @@ function initSocket() {
         slots.forEach(s => {
             const owner = s.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${s.row}-${s.col}`;
-            animatingSlots.delete(slotKey);
+            RenderLock.unlock('slot', slotKey, 'socket:unblockSlots');
         });
         if (typeof window.visTrace === 'function') {
             window.visTrace('socket:unblockSlots', {
@@ -979,9 +1022,9 @@ function initSocket() {
 }
 
 // PowerBuff : bloquer render() ATK pendant l'animation (mis Ã  jour par le handler dans game-animations.js)
-let powerBuffAtkOverrides = new Map(); // slotKey -> displayed ATK
+// [LEGACY] powerBuffAtkOverrides → migré vers RenderLock.setOverride('slot', ...)
 // PoisonDamage : bloquer render() HP pendant l'animation (geler le HP prÃ©-poison)
-let poisonHpOverrides = new Map(); // slotKey -> { hp: number, consumed: boolean, uid?: string|null, updatedAt?: number }
+// [LEGACY] poisonHpOverrides → migré vers RenderLock.setOverride('slot', ...) // slotKey -> { hp: number, consumed: boolean, uid?: string|null, updatedAt?: number }
 
 function _isAnimHandIndexValue(value) {
     if (value === null || value === undefined || value === '') return false;
@@ -1153,7 +1196,7 @@ function handleAnimation(data) {
     // En mode client-paced, on ajoute aussi les reveals (summon/move/trapPlace)
     // pour eviter les chevauchements quand le serveur n'attend plus entre les phases.
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'massDiscard', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     const needsOppHandSnapshot =
         (type === 'summon' && data?.player !== myNum) ||
@@ -1189,24 +1232,25 @@ function handleAnimation(data) {
 
         // Bloquer render() immÃ©diatement pour les animations trample (avant traitement de la queue)
         if (type === 'trampleHeroHit') {
-            zdejebelAnimationInProgress = true;
+            RenderLock.lock('heroHp', 'all', 'heroAnim');
         }
         if (type === 'trampleDamage') {
             const owner = data.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${data.row}-${data.col}`;
-            animatingSlots.add(slotKey);
+            RenderLock.lock('slot', slotKey, 'trampleDamage');
         }
         // Bloquer render() immÃ©diatement pour onDeathDamage hÃ©ros (Dragon CrÃ©pitant)
         if (type === 'onDeathDamage' && data.targetRow === undefined) {
-            zdejebelAnimationInProgress = true;
+            RenderLock.lock('heroHp', 'all', 'heroAnim');
         }
         // Bloquer render() ATK immÃ©diatement pour powerBuff (on utilise fromAtk du serveur)
         if (type === 'powerBuff' && data.row !== undefined) {
             const pbOwner = data.player === myNum ? 'me' : 'opp';
             const pbKey = `${pbOwner}-${data.row}-${data.col}`;
             // Ne capturer que la premiÃ¨re fois (s'il y a dÃ©jÃ  un override, on le garde)
-            if (!powerBuffAtkOverrides.has(pbKey)) {
-                powerBuffAtkOverrides.set(pbKey, data.fromAtk);
+            if (!(RenderLock.getOverride('slot', pbKey)?.atk !== undefined)) {
+                const existing = RenderLock.getOverride('slot', pbKey) || {};
+                RenderLock.setOverride('slot', pbKey, { ...existing, atk: data.fromAtk });
             }
         }
         // Bloquer render() HP immÃ©diatement pour poisonDamage (geler le HP prÃ©-poison)
@@ -1227,7 +1271,7 @@ function handleAnimation(data) {
             const pdKey = `${pdOwner}-${data.row}-${data.col}`;
             const side = pdOwner === 'me' ? 'me' : 'opponent';
             const card = state?.[side]?.field?.[data.row]?.[data.col];
-            const existing = poisonHpOverrides.get(pdKey);
+            const existing = RenderLock.getOverride('slot', pdKey);
             const cardUid = card?.uid || null;
             const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, data.row, data.col) : null;
             const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
@@ -1235,7 +1279,7 @@ function handleAnimation(data) {
             const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
 
             if (!card) {
-                if (existing) poisonHpOverrides.delete(pdKey);
+                if (existing) RenderLock.clearOverride('slot', pdKey);
                 if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
                     console.log('[HP-SEQ-DBG] core-poison-override-clear:no-card', {
                         key: pdKey,
@@ -1259,7 +1303,7 @@ function handleAnimation(data) {
                     const prePoisonHp = (domHp !== null && stateHp !== null)
                         ? Math.min(domHp, stateHp)
                         : (domHp !== null ? domHp : (stateHp !== null ? stateHp : 0));
-                    poisonHpOverrides.set(pdKey, {
+                    RenderLock.setOverride('slot', pdKey, {
                         hp: prePoisonHp,
                         consumed: false,
                         uid: cardUid,
@@ -1303,24 +1347,24 @@ function handleAnimation(data) {
         if (type === 'trapTrigger') {
             const owner = data.player === myNum ? 'me' : 'opp';
             const trapKey = `${owner}-${data.row}`;
-            animatingTrapSlots.add(trapKey);
+            RenderLock.lock('trap', trapKey, 'anim');
         }
         if (type === 'summon' && data.row !== undefined && data.col !== undefined) {
             const owner = data.player === myNum ? 'me' : 'opp';
-            animatingSlots.add(`${owner}-${data.row}-${data.col}`);
+            RenderLock.lock('slot', `${owner}-${data.row}-${data.col}`, 'summon');
         }
         if (type === 'move') {
             const owner = data.player === myNum ? 'me' : 'opp';
             if (data.fromRow !== undefined && data.fromCol !== undefined) {
-                animatingSlots.add(`${owner}-${data.fromRow}-${data.fromCol}`);
+                RenderLock.lock('slot', `${owner}-${data.fromRow}-${data.fromCol}`, 'move-from');
             }
             if (data.toRow !== undefined && data.toCol !== undefined) {
-                animatingSlots.add(`${owner}-${data.toRow}-${data.toCol}`);
+                RenderLock.lock('slot', `${owner}-${data.toRow}-${data.toCol}`, 'move-to');
             }
         }
         if (type === 'trapPlace' && data.row !== undefined) {
             const owner = data.player === myNum ? 'me' : 'opp';
-            animatingTrapSlots.add(`${owner}-${data.row}`);
+            RenderLock.lock('trap', `${owner}-${data.row}`, 'trapPlace');
         }
         queueAnimation(type, data);
         if (type === 'attack' || type === 'damage' || type === 'spellDamage' || type === 'poisonDamage') {
@@ -1490,7 +1534,7 @@ function handleAnimationBatch(animations) {
         if (anim.type === 'deathTransform') {
             const owner = anim.player === myNum ? 'me' : 'opp';
             const slotKey = `${owner}-${anim.row}-${anim.col}`;
-            animatingSlots.add(slotKey);
+            RenderLock.lock('slot', slotKey, 'deathTransform');
         }
     }
 
@@ -1553,14 +1597,14 @@ function handleAnimationBatch(animations) {
             const pdKey = `${pdOwner}-${anim.row}-${anim.col}`;
             const side = pdOwner === 'me' ? 'me' : 'opponent';
             const card = state?.[side]?.field?.[anim.row]?.[anim.col];
-            const existing = poisonHpOverrides.get(pdKey);
+            const existing = RenderLock.getOverride('slot', pdKey);
             const cardUid = card?.uid || null;
             const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, anim.row, anim.col) : null;
             const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
             const domHpRaw = pdHpEl ? parseInt(pdHpEl.textContent || '', 10) : NaN;
             const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
             if (!card) {
-                if (existing) poisonHpOverrides.delete(pdKey);
+                if (existing) RenderLock.clearOverride('slot', pdKey);
                 if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
                     console.log('[HP-SEQ-DBG] core-poison-override-clear:batch', {
                         key: pdKey,
@@ -1584,7 +1628,7 @@ function handleAnimationBatch(animations) {
                     const prePoisonHp = (domHp !== null && stateHp !== null)
                         ? Math.min(domHp, stateHp)
                         : (domHp !== null ? domHp : (stateHp !== null ? stateHp : 0));
-                    poisonHpOverrides.set(pdKey, {
+                    RenderLock.setOverride('slot', pdKey, {
                         hp: prePoisonHp,
                         consumed: false,
                         uid: cardUid,

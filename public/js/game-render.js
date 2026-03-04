@@ -120,6 +120,97 @@ function _traceInvalidCardStats(source, card, meta = {}) {
     return true;
 }
 
+// --- DELTA RENDER (Niveau 2) ---
+// Rendu chirurgical : ne met à jour que les zones qui ont changé dans le state.
+// Utilisé pendant la phase de résolution pour éviter les reconstructions DOM massives.
+function renderDelta(d) {
+    if (!state || !d) { render(); return; }
+    if (d.full || d.phaseChanged) { render(); return; }
+
+    const me = state.me, opp = state.opponent;
+    const dom = _getDomEls();
+
+    // Hero HP (seulement si pas locked)
+    if (d.meHp !== undefined && !RenderLock.isLocked('heroHp', 'all')) {
+        const hpVal = Math.max(0, Math.floor(d.meHp));
+        if (dom.meHpNum) dom.meHpNum.textContent = String(hpVal);
+    }
+    if (d.oppHp !== undefined && !RenderLock.isLocked('heroHp', 'all')) {
+        const hpVal = Math.max(0, Math.floor(d.oppHp));
+        if (dom.oppHpNum) dom.oppHpNum.textContent = String(hpVal);
+    }
+
+    // Mana
+    if (d.meMana) {
+        if (dom.meManaPill) {
+            dom.meManaPill.innerHTML = `${d.meMana.energy}<span class="slash">/</span>${d.meMana.max}`;
+            dom.meManaPill.classList.toggle('empty', d.meMana.energy <= 0);
+        }
+    }
+    if (d.oppMana) {
+        if (dom.oppManaPill) {
+            dom.oppManaPill.innerHTML = `${d.oppMana.energy}<span class="slash">/</span>${d.oppMana.max}`;
+            dom.oppManaPill.classList.toggle('empty', d.oppMana.energy <= 0);
+        }
+    }
+
+    // Deck counts
+    if (d.meDeckCount !== undefined) {
+        if (dom.meDeckTooltip) dom.meDeckTooltip.textContent = d.meDeckCount + (d.meDeckCount > 1 ? ' cartes' : ' carte');
+        updateDeckDisplay('me', d.meDeckCount);
+    }
+    if (d.oppDeckCount !== undefined) {
+        if (dom.oppDeckTooltip) dom.oppDeckTooltip.textContent = d.oppDeckCount + (d.oppDeckCount > 1 ? ' cartes' : ' carte');
+        updateDeckDisplay('opp', d.oppDeckCount);
+    }
+
+    // Graveyard (only if data changed and not locked)
+    if (d.meGraveyard && !RenderLock.isLocked('grave', 'me')) {
+        const meGraveCount = me.graveyardCount || 0;
+        if (dom.meGraveTooltip) dom.meGraveTooltip.textContent = meGraveCount + (meGraveCount > 1 ? ' cartes' : ' carte');
+        updateGraveTopCard('me', me.graveyard);
+        updateGraveDisplay('me', me.graveyard);
+    }
+    if (d.oppGraveyard && !RenderLock.isLocked('grave', 'opp')) {
+        const oppGraveCount = opp.graveyardCount || 0;
+        if (dom.oppGraveTooltip) dom.oppGraveTooltip.textContent = oppGraveCount + (oppGraveCount > 1 ? ' cartes' : ' carte');
+        updateGraveTopCard('opp', opp.graveyard);
+        updateGraveDisplay('opp', opp.graveyard);
+    }
+
+    // Field: only re-render if any slots changed
+    if (d.fieldChanges && d.fieldChanges.length > 0) {
+        const activeShieldKeys = new Set();
+        const activeCamoKeys = new Set();
+        renderField('me', me.field, activeShieldKeys, activeCamoKeys);
+        renderField('opp', opp.field, activeShieldKeys, activeCamoKeys);
+        _syncPixiBoard();
+        CombatVFX.syncShields(activeShieldKeys);
+        CombatVFX.syncCamouflages(activeCamoKeys);
+    }
+
+    // Traps
+    if (d.meTrapsChanged || d.oppTrapsChanged) {
+        renderTraps();
+    }
+
+    // Hand: only if changed
+    if (d.meHandChanged) {
+        renderHand(me.hand, me.energy);
+    }
+    if (d.oppHandChanged) {
+        renderOppHand(opp.handCount, opp.oppHand);
+    }
+
+    // Draw animations
+    if (typeof GameAnimations !== 'undefined') {
+        GameAnimations.startPendingDrawAnimations();
+    }
+
+    // CardGlow
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+}
+
 function render() {
     if (!state) return;
     const __perfRenderStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -207,7 +298,7 @@ function render() {
     _markHeroHpBlockFromQueue(hpBlockedByActiveAnim);
     // Ne pas geler globalement les HP pour lifesteal/heroHeal:
     // on bloque seulement pendant l'animation HP active pour éviter les retards visibles.
-    const hpBlockedGlobal = !!zdejebelAnimationInProgress;
+    const hpBlockedGlobal = RenderLock.isLocked('heroHp', 'all');
     const hpBlockedMe = hpBlockedGlobal || hpBlockedByActiveAnim.me;
     const hpBlockedOpp = hpBlockedGlobal || hpBlockedByActiveAnim.opp;
     const hasHpAnimPending = hpBlockedMe || hpBlockedOpp;
@@ -319,19 +410,11 @@ function updateDeckDisplay(owner, deckCount) {
     });
 }
 
-// Bloquer le render du cimetière pendant les animations (compteur pour supporter plusieurs animations simultanées)
-const _graveBlockCount = { me: 0, opp: 0 };
-const graveRenderBlocked = {
-    add(owner) { _graveBlockCount[owner] = (_graveBlockCount[owner] || 0) + 1; },
-    delete(owner) { _graveBlockCount[owner] = Math.max(0, (_graveBlockCount[owner] || 0) - 1); },
-    has(owner) { return (_graveBlockCount[owner] || 0) > 0; },
-    clear() { _graveBlockCount.me = 0; _graveBlockCount.opp = 0; }
-};
+// [LEGACY] graveRenderBlocked/graveReturnAnimActive → migré vers RenderLock.lock('grave', ...)
 const pendingSpellReturns = new Map(); // spellId   { handIndex, player } pour sorts qui retournent en main
-const graveReturnAnimActive = new Set(); // 'me'|'opp' — bloque le render cimetière pendant l'animation de retour de sort
 
 function updateGraveDisplay(owner, graveyard) {
-    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) return;
+    if (RenderLock.isLocked('grave', owner)) return;
     const stack = document.getElementById(`${owner}-grave-stack`);
     if (!stack) return;
 
@@ -374,7 +457,7 @@ function updateGraveDisplay(owner, graveyard) {
 }
 
 function updateGraveTopCard(owner, graveyard) {
-    if (graveRenderBlocked.has(owner) || graveReturnAnimActive.has(owner)) return;
+    if (RenderLock.isLocked('grave', owner)) return;
     const container = document.getElementById(`${owner}-grave-top`);
     if (!container) return;
 
@@ -406,7 +489,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
 
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
-            if (animatingSlots.has(slotKey)) {
+            if (RenderLock.isLocked('slot', slotKey)) {
                 continue;
             }
             const card = field[r][c];
@@ -414,16 +497,16 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 _traceInvalidCardStats('renderField:slot', card, { owner, row: r, col: c });
             }
             // Purge des overrides poison stale quand le contenu du slot change.
-            if (typeof poisonHpOverrides !== 'undefined') {
-                const poisonOvPre = poisonHpOverrides.get(slotKey);
-                if (poisonOvPre) {
+            {
+                const poisonOvPre = RenderLock.getOverride('slot', slotKey);
+                if (poisonOvPre && poisonOvPre.hp !== undefined) {
                     const cardUid = card?.uid || null;
                     const ovAge = typeof poisonOvPre.updatedAt === 'number' ? (Date.now() - poisonOvPre.updatedAt) : 0;
                     const staleByUid = !!(poisonOvPre.uid && cardUid && poisonOvPre.uid !== cardUid);
                     const staleByMissingCard = !card;
                     const staleByTimeout = ovAge > 6000;
                     if (staleByUid || staleByMissingCard || staleByTimeout) {
-                        poisonHpOverrides.delete(slotKey);
+                        RenderLock.clearOverride('slot', slotKey);
                     }
                 }
             }
@@ -447,7 +530,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     hpVal = Number.isFinite(domHpFallback) ? domHpFallback : 0;
                 }
                 // Skip si poisonDamage anime ce slot (geler le HP pré-poison)
-                const poisonOv = typeof poisonHpOverrides !== 'undefined' && poisonHpOverrides.get(slotKey);
+                const poisonOv = RenderLock.getOverride('slot', slotKey);
                 if (poisonOv) {
                     const ovUidMismatch = !!(poisonOv.uid && card.uid && poisonOv.uid !== card.uid);
                     const ovAge = typeof poisonOv.updatedAt === 'number' ? (Date.now() - poisonOv.updatedAt) : 0;
@@ -468,7 +551,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                                 reason: ovUidMismatch ? 'uid_mismatch' : ((poisonOv.consumed && hpVal <= poisonOv.hp) ? 'consumed_caught_up' : 'stale_consumed')
                             });
                         }
-                        poisonHpOverrides.delete(slotKey);
+                        RenderLock.clearOverride('slot', slotKey);
                     } else {
                         if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
                             console.log('[HP-SEQ-DBG] render-poison-override-apply', {
@@ -539,7 +622,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 }
                 // Mettre à jour ATK (pas pour les bâtiments)
                 // Skip si powerBuff anime ce slot (mise à jour graduelle en cours)
-                if (!card.isBuilding && !(typeof powerBuffAtkOverrides !== 'undefined' && powerBuffAtkOverrides.has(slotKey))) {
+                if (!card.isBuilding && !(RenderLock.getOverride('slot', slotKey)?.atk !== undefined)) {
                     const atkEl = existingCardEl.querySelector('.arena-atk') || existingCardEl.querySelector('.img-atk');
                     if (atkEl) {
                         let atkVal = _toFiniteNumberOrNull(card.atk);
@@ -1173,7 +1256,7 @@ function renderTraps() {
         const slot = getTrapSlot('me', i);
         if (slot) {
             const trapKey = `me-${i}`;
-            const isProtected = animatingTrapSlots.has(trapKey);
+            const isProtected = RenderLock.isLocked('trap', trapKey);
             if (isProtected) return;
             // Fast path : si l'état du trap n'a pas changé, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
@@ -1208,7 +1291,7 @@ function renderTraps() {
         const slot = getTrapSlot('opp', i);
         if (slot) {
             const trapKey = `opp-${i}`;
-            const isProtected = animatingTrapSlots.has(trapKey);
+            const isProtected = RenderLock.isLocked('trap', trapKey);
             if (isProtected) return;
             // Fast path : si l'état du trap n'a pas changé, ne rien faire
             const hadTrap = slot.dataset.trapState === '1';
@@ -2350,6 +2433,7 @@ function renderOppHand(count, oppHand) {
     const oldCards = panel.querySelectorAll('.opp-card-back');
     const oldCount = oldCards.length;
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
+    console.log(`[MAUSOLE-DBG][renderOppHand] count=${count} oldCount=${oldCount} purged=${purgedCount} drawActive=${drawActive} phase=${state?.phase} isAnimating=${typeof isAnimating !== 'undefined' ? isAnimating : '?'} queueLen=${typeof animationQueue !== 'undefined' ? animationQueue.length : '?'}`);
     if (window.HAND_INDEX_DEBUG) {
         _bounceRenderDbg('render:opp:start', {
             count,
@@ -2549,6 +2633,8 @@ function renderOppHand(count, oppHand) {
     // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
     // donc on ne peut pas se fier à animatingSlots ici.
     if (count < oldCount && state?.phase === 'resolution') {
+        console.log(`[MAUSOLE-DBG][renderOppHand] RESOLUTION FREEZE: count=${count} < oldCount=${oldCount} — NOT removing DOM cards`);
+
         if (!savedOppHandRects) {
             savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
         }

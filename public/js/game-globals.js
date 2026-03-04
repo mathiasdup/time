@@ -296,7 +296,7 @@ if (typeof window !== 'undefined' && typeof window.visBuildDomSig !== 'function'
         const oppHidden = oppCards.filter((el) => el.style.visibility === 'hidden').length;
         const oppRevealed = document.querySelectorAll('#opp-hand .opp-revealed').length;
         const qLen = (typeof animationQueue !== 'undefined' && animationQueue) ? animationQueue.length : 0;
-        const animSlots = (typeof animatingSlots !== 'undefined' && animatingSlots) ? animatingSlots.size : 0;
+        const animSlots = (typeof RenderLock !== 'undefined') ? RenderLock.count() : 0;
         const isAnim = (typeof isAnimating !== 'undefined') ? !!isAnimating : false;
         return {
             meHpDom,
@@ -679,8 +679,7 @@ let currentProcessorId = 0; // Pour traquer le processeur actif
 
 // SystÃ¨me de HP diffÃ©rÃ©s pour zdejebel (pour que les HP changent APRÃˆS l'animation)
 let pendingHpUpdate = null; // { target: 'me'|'opp', oldHp: number, newHp: number }
-let zdejebelAnimationInProgress = false; // Bloque render() pour les HP pendant zdejebel
-let lifestealHeroHealInProgress = false; // Bloque render() pour les HP hÃ©ros pendant lifelink
+// [LEGACY] zdejebelAnimationInProgress/lifestealHeroHealInProgress → migré vers RenderLock.lock('heroHp', ...)
 const ANIMATION_DELAYS = {
     attack: 600,       // DÃ©lai aprÃ¨s une attaque
     damage: 500,       // DÃ©lai aprÃ¨s affichage des dÃ©gÃ¢ts
@@ -696,6 +695,7 @@ const ANIMATION_DELAYS = {
     lifesteal: 200,    // DÃ©lai aprÃ¨s animation lifesteal (le gros de l'anim est dans handleLifestealAnim)
     buildingActivate: 100, // DÃ©lai aprÃ¨s activation de bÃ¢timent (le gros est dans handleBuildingActivate)
     buildingDiscard: 200,  // DÃ©lai aprÃ¨s dÃ©fausse bÃ¢timent
+    massDiscard: 200,      // DÃ©lai aprÃ¨s dÃ©fausse massive (Bahamut)
     buildingMiss: 100,     // DÃ©lai aprÃ¨s miss bÃ¢timent (croix)
     default: 300       // DÃ©lai par dÃ©faut
 };

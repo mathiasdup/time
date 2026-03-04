@@ -35,6 +35,7 @@ function prepareDrawAnimation(data) {
         autoHiddenCards[owner].delete(handIndex);
         // Stocker pour que le render crée la carte cachée
         pendingDrawAnimations[owner].set(handIndex, card);
+        console.log(`[MAUSOLE-DBG][prepareDraw] owner=${owner} handIndex=${handIndex} card=${card?.name || '-'} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length} stateOppHandCount=${typeof state !== 'undefined' ? state?.opponent?.handCount : '?'}`);
         // Marquer les tokens pour animation d'apparition directe
         if (drawData.isToken) {
             pendingTokenSpawns[owner].add(handIndex);
@@ -232,9 +233,9 @@ function startPendingDrawAnimations() {
         for (const [handIndex, card] of pendingDrawAnimations.opp) {
             if (startedDrawAnimations.opp.has(handIndex)) continue;
             const { targetCard } = resolveHandTarget('opp', handIndex, card, oppCards);
+            console.log(`[MAUSOLE-DBG][startPendingDraw] opp handIndex=${handIndex} card=${card?.name || '-'} domCount=${oppCards.length} targetFound=${!!targetCard}`);
             if (!targetCard) {
                 allOppTargetsReady = false;
-                if (window.DEBUG_LOGS) console.log(`[BLAST-RET] opp target not ready handIndex=${handIndex} card=${card?.name || card?.id || '-'} domCount=${oppCards.length}`);
                 break;
             }
         }
@@ -476,7 +477,7 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             // Flag dédié — indépendant du compteur graveRenderBlocked
             // Empêche render()/updateGraveTopCard/updateGraveDisplay de toucher
             // au cimetière pendant toute la durée de l'animation de retour.
-            graveReturnAnimActive.add('me');
+            RenderLock.lock('grave', 'me', 'graveReturn');
             // Rendre IMMÉDIATEMENT l'état "après retour" (cimetière sans la carte qui remonte),
             // au lieu de vider visuellement le cimetière pendant l'animation.
             const stateMeGrave = state?.me?.graveyard || [];
@@ -582,8 +583,8 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                 }
 
                 // MAINTENANT retirer les flags
-                graveReturnAnimActive.delete('me');
-                graveRenderBlocked.delete('me');
+                RenderLock.unlock('grave', 'me', 'graveReturn');
+                RenderLock.unlock('grave', 'me', 'anim');
 
                 if (onComplete) onComplete(resolvedIndex);
             });
@@ -696,7 +697,7 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
                     oppGraveTop.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
                 }
                 // Débloquer et mettre à jour les layers du cimetière
-                graveRenderBlocked.delete('opp');
+                RenderLock.unlock('grave', 'opp', 'anim');
                 updateGraveDisplay('opp', oppGrave || []);
             }
 

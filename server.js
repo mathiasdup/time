@@ -583,6 +583,10 @@ function emitStateToPlayer(room, playerNum, extra) {
     if (socketId) {
         const t0 = PERF_ENABLED ? performance.now() : 0;
         const state = getPublicGameState(room, playerNum);
+        // Version counter for client-side delta detection
+        if (!room._stateVersion) room._stateVersion = 0;
+        room._stateVersion++;
+        state._v = room._stateVersion;
         if (extra) Object.assign(state, extra);
         const dedupeDuringResolution = room.gameState?.phase === 'resolution' && !extra;
         const needsSerialized = PERF_ENABLED || dedupeDuringResolution;
@@ -2618,8 +2622,6 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     addToGraveyard(player, milled);
                     log(`  Ã°Å¸ÂªÂ¦ ${effect.source} Ã¢â€ â€™ ${milled.name} va au cimetiÃƒÂ¨re`, 'action');
                     emitAnimation(room, 'burn', { player: effect.player, card: milled });
-                    await sleep(20);
-                    emitStateToBoth(room);
                     await sleep(1200);
                     await syncMillWatchers(room, effect.player, 1, log, sleep);
                     recalcDynamicAtk(room);
@@ -2723,10 +2725,11 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     for (const card of discardedCards) {
                         addToGraveyard(pState, card);
                         log(`  🐉 ${effect.source} : ${pState.heroName || 'Joueur ' + p} défausse ${card.name}`, 'action');
-                        emitAnimation(room, 'burn', { player: p, card });
                     }
+                    // Une seule animation avec toutes les cartes (défausse simultanée)
+                    emitAnimation(room, 'massDiscard', { player: p, cards: discardedCards });
                     emitStateToBoth(room);
-                    await sleep(800);
+                    await sleep(1800);
 
                     await drawCards(room, p, handSize, log, sleep, `${effect.source}`);
                 }
@@ -3004,9 +3007,11 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
             const discarded = player.hand.splice(chosenIdx, 1)[0];
             addToGraveyard(player, discarded);
 
-            log(`🏛️ ${card.name} : ${discarded.name} (coût ${discarded.cost}) défaussé`, 'action');
+            log(`🏛️ [MAUSOLE-DBG] DISCARD: handBefore=${player.hand.length+1} handAfter=${player.hand.length} discardIdx=${chosenIdx} card=${discarded.name}`, 'action');
             emitAnimation(room, 'buildingDiscard', { player: playerNum, card: discarded, handIndex: chosenIdx });
             await sleep(1400);
+            log(`🏛️ [MAUSOLE-DBG] POST-DISCARD emitState: handCount=${player.hand.length}`, 'info');
+            emitStateToBoth(room);
 
             let drawnIdx = -1;
             for (let i = 0; i < player.deck.length; i++) {
@@ -3025,9 +3030,11 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                     await sleep(800);
                 } else {
                     player.hand.push(drawn);
-                    log(`🏛️ ${card.name} : ${drawn.name} piochée depuis le deck`, 'special');
-                    emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: drawn, handIndex: player.hand.length - 1 }] });
+                    const drawIdx = player.hand.length - 1;
+                    log(`🏛️ [MAUSOLE-DBG] DRAW: handAfterPush=${player.hand.length} drawHandIndex=${drawIdx} card=${drawn.name}`, 'special');
+                    emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: drawn, handIndex: drawIdx }] });
                     await sleep(20);
+                    log(`🏛️ [MAUSOLE-DBG] POST-DRAW emitState: handCount=${player.hand.length}`, 'info');
                     emitStateToBoth(room);
                     await sleep(1400);
                 }
@@ -5059,8 +5066,6 @@ async function applySpell(room, action, log, sleep, options = {}) {
                     // Creature/batiment/piege ou main pleine => burn au cimetiere
                     addToGraveyard(targetHero, card);
                     emitAnimation(room, 'burn', { player: action.targetPlayer, card });
-                    await sleep(20);
-                    emitStateToBoth(room);
                     await sleep(1000);
                 }
             }
@@ -5087,8 +5092,6 @@ async function applySpell(room, action, log, sleep, options = {}) {
             for (const card of milledCards) {
                 log(`  Ã°Å¸ÂªÂ¦ ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${card.name} va au cimetiÃƒÂ¨re`, 'action');
                 emitAnimation(room, 'burn', { player: action.targetPlayer, card });
-                await sleep(20);
-                emitStateToBoth(room);
                 await sleep(1200);
             }
             const milledCreatures = milledCards.filter(c => c.type === 'creature').length;
@@ -5107,8 +5110,6 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 addToGraveyard(targetHero, chosen);
                 log(`  Ã°Å¸ÂªÂ¦ ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${chosen.name} (coÃƒÂ»t ${maxCost}) va au cimetiÃƒÂ¨re`, 'action');
                 emitAnimation(room, 'burn', { player: action.targetPlayer, card: chosen });
-                await sleep(20);
-                emitStateToBoth(room);
                 await sleep(1200);
                 await syncMillWatchers(room, action.targetPlayer, 1, log, sleep);
                 recalcDynamicAtk(room);
@@ -6631,8 +6632,6 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
             for (const mc of milledCards) {
                 log(`  Ã°Å¸ÂªÂ¦ ${card.name} Ã¢â€ â€™ ${mc.name} va au cimetiÃƒÂ¨re`, 'action');
                 emitAnimation(room, 'burn', { player: playerNum, card: mc });
-                await sleep(20);
-                emitStateToBoth(room);
                 await sleep(800);
             }
             const milledCreatures = milledCards.filter(mc => mc.type === 'creature').length;

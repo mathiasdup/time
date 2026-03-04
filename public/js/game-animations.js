@@ -423,8 +423,8 @@ function queueAnimation(type, data) {
         data._displayHpBefore = currentDisplayedHp;
     }
 
-    // Pour burn, death, sacrifice, spell, trapTrigger, bloquer le render du cimetiÃƒÆ’Ã‚Â¨re IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT
-    if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger' || type === 'buildingDiscard') {
+    // Pour burn, death, sacrifice, spell, trapTrigger, massDiscard, bloquer le render du cimetiÃƒÆ’Ã‚Â¨re IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT
+    if (type === 'burn' || type === 'death' || type === 'sacrifice' || type === 'spell' || type === 'trapTrigger' || type === 'buildingDiscard' || type === 'massDiscard') {
         const owner = (type === 'spell' ? data.caster : data.player) === myNum ? 'me' : 'opp';
         graveRenderBlocked.add(owner);
     }
@@ -441,6 +441,20 @@ function queueAnimation(type, data) {
             if (targetCard) {
                 data._sourceRect = targetCard.getBoundingClientRect();
                 console.log(`[BLDG-DISCARD][QUEUE] captured rect: left=${data._sourceRect.left.toFixed(0)} top=${data._sourceRect.top.toFixed(0)} w=${data._sourceRect.width.toFixed(0)} h=${data._sourceRect.height.toFixed(0)}`);
+            }
+        }
+    }
+    // Pour massDiscard, capturer les rects de TOUTES les cartes de la main
+    if (type === 'massDiscard' && data.cards) {
+        const mdIsMine = data.player === myNum;
+        const handId = mdIsMine ? 'my-hand' : 'opp-hand';
+        const handContainer = document.getElementById(handId);
+        if (handContainer) {
+            const selector = mdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
+            const cardEls = handContainer.querySelectorAll(selector);
+            data._sourceRects = [];
+            for (let i = 0; i < cardEls.length; i++) {
+                data._sourceRects.push(cardEls[i].getBoundingClientRect());
             }
         }
     }
@@ -804,7 +818,7 @@ function queueAnimation(type, data) {
                     const pOwner = purged.data.player === myNum ? 'me' : 'opp';
                     animatingSlots.delete(`${pOwner}-${purged.data.row}-${purged.data.col}`);
                 }
-                if (purged.type === 'burn' || purged.type === 'death' || purged.type === 'sacrifice' || purged.type === 'spell' || purged.type === 'trapTrigger') {
+                if (purged.type === 'burn' || purged.type === 'death' || purged.type === 'sacrifice' || purged.type === 'spell' || purged.type === 'trapTrigger' || purged.type === 'massDiscard') {
                     const gOwner = (purged.type === 'spell' ? purged.data.caster : purged.data.player) === myNum ? 'me' : 'opp';
                     graveRenderBlocked.delete(gOwner);
                 }
@@ -872,7 +886,9 @@ async function processAnimationQueue(processorId = null) {
                     qLen: animationQueue.length,
                 });
             }
-            // Lancer les animations de pioche en attente (bloquÃƒÆ’Ã‚Â©es pendant les combats)
+            // Sync le DOM (purge cartes collapsed, rebuild main) avant les pioche
+            render();
+            // Lancer les animations de pioche en attente
             if (typeof GameAnimations !== 'undefined') {
                 GameAnimations.startPendingDrawAnimations();
             }
@@ -1508,6 +1524,9 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'buildingDiscard':
             await handleBuildingDiscard(data);
+            break;
+        case 'massDiscard':
+            await handleMassDiscard(data);
             break;
         case 'buildingMiss':
             await handleBuildingMiss(data);
@@ -3917,23 +3936,61 @@ async function handleBuildingDiscard(data) {
         if (!found && data.handIndex !== undefined && cardEls[data.handIndex]) {
             found = cardEls[data.handIndex];
         }
-        console.log(`[BLDG-DISCARD][HANDLER] isMine=${bdIsMine}, cardEls=${cardEls.length}, found=${!!found}, handIndex=${data.handIndex}, hasQueueRect=${!!startRect}`);
+        console.log(`[MAUSOLE-DBG][DISCARD] isMine=${bdIsMine}, domCards=${cardEls.length}, found=${!!found}, handIndex=${data.handIndex}, stateOppHandCount=${state?.opponent?.handCount}`);
         if (found) {
             startRect = found.getBoundingClientRect();
-            console.log(`[BLDG-DISCARD][HANDLER] hiding card, rect: left=${startRect.left.toFixed(0)} top=${startRect.top.toFixed(0)}`);
+            console.log(`[MAUSOLE-DBG][DISCARD] hiding card at rect: left=${startRect.left.toFixed(0)} top=${startRect.top.toFixed(0)}`);
             found.style.visibility = 'hidden';
-            if (bdIsMine) {
-                const wrapper = found.closest('.hand-card-wrapper') || found;
-                wrapper.style.display = 'none';
-            } else {
-                smoothCloseOppHandGap(found);
-            }
+            smoothCloseOppHandGap(found);
         } else {
-            console.log(`[BLDG-DISCARD][HANDLER] card NOT in hand DOM — using fallback rect=${!!startRect}`);
+            console.log(`[MAUSOLE-DBG][DISCARD] card NOT found in DOM`);
         }
     }
+    console.log(`[MAUSOLE-DBG][DISCARD] starting animateSpellReveal, isAnimating=${isAnimating}, queueLen=${animationQueue.length}`);
     // Même animation qu'un sort : main → showcase → cimetière
     await animateSpellReveal(data.card, data.player, startRect);
+    console.log(`[MAUSOLE-DBG][DISCARD] animateSpellReveal DONE, oppHand DOM count=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
+}
+
+async function handleMassDiscard(data) {
+    const owner = data.player === myNum ? 'me' : 'opp';
+    if (!data.cards || data.cards.length === 0) {
+        graveRenderBlocked.delete(owner);
+        return;
+    }
+
+    const isMine = data.player === myNum;
+    const handId = isMine ? 'my-hand' : 'opp-hand';
+    const handContainer = document.getElementById(handId);
+
+    // 1. Capturer les rects et cacher toutes les cartes de la main en meme temps
+    const sourceRects = data._sourceRects || [];
+    if (handContainer) {
+        const selector = isMine ? '.card:not(.committed-spell)' : '.opp-card-back';
+        const cardEls = handContainer.querySelectorAll(selector);
+        for (let i = 0; i < cardEls.length; i++) {
+            if (!sourceRects[i]) {
+                sourceRects[i] = cardEls[i].getBoundingClientRect();
+            }
+            cardEls[i].style.visibility = 'hidden';
+            smoothCloseOppHandGap(cardEls[i]);
+        }
+    }
+
+    // 2. Lancer toutes les animateSpellReveal en parallele avec un leger decalage (cascade)
+    const stagger = 100; // ms entre chaque carte
+    const promises = data.cards.map((card, i) => {
+        return new Promise(resolve => {
+            setTimeout(async () => {
+                // Pour la premiere carte, graveRenderBlocked est deja lock par queueAnimation
+                // Pour les suivantes, on ajoute un lock supplementaire
+                if (i > 0) graveRenderBlocked.add(owner);
+                await animateSpellReveal(card, data.player, sourceRects[i] || null);
+                resolve();
+            }, i * stagger);
+        });
+    });
+    await Promise.all(promises);
 }
 
 async function handleLifestealAnim(data) {
