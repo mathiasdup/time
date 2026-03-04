@@ -143,6 +143,9 @@ function startGame() {
     document.getElementById('mulligan-overlay').classList.add('hidden');
     // Nettoyer les cartes du mulligan pour libérer le DOM
     document.getElementById('mulligan-hand').innerHTML = '';
+    document.getElementById('me-player-bar')?.classList.remove('hidden');
+    document.getElementById('opp-player-bar')?.classList.remove('hidden');
+    document.getElementById('viewport-top-bar')?.classList.remove('hidden');
     const gc = document.getElementById('game-container');
     gc.classList.add('active');
     gc.style.display = 'block'; // Défensif : empêche le flash si la classe active est retirée

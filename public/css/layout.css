@@ -18,6 +18,19 @@
             color: white;
             overflow: hidden;
         }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+        body:has(#lobby:not(.hidden))::before,
+        body.lobby-open::before {
+            opacity: 1;
+        }
 
         /* â”€â”€ Game Scaler : rÃ©solution de rÃ©fÃ©rence 1920Ã—1080 â”€â”€ */
         #game-scaler {
@@ -30,6 +43,7 @@
             margin: 0 auto;
             overflow: hidden;
             will-change: transform;
+            z-index: 2;
         }
 
         /* â”€â”€ Curseur fantasy custom â”€â”€ */
@@ -53,7 +67,16 @@
             transform: scale(0.95);
         }
         
-        .lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 20px; background: rgba(0,0,0,0.7); }
+        .lobby {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100%;
+            padding: 20px;
+            position: relative;
+            background: transparent;
+        }
         .lobby.hidden { display: none; }
         .lobby-title { font-size: 3em; color: #ffd700; text-shadow: 0 0 30px rgba(255,215,0,0.5); margin-bottom: 30px; }
         .lobby-box { background: rgba(20,20,40,0.95); padding: 35px; border-radius: 15px; border: 3px solid #8b7355; text-align: center; min-width: 380px; }
@@ -137,7 +160,21 @@
             display: none !important;
         }
         
-        .top-bar { position: absolute; top: 5px; left: 10px; right: 10px; height: 80px; display: flex; justify-content: space-between; align-items: center; background: transparent; z-index: 50; }
+        .top-bar {
+            position: fixed;
+            top: 8px;
+            left: 0;
+            right: 0;
+            width: 100vw;
+            height: 80px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: transparent;
+            z-index: 120;
+            pointer-events: none;
+        }
+        .top-bar.hidden { display: none !important; }
         .player-info-bar { display: flex; align-items: center; gap: 0; position: relative; }
         .player-info-bar.left { flex-direction: row; }
         .player-info-bar.right { flex-direction: row; }
@@ -153,6 +190,9 @@
         }
         .player-info-bar.viewport-player.right {
             right: 10px;
+        }
+        .player-info-bar.hidden {
+            display: none !important;
         }
         
         /* ===== Cadre joueur gold/legendary ===== */
@@ -713,7 +753,17 @@
                 0 2px 4px rgba(0, 0, 0, 0.8);
         }
         
-        .header-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+        .header-center {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: auto;
+            z-index: 130;
+        }
         .mana-orb {
             min-width: 50px;
             height: 50px;

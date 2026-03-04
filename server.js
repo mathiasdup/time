@@ -2288,6 +2288,18 @@ function collectOnDeathEffects(normalDeaths) {
         if (d.card.onDeath.healHero) {
             effects.push({ type: 'heroHeal', player: d.player, amount: d.card.onDeath.healHero, source: d.card.name });
         }
+        if (d.card.onDeath.returnGraveCost1ToHand) {
+            effects.push({ type: 'returnGraveCost1ToHand', player: d.player, source: d.card.name });
+        }
+        if (d.card.onDeath.discardHandAndRedraw) {
+            effects.push({ type: 'discardHandAndRedraw', player: d.player, source: d.card.name });
+        }
+    }
+    // bloodPactCost : après les onDeath normaux, ajouter le dégât du pacte de sang
+    for (const d of normalDeaths) {
+        if (d.card.bloodPactCost) {
+            effects.push({ type: 'bloodPactDamage', player: d.player, damage: d.card.bloodPactCost, source: d.card.name });
+        }
     }
     return effects;
 }
@@ -2325,6 +2337,17 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 emitAnimation(room, 'onDeathDamage', {
                     source: effect.source,
                     targetPlayer: effect.targetPlayer,
+                    damage: effect.damage
+                });
+                maxSleepTime = Math.max(maxSleepTime, 800);
+                break;
+            }
+            case 'bloodPactDamage': {
+                room.gameState.players[effect.player].hp -= effect.damage;
+                log(`🩸 ${effect.source} - Pacte de sang : vous perdez ${effect.damage} PV!`, 'damage');
+                emitAnimation(room, 'onDeathDamage', {
+                    source: effect.source,
+                    targetPlayer: effect.player,
                     damage: effect.damage
                 });
                 maxSleepTime = Math.max(maxSleepTime, 800);
@@ -2641,6 +2664,65 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 maxSleepTime = Math.max(maxSleepTime, 1200);
                 break;
             }
+            case 'returnGraveCost1ToHand': {
+                const player = room.gameState.players[effect.player];
+                if (!player) break;
+
+                const toReturn = [];
+                for (let i = player.graveyard.length - 1; i >= 0; i--) {
+                    const gc = player.graveyard[i];
+                    if (gc && gc.type === 'creature' && (gc.cost ?? 0) === 1) {
+                        toReturn.push(i);
+                    }
+                }
+
+                if (toReturn.length === 0) {
+                    log(`  🪦 ${effect.source} : aucune créature coût 1 dans le cimetière`, 'info');
+                    break;
+                }
+
+                let returned = 0;
+                for (const idx of toReturn) {
+                    if (player.hand.length >= 9) {
+                        log(`  🖐️ ${effect.source} : main pleine, arrêt du renvoi`, 'info');
+                        break;
+                    }
+                    const creature = player.graveyard.splice(idx, 1)[0];
+                    creature.revealedToOpponent = true;
+                    player.hand.push(creature);
+                    returned++;
+                    log(`  🪦 ${effect.source} : ${creature.name} revient du cimetière en main!`, 'special');
+                    emitAnimation(room, 'graveyardReturn', { player: effect.player, card: creature, handIndex: player.hand.length - 1 });
+                }
+
+                if (returned > 0) {
+                    recalcDynamicAtk(room);
+                    emitStateToBoth(room);
+                    maxSleepTime = Math.max(maxSleepTime, 900 * returned);
+                }
+                break;
+            }
+            case 'discardHandAndRedraw': {
+                for (let p = 1; p <= 2; p++) {
+                    const pState = room.gameState.players[p];
+                    if (!pState) continue;
+                    const handSize = pState.hand.length;
+                    if (handSize === 0) continue;
+
+                    const discardedCards = pState.hand.splice(0, pState.hand.length);
+                    for (const card of discardedCards) {
+                        addToGraveyard(pState, card);
+                        log(`  🐉 ${effect.source} : ${pState.heroName || 'Joueur ' + p} défausse ${card.name}`, 'action');
+                        emitAnimation(room, 'burn', { player: p, card });
+                    }
+                    emitStateToBoth(room);
+                    await sleep(800);
+
+                    await drawCards(room, p, handSize, log, sleep, `${effect.source}`);
+                }
+                maxSleepTime = Math.max(maxSleepTime, 200);
+                break;
+            }
             case 'summonIfPoisoned': {
                 const player = room.gameState.players[effect.player];
                 if (!player) break;
@@ -2882,8 +2964,64 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
             await sleep(800);
         }
     }
+    else if (card.activeAbility === 'discardHighestDrawCreature') {
+        const player = room.gameState.players[playerNum];
 
-    // Synchroniser l'ÃƒÂ©tat pour que les compteurs soient visibles avant le prochain bÃƒÂ¢timent/combat
+        let highestCost = -1;
+        const creatureIndices = [];
+        for (let i = 0; i < player.hand.length; i++) {
+            const c = player.hand[i];
+            if (c.type === 'creature') {
+                const cCost = c.cost ?? 0;
+                if (cCost > highestCost) {
+                    highestCost = cCost;
+                    creatureIndices.length = 0;
+                    creatureIndices.push(i);
+                } else if (cCost === highestCost) {
+                    creatureIndices.push(i);
+                }
+            }
+        }
+
+        if (creatureIndices.length === 0) {
+            log(`🏛️ ${card.name} : aucune créature en main à défausser`, 'info');
+        } else {
+            const chosenIdx = creatureIndices[Math.floor(Math.random() * creatureIndices.length)];
+            const discarded = player.hand.splice(chosenIdx, 1)[0];
+            addToGraveyard(player, discarded);
+
+            log(`🏛️ ${card.name} : ${discarded.name} (coût ${discarded.cost}) défaussé`, 'action');
+            emitAnimation(room, 'buildingDiscard', { player: playerNum, card: discarded });
+            await sleep(1400);
+
+            let drawnIdx = -1;
+            for (let i = 0; i < player.deck.length; i++) {
+                if (player.deck[i].type === 'creature') {
+                    drawnIdx = i;
+                    break;
+                }
+            }
+
+            if (drawnIdx !== -1) {
+                const drawn = player.deck.splice(drawnIdx, 1)[0];
+                if (player.hand.length >= 9) {
+                    addToGraveyard(player, drawn);
+                    log(`🔥 ${card.name} : ${drawn.name} piochée mais main pleine, brûlée!`, 'action');
+                    emitAnimation(room, 'burn', { player: playerNum, card: drawn });
+                    await sleep(800);
+                } else {
+                    player.hand.push(drawn);
+                    log(`🏛️ ${card.name} : ${drawn.name} piochée depuis le deck`, 'special');
+                    emitAnimation(room, 'draw', { player: playerNum, card: drawn });
+                    await sleep(500);
+                }
+            } else {
+                log(`🏛️ ${card.name} : aucune créature dans le deck à piocher`, 'info');
+            }
+        }
+    }
+
+    // Synchroniser l'état pour que les compteurs soient visibles avant le prochain bâtiment/combat
     emitStateToBoth(room);
 }
 
@@ -4874,6 +5012,46 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 await drawCards(room, action.targetPlayer, spell.drawAmount, log, sleep, `${action.heroName}: ${spell.name}`);
             }
             emitStateToBoth(room);
+        } else if (spell.effect === 'triSelectif') {
+            // Tri selectif : pioche 5, garde les sorts, envoie le reste au cimetiere
+            const drawCount = 5;
+            const burnedCards = [];
+            const drawnCards = [];
+            for (let i = 0; i < drawCount; i++) {
+                if (targetHero.deck.length === 0) break;
+                const card = targetHero.deck.shift();
+                if (card.type === 'spell') {
+                    if (targetHero.hand.length < 9) {
+                        targetHero.hand.push(card);
+                        drawnCards.push({ player: action.targetPlayer, card, handIndex: targetHero.hand.length - 1 });
+                    } else {
+                        addToGraveyard(targetHero, card);
+                        burnedCards.push(card);
+                    }
+                } else {
+                    addToGraveyard(targetHero, card);
+                    burnedCards.push(card);
+                }
+            }
+            // Animations de burn
+            for (const card of burnedCards) {
+                emitAnimation(room, 'burn', { player: action.targetPlayer, card });
+                await sleep(400);
+            }
+            // Animations de pioche
+            for (const d of drawnCards) {
+                emitAnimation(room, 'draw', { player: d.player, card: d.card, handIndex: d.handIndex });
+                await sleep(300);
+            }
+            // Perte de HP : 2 par carte en main
+            const hpLoss = targetHero.hand.length * 2;
+            if (hpLoss > 0) {
+                targetHero.hp -= hpLoss;
+                log(`  ${action.heroName}: Tri selectif - perd ${hpLoss} HP (${targetHero.hand.length} cartes en main)`, 'action');
+                emitAnimation(room, 'heroDamage', { player: action.targetPlayer, damage: hpLoss });
+                await sleep(600);
+            }
+            emitStateToBoth(room);
         } else if (spell.effect === 'mill') {
             const millCount = spell.millCount || 4;
             const milledCards = [];
@@ -5190,6 +5368,65 @@ async function applySpell(room, action, log, sleep, options = {}) {
             emitStateToBoth(room);
         }
     }
+    else if (spell.effect === 'reanimateBloodPact') {
+        // Pacte de sang : reanime une creature et lui ajoute bloodPactCost
+        let creatureIdx = -1;
+        if (action.graveyardIndex !== null && action.graveyardIndex !== undefined &&
+            action.graveyardIndex >= 0 && action.graveyardIndex < player.graveyard.length) {
+            const candidate = player.graveyard[action.graveyardIndex];
+            if (candidate && candidate.type === 'creature') {
+                if (!action.graveyardCreatureUid || candidate.uid === action.graveyardCreatureUid || candidate.id === action.graveyardCreatureUid) {
+                    creatureIdx = action.graveyardIndex;
+                }
+            }
+        }
+        if (creatureIdx === -1 && action.graveyardCreatureUid) {
+            creatureIdx = player.graveyard.findIndex(c =>
+                c.type === 'creature' && (c.uid === action.graveyardCreatureUid || c.id === action.graveyardCreatureUid)
+            );
+        }
+
+        if (creatureIdx === -1 || player.field[action.row][action.col]) {
+            log(`  ${action.heroName}: ${spell.name} echoue (cible invalide)`, 'action');
+            emitAnimation(room, 'spellMiss', { targetPlayer: action.targetPlayer, row: action.row, col: action.col });
+        } else {
+            const creature = player.graveyard.splice(creatureIdx, 1)[0];
+            const baseCard = CardByIdMap.get(creature.id);
+            const template = baseCard || creature;
+
+            const placed = {
+                ...template,
+                abilities: [...(template.abilities || [])],
+                uid: creature.uid || `${Date.now()}-reanimateBloodPact-${Math.random()}`,
+                currentHp: template.hp,
+                baseAtk: template.atk,
+                baseHp: template.hp,
+                canAttack: false,
+                turnsOnField: 0,
+                movedThisTurn: false,
+                bloodPactCost: template.cost || 0
+            };
+            if (placed.abilities.includes('protection')) placed.hasProtection = true;
+            if (placed.abilities.includes('camouflage')) placed.hasCamouflage = true;
+            if (placed.abilities.includes('untargetable')) placed.hasUntargetable = true;
+            placed.summonOrder = ++room.gameState.summonCounter;
+
+            player.field[action.row][action.col] = placed;
+
+            log(`  ${action.heroName}: ${spell.name} reanime ${placed.name} avec Pacte de sang (cout ${placed.bloodPactCost})`, 'action');
+            emitAnimation(room, 'reanimate', {
+                player: action.targetPlayer,
+                row: action.row,
+                col: action.col,
+                card: deepClone(placed),
+                fromGraveyard: true
+            });
+            await sleep(1200);
+
+            recalcDynamicAtk(room);
+            emitStateToBoth(room);
+        }
+    }
     else if (spell.effect === 'reanimateSacrifice') {
         // Cycle ÃƒÂ©ternel : rÃƒÂ©anime avec onSurvive Ã¢â€ â€™ sacrifice (fin du combat)
         let creatureIdx = -1;
@@ -5232,6 +5469,12 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 placed.abilities.push('haste');
                 placed.addedAbilities = placed.addedAbilities || [];
                 placed.addedAbilities.push('haste');
+            }
+            // Ajouter dissipation (Cycle eternel)
+            if (!placed.abilities.includes('dissipation')) {
+                placed.abilities.push('dissipation');
+                placed.addedAbilities = placed.addedAbilities || [];
+                placed.addedAbilities.push('dissipation');
             }
             // Marquer pour sacrifice en fin de combat (onSurvive)
             // IMPORTANT: crÃƒÂ©er un nouvel objet pour ne pas muter le template partagÃƒÂ©
@@ -7049,6 +7292,17 @@ io.on('connection', (socket) => {
             const toSacrifice = sacrificeTargets.slice(0, card.sacrifice);
             for (const t of toSacrifice) {
                 player.pendingSacrificeSlots.push({ row: t.row, col: t.col });
+            }
+        }
+
+        // Trepas : buff conditionnel si 3+ creatures au cimetiere
+        if (placed.trepasBuffCounters && placed.abilities?.includes('trepas')) {
+            const graveyardCreatureCount = (player.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatureCount >= 3) {
+                const bc = placed.trepasBuffCounters;
+                placed.buffCounters = (placed.buffCounters || 0) + bc;
+                placed.hp += bc;
+                placed.currentHp += bc;
             }
         }
 

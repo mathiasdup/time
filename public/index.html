@@ -142,20 +142,6 @@
     </div>
 
     <div class="game-container" id="game-container">
-        <div class="top-bar">
-            <div class="header-center">
-                <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
-                    <div class="end-turn-inner">
-                        <span class="end-turn-text">FIN DE TOUR</span>
-                        <span class="end-turn-timer"></span>
-                        <span class="end-turn-phase"></span>
-                        <svg class="end-turn-hourglass" viewBox="0 0 24 24">
-                            <path d="M6 2v6l4 4-4 4v6h12v-6l-4-4 4-4V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5l-4-4V4h8v3.5l-4 4z"/>
-                        </svg>
-                    </div>
-                </button>
-            </div>
-        </div>
         
         <!-- Phase indicator au dessus du terrain adverse -->
         <div class="phase-indicator deploy" id="phase-indicator">Phase de repositionnement</div>
@@ -377,7 +363,21 @@
     </div><!-- /game-scaler -->
 
     <!-- Éléments viewport (hors game-scaler, position fixed au bord de l'écran) -->
-    <div class="player-info-bar left viewport-player">
+    <div class="top-bar hidden" id="viewport-top-bar">
+        <div class="header-center">
+            <button class="end-turn-btn" id="end-turn-btn" onclick="endTurn()">
+                <div class="end-turn-inner">
+                    <span class="end-turn-text">FIN DE TOUR</span>
+                    <span class="end-turn-timer"></span>
+                    <span class="end-turn-phase"></span>
+                    <svg class="end-turn-hourglass" viewBox="0 0 24 24">
+                        <path d="M6 2v6l4 4-4 4v6h12v-6l-4-4 4-4V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5l-4-4V4h8v3.5l-4 4z"/>
+                    </svg>
+                </div>
+            </button>
+        </div>
+    </div>
+    <div class="player-info-bar left viewport-player hidden" id="me-player-bar">
         <div class="player-frame" id="me-player-frame">
             <svg class="frame-svg" id="me-frame-svg" viewBox="0 0 300 100" fill="none" xmlns="http://www.w3.org/2000/svg"></svg>
             <div class="player-name-zone">
@@ -388,7 +388,7 @@
             <div class="shimmer-line"></div>
         </div>
     </div>
-    <div class="player-info-bar right viewport-player">
+    <div class="player-info-bar right viewport-player hidden" id="opp-player-bar">
         <div class="player-frame" id="opp-player-frame">
             <svg class="frame-svg" id="opp-frame-svg" viewBox="0 0 300 100" fill="none" xmlns="http://www.w3.org/2000/svg"></svg>
             <div class="player-name-zone">

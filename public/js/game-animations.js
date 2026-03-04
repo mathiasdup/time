@@ -1490,6 +1490,9 @@ async function executeAnimationAsync(type, data) {
         case 'buildingActivate':
             await handleBuildingActivate(data);
             break;
+        case 'buildingDiscard':
+            await handleBuildingDiscard(data);
+            break;
         case 'heroHeal':
             await handleHeroHealAnim(data);
             break;
@@ -3842,7 +3845,7 @@ async function handleBuildingActivate(data) {
     );
     await new Promise(r => setTimeout(r, 900));
 
-    // Nuage poison pour selfPoison (Pustule vivante) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â jouÃƒÆ’Ã‚Â© APRÃƒÆ’Ã‹â€ S le VFX dorÃƒÆ’Ã‚Â©
+    // Nuage poison pour selfPoison (selfPoison) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â jouÃƒÆ’Ã‚Â© APRÃƒÆ’Ã‹â€ S le VFX dorÃƒÆ’Ã‚Â©
     if (data.selfPoison) {
         const poisonRect = slot.getBoundingClientRect();
         CombatVFX.createPoisonCloudEffect(
@@ -3850,6 +3853,13 @@ async function handleBuildingActivate(data) {
             poisonRect.top + poisonRect.height / 2,
             poisonRect.width, poisonRect.height
         );
+    }
+}
+
+async function handleBuildingDiscard(data) {
+    // Réutilise animateSpellReveal pour montrer la carte en grand puis l'envoyer au cimetière
+    if (data.card) {
+        await animateSpellReveal(data.card, data.player);
     }
 }
 

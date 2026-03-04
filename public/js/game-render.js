@@ -565,6 +565,14 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                             if (riposteVal === null) riposteVal = 0;
                             const riposteStr = String(riposteVal);
                             if (riposteEl.textContent !== riposteStr) riposteEl.textContent = riposteStr;
+                            const baseRiposte = _toFiniteNumberOrNull(card.baseRiposte ?? card.riposte);
+                            if (baseRiposte !== null) {
+                                riposteEl.classList.toggle('boosted', riposteVal > baseRiposte);
+                                riposteEl.classList.toggle('reduced', riposteVal < baseRiposte);
+                            } else {
+                                riposteEl.classList.remove('boosted');
+                                riposteEl.classList.remove('reduced');
+                            }
                         }
                     }
                 }
@@ -655,7 +663,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 } else if (entraveCount === 0 && entraveMarker) {
                     entraveMarker.remove();
                 }
-                // Buff marker (+1/+1)  propriété serveur : buffCounters
+                // Buff marker (Renforcement) propriete serveur : buffCounters
                 const buffCount = card.buffCounters || 0;
                 let buffMarker = existingCardEl.querySelector('.buff-marker');
                 if (buffCount > 0 && !buffMarker) {
@@ -1342,6 +1350,26 @@ function _updateHandInPlace(panel, hand, energy) {
                     atkEl.classList.remove('reduced');
                 }
             }
+
+            const riposteEl = el.querySelector('.arena-riposte') || el.querySelector('.img-riposte');
+            if (riposteEl) {
+                let riposteVal = _toFiniteNumberOrNull(card.riposte);
+                if (riposteVal === null) {
+                    const domRipFallback = parseInt(riposteEl.textContent || '', 10);
+                    riposteVal = Number.isFinite(domRipFallback) ? domRipFallback : 0;
+                }
+                const riposteStr = String(riposteVal);
+                if (riposteEl.textContent !== riposteStr) riposteEl.textContent = riposteStr;
+
+                const baseRiposte = _toFiniteNumberOrNull(card.baseRiposte ?? card.riposte);
+                if (baseRiposte !== null) {
+                    riposteEl.classList.toggle('boosted', riposteVal > baseRiposte);
+                    riposteEl.classList.toggle('reduced', riposteVal < baseRiposte);
+                } else {
+                    riposteEl.classList.remove('boosted');
+                    riposteEl.classList.remove('reduced');
+                }
+            }
         }
 
         // Mettre à jour le texte Poison dynamique (poisonPerGraveyard)
@@ -1383,6 +1411,24 @@ function _updateHandInPlace(panel, hand, energy) {
             el.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showCardZoom(card); };
         }
     }
+
+    // Fast-path: conserver le même empilement visuel que le slow-path
+    // en réindexant toutes les cartes (committed incluses) dans l'ordre DOM.
+    const allHandCards = panel.querySelectorAll('.card');
+    allHandCards.forEach((cardEl, idx) => {
+        cardEl.style.zIndex = idx + 1;
+        cardEl.style.setProperty('--hand-z', String(idx + 1));
+
+        // Nettoyer d'éventuels résidus FLIP sur les cartes committed.
+        if (cardEl.classList.contains('committed-spell')) {
+            if (cardEl.style.transform && cardEl.style.transform.includes('translateX(')) {
+                cardEl.style.transform = '';
+            }
+            if (cardEl.style.transition && cardEl.style.transition.includes('transform')) {
+                cardEl.style.transition = '';
+            }
+        }
+    });
 }
 
 function renderHand(hand, energy) {
@@ -2725,6 +2771,7 @@ function makeCard(card, inHand, discountedCost = null) {
     // boosted = supérieur à la base (vert), reduced = inférieur à la base (rouge)
     let hpClass = '';
     let atkClass = '';
+    let riposteClass = '';
     if (card.type === 'creature') {
         const baseHp = _toFiniteNumberOrNull(card.baseHp ?? card.hp);
         if (baseHp !== null && hpNum !== null && hpNum > baseHp) {
@@ -2740,6 +2787,13 @@ function makeCard(card, inHand, discountedCost = null) {
                 atkClass = 'boosted';
             } else if (baseAtk !== null && atkNum !== null && atkNum < baseAtk) {
                 atkClass = 'reduced';
+            }
+
+            const baseRiposte = _toFiniteNumberOrNull(card.baseRiposte ?? card.riposte);
+            if (baseRiposte !== null && riposteNum !== null && riposteNum > baseRiposte) {
+                riposteClass = 'boosted';
+            } else if (baseRiposte !== null && riposteNum !== null && riposteNum < baseRiposte) {
+                riposteClass = 'reduced';
             }
         }
     }
@@ -2815,6 +2869,7 @@ function makeCard(card, inHand, discountedCost = null) {
             ogre: 'Ogre',
             spider: 'Araignée',
             parasite: 'Parasite',
+            golem: 'Golem',
             plant: 'Plante',
             vampire: 'Vampire',
             insect: 'Insecte'
@@ -2912,7 +2967,7 @@ function makeCard(card, inHand, discountedCost = null) {
             <g class="arena-stat-riposte" transform="translate(450, 534) scale(0.36)">
                 <path d="${CARD_SVG_SPIKED_DIAMOND}" fill="#dddddd75"/>
                 <path d="${CARD_SVG_SPIKED_DIAMOND_INNER}" fill="url(#${uid}_starGrad)"/>
-                <text class="arena-riposte" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="160" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${riposteDisplay}</text>
+                <text class="arena-riposte ${riposteClass}" x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="'Glacial Indifference', sans-serif" font-size="160" font-weight="bold" fill="#e5e5e5" filter="url(#${uid}_statShadow)">${riposteDisplay}</text>
             </g>
             <g class="arena-stat-hp" transform="translate(450, 629) scale(0.34)">
                 <circle cx="0" cy="0" r="116" fill="#dddddd75"/>
