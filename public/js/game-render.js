@@ -130,14 +130,49 @@ function renderDelta(d) {
     const me = state.me, opp = state.opponent;
     const dom = _getDomEls();
 
-    // Hero HP (seulement si pas locked)
-    if (d.meHp !== undefined && !RenderLock.isLocked('heroHp', 'all')) {
-        const hpVal = Math.max(0, Math.floor(d.meHp));
-        if (dom.meHpNum) dom.meHpNum.textContent = String(hpVal);
+    // Check si un heroHit/heroHeal est en queue (bloquer le delta pour laisser l'anim gérer)
+    const _deltaHeroBlock = { me: false, opp: false };
+    if (typeof animationQueue !== 'undefined' && Array.isArray(animationQueue)) {
+        for (const item of animationQueue) {
+            if (!item) continue;
+            const t = item.type, dd = item.data || {};
+            if (t === 'heroHit' || t === 'trampleHeroHit') {
+                const defNum = dd.defender;
+                if (defNum === (typeof myNum !== 'undefined' ? myNum : -1)) _deltaHeroBlock.me = true;
+                else _deltaHeroBlock.opp = true;
+            }
+            if (t === 'onDeathDamage' && dd.targetRow === undefined) {
+                const tpNum = dd.targetPlayer;
+                if (tpNum === (typeof myNum !== 'undefined' ? myNum : -1)) _deltaHeroBlock.me = true;
+                else _deltaHeroBlock.opp = true;
+            }
+            if (t === 'heroHeal' || (t === 'lifesteal' && dd.heroHeal)) {
+                const plNum = dd.player;
+                if (plNum === (typeof myNum !== 'undefined' ? myNum : -1)) _deltaHeroBlock.me = true;
+                else _deltaHeroBlock.opp = true;
+            }
+            if (t === 'zdejebel') {
+                const tpNum = dd.targetPlayer;
+                if (tpNum === (typeof myNum !== 'undefined' ? myNum : -1)) _deltaHeroBlock.me = true;
+                else _deltaHeroBlock.opp = true;
+            }
+        }
     }
-    if (d.oppHp !== undefined && !RenderLock.isLocked('heroHp', 'all')) {
+
+    // Hero HP (seulement si pas locked ET pas d'anim hero en queue)
+    if (d.meHp !== undefined && !RenderLock.isLocked('heroHp', 'all') && !RenderLock.isLocked('heroHp', 'me') && !_deltaHeroBlock.me) {
+        const hpVal = Math.max(0, Math.floor(d.meHp));
+        if (dom.meHpNum) {
+            _traceHp('hero-me', dom.meHpNum.textContent, hpVal, 'renderDelta');
+            dom.meHpNum.textContent = String(hpVal);
+        }
+    }
+    if (d.oppHp !== undefined && !RenderLock.isLocked('heroHp', 'all') && !RenderLock.isLocked('heroHp', 'opp') && !_deltaHeroBlock.opp) {
         const hpVal = Math.max(0, Math.floor(d.oppHp));
-        if (dom.oppHpNum) dom.oppHpNum.textContent = String(hpVal);
+        if (dom.oppHpNum) {
+            _traceHp('hero-opp', dom.oppHpNum.textContent, hpVal, 'renderDelta');
+            dom.oppHpNum.textContent = String(hpVal);
+        }
     }
 
     // Mana
@@ -299,14 +334,20 @@ function render() {
     // Ne pas geler globalement les HP pour lifesteal/heroHeal:
     // on bloque seulement pendant l'animation HP active pour éviter les retards visibles.
     const hpBlockedGlobal = RenderLock.isLocked('heroHp', 'all');
-    const hpBlockedMe = hpBlockedGlobal || hpBlockedByActiveAnim.me;
-    const hpBlockedOpp = hpBlockedGlobal || hpBlockedByActiveAnim.opp;
+    const hpBlockedMe = hpBlockedGlobal || hpBlockedByActiveAnim.me || RenderLock.isLocked('heroHp', 'me');
+    const hpBlockedOpp = hpBlockedGlobal || hpBlockedByActiveAnim.opp || RenderLock.isLocked('heroHp', 'opp');
     const hasHpAnimPending = hpBlockedMe || hpBlockedOpp;
     if (!hpBlockedMe) {
-        if (dom.meHpNum) dom.meHpNum.textContent = String(_clampHeroHp(me.hp));
+        if (dom.meHpNum) {
+            _traceHp('hero-me', dom.meHpNum.textContent, _clampHeroHp(me.hp), 'render()', { stateHp: me.hp });
+            dom.meHpNum.textContent = String(_clampHeroHp(me.hp));
+        }
     }
     if (!hpBlockedOpp) {
-        if (dom.oppHpNum) dom.oppHpNum.textContent = String(_clampHeroHp(opp.hp));
+        if (dom.oppHpNum) {
+            _traceHp('hero-opp', dom.oppHpNum.textContent, _clampHeroHp(opp.hp), 'render()', { stateHp: opp.hp });
+            dom.oppHpNum.textContent = String(_clampHeroHp(opp.hp));
+        }
     }
     if (dom.meManaPill) {
         dom.meManaPill.innerHTML = `${me.energy}<span class="slash">/</span>${me.maxEnergy}`;
@@ -605,6 +646,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                             if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] render-apply-hp card=${card.name} uid=${card.uid} slot=${slotKey} stateHp=${hpVal} visualDmgHp=${visualDmgHp ?? 'none'} domHpBefore=${hpEl.textContent} expired=${visualDmgExpired}`);
                         }
                         if (hpEl.textContent !== hpStr) {
+                            _traceHp(slotKey, hpEl.textContent, hpStr, 'renderField', { card: card.name, uid: card.uid?.slice(-6) });
                             hpEl.textContent = hpStr;
                         }
                         // Classes boosted/reduced (même noms que makeCard)  pas pour les bâtiments
@@ -2433,7 +2475,6 @@ function renderOppHand(count, oppHand) {
     const oldCards = panel.querySelectorAll('.opp-card-back');
     const oldCount = oldCards.length;
     const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
-    console.log(`[MAUSOLE-DBG][renderOppHand] count=${count} oldCount=${oldCount} purged=${purgedCount} drawActive=${drawActive} phase=${state?.phase} isAnimating=${typeof isAnimating !== 'undefined' ? isAnimating : '?'} queueLen=${typeof animationQueue !== 'undefined' ? animationQueue.length : '?'}`);
     if (window.HAND_INDEX_DEBUG) {
         _bounceRenderDbg('render:opp:start', {
             count,
@@ -2633,8 +2674,6 @@ function renderOppHand(count, oppHand) {
     // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
     // donc on ne peut pas se fier à animatingSlots ici.
     if (count < oldCount && state?.phase === 'resolution') {
-        console.log(`[MAUSOLE-DBG][renderOppHand] RESOLUTION FREEZE: count=${count} < oldCount=${oldCount} — NOT removing DOM cards`);
-
         if (!savedOppHandRects) {
             savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
         }

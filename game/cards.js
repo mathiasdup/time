@@ -258,6 +258,8 @@ const CardDB = {
         { id: 'guerriere_solitaire', name: 'Guerrière solitaire', atk: 4, hp: 4, cost: 0, type: 'creature', abilities: ['trample'], combatType: 'melee', creatureType: 'human', faction: 'red', edition: 2, image: 'red/guerriere_solitaire.png', arenaStyle: true },
         { id: 'esprit_furieux', name: 'Esprit furieux', atk: 3, hp: 8, cost: 0, type: 'creature', abilities: ['fly'], combatType: 'fly', creatureType: 'spirit', faction: 'red', edition: 3, image: 'red/esprit_furieux.png', arenaStyle: true, manaCap: 3, description: 'Tant que l\'Esprit furieux est en jeu, vous ne pouvez produire que 3 mana maximum.' },
         { id: 'liche_affaiblie', name: 'Liche affaiblie', atk: 2, riposte: 1, hp: 2, cost: 2, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 1, image: 'black/liche_affaiblie.png', arenaStyle: true },
+        { id: 'garde_branlante', name: 'Garde branlante', atk: 0, riposte: 1, hp: 7, cost: 4, type: 'creature', abilities: ['poison'], poisonX: 1, combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/garde_branlante.png', arenaStyle: true },
+        { id: 'zombie_decharne', name: 'Zombie décharné', atk: 1, riposte: 1, hp: 2, cost: 2, type: 'creature', abilities: ['poison'], poisonX: 2, combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 2, rarity: 2, image: 'black/zombie_decharne.png', arenaStyle: true },
         { id: 'zombie_delabre', name: 'Zombie délabré', atk: 2, riposte: 1, hp: 3, cost: 3, type: 'creature', abilities: ['poison'], poisonX: 1, combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 2, image: 'black/zombie_delabre.png', arenaStyle: true, onDeath: { poisonRow: 1 }, description: 'Mort : inflige 1 compteur poison à chaque créature adverse sur la ligne.' },
         { id: 'chevalier_pavois', name: 'Chevalier au pavois', atk: 3, hp: 5, cost: 0, type: 'creature', abilities: ['untargetable'], combatType: 'melee', creatureType: 'human', faction: 'white', edition: 2, image: 'white/chevalier_au_pavois.png', arenaStyle: true, description: 'Inciblable : cette créature ne peut pas être ciblée par les sorts.' },
         { id: 'cavalier_pegase', name: 'Cavalier de pégase', atk: 5, hp: 2, cost: 5, type: 'creature', abilities: ['fly', 'protection', 'trample'], combatType: 'fly', creatureType: 'human', faction: 'red', edition: 4, image: 'red/cavalier_de_pegase.png', arenaStyle: true, spellMagnet: true, description: 'Les sorts offensifs ciblés de l\'adversaire doivent cibler cette créature si possible.' },
@@ -384,6 +386,7 @@ const CardDB = {
         { id: 'nuee_de_moustique', name: 'Nuée de moustique', atk: 1, riposte: 1, hp: 1, cost: 1, type: 'creature', abilities: ['fly', 'poison'], poisonX: 1, combatType: 'fly', creatureType: 'insect', faction: 'black', edition: 2, image: 'black/nuee_de_moustique.png', arenaStyle: true },
         { id: 'zobombie', name: 'Zobombie', atk: 2, riposte: 0, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zobombie.png', arenaStyle: true, onDeath: { damageKiller: 2 }, description: 'Mort : Inflige 2 dégâts à la créature qui l\'a détruite.' },
         { id: 'behemoth_fantomatique', name: 'Béhémoth fantomatique', atk: 8, riposte: 8, hp: 4, cost: 7, type: 'creature', abilities: ['spectral'], combatType: 'melee', creatureType: 'spirit', faction: 'black', edition: 1, image: 'black/behemoth_fantomatique.png', arenaStyle: true },
+        { id: 'avatar_du_poison', name: 'Avatar du poison', atk: 7, riposte: 7, hp: 7, cost: 7, type: 'creature', abilities: ['antitoxin', 'trample'], combatType: 'melee', creatureType: 'avatar', faction: 'black', edition: 4, rarity: 4, image: 'black/avatar_du_poison.png', arenaStyle: true, endOfCombat: { absorbPoison: true }, description: 'Fin du combat : absorbe tous les marqueurs poison du champ de bataille et les transforme en marqueurs renforcement.' },
         { id: 'demon_supreme', name: 'Démon Suprême', atk: 6, riposte: 6, hp: 6, cost: 6, type: 'creature', abilities: ['fly', 'trample'], combatType: 'fly', creatureType: 'demon', faction: 'black', edition: 4, image: 'black/demon_supreme.png', arenaStyle: true, endOfCombat: { spawnAdjacentMelee: 'demon_superieur' }, description: 'Fin du combat : invoque un Démon supérieur sur une case mêlée adjacente vide.' },
         { id: 'paria_abysses', name: 'Paria des abysses', atk: 1, riposte: 1, hp: 1, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/paria_des_abysses.png', arenaStyle: true, onDeath: { transformInto: 'zombie_paria' }, description: 'Mort : Se transforme en Zombie.' },
         { id: 'zombie_paria', name: 'Zombie', atk: 2, hp: 2, cost: 2, type: 'creature', abilities: ['dissipation'], combatType: 'melee', creatureType: 'undead', faction: 'black', edition: 1, image: 'black/zombie.png', arenaStyle: true, isToken: true },
@@ -399,9 +402,13 @@ const CardDB = {
         { id: 'fossoyeur_methodique', name: 'Fossoyeur méthodique', atk: 2, hp: 2, cost: 1, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 1, image: 'black/fossoyeur_methodique.png', arenaStyle: true, onDeath: { millFirstCreature: true }, description: 'Quand le Fossoyeur méthodique meurt, mettez la première carte de créature du dessus de votre bibliothèque au cimetière.' },
         { id: 'rosalia_demonicus', name: 'Rosalia démonicus', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/rosalia_demonicus.png', arenaStyle: true, activeAbility: 'poisonAll', description: 'Active : inflige 1 marqueur poison à toutes les créatures.' },
         { id: 'mausole_sinistre', name: 'Mausolée sinistre', hp: 3, cost: 2, type: 'creature', isBuilding: true, abilities: [], faction: 'black', edition: 2, image: 'black/mausole_sinistre.png', arenaStyle: true, activeAbility: 'discardHighestDrawCreature', description: 'Active : Défaussez la carte de créature avec le plus haut coût en mana de votre main. Si vous vous êtes défaussé d\'une carte, piochez une carte de créature depuis votre deck.' },
-        { id: 'serpent_emeraude', name: 'Serpent d\'émeraude', atk: 2, riposte: 2, hp: 2, cost: 2, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'serpent', faction: 'black', edition: 3, image: 'black/serpent_demeraude.png', arenaStyle: true, buffOnEnemyPoisonDeath: true, trampleAtBuffCounters: 3, description: 'Quand une créature ennemie meurt du poison, gagne 1 marqueur renforcement. Acquiert Piétinement à 3 marqueurs renforcement.' },
+        { id: 'serpent_emeraude', name: 'Serpent d\'émeraude', atk: 2, riposte: 2, hp: 2, cost: 2, type: 'creature', abilities: ['trample'], combatType: 'melee', creatureType: 'serpent', faction: 'black', edition: 3, image: 'black/serpent_demeraude.png', arenaStyle: true, poisonFeedsSelf: true, description: 'Quand cette créature reçoit du poison, elle gagne autant de marqueurs renforcement. Le poison soigne cette créature.' },
+        { id: 'spores', name: 'Spores', atk: 0, riposte: 0, hp: 1, cost: 1, type: 'creature', abilities: ['immovable', 'antitoxin'], combatType: 'melee', creatureType: 'parasite', faction: 'black', edition: 1, image: 'black/spores.png', arenaStyle: true, onDeath: { poisonAdjacent: 1, drawCards: 1 }, description: 'Mort : Inflige 1 poison aux créatures adjacentes. Piochez une carte.' },
         { id: 'porteur_de_peste', name: 'Porteur de peste', atk: 1, riposte: 0, hp: 3, cost: 3, type: 'creature', abilities: ['antitoxin'], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 2, image: 'black/porteur_peste.png', arenaStyle: true, onDeath: { poisonAll: 1 }, description: 'Quand le Porteur de peste meurt, met 1 marqueur poison à toutes les créatures.' },
+        { id: 'nuage_toxique', name: 'Nuage toxique', atk: 2, riposte: 1, hp: 3, cost: 4, type: 'creature', abilities: ['spectral', 'antitoxin'], combatType: 'fly', creatureType: 'spirit', faction: 'black', edition: 2, rarity: 2, image: 'black/nuage_toxique.png', arenaStyle: true, aura: 'poisonAmplifier', description: 'Passif : Quand une créature reçoit des marqueurs poison, elle en reçoit un de plus.' },
         { id: 'spectre_recurrent', name: 'Spectre récurrent', atk: 2, hp: 1, cost: 2, type: 'creature', abilities: ['fly', 'dissipation'], combatType: 'fly', creatureType: 'spirit', faction: 'black', edition: 2, image: 'black/spectre_recurrent.png', arenaStyle: true, graveyardTrigger: 'reanimateOnAllyDeath', description: 'Quand une créature alliée va au cimetière, si le Spectre est dans votre cimetière, il se réanime sur l\'emplacement de la créature morte.' },
+        { id: 'genie_du_sang', name: 'Génie du sang', atk: 2, riposte: 2, hp: 4, cost: 3, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 3, rarity: 3, image: 'black/genie_du_sang.png', arenaStyle: true, aura: 'poisonHealsAllies', description: 'Passif : Le poison soigne vos créatures au lieu de leur infliger des dégâts.' },
+        { id: 'immondice_des_trefonds', name: 'Immondice des tréfonds', atk: 3, riposte: 1, hp: 6, cost: 5, type: 'creature', abilities: ['poison'], poisonX: 1, combatType: 'melee', creatureType: 'monstrosity', faction: 'black', edition: 3, rarity: 3, image: 'black/immondice_des_trefonds.png', arenaStyle: true, onDeath: { absorbAdjacentPoisonThenDamageHero: true }, description: 'Mort : Absorbe le poison des créatures adjacentes puis inflige au héros adverse des dégâts égaux à ses marqueurs poison.' },
         { id: 'excavateur_stratege', name: 'Excavateur stratège', atk: 2, riposte: 1, hp: 3, cost: 5, type: 'creature', abilities: [], combatType: 'shooter', creatureType: 'human', faction: 'black', edition: 3, rarity: 3, image: 'black/excavateur_stratege.png', arenaStyle: true, onDeath: { returnGraveCost1ToHand: true }, description: 'Mort : Renvoyez dans votre main toutes les créatures depuis votre cimetière qui coûtent 1 mana.' },
         { id: 'liche_blasteuse', name: 'Liche blasteuse', atk: 3, riposte: 1, hp: 7, cost: 7, type: 'creature', abilities: ['shooter', 'regeneration', 'entrave'], regenerationX: 2, entraveX: 2, combatType: 'shooter', creatureType: 'undead', faction: 'black', edition: 2, rarity: 2, image: 'black/liche_blasteuse.png', arenaStyle: true },
         { id: 'eveque_corrompu', name: 'Évêque corrompu', atk: 3, riposte: 3, hp: 4, cost: 6, type: 'creature', abilities: [], combatType: 'melee', creatureType: 'human', faction: 'black', edition: 2, rarity: 2, image: 'black/eveque_corrompu.png', arenaStyle: true, onDeath: { healHero: 4, damageHero: 3 }, description: 'Mort : Votre héros se soigne de 4 PV et l\'adversaire perd 3 PV.' },
@@ -429,7 +436,9 @@ const CardDB = {
         { id: 'ensevelissement', name: 'Ensevelissement', cost: 1, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'hybride', pattern: 'hero', targetSelf: true, targetEnemy: true, effect: 'mill', millCount: 3, image: 'black/ensevelissement.png', arenaStyle: true, faction: 'black', edition: 1, description: 'Mettez les 3 cartes du dessus de la bibliothèque du héros ciblé dans son cimetière.' },
         { id: 'mon_precieux', name: 'Mon précieux', cost: 2, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'all', effect: 'graveyardToHand', requiresGraveyardCreature: true, image: 'black/mon_precieux.png', arenaStyle: true, faction: 'black', edition: 1, description: 'Renvoyez une carte de créature de votre cimetière dans votre main.' },
         { id: 'pacte_sombre', name: 'Pacte sombre', cost: 1, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'défensif', pattern: 'hero', targetSelf: true, effect: 'millHighestCostCreature', image: 'black/pacte_sombre.png', arenaStyle: true, faction: 'black', edition: 1, description: 'Mettez la carte de créature avec le coût le plus élevé de votre bibliothèque dans votre cimetière.' },
-        { id: 'contamination_eau', name: 'Contamination de l\'eau', cost: 3, type: 'spell', spellSpeed: 3, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'poisonAllEnemies', poisonAmount: 1, image: 'black/contamination_de_leau.png', arenaStyle: true, faction: 'black', edition: 3, description: 'Toutes les créatures adverses reçoivent un marqueur poison.' },
+        { id: 'contamination_eau', name: 'Contamination de l\'eau', cost: 2, type: 'spell', spellSpeed: 3, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'poisonAllCreatures', poisonAmount: 1, image: 'black/contamination_de_leau.png', arenaStyle: true, faction: 'black', edition: 3, description: 'Toutes les créatures reçoivent un marqueur poison.' },
+        { id: 'envenimement', name: 'Envenimement', cost: 2, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'doublePoisonAll', image: 'black/envenimement.png', arenaStyle: true, faction: 'black', edition: 2, rarity: 2, description: 'Double le nombre de marqueurs poison sur toutes les créatures du champ de bataille.' },
+        { id: 'vapeur_mortelle', name: 'Vapeur mortelle', cost: 5, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'poisonAllCreatures', poisonAmount: 3, image: 'black/vapeur_mortelle.png', arenaStyle: true, faction: 'black', edition: 3, rarity: 3, description: 'Mettez 3 marqueurs poison sur toutes les créatures du champ de bataille.' },
         { id: 'mur_de_zombie', name: 'Mur de zombie', cost: 4, type: 'spell', spellSpeed: 3, offensive: false, spellType: 'défensif', pattern: 'global', effect: 'summonZombieWall', summonId: 'zombie_paria', image: 'black/mur_de_zombie.png', arenaStyle: true, faction: 'black', edition: 4, description: 'Invoque un Zombie 2/2 dans chaque emplacement de mêlée vide.' },
         { id: 'brume_toxique', name: 'Brume toxique', cost: 2, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'triggerPoison', image: 'black/brume_toxique.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Toutes les créatures empoisonnées subissent immédiatement leurs dégâts de poison.' },
         { id: 'cycle_eternel', name: 'Cycle éternel', cost: 4, type: 'spell', spellSpeed: 2, offensive: false, spellType: 'defensif', pattern: 'self', effect: 'reanimateSacrifice', image: 'black/cycle_eternel.png', arenaStyle: true, faction: 'black', edition: 3, targetSelfEmptySlot: true, requiresGraveyardCreature: true, description: 'Réanime une créature avec Célérité et Dissipation. Fin du combat : sacrifiez cette créature.' },
@@ -443,7 +452,8 @@ const CardDB = {
         { id: 'troubeant', name: 'Trou béant', damage: 6, cost: 2, type: 'trap', meleeOnly: true, image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 6 dégâts à la première créature de mêlée adverse qui attaque sur la ligne.' },
         { id: 'trappe_secrete', name: 'Trappe secrète', damage: 3, cost: 3, type: 'trap', pattern: 'line', image: 'neutral/trappe_secrete.png', arenaStyle: true, faction: 'neutral', edition: 2, description: 'Inflige 3 blessures à toutes les créatures adverses sur cette ligne.' },
         { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 3, type: 'trap', effect: 'bounce', image: 'neutral/voyage_inattendu.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
-        { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' }
+        { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' },
+        { id: 'piece_renfermee', name: 'Pièce renfermée', cost: 3, type: 'trap', effect: 'poisonLine', poisonAmount: 3, pattern: 'line', image: 'neutral/piece_renfermee.png', arenaStyle: true, faction: 'neutral', edition: 3, rarity: 3, description: 'Inflige 3 marqueurs poison à toutes les créatures sur la ligne (alliées et ennemies).' }
     ]
 };
 
@@ -481,7 +491,7 @@ const HEROES = {
         titleColor: '#2a1a3dba', // Noir/violet
         faction: 'black',
         edition: 3,
-        ability: 'Quand une créature alliée va au cimetière depuis le terrain, soignez 1 PV. Une fois par tour.'
+        ability: ''
     }
 };
 
@@ -680,11 +690,15 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
         poisonRow: 'death handling',
         summonIfPoisoned: 'death handling',
         reanimateMeleeCost2OrLessBottom: 'death handling',
+        absorbAdjacentPoisonThenDamageHero: 'death handling',
+        poisonAdjacent: 'death handling',
+        drawCards: 'death handling',
         returnGraveCost1ToHand: 'death handling',
         transformInto: 'death handling'
     }),
     endOfCombatKeys: Object.freeze({
         absorbAdjacent: 'endOfCombat',
+        absorbPoison: 'endOfCombat',
         damageAllEnemies: 'endOfCombat',
         selfMill: 'endOfCombat',
         selfSacrifice: 'endOfCombat (last)',
@@ -724,11 +738,13 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
         buffAll: 'spell resolution',
         debuffAll: 'spell resolution',
         destroy: 'spell resolution',
+        doublePoisonAll: 'spell resolution',
         destroyIfPoisoned: 'spell resolution',
         draw: 'spell resolution',
         graveyardToHand: 'spell resolution',
         mill: 'spell resolution',
         millHighestCostCreature: 'spell resolution',
+        poisonAllCreatures: 'spell resolution',
         poisonAllEnemies: 'spell resolution',
         reanimate: 'spell resolution',
         reanimateBloodPact: 'spell resolution',
@@ -752,6 +768,7 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
     }),
     trapEffectKeys: Object.freeze({
         bounce: 'trap resolution',
+        poisonLine: 'trap resolution',
         summon: 'trap resolution'
     })
 });

@@ -70,6 +70,10 @@ class CombatAnimationSystem {
         const currentHp = parseInt(hpEl.textContent) || 0;
         const newHp = currentHp - damage;
         const cardName = cardEl.querySelector('.arena-name')?.textContent || '?';
+        const slotEl = cardEl.closest('.card-slot');
+        const slotKey = (slotEl && slotEl.dataset.owner && slotEl.dataset.row !== undefined)
+            ? slotEl.dataset.owner + '-' + slotEl.dataset.row + '-' + slotEl.dataset.col
+            : '?';
         const isRadjawak = cardName.toLowerCase().includes('radjawak');
         const stateHp = parseInt(cardEl.dataset.stateHp || '', 10);
         const stateSyncAt = parseInt(cardEl.dataset.stateHpSyncAt || '0', 10);
@@ -80,14 +84,7 @@ class CombatAnimationSystem {
             Number.isFinite(stateHp);
 
         if (hasNewerStateThanAttack) {
-            if (currentHp <= 0 && stateHp > 0) {
-                if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] visual-skip-newer card=${cardName} uid=${cardEl.dataset.uid || '-'} domHp=${currentHp} stateHp=${stateHp} eventTs=${attackEventTs}`);
-            }
-            if (isRadjawak) {
-                if (window.DEBUG_LOGS) console.log(
-                    `[RADJ-DBG] visual-damage skip-newer-state card=${cardName} uid=${cardEl.dataset.uid || '-'} eventTs=${attackEventTs} stateSyncAt=${stateSyncAt} stateHp=${stateHp} domHp=${currentHp} damage=${damage}`
-                );
-            }
+            _traceHp(slotKey, currentHp, stateHp, 'visualDmg:skip-newer', { card: cardName, damage, stateHp });
             hpEl.textContent = String(stateHp);
             delete cardEl.dataset.visualDmgHp;
             delete cardEl.dataset.visualDmgSetAt;
@@ -97,7 +94,7 @@ class CombatAnimationSystem {
         if (isRadjawak) {
             if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] visual-damage start card=${cardName} uid=${cardEl.dataset.uid || '-'} domHpBefore=${currentHp} damage=${damage} domHpAfter=${newHp}`);
         }
-        // if (window.DEBUG_LOGS) console.log(`[VISUAL_DMG] ${cardName}: HP ${currentHp} ? ${newHp} (damage=${damage})`);
+        _traceHp(slotKey, currentHp, newHp, 'visualDmg:impact', { card: cardName, damage });
         hpEl.textContent = newHp;
         if (newHp <= 0) {
             if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] visual-apply-zero card=${cardName} uid=${cardEl.dataset.uid || '-'} domHpBefore=${currentHp} damage=${damage} newHp=${newHp} eventTs=${attackEventTs}`);

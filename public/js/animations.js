@@ -35,7 +35,6 @@ function prepareDrawAnimation(data) {
         autoHiddenCards[owner].delete(handIndex);
         // Stocker pour que le render crée la carte cachée
         pendingDrawAnimations[owner].set(handIndex, card);
-        console.log(`[MAUSOLE-DBG][prepareDraw] owner=${owner} handIndex=${handIndex} card=${card?.name || '-'} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length} stateOppHandCount=${typeof state !== 'undefined' ? state?.opponent?.handCount : '?'}`);
         // Marquer les tokens pour animation d'apparition directe
         if (drawData.isToken) {
             pendingTokenSpawns[owner].add(handIndex);
@@ -233,7 +232,6 @@ function startPendingDrawAnimations() {
         for (const [handIndex, card] of pendingDrawAnimations.opp) {
             if (startedDrawAnimations.opp.has(handIndex)) continue;
             const { targetCard } = resolveHandTarget('opp', handIndex, card, oppCards);
-            console.log(`[MAUSOLE-DBG][startPendingDraw] opp handIndex=${handIndex} card=${card?.name || '-'} domCount=${oppCards.length} targetFound=${!!targetCard}`);
             if (!targetCard) {
                 allOppTargetsReady = false;
                 break;

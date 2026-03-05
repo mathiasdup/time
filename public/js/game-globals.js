@@ -1,4 +1,60 @@
-﻿// ==================== VARIABLES GLOBALES DU JEU ====================
+﻿// ==================== HP TRACE (debug temporaire) ====================
+// Désactiver avec : window.HP_TRACE = false
+window.HP_TRACE = true; // activé par défaut (debug temporaire)
+// Logs tous les changements de HP dans le DOM (héros + créatures)
+const _hpTraceLog = [];
+const _hpTraceT0 = performance.now();
+function _traceHp(target, oldVal, newVal, source, extra) {
+    if (!window.HP_TRACE) return;
+    if (String(oldVal) === String(newVal)) return; // pas de changement réel
+    const entry = {
+        t: Math.round(performance.now() - _hpTraceT0),
+        target,
+        old: oldVal,
+        new: newVal,
+        src: source,
+        ...(extra || {})
+    };
+    _hpTraceLog.push(entry);
+    if (_hpTraceLog.length > 500) _hpTraceLog.shift();
+    const dir = Number(newVal) > Number(oldVal) ? '\u2191' : '\u2193'; // ↑ ou ↓
+    console.log(`[HP] ${entry.t}ms ${dir} ${target}: ${oldVal} -> ${newVal}  [${source}]`,
+        extra ? extra : '');
+}
+// Accès console : _hpTraceLog pour l'historique, _traceHpDump() pour un résumé
+function _traceHpDump() {
+    console.table(_hpTraceLog.slice(-50));
+}
+window._hpTraceLog = _hpTraceLog;
+window._traceHpDump = _traceHpDump;
+
+// ==================== MUTATION OBSERVER HERO HP (debug temporaire) ====================
+// Surveille TOUT changement de textContent sur les hero-hp-number, même hors de nos traces
+(function() {
+    function _watchHeroHp() {
+        var targets = document.querySelectorAll('.hero-hp-number');
+        if (targets.length === 0) { setTimeout(_watchHeroHp, 500); return; }
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(m) {
+                var el = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+                var owner = (el && el.closest && el.closest('#me-hp')) ? 'me' : 'opp';
+                var val = el ? el.textContent : '?';
+                console.log('[HP-MUTOBS] hero-' + owner + ' changed to: ' + val, new Error().stack.split('\n').slice(1, 5).join(' <- '));
+            });
+        });
+        targets.forEach(function(t) {
+            observer.observe(t, { childList: true, characterData: true, subtree: true });
+        });
+        console.log('[HP-MUTOBS] Watching', targets.length, 'hero-hp-number elements');
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _watchHeroHp);
+    } else {
+        _watchHeroHp();
+    }
+})();
+
+// ==================== VARIABLES GLOBALES DU JEU ====================
 let socket, myNum = 0, state = null;
 let selected = null, dragged = null, draggedFromField = null;
 let currentTimer = 90;

@@ -406,7 +406,6 @@ function resetPlayerForNewTurn(player) {
     player.pendingSacrificeSlots = [];
     player.spellsCastThisTurn = 0;
     player.heroAttackedThisTurn = false;
-    player.erebethHealedThisTurn = false;
 
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
@@ -769,13 +768,27 @@ function waitForClientsAnimationsDone(room) {
     });
 }
 
-function addPoisonCounters(card, amount, meta = {}) {
+function addPoisonCounters(card, amount, meta = {}, room = null) {
     if (!card) return 0;
     if (card.isBuilding) return 0;
     const incNum = Number(amount);
     if (!Number.isFinite(incNum) || incNum <= 0) return 0;
-    const inc = Math.floor(incNum);
+    let inc = Math.floor(incNum);
     if (inc <= 0) return 0;
+    // Nuage toxique aura: +1 poison par application pour chaque Nuage toxique en jeu
+    if (room && room.gameState) {
+        for (let p = 1; p <= 2; p++) {
+            const pField = room.gameState.players[p].field;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const fc = pField[r][c];
+                    if (fc && fc.currentHp > 0 && fc.aura === 'poisonAmplifier') {
+                        inc += 1;
+                    }
+                }
+            }
+        }
+    }
     const before = Number(card.poisonCounters) || 0;
     const after = before + inc;
     card.poisonCounters = after;
@@ -796,6 +809,16 @@ function addPoisonCounters(card, amount, meta = {}) {
     if (!Array.isArray(card._poisonAuditTrail)) card._poisonAuditTrail = [];
     card._poisonAuditTrail.push(audit);
     if (card._poisonAuditTrail.length > 6) card._poisonAuditTrail.shift();
+    // poisonFeedsSelf (Serpent d'émeraude) : gagne autant de marqueurs renforcement que de poison reçu
+    if (card.poisonFeedsSelf && inc > 0) {
+        if (card.baseAtk === undefined) card.baseAtk = card.atk;
+        if (card.baseHp === undefined) card.baseHp = card.hp;
+        if (card.baseRiposte === undefined) card.baseRiposte = card.riposte ?? 0;
+        card.buffCounters = (card.buffCounters || 0) + inc;
+        card.hp += inc;
+        card.currentHp += inc;
+        card.riposte = (card.riposte || 0) + inc;
+    }
     return inc;
 }
 
@@ -944,23 +967,66 @@ async function applySlotPoisonDamage(room, row, col, attackedSlots, log, sleep, 
             `[POISON-TICK-DBG] card=${card.name} uid=${card.uid || '-'} slot=${slotRow},${slotCol} counters=${card.poisonCounters} dmg=${damage} lastSource=${poisonAudit?.source || 'unknown'} lastTurn=${poisonAudit?.turn ?? 'n/a'} lastBy=${poisonAudit?.byCard || '-'} lastAdded=${poisonAudit?.added ?? 'n/a'}`,
             'action'
         );
-        card.currentHp -= damage;
-        log(`[POISON] ${card.name} subit ${damage} degat(s) de poison! (${Math.max(0, card.currentHp)}/${card.hp})`, 'damage');
-        poisonEffects.push({
-            type: 'poisonDamage',
-            player: playerNum,
-            row: slotRow,
-            col: slotCol,
-            amount: damage,
-            source: 'combat.poisonTick',
-            poisonCounters: card.poisonCounters,
-            cardName: card.name,
-            cardUid: card.uid || null,
-            lastPoisonSource: poisonAudit?.source || null,
-            lastPoisonTurn: poisonAudit?.turn ?? null,
-            lastPoisonByCard: poisonAudit?.byCard || null,
-            lastPoisonAdded: poisonAudit?.added ?? null
-        });
+        // Génie du sang : si une créature alliée avec aura poisonHealsAllies est en jeu, le poison soigne
+        const ownerField = room.gameState.players[playerNum].field;
+        let hasPoisonHealAura = false;
+        for (let ar = 0; ar < 4; ar++) {
+            for (let ac = 0; ac < 2; ac++) {
+                const auraCard = ownerField[ar][ac];
+                if (auraCard && auraCard.currentHp > 0 && auraCard.aura === 'poisonHealsAllies') {
+                    hasPoisonHealAura = true;
+                    break;
+                }
+            }
+            if (hasPoisonHealAura) break;
+        }
+
+        if (hasPoisonHealAura || card.poisonFeedsSelf) {
+            const healed = Math.min(damage, card.hp - card.currentHp);
+            card.currentHp = Math.min(card.hp, card.currentHp + damage);
+            log(`[POISON] ${card.name} est soigné de ${healed} par le poison! (${card.currentHp}/${card.hp})`, 'heal');
+            poisonEffects.push({
+                type: 'poisonHeal',
+                player: playerNum,
+                row: slotRow,
+                col: slotCol,
+                amount: healed,
+                source: 'combat.poisonTick.heal',
+                poisonCounters: card.poisonCounters,
+                cardName: card.name,
+                cardUid: card.uid || null
+            });
+        } else {
+            // Roi du poison : double les dégâts de poison sur les créatures ennemies
+            let finalDamage = damage;
+            const enemyPlayerNum = playerNum === 1 ? 2 : 1;
+            const enemyField = room.gameState.players[enemyPlayerNum].field;
+            for (let ar = 0; ar < 4; ar++) {
+                for (let ac = 0; ac < 2; ac++) {
+                    const ec = enemyField[ar][ac];
+                    if (ec && ec.currentHp > 0 && ec.poisonDamageMultiplier) {
+                        finalDamage *= ec.poisonDamageMultiplier;
+                    }
+                }
+            }
+            card.currentHp -= finalDamage;
+            log(`[POISON] ${card.name} subit ${finalDamage} degat(s) de poison! (${Math.max(0, card.currentHp)}/${card.hp})`, 'damage');
+            poisonEffects.push({
+                type: 'poisonDamage',
+                player: playerNum,
+                row: slotRow,
+                col: slotCol,
+                amount: finalDamage,
+                source: 'combat.poisonTick',
+                poisonCounters: card.poisonCounters,
+                cardName: card.name,
+                cardUid: card.uid || null,
+                lastPoisonSource: poisonAudit?.source || null,
+                lastPoisonTurn: poisonAudit?.turn ?? null,
+                lastPoisonByCard: poisonAudit?.byCard || null,
+                lastPoisonAdded: poisonAudit?.added ?? null
+            });
+        }
 
         if (card.currentHp <= 0) {
             card._killedByPoisonTick = true;
@@ -1159,7 +1225,7 @@ function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sou
                     sourcePlayer: sourceCreature.player,
                     byCard: srcCard.name || null,
                     byUid: srcCard.uid || null
-                });
+                }, room);
                 log(`Ã¢ËœÂ Ã¯Â¸Â Poison : ${srcCard.name} inflige ${poisonAmount} compteur(s) poison ÃƒÂ  ${card.name} (total: ${card.poisonCounters})`, 'damage');
                 // Feedback immédiat du marqueur poison au hit (avant le tick poison de fin de slot).
                 emitAnimation(room, 'poisonApply', {
@@ -1218,7 +1284,7 @@ function applyCreatureDamage(card, damage, room, log, ownerPlayer, row, col, sou
                     sourcePlayer: ownerPlayer,
                     byCard: card.name || null,
                     byUid: card.uid || null
-                });
+                }, room);
             }
         }
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} empoisonne la ligne! (+${poisonAmt} poison)`, 'poison');
@@ -1383,9 +1449,6 @@ function getEffectiveCombatDamage(card, damage) {
 
 function getCreatureRiposte(card) {
     const rawRiposte = Number(card?.riposte);
-    if (card?.isBuilding) {
-        console.log(`[RIPOSTE-DBG] Building ${card.name}: riposte=${card.riposte}, rawRiposte=${rawRiposte}, baseRiposte=${card.baseRiposte}, atk=${card.atk}`, new Error().stack?.split('\n').slice(1,4).join(' <- '));
-    }
     if (!Number.isFinite(rawRiposte)) return 0;
     return Math.max(0, Math.floor(rawRiposte));
 }
@@ -1441,26 +1504,6 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
     // Synchroniser revealField si en phase de rÃƒÂ©vÃƒÂ©lation
     if (player.revealField) player.revealField[row][col] = null;
 
-    // V2 : Erebeth Ã¢â‚¬â€ soigne 1 PV quand une crÃƒÂ©ature alliÃƒÂ©e va au cimetiÃƒÂ¨re (1 fois/tour)
-    if (RESOLUTION_V2 && player.hero?.id === 'erebeth' && !player.erebethHealedThisTurn && !card.abilities?.includes('dissipation')) {
-        const oldHp = player.hp;
-        player.hp = Math.min(20, player.hp + 1);
-        const healed = player.hp - oldHp;
-        player.erebethHealedThisTurn = true;
-        const emitLog = (msg, type) => emitResolutionLog(room, msg, type);
-        emitLog(`${player.heroName} (Erebeth) : +${healed} PV (creature au cimetiere)`, 'heal');
-        emitLog(`[EREBETH-DBG] grave-heal player=${playerNum} oldHp=${oldHp} newHp=${player.hp} healed=${healed} card=${card.name} uid=${card.uid || '-'} dissipation=${!!card.abilities?.includes('dissipation')}`, 'heal');
-        // DiffÃƒÂ©rer l'ÃƒÂ©mission pour que heroHeal arrive APRÃƒË†S l'animation death/deathTransform
-        // ÃƒÂ©mise par l'appelant (qui est synchrone aprÃƒÂ¨s le retour de handleCreatureDeath)
-        if (!Array.isArray(room._pendingHeroHeals)) room._pendingHeroHeals = [];
-        room._pendingHeroHeals.push({
-            player: playerNum,
-            amount: healed,
-            source: 'erebeth_grave',
-            cardName: card.name,
-            cardUid: card.uid || null
-        });
-    }
 
     // Soif de sang : les crÃƒÂ©atures ennemies avec bloodthirst gagnent +X ATK permanent
     const enemyPlayerNum = playerNum === 1 ? 2 : 1;
@@ -2195,7 +2238,7 @@ async function processOnSummonAbility(room, card, playerNum, row, col, log, slee
             sourcePlayer: playerNum,
             byCard: card.name || null,
             byUid: card.uid || null
-        });
+        }, room);
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} s'inflige ${amount} marqueur(s) poison (total: ${card.poisonCounters})`, 'damage');
         emitAnimation(room, 'poisonApply', { player: playerNum, row, col, amount });
         recalcDynamicAtk(room);
@@ -2355,6 +2398,16 @@ function collectOnDeathEffects(normalDeaths) {
         if (d.card.onDeath.discardHandAndRedraw) {
             effects.push({ type: 'discardHandAndRedraw', player: d.player, source: d.card.name });
         }
+        if (d.card.onDeath.poisonAdjacent && d.row !== undefined && d.col !== undefined) {
+            effects.push({ type: 'poisonAdjacent', sourcePlayer: d.player, row: d.row, col: d.col, poisonAmount: d.card.onDeath.poisonAdjacent, source: d.card.name });
+        }
+        if (d.card.onDeath.drawCards) {
+            effects.push({ type: 'drawCards', player: d.player, count: d.card.onDeath.drawCards, source: d.card.name });
+        }
+        if (d.card.onDeath.absorbAdjacentPoisonThenDamageHero && d.row !== undefined && d.col !== undefined) {
+            console.log(`[IMMONDICE-DBG] collectOnDeath card=${d.card.name} poisonCounters=${d.card.poisonCounters} row=${d.row} col=${d.col}`);
+            effects.push({ type: 'absorbAdjacentPoisonThenDamageHero', sourcePlayer: d.player, row: d.row, col: d.col, poisonCounters: d.card.poisonCounters || 0, source: d.card.name });
+        }
     }
     // bloodPactCost : après les onDeath normaux, ajouter le dégât du pacte de sang
     for (const d of normalDeaths) {
@@ -2390,6 +2443,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 hero.hp = Math.min(20, hero.hp + effect.amount);
                 log(`Ã°Å¸â€™Å¡ ${effect.source} - CapacitÃƒÂ© de mort: soigne ${effect.amount} PV ÃƒÂ  votre hÃƒÂ©ros!`, 'heal');
                 maxSleepTime = Math.max(maxSleepTime, 800);
+                emitAnimation(room, 'heroHeal', { player: effect.player, amount: effect.amount });
                 break;
             }
             case 'heroDamage': {
@@ -2550,7 +2604,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                             sourcePlayer: effect.sourcePlayer,
                             byCard: effect.source || null,
                             byUid: null
-                        });
+                        }, room);
                         log(`Ã¢ËœÂ Ã¯Â¸Â ${effect.source} empoisonne ${target.name} (+${effect.poisonAmount} compteur poison, total: ${target.poisonCounters})`, 'damage');
                         emitAnimation(room, 'poisonApply', {
                             player: enemyPlayerNum,
@@ -2580,7 +2634,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                                 sourcePlayer: effect.sourcePlayer,
                                 byCard: effect.source || null,
                                 byUid: effect.sourceUid || null
-                            });
+                            }, room);
                             poisonAnims.push({
                                 type: 'poisonApply',
                                 player: p,
@@ -2596,6 +2650,93 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                     emitAnimationBatch(room, poisonAnims);
                 }
                 maxSleepTime = Math.max(maxSleepTime, 800);
+                break;
+            }
+            case 'absorbAdjacentPoisonThenDamageHero': {
+                // Immondice des tréfonds : absorbe poison adjacent puis dégâts héros
+                console.log(`[IMMONDICE-DBG] effect.poisonCounters=${effect.poisonCounters} row=${effect.row} col=${effect.col} srcPlayer=${effect.sourcePlayer}`);
+                const abTargets = [];
+                const abSrcPlayer = effect.sourcePlayer;
+                const abEnemyPNum = abSrcPlayer === 1 ? 2 : 1;
+                const abRow = effect.row;
+                const abCol = effect.col;
+                if (abRow > 0) abTargets.push({ p: abSrcPlayer, r: abRow - 1, c: abCol });
+                if (abRow < 3) abTargets.push({ p: abSrcPlayer, r: abRow + 1, c: abCol });
+                if (abCol > 0) abTargets.push({ p: abSrcPlayer, r: abRow, c: abCol - 1 });
+                if (abCol === 0) {
+                    abTargets.push({ p: abSrcPlayer, r: abRow, c: 1 });
+                } else {
+                    abTargets.push({ p: abEnemyPNum, r: abRow, c: 1 });
+                }
+                let absorbedPoison = effect.poisonCounters || 0;
+                const abAnims = [];
+                for (const t of abTargets) {
+                    const target = room.gameState.players[t.p].field[t.r][t.c];
+                    if (target && target.poisonCounters > 0) {
+                        absorbedPoison += target.poisonCounters;
+                        abAnims.push({ type: 'poisonApply', player: t.p, row: t.r, col: t.c, amount: -target.poisonCounters });
+                        target.poisonCounters = 0;
+                    }
+                }
+                if (abAnims.length > 0) {
+                    log(`  ☠️ ${effect.source} absorbe le poison des créatures adjacentes (total: ${absorbedPoison})`, 'damage');
+                    emitAnimationBatch(room, abAnims);
+                }
+                if (absorbedPoison > 0) {
+                    const abEnemy = room.gameState.players[abEnemyPNum];
+                    abEnemy.hp = Math.max(0, abEnemy.hp - absorbedPoison);
+                    log(`  ☠️ ${effect.source} inflige ${absorbedPoison} dégâts au héros adverse! (${abEnemy.hp} PV)`, 'damage');
+                    emitAnimation(room, 'heroDamage', { player: abEnemyPNum, damage: absorbedPoison, source: effect.source });
+                }
+                maxSleepTime = Math.max(maxSleepTime, 800);
+                break;
+            }
+            case 'poisonAdjacent': {
+                // Spores : poison adjacent (haut/bas/gauche/droite, traverse vers ennemi si front col 1)
+                const adjTargets = [];
+                const srcPlayer = effect.sourcePlayer;
+                const enemyPNum = srcPlayer === 1 ? 2 : 1;
+                const srcRow = effect.row;
+                const srcCol = effect.col;
+                if (srcRow > 0) adjTargets.push({ p: srcPlayer, r: srcRow - 1, c: srcCol });
+                if (srcRow < 3) adjTargets.push({ p: srcPlayer, r: srcRow + 1, c: srcCol });
+                if (srcCol > 0) adjTargets.push({ p: srcPlayer, r: srcRow, c: srcCol - 1 });
+                if (srcCol === 0) {
+                    adjTargets.push({ p: srcPlayer, r: srcRow, c: 1 });
+                } else {
+                    adjTargets.push({ p: enemyPNum, r: srcRow, c: 1 });
+                }
+                const poisonAdjAnims = [];
+                for (const t of adjTargets) {
+                    const target = room.gameState.players[t.p].field[t.r][t.c];
+                    if (target && target.currentHp > 0 && !target.isBuilding && !target.abilities?.includes('antitoxin')) {
+                        addPoisonCounters(target, effect.poisonAmount, {
+                            source: 'onDeath.poisonAdjacent',
+                            turn: room.gameState.turn,
+                            row: t.r,
+                            col: t.c,
+                            sourcePlayer: srcPlayer,
+                            byCard: effect.source || null,
+                            byUid: null
+                        }, room);
+                        poisonAdjAnims.push({
+                            type: 'poisonApply',
+                            player: t.p,
+                            row: t.r,
+                            col: t.c,
+                            amount: effect.poisonAmount
+                        });
+                    }
+                }
+                if (poisonAdjAnims.length > 0) {
+                    log(`☠️ ${effect.source} empoisonne les créatures adjacentes (+${effect.poisonAmount} poison)`, 'damage');
+                    emitAnimationBatch(room, poisonAdjAnims);
+                }
+                maxSleepTime = Math.max(maxSleepTime, 800);
+                break;
+            }
+            case 'drawCards': {
+                await drawCards(room, effect.player, effect.count, log, sleep, effect.source);
                 break;
             }
             case 'poisonExplosion': {
@@ -2990,7 +3131,7 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
             sourcePlayer: playerNum,
             byCard: card.name || null,
             byUid: card.uid || null
-        });
+        }, room);
         log(`Ã¢ËœÂ Ã¯Â¸Â ${card.name} accumule du poison (${card.poisonCounters} marqueurs)`, 'action');
         // Le nuage poison est jouÃƒÂ© par le handler buildingActivate cÃƒÂ´tÃƒÂ© client (via selfPoison: true)
         // Plus besoin de emitAnimationBatch ici Ã¢â‚¬â€ le VFX est inclus dans l'animation queueÃƒÂ©e
@@ -3014,7 +3155,7 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                         sourcePlayer: playerNum,
                         byCard: card.name || null,
                         byUid: card.uid || null
-                    });
+                    }, room);
                     // If this slot already resolved this row, delay poison tick to avoid retroactive damage.
                     if (r === row && c < col) {
                         target._skipPoisonTickKey = sameRowDelayKey;
@@ -3057,10 +3198,8 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
             const discarded = player.hand.splice(chosenIdx, 1)[0];
             addToGraveyard(player, discarded);
 
-            log(`🏛️ [MAUSOLE-DBG] DISCARD: handBefore=${player.hand.length+1} handAfter=${player.hand.length} discardIdx=${chosenIdx} card=${discarded.name}`, 'action');
             emitAnimation(room, 'buildingDiscard', { player: playerNum, card: discarded, handIndex: chosenIdx });
             await sleep(1400);
-            log(`🏛️ [MAUSOLE-DBG] POST-DISCARD emitState: handCount=${player.hand.length}`, 'info');
             emitStateToBoth(room);
 
             let drawnIdx = -1;
@@ -3081,10 +3220,8 @@ async function processBuildingActiveAbility(room, card, playerNum, row, col, log
                 } else {
                     player.hand.push(drawn);
                     const drawIdx = player.hand.length - 1;
-                    log(`🏛️ [MAUSOLE-DBG] DRAW: handAfterPush=${player.hand.length} drawHandIndex=${drawIdx} card=${drawn.name}`, 'special');
                     emitAnimation(room, 'draw', { cards: [{ player: playerNum, card: drawn, handIndex: drawIdx }] });
                     await sleep(20);
-                    log(`🏛️ [MAUSOLE-DBG] POST-DRAW emitState: handCount=${player.hand.length}`, 'info');
                     emitStateToBoth(room);
                     await sleep(1400);
                 }
@@ -3159,7 +3296,7 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
                     sourcePlayer: null,
                     byCard: poisonSources.join(' + ') || null,
                     byUid: null
-                });
+                }, room);
                 log(`Ã¢ËœÂ Ã¯Â¸Â ${poisonSources.join(' + ')} empoisonne ${target.name} (+${totalPoison} compteur poison, total: ${target.poisonCounters})`, 'damage');
                 poisonApplyAnims.push({ type: 'poisonApply', player: enemyNum, row: r, col: c, amount: totalPoison });
             }
@@ -4316,7 +4453,34 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                     }
                 }
 
-                if (trap.damage) {
+                if (trap.effect === 'poisonLine') {
+                    // Pièce renfermée : poison toute la ligne (alliés + ennemis)
+                    const poisonAnims = [];
+                    for (let p = 1; p <= 2; p++) {
+                        const pField = room.gameState.players[p].field;
+                        for (let col = 0; col < 2; col++) {
+                            const target = pField[row][col];
+                            if (target && target.currentHp > 0 && !target.isBuilding) {
+                                addPoisonCounters(target, trap.poisonAmount, {
+                                    source: 'trap.poisonLine',
+                                    turn: room.gameState.turn,
+                                    row: row,
+                                    col: col,
+                                    sourcePlayer: defenderPlayer,
+                                    byCard: trap.name || null,
+                                    byUid: null
+                                }, room);
+                                poisonAnims.push({ type: 'poisonApply', player: p, row: row, col: col, amount: trap.poisonAmount });
+                                log(`  ☠️ ${trap.name} → ${target.name} reçoit ${trap.poisonAmount} marqueur(s) poison`, 'damage');
+                            }
+                        }
+                    }
+                    if (poisonAnims.length > 0) {
+                        emitAnimationBatch(room, poisonAnims);
+                        await sleep(800);
+                    }
+                    recalcDynamicAtk(room);
+                } else if (trap.damage) {
                     let lineTrapGrantedPower = false;
                     for (const t of lineTargets) {
                         const actualDmg = applyCreatureDamage(t.card, trap.damage, room, log, attackerPlayer, row, t.col, undefined, defenderPlayer);
@@ -4827,7 +4991,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                                 sourcePlayer: null,
                                 byCard: poisonSources.join(' + ') || null,
                                 byUid: null
-                            });
+                            }, room);
                             log(`Ã¢ËœÂ Ã¯Â¸Â ${poisonSources.join(' + ')} empoisonne ${target.name} (+${totalPoison} compteur poison, total: ${target.poisonCounters})`, 'damage');
                             poisonApplyAnims.push({ type: 'poisonApply', player: enemyNum, row: r, col: c, amount: totalPoison });
                         }
@@ -4905,7 +5069,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
                         sourcePlayer: playerNum,
                         byCard: spell.name || null,
                         byUid: null
-                    });
+                    }, room);
                     poisonAnims.push({ type: 'poisonApply', player: opponentNum, row: r, col: c, amount });
                     log(`  Ã¢ËœÂ Ã¯Â¸Â ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${target.name} reÃƒÂ§oit ${amount} marqueur(s) poison`, 'damage');
                     count++;
@@ -4919,6 +5083,62 @@ async function applySpell(room, action, log, sleep, options = {}) {
         if (count > 0) {
             recalcDynamicAtk(room);
         }
+        emitStateToBoth(room);
+    }
+    else if (spell.pattern === 'all' && spell.effect === 'poisonAllCreatures') {
+        const amount = spell.poisonAmount || 1;
+        const poisonAnims = [];
+        let count = 0;
+        for (let p = 1; p <= 2; p++) {
+            const pField = room.gameState.players[p].field;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const target = pField[r][c];
+                    if (target && target.currentHp > 0 && !target.isBuilding) {
+                        addPoisonCounters(target, amount, {
+                            source: 'spell.poisonAllCreatures',
+                            turn: room.gameState.turn,
+                            row: r,
+                            col: c,
+                            sourcePlayer: playerNum,
+                            byCard: spell.name || null,
+                            byUid: null
+                        }, room);
+                        poisonAnims.push({ type: 'poisonApply', player: p, row: r, col: c, amount });
+                        count++;
+                    }
+                }
+            }
+        }
+        if (poisonAnims.length > 0) {
+            emitAnimationBatch(room, poisonAnims);
+            await sleep(800);
+        }
+        if (count > 0) {
+            recalcDynamicAtk(room);
+        }
+        emitStateToBoth(room);
+    }
+    else if (spell.pattern === 'all' && spell.effect === 'doublePoisonAll') {
+        const poisonAnims = [];
+        for (let p = 1; p <= 2; p++) {
+            const pField = room.gameState.players[p].field;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const target = pField[r][c];
+                    if (target && target.currentHp > 0 && target.poisonCounters > 0 && !target.isBuilding) {
+                        const added = target.poisonCounters;
+                        target.poisonCounters += added;
+                        poisonAnims.push({ type: 'poisonApply', player: p, row: r, col: c, amount: added });
+                    }
+                }
+            }
+        }
+        if (poisonAnims.length > 0) {
+            emitAnimationBatch(room, poisonAnims);
+            await sleep(800);
+        }
+        recalcDynamicAtk(room);
         emitStateToBoth(room);
     }
     else if (spell.pattern === 'all' && spell.effect === 'debuffAll') {
@@ -5102,6 +5322,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
             // Tri selectif : pioche 5 une par une, garde les sorts, envoie le reste au cimetiere
             const drawCount = 5;
             let spellsKept = 0;
+            let milledCreatures = 0;
             for (let i = 0; i < drawCount; i++) {
                 if (targetHero.deck.length === 0) break;
                 const card = targetHero.deck.shift();
@@ -5116,10 +5337,14 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 } else {
                     // Creature/batiment/piege ou main pleine => burn au cimetiere
                     addToGraveyard(targetHero, card);
+                    if (card.type === 'creature') milledCreatures++;
                     emitAnimation(room, 'burn', { player: action.targetPlayer, card });
                     await sleep(1000);
                 }
             }
+            // Ver des tombes : notifier pour les créatures mill depuis le deck
+            if (milledCreatures > 0) await syncMillWatchers(room, action.targetPlayer, milledCreatures, log, sleep);
+            recalcDynamicAtk(room);
             // Perte de HP : 2 par sort ajoute en main
             const hpLoss = spellsKept * 2;
             if (hpLoss > 0) {
@@ -6668,6 +6893,40 @@ async function resolveEndOfCombatForCard(room, card, playerNum, row, col, log, s
         }
     }
 
+    // absorbPoison (Avatar du poison) : absorbe tous les marqueurs poison du board → marqueurs renforcement
+    if (card.endOfCombat.absorbPoison && card.currentHp > 0 && isStillInSlot()) {
+        let totalAbsorbed = 0;
+        const poisonAnims = [];
+        for (let p = 1; p <= 2; p++) {
+            const pField = room.gameState.players[p].field;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const target = pField[r][c];
+                    if (target && target.poisonCounters > 0) {
+                        totalAbsorbed += target.poisonCounters;
+                        poisonAnims.push({ type: 'poisonApply', player: p, row: r, col: c, amount: -target.poisonCounters });
+                        target.poisonCounters = 0;
+                    }
+                }
+            }
+        }
+        if (totalAbsorbed > 0) {
+            resolvedAny = true;
+            if (card.baseAtk === undefined) card.baseAtk = card.atk;
+            if (card.baseHp === undefined) card.baseHp = card.hp;
+            if (card.baseRiposte === undefined) card.baseRiposte = card.riposte ?? 0;
+            card.buffCounters = (card.buffCounters || 0) + totalAbsorbed;
+            card.hp += totalAbsorbed;
+            card.currentHp += totalAbsorbed;
+            card.riposte = (card.riposte || 0) + totalAbsorbed;
+            log(`  ☠️ ${card.name} absorbe ${totalAbsorbed} marqueurs poison → +${totalAbsorbed} renforcement`, 'buff');
+            if (poisonAnims.length > 0) emitAnimationBatch(room, poisonAnims);
+            recalcDynamicAtk(room);
+            emitStateToBoth(room);
+            await sleep(800);
+        }
+    }
+
     // selfMill (Chevaucheur de l'ombre) : met X cartes du dessus du deck au cimetiÃƒÂ¨re
     if (card.endOfCombat.selfMill && card.currentHp > 0 && isStillInSlot()) {
         const millCount = card.endOfCombat.selfMill;
@@ -7366,9 +7625,6 @@ io.on('connection', (socket) => {
         placed.baseAtk = placed.baseAtk ?? placed.atk;
         placed.baseHp = placed.baseHp ?? placed.hp;
         placed.baseRiposte = placed.baseRiposte ?? placed.riposte ?? placed.atk;
-        if (card.isBuilding) {
-            console.log(`[RIPOSTE-DBG] PLACEMENT ${placed.name}: riposte=${placed.riposte}, baseRiposte=${placed.baseRiposte}, atk=${placed.atk}, card.riposte=${card.riposte}, card.atk=${card.atk}`);
-        }
         placed.summonOrder = ++room.gameState.summonCounter;
         player.field[row][col] = placed;
         player.hand.splice(handIndex, 1);
@@ -7713,4 +7969,47 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Ã°Å¸Å½Â® Server on http://localhost:${PORT}`));
+if (require.main === module) {
+    server.listen(PORT, () => console.log('Server on http://localhost:' + PORT));
+}
+
+// === EXPORTS FOR TESTING ===
+module.exports = {
+    rooms,
+    playerRooms,
+    io,
+    addPoisonCounters,
+    applyCreatureDamage,
+    handleCreatureDeath,
+    collectOnDeathEffects,
+    resolvePostCombatEffects,
+    processOnDeathAbility,
+    recalcDynamicAtk,
+    applySlotPoisonDamage,
+    processTrapsForRow,
+    processCombatSlotV2,
+    findTarget,
+    startResolution,
+    resolveEndOfCombatForCard,
+    emitAnimation,
+    emitAnimationBatch,
+    emitStateToBoth,
+    emitStateToPlayer,
+    startNewTurn,
+    canCreatureAttack,
+    getCreatureRiposte,
+    resetPlayerForNewTurn,
+    deepClone,
+    countTotalPoisonCounters,
+    drawCards,
+    applySlotRegeneration,
+    processEndOfCombatForSlot,
+    resolveCombatDeathsAndPostEffects,
+    processOnSummonAbility,
+    applySpell,
+    getEffectiveCombatDamage,
+    processOnPoisonDeathEffects,
+    applyPendingLifelinkHeals,
+    getSpellBoost,
+    syncMillWatchers, addToGraveyard
+};

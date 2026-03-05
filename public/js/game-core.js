@@ -30,7 +30,6 @@ function _cancelPendingResolutionStateRender() {
 }
 
 function _renderFromStateUpdate(phase) {
-    console.log(`[MAUSOLE-DBG][_renderFromState] phase=${phase} oppHandCount=${state?.opponent?.handCount} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
     // Fallback debug: window.FORCE_FULL_RENDER = true pour désactiver le delta render
     if (window.FORCE_FULL_RENDER) {
         _cancelPendingResolutionStateRender();
@@ -133,8 +132,9 @@ function _toFiniteAnimNumberOrNull(value) {
 }
 
 function _hpTrace(label, payload = {}) {
-    if (typeof window === 'undefined') return;
-    if (window.HP_TRACE !== true) return;
+    // Ancien système de trace — désactivé, remplacé par _traceHp dans game-globals.js
+    // Activer avec : window.HP_TRACE_LEGACY = true
+    if (!window.HP_TRACE_LEGACY) return;
     try {
         console.warn(`[HP-TRACE] ${label}`, payload);
     } catch (_) {}
@@ -500,7 +500,6 @@ function initSocket() {
     });
 
     socket.on('gameStateUpdate', (s) => {
-        console.log(`[MAUSOLE-DBG][GSU] phase=${s.phase} oppHandCount=${s.opponent?.handCount} isAnimating=${typeof isAnimating !== 'undefined' ? isAnimating : '?'} qLen=${typeof animationQueue !== 'undefined' ? animationQueue.length : '?'} oppDomCards=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
         const __perfGsuStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const prevStateSig = typeof window.visBuildStateSig === 'function' ? window.visBuildStateSig(state) : null;
         if (s.features && typeof s.features.clientPacedResolution === 'boolean') {

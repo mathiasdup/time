@@ -130,13 +130,25 @@ function _clampHeroHpValue(value) {
     return Math.max(0, Math.floor(n));
 }
 
-function _setHeroHpText(hpElement, value) {
+// Garde temporaire : empêche render()/renderDelta() d'écraser les HP héros
+// avec un state stale juste après la fin d'une animation
+function _heroHpGuard(owner) {
+    RenderLock.lock('heroHp', owner, 'heroHpGuard');
+    setTimeout(function() { RenderLock.unlock('heroHp', owner, 'heroHpGuard'); }, 500);
+}
+
+function _setHeroHpText(hpElement, value, _trSrc) {
     if (!hpElement) return;
-    hpElement.textContent = String(_clampHeroHpValue(value));
+    var clamped = _clampHeroHpValue(value);
+    if (_trSrc && typeof _traceHp === 'function') {
+        var owner = (hpElement.closest && hpElement.closest('#me-hp')) ? 'me' : 'opp';
+        _traceHp('hero-' + owner, hpElement.textContent, clamped, _trSrc);
+    }
+    hpElement.textContent = String(clamped);
 }
 
 function _debugHpSeq(label, payload = null) {
-    if (!(window.DEBUG_LOGS || window.HP_SEQ_TRACE || window.HP_TRACE === true)) return;
+    if (!(window.DEBUG_LOGS || window.HP_SEQ_TRACE)) return;
     if (payload === null || payload === undefined) {
         console.log('[HP-SEQ-DBG]', label);
         return;
@@ -416,11 +428,18 @@ function queueAnimation(type, data) {
         }
     }
 
-    // Pour zdejebel et onDeathDamage hÃƒÆ’Ã‚Â©ros, capturer les HP actuels AVANT que render() ne les mette ÃƒÆ’Ã‚Â  jour
+    // Pour zdejebel et onDeathDamage héros, capturer les HP actuels AVANT que render() ne les mette à jour
     if ((type === 'zdejebel' || (type === 'onDeathDamage' && data.targetRow === undefined)) && state) {
         const target = data.targetPlayer === myNum ? 'me' : 'opp';
-        const currentDisplayedHp = target === 'me' ? state.me?.hp : state.opponent?.hp;
-        data._displayHpBefore = currentDisplayedHp;
+        const hpEl = document.querySelector('#' + (target === 'me' ? 'me' : 'opp') + '-hp .hero-hp-number');
+        data._displayHpBefore = hpEl ? parseInt(hpEl.textContent) : (target === 'me' ? state.me?.hp : state.opponent?.hp);
+    }
+    // Pour onDeathDamage héros, bloquer render() dès le queue (sinon render() applique les HP avant l'animation)
+    if (type === 'onDeathDamage' && data.targetRow === undefined) {
+        const target = data.targetPlayer === myNum ? 'me' : 'opp';
+        RenderLock.lock('heroHp', target, 'onDeathDmg-pre');
+        data._onDeathDmgPreLock = target;
+        console.log("[EVEQUE-DBG] queue onDeathDmg", { target, _displayHpBefore: data._displayHpBefore, lockSet: true, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp });
     }
 
     // Pour burn, death, sacrifice, spell, trapTrigger, massDiscard, bloquer le render du cimetiÃƒÆ’Ã‚Â¨re IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT
@@ -437,10 +456,8 @@ function queueAnimation(type, data) {
             const selector = bdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
             const cardEls = handContainer.querySelectorAll(selector);
             const targetCard = cardEls[data.handIndex];
-            console.log(`[BLDG-DISCARD][QUEUE] isMine=${bdIsMine}, handIndex=${data.handIndex}, selector=${selector}, cardEls=${cardEls.length}, found=${!!targetCard}, card=${data.card?.name}`);
             if (targetCard) {
                 data._sourceRect = targetCard.getBoundingClientRect();
-                console.log(`[BLDG-DISCARD][QUEUE] captured rect: left=${data._sourceRect.left.toFixed(0)} top=${data._sourceRect.top.toFixed(0)} w=${data._sourceRect.width.toFixed(0)} h=${data._sourceRect.height.toFixed(0)}`);
             }
         }
     }
@@ -464,6 +481,7 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+        console.log("[SPECTRE-DBG] queue death: slot locked", slotKey);
     }
 
     // Pour deathTransform, bloquer le slot IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT pour que render() ne remplace pas la carte
@@ -479,6 +497,7 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+        console.log("[SPECTRE-DBG] queue reanimate: slot locked", slotKey, "queueLen:", animationQueue.length);
     }
 
     // Pour bounce, bloquer le slot pour que render() ne retire pas la carte
@@ -570,7 +589,7 @@ function queueAnimation(type, data) {
         const hpEl = document.querySelector(`#${owner === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`);
         data._preHeroHp = hpEl ? parseInt(hpEl.textContent) : undefined;
         lifestealHeroHealInProgress = true;
-        if (window.DEBUG_LOGS) console.log(`[EREBETH-DBG] queue heroHeal owner=${owner} amount=${data.amount} preHeroHp=${data._preHeroHp}`);
+        console.log("[EVEQUE-DBG] queue heroHeal", { owner, amount: data.amount, _preHeroHp: data._preHeroHp, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, locked: RenderLock.isLocked("heroHp", "all") });
     }
 
     // Pour regen, capturer les HP ACTUELS (avant le heal) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mÃƒÆ’Ã‚Âªme technique que lifesteal
@@ -978,11 +997,28 @@ async function processAnimationQueue(processorId = null) {
                 });
             }
             _perfRecordBatchQueueWait(burnBatch);
+            // Extra grave lock per owner : empêche render() de reconstruire le cimetière
+            // entre deux burns consécutifs (la vraie release est différée de 200ms après le batch)
+            var _burnBatchOwners = new Set(burnBatch.map(function(d) { return d.player === myNum ? 'me' : 'opp'; }));
+            _burnBatchOwners.forEach(function(ow) { graveRenderBlocked.add(ow); });
             const _perfStepStart = _perfNowMs();
             for (const data of burnBatch) {
                 await animateBurn(data);
             }
             _perfRecordAnimationStep(_perfStepStart, burnBatch.length);
+            // Release extra lock avec délai pour couvrir l'arrivée du prochain burn
+            setTimeout(function() {
+                _burnBatchOwners.forEach(function(ow) {
+                    graveRenderBlocked.delete(ow);
+                    if (!RenderLock.isLocked('grave', ow) && state) {
+                        var graveyard = ow === 'me' ? state.me?.graveyard : state.opponent?.graveyard;
+                        if (graveyard) {
+                            updateGraveTopCard(ow, graveyard);
+                            updateGraveDisplay(ow, graveyard);
+                        }
+                    }
+                });
+            }, 200);
             processAnimationQueue(processorId);
             return;
         }
@@ -1168,6 +1204,7 @@ async function processAnimationQueue(processorId = null) {
             _perfRecordAnimationStep(_perfStepStart, batch.length);
             lifestealHeroHealInProgress = false;
             render();
+            console.log("[EVEQUE-DBG] post-heroHeal render()", { stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, domMe: document.querySelector('#me-hp .hero-hp-number')?.textContent, domOpp: document.querySelector('#opp-hp .hero-hp-number')?.textContent, lockedMe: RenderLock.isLocked('heroHp', 'me'), lockedOpp: RenderLock.isLocked('heroHp', 'opp'), lockedAll: RenderLock.isLocked('heroHp', 'all') });
             processAnimationQueue(processorId);
             return;
         }
@@ -1764,6 +1801,8 @@ async function handlePixiDamage(data) {
 async function handlePoisonDamage(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     const slotKey = `${owner}-${data.row}-${data.col}`;
+    // Bloquer render() pour ce slot pendant l'animation poison
+    animatingSlots.add(slotKey);
     _debugHpSeq('poison-handler-start', {
         amount: data?.amount ?? null,
         source: data?.source ?? null,
@@ -1827,7 +1866,17 @@ async function handlePoisonDamage(data) {
         currentHp = domHp;
     }
     const safePoisonAmount = Number.isFinite(poisonAmount) && poisonAmount > 0 ? poisonAmount : 0;
-    const newHp = Math.max(0, currentHp - safePoisonAmount);
+    let newHp = Math.max(0, currentHp - safePoisonAmount);
+    // If server state says card has more HP (e.g. regen applied), use server value
+    // to avoid flash 0→stateHp when render() corrects afterward
+    {
+        const _stateSide = owner === 'me' ? 'me' : 'opponent';
+        const _sc = state?.[_stateSide]?.field?.[data.row]?.[data.col];
+        const _sHp = _sc ? (_sc.currentHp ?? _sc.hp) : null;
+        if (_sHp !== null && Number.isFinite(_sHp) && _sHp > newHp && _sHp <= currentHp) {
+            newHp = _sHp;
+        }
+    }
     if (window.DEBUG_LOGS) console.log(`[POISON-HP] handlePoisonDamage: slot=${slotKey} override=${JSON.stringify(override)} domHp=${domHp} currentHp=${currentHp} amount=${safePoisonAmount} rawAmount=${rawAmount} newHp=${newHp}`);
     _debugHpSeq('poison-handler-calc', {
         slotKey,
@@ -1840,6 +1889,7 @@ async function handlePoisonDamage(data) {
     });
 
     // S'assurer que le HP affichÃƒÆ’Ã‚Â© est le prÃƒÆ’Ã‚Â©-poison avant le VFX
+    _traceHp(slotKey || "?", hpEl?.textContent, String(currentHp), "poison:before", { card: data?.card?.name || data?.cardName || "?" });
     if (hpEl) hpEl.textContent = String(currentHp);
 
     const rect = slot.getBoundingClientRect();
@@ -1864,6 +1914,7 @@ async function handlePoisonDamage(data) {
 
     // Mettre ÃƒÆ’Ã‚Â  jour le HP directement dans le DOM (post-poison)
     if (hpEl) {
+        _traceHp(slotKey, hpEl?.textContent, String(newHp), "poison:after", { card: data?.card?.name || data?.cardName || "?" });
         hpEl.textContent = String(newHp);
         hpEl.classList.remove('boosted');
         hpEl.classList.add('reduced');
@@ -1900,7 +1951,7 @@ async function handlePixiHeroHit(data) {
     const hpAfter = hpBefore - data.damage;
 
     // Garder les HP d'avant pendant l'animation de dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts
-    _setHeroHpText(hpElement, hpBefore);
+    _setHeroHpText(hpElement, hpBefore, "heroHit:before");
 
     // Pour les sorts/effets : afficher le VFX (shake + explosion + chiffre)
     // Pour les crÃƒÆ’Ã‚Â©atures : dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  fait par animateSoloAttack ÃƒÆ’Ã‚Â  l'impact
@@ -1927,10 +1978,11 @@ async function handlePixiHeroHit(data) {
     }
 
     // Mettre ÃƒÆ’Ã‚Â  jour les HP APRÃƒÆ’Ã‹â€ S l'animation
-    _setHeroHpText(hpElement, hpAfter);
+    _setHeroHpText(hpElement, hpAfter, "heroHit:after");
 
     // DÃƒÆ’Ã‚Â©bloquer render()
     zdejebelAnimationInProgress = false;
+    _heroHpGuard(owner);
 }
 
 async function handleOnDeathDamage(data) {
@@ -1966,19 +2018,26 @@ async function handleOnDeathDamage(data) {
     }
 
     // Cas 2 : dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts au hÃƒÆ’Ã‚Â©ros (damageHero ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Dragon CrÃƒÆ’Ã‚Â©pitant) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â style Zdejebel
+    // Libérer le lock queue-time (le handler a son propre lock via zdejebelAnimationInProgress)
+    if (data._onDeathDmgPreLock) {
+        RenderLock.unlock('heroHp', data._onDeathDmgPreLock, 'onDeathDmg-pre');
+    }
+
     zdejebelAnimationInProgress = true;
 
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
 
-    // PrÃƒÆ’Ã‚Â©server les HP d'avant l'animation
+    // Lire les HP depuis le DOM (comme zdejebel) — le state peut ne pas être à jour si le handler démarre avant le state update
     const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
     const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
-    const currentHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
-    const hpBeforeAnimation = data._displayHpBefore ?? (currentHp !== undefined ? currentHp + data.damage : undefined);
+    const domHp = hpElement ? parseInt(hpElement.textContent) : null;
+    const hpBefore = domHp ?? data._displayHpBefore ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
+    const hpAfter = hpBefore - data.damage;
 
-    if (hpBeforeAnimation !== undefined) {
-        _setHeroHpText(hpElement, hpBeforeAnimation);
-    }
+    console.log("[EVEQUE-DBG] handleOnDeathDmg START", { owner, damage: data.damage, domHp, hpBefore, hpAfter, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp) });
+
+    // Afficher les HP d'avant pendant l'animation
+    _setHeroHpText(hpElement, hpBefore, "onDeathDmg:before");
 
     if (heroCard) {
         // Secousse + flash rouge DOM sur le hÃƒÆ’Ã‚Â©ros
@@ -1997,13 +2056,13 @@ async function handleOnDeathDamage(data) {
     // Attendre que l'animation soit visible
     await new Promise(r => setTimeout(r, 600));
 
-    // Mettre ÃƒÆ’Ã‚Â  jour les HP APRÃƒÆ’Ã‹â€ S l'animation
-    if (currentHp !== undefined) {
-        _setHeroHpText(hpElement, currentHp);
-    }
+    // Mettre a jour les HP APRES animation (calcule, pas state-dependent)
+    _setHeroHpText(hpElement, hpAfter, "onDeathDmg:after");
 
     // DÃƒÆ’Ã‚Â©bloquer render()
     zdejebelAnimationInProgress = false;
+    _heroHpGuard(owner);
+    console.log("[EVEQUE-DBG] handleOnDeathDmg END", { owner, domHp: document.querySelector("#" + (owner === "me" ? "me" : "opp") + "-hp .hero-hp-number")?.textContent, guardSet: true });
 
     await new Promise(r => setTimeout(r, 200));
 }
@@ -2022,7 +2081,7 @@ async function animateZdejebelDamage(data) {
     const hpAfter = hpBefore - data.damage;
 
     // S'assurer que les HP d'avant sont affichÃƒÆ’Ã‚Â©s pendant l'animation
-    _setHeroHpText(hpElement, hpBefore);
+    _setHeroHpText(hpElement, hpBefore, "zdejebel:before");
 
     // RÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer la position du hÃƒÆ’Ã‚Â©ros ciblÃƒÆ’Ã‚Â©
     const heroCard = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
@@ -2045,10 +2104,11 @@ async function animateZdejebelDamage(data) {
     await new Promise(r => setTimeout(r, 600));
 
     // Mettre ÃƒÆ’Ã‚Â  jour les HP APRÃƒÆ’Ã‹â€ S l'animation (hpBefore - damage, indÃƒÆ’Ã‚Â©pendant du state)
-    _setHeroHpText(hpElement, hpAfter);
+    _setHeroHpText(hpElement, hpAfter, "zdejebel:after");
 
     // DÃƒÆ’Ã‚Â©bloquer render() pour les HP
     zdejebelAnimationInProgress = false;
+    _heroHpGuard(owner);
 
     // Petit dÃƒÆ’Ã‚Â©lai supplÃƒÆ’Ã‚Â©mentaire pour voir le changement
     await new Promise(r => setTimeout(r, 200));
@@ -2077,6 +2137,7 @@ async function animateTrampleDamage(data) {
     // Sauvegarder les HP d'avant dans l'affichage
     const hpEl = card.querySelector('.arena-armor') || card.querySelector('.arena-hp') || card.querySelector('.fa-hp') || card.querySelector('.img-hp');
     if (hpEl && data.hpBefore !== undefined) {
+        _traceHp(slotKey || "?", hpEl?.textContent, data.hpBefore, "trampleDmg:before", { card: data?.card?.name || data?.cardName || "?" });
         hpEl.textContent = data.hpBefore;
     }
     // Pour le format ATK/HP combinÃƒÆ’Ã‚Â© dans arena-stats
@@ -2108,6 +2169,7 @@ async function animateTrampleDamage(data) {
 
     // Mettre ÃƒÆ’Ã‚Â  jour les HP APRÃƒÆ’Ã‹â€ S l'animation
     if (hpEl && data.hpAfter !== undefined) {
+        _traceHp(slotKey || "?", hpEl?.textContent, data.hpAfter, "trampleDmg:after", { card: data?.card?.name || data?.cardName || "?" });
         hpEl.textContent = data.hpAfter;
         hpEl.classList.remove('boosted');
         hpEl.classList.toggle('reduced', data.hpAfter < (data.hpBefore || 0));
@@ -2141,7 +2203,7 @@ async function animateTrampleHeroHit(data) {
     const hpBefore = domHp ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-    _setHeroHpText(hpElement, hpBefore);
+    _setHeroHpText(hpElement, hpBefore, "trample:before");
 
     // Secousse + flash rouge DOM sur le hÃƒÆ’Ã‚Â©ros
     heroCard.style.animation = 'heroShake 0.5s ease-out';
@@ -2158,9 +2220,10 @@ async function animateTrampleHeroHit(data) {
     await new Promise(r => setTimeout(r, 600));
 
     // Mettre ÃƒÆ’Ã‚Â  jour les HP APRÃƒÆ’Ã‹â€ S l'animation (hpBefore - damage, indÃƒÆ’Ã‚Â©pendant du state)
-    _setHeroHpText(hpElement, hpAfter);
+    _setHeroHpText(hpElement, hpAfter, "trample:after");
 
     zdejebelAnimationInProgress = false;
+    _heroHpGuard(owner);
     await new Promise(r => setTimeout(r, 200));
 }
 
@@ -2729,8 +2792,8 @@ async function animateDeathToGraveyard(data) {
     slot.classList.remove('has-card');
     slot.classList.remove('has-flying');
 
-    // DÃƒÆ’Ã‚Â©bloquer le slot ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â la carte est maintenant dans le wrapper volant, render() peut toucher le slot
-    animatingSlots.delete(deathSlotKey);
+    // Le slot reste locke (animatingSlots) jusqu'a la fin du vol vers le cimetiere
+    // animatingSlots.delete est fait dans resolve() ci-dessous
 
     // 6. Ajouter au DOM dans le game-board (hÃƒÆ’Ã‚Â©rite de la perspective)
     gameBoard.appendChild(wrapper);
@@ -2789,6 +2852,7 @@ async function animateDeathToGraveyard(data) {
 
         const safetyTimeout = setTimeout(() => {
             graveRenderBlocked.delete(ownerKey);
+            animatingSlots.delete(deathSlotKey);
             if (deathGhost) {
                 deathGhost.destroy();
                 deathGhost = null;
@@ -2873,6 +2937,8 @@ async function animateDeathToGraveyard(data) {
                 animateDissipationVanish(sourceCanvas, wrapperRect.left, wrapperRect.top, cardWidth, cardHeight, 0, null).then(() => {
                     wrapper.remove();
                     graveRenderBlocked.delete(ownerKey);
+                console.log("[SPECTRE-DBG] death anim END: slot unlocked", deathSlotKey);
+                    animatingSlots.delete(deathSlotKey);
                     resolve();
                 });
                 return;
@@ -2957,6 +3023,7 @@ async function animateDeathToGraveyard(data) {
                 requestAnimationFrame(() => {
                     wrapper.remove();
                 });
+                animatingSlots.delete(deathSlotKey);
                 resolve();
             }
         }
@@ -3831,6 +3898,7 @@ async function handleRegenAnim(data) {
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
+            _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "regen:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
             if (data._preHealHp < data._preHealMax) {
                 hpEl.classList.add('reduced');
@@ -3863,6 +3931,7 @@ async function handleRegenAnim(data) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
             if (finalCard) {
+                _traceHp(slotKey || "?", hpEl?.textContent, finalCard.currentHp, "regen:after", { card: data?.card?.name || data?.cardName || "?" });
                 hpEl.textContent = finalCard.currentHp;
                 if (finalCard.currentHp < finalCard.hp) {
                     hpEl.classList.add('reduced');
@@ -3941,20 +4010,13 @@ async function handleBuildingDiscard(data) {
         if (!found && data.handIndex !== undefined && cardEls[data.handIndex]) {
             found = cardEls[data.handIndex];
         }
-        console.log(`[MAUSOLE-DBG][DISCARD] isMine=${bdIsMine}, domCards=${cardEls.length}, found=${!!found}, handIndex=${data.handIndex}, stateOppHandCount=${state?.opponent?.handCount}`);
         if (found) {
             startRect = found.getBoundingClientRect();
-            console.log(`[MAUSOLE-DBG][DISCARD] hiding card at rect: left=${startRect.left.toFixed(0)} top=${startRect.top.toFixed(0)}`);
             found.style.visibility = 'hidden';
             smoothCloseOppHandGap(found);
-        } else {
-            console.log(`[MAUSOLE-DBG][DISCARD] card NOT found in DOM`);
         }
     }
-    console.log(`[MAUSOLE-DBG][DISCARD] starting animateSpellReveal, isAnimating=${isAnimating}, queueLen=${animationQueue.length}`);
-    // Même animation qu'un sort : main → showcase → cimetière
     await animateSpellReveal(data.card, data.player, startRect);
-    console.log(`[MAUSOLE-DBG][DISCARD] animateSpellReveal DONE, oppHand DOM count=${document.querySelectorAll('#opp-hand .opp-card-back').length}`);
 }
 
 async function handleMassDiscard(data) {
@@ -4013,6 +4075,7 @@ async function handleLifestealAnim(data) {
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
+            _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "lifesteal:creature:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
             // Colorer en rouge si endommagÃƒÆ’Ã‚Â© (classe "reduced" pour arena-style)
             if (data._preHealHp < data._preHealMax) {
@@ -4026,7 +4089,7 @@ async function handleLifestealAnim(data) {
     if (data.heroHeal && data._preHeroHp !== undefined) {
         const hpContainer = document.getElementById(owner === 'me' ? 'me-hp' : 'opp-hp');
         const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
-        _setHeroHpText(hpElement, data._preHeroHp);
+        _setHeroHpText(hpElement, data._preHeroHp, "lifesteal:hero:before");
     }
 
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 2 : Laisser le joueur voir les HP rÃƒÆ’Ã‚Â©duits pendant 500ms
@@ -4068,7 +4131,7 @@ async function handleLifestealAnim(data) {
         const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
         if (hpElement) {
             const finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
-            if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp);
+            if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp, "lifesteal:hero:after");
         }
         lifestealHeroHealInProgress = false;
     } else if (cardEl) {
@@ -4078,6 +4141,7 @@ async function handleLifestealAnim(data) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
             if (finalCard) {
+                _traceHp(slotKey || "?", hpEl?.textContent, finalCard.currentHp, "lifesteal:creature:after", { card: data?.card?.name || data?.cardName || "?" });
                 hpEl.textContent = finalCard.currentHp;
                 if (finalCard.currentHp < finalCard.hp) {
                     hpEl.classList.add('reduced');
@@ -4098,8 +4162,9 @@ async function handleHeroHealAnim(data) {
     const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
     const heroEl = document.getElementById(`hero-${owner === 'me' ? 'me' : 'opp'}`);
 
+    console.log("[EVEQUE-DBG] handleHeroHeal START", { owner, amount, _preHeroHp: data._preHeroHp, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp), domHp: hpElement?.textContent, lockedAll: RenderLock.isLocked("heroHp", "all"), lockedOwner: RenderLock.isLocked("heroHp", owner) });
     if (data._preHeroHp !== undefined) {
-        _setHeroHpText(hpElement, data._preHeroHp);
+        _setHeroHpText(hpElement, data._preHeroHp, "heroHeal:before");
     }
 
     await new Promise(r => setTimeout(r, 250));
@@ -4118,11 +4183,18 @@ async function handleHeroHealAnim(data) {
     await new Promise(r => setTimeout(r, 600));
 
     if (hpElement) {
-        const finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
-        if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp);
+        // Calculate healed HP from pre-heal snapshot + amount
+        // (don't read state — it may include subsequent damage from onDeathDmg)
+        let finalHp;
+        if (data._preHeroHp !== undefined && Number.isFinite(amount) && amount > 0) {
+            finalHp = data._preHeroHp + amount;
+        } else {
+            finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
+        }
+        if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp, "heroHeal:after");
+        console.log("[EVEQUE-DBG] handleHeroHeal END", { owner, finalHp, preHp: data._preHeroHp, amount, domHp: hpElement?.textContent });
     }
 
-    if (window.DEBUG_LOGS) console.log(`[EREBETH-DBG] heroHeal anim owner=${owner} amount=${amount} preHeroHp=${data._preHeroHp} finalHp=${owner === 'me' ? state?.me?.hp : state?.opponent?.hp}`);
 }
 
 async function handleHealOnDeathAnim(data) {
@@ -4139,6 +4211,7 @@ async function handleHealOnDeathAnim(data) {
     if (cardEl && data._preHealHp !== undefined) {
         const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
         if (hpEl) {
+            _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "healOnDeath:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
             if (data._preHealHp < data._preHealMax) {
                 hpEl.classList.add('reduced');
@@ -4172,6 +4245,7 @@ async function handleHealOnDeathAnim(data) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
             if (finalCard) {
+                _traceHp(slotKey || "?", hpEl?.textContent, finalCard.currentHp, "healOnDeath:after", { card: data?.card?.name || data?.cardName || "?" });
                 hpEl.textContent = finalCard.currentHp;
                 if (finalCard.currentHp < finalCard.hp) {
                     hpEl.classList.add('reduced');
@@ -7292,6 +7366,7 @@ function animateReanimate(data) {
         const slotKey = `${owner}-${data.row}-${data.col}`;
 
         animatingSlots.add(slotKey);
+        console.log("[SPECTRE-DBG] reanimate handler START", { slotKey, card: data.card?.name });
 
         const slot = getSlot(owner, data.row, data.col);
         if (!slot) {
@@ -7325,7 +7400,16 @@ function animateReanimate(data) {
                 const field = owner === 'me' ? state?.me?.field : state?.opponent?.field;
                 const arrived = !!field?.[data.row]?.[data.col];
                 if (arrived || (performance.now() - waitStart) > waitMax) {
+                    console.log("[SPECTRE-DBG] reanimate handler END", { slotKey, arrived: !!((owner === "me" ? state?.me?.field : state?.opponent?.field)?.[data.row]?.[data.col]) });
                     animatingSlots.delete(slotKey);
+                    // Sync tempCard uid with state so renderField fast-path works
+                    // (slow path is deferred while isAnimating=true)
+                    const stateField = owner === 'me' ? state?.me?.field : state?.opponent?.field;
+                    const stateCard = stateField?.[data.row]?.[data.col];
+                    if (stateCard) {
+                        const tempEl = slot.querySelector('.card');
+                        if (tempEl) tempEl.dataset.uid = stateCard.uid || '';
+                    }
                     render();
                     if (isFlying) {
                         const newCardEl = slot.querySelector('.card.flying-creature');
