@@ -1195,7 +1195,7 @@ function handleAnimation(data) {
     // En mode client-paced, on ajoute aussi les reveals (summon/move/trapPlace)
     // pour eviter les chevauchements quand le serveur n'attend plus entre les phases.
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'massDiscard', 'heroHeal', 'powerBuff', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'massDiscard', 'heroHeal', 'powerBuff', 'buffApply', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     const needsOppHandSnapshot =
         (type === 'summon' && data?.player !== myNum) ||
@@ -1744,7 +1744,7 @@ function selectCard(i) {
     }
     if (card.requiresGraveyardCreature) {
         const available = (state.me.graveyard || []).filter(c =>
-            c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+            c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id) && (!card.excludeLegendary || c.edition !== 4)
         );
         if (available.length === 0) return;
     }
@@ -1752,6 +1752,10 @@ function selectCard(i) {
     if (card.targetSelfCreature) {
         const hasCreature = state.me.field.some(row => row.some(c => c !== null));
         if (!hasCreature) return;
+    }
+    if (card.targetAnyCreature) {
+        const hasAnyCreature = state.me.field.some(row => row.some(c => c !== null)) || state.opponent.field.some(row => row.some(c => c !== null));
+        if (!hasAnyCreature) return;
     }
 
     clearSel();
@@ -2017,7 +2021,9 @@ function openGraveyardForSelection() {
             (canPlaceAt(card, targetCol) && respectsProvocationPriority(card, targetRow, targetCol))
         );
 
-        if (fitsSlot && !alreadyCommitted) {
+        const isLegendaryBlocked = pendingReanimation.card?.excludeLegendary && card.edition === 4;
+
+        if (fitsSlot && !alreadyCommitted && !isLegendaryBlocked) {
             hasCreature = true;
             cardEl.classList.add('graveyard-selectable');
             cardEl.onclick = (e) => {

@@ -560,7 +560,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 existingCardEl.__cardData = card;
                 const isRadjawak = typeof card.name === 'string' && card.name.toLowerCase().includes('radjawak');
 
-                // Debug: log pour Vampire sordide
+                // Debug: log pour Luciole bicolore
 
                 // Mettre à jour HP
                 const hpEl = existingCardEl.querySelector('.arena-armor') || existingCardEl.querySelector('.arena-hp') || existingCardEl.querySelector('.img-hp');
@@ -1058,6 +1058,8 @@ const ABILITY_DESCRIPTIONS = {
     lifelink: { name: 'Lien vital', desc: 'Quand cette créature inflige des blessures de combat, votre héros se soigne de X PV (plafonné à 20 PV).' },
     lifedrain: { name: 'Drain de vie', desc: 'Quand cette créature inflige des blessures de combat, elle se soigne de X PV (plafonné aux PV max).' },
     antitoxin: { name: 'Antitoxine', desc: 'Cette créature ne subit pas de dégâts de poison.' },
+    soinToxique: { name: 'Soin toxique', desc: 'Le poison soigne cette créature au lieu de lui infliger des dégâts.' },
+    deflexion: { name: 'Déflexion', desc: 'Annule le premier sort adverse qui cible spécifiquement cette créature.' },
     unsacrificable: { name: 'Non sacrifiable', desc: 'Cette créature ne peut pas être sacrifiée.' }
 };
 
@@ -1446,6 +1448,10 @@ function _updateHandInPlace(panel, hand, energy) {
             const hasCreature = state.me.field.some(row => row.some(c => c !== null));
             if (!hasCreature) playable = false;
         }
+        if (playable && card.targetAnyCreature) {
+            const hasAnyCreature = state.me.field.some(row => row.some(c => c !== null)) || state.opponent.field.some(row => row.some(c => c !== null));
+            if (!hasAnyCreature) playable = false;
+        }
 
         el.classList.toggle('playable', playable);
 
@@ -1753,6 +1759,13 @@ function renderHand(hand, energy) {
         if (card.targetSelfCreature) {
             const hasCreature = state.me.field.some(row => row.some(c => c !== null));
             if (!hasCreature) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        if (card.targetAnyCreature) {
+            const hasAnyCreature = state.me.field.some(row => row.some(c => c !== null)) || state.opponent.field.some(row => row.some(c => c !== null));
+            if (!hasAnyCreature) {
                 cantSummon = true;
                 el.classList.remove('playable');
             }
@@ -2942,7 +2955,7 @@ function makeCard(card, inHand, discountedCost = null) {
         const commonAbilityNames = {
             haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
             trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', unsacrificable: 'Non sacrifiable', provocation: 'Provocation'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', soinToxique: 'Soin toxique', unsacrificable: 'Non sacrifiable', provocation: 'Provocation', deflexion: 'Déflexion'
         };
         // Filtrer shooter et fly des capacités affichées
         const addedAbils = card.addedAbilities || [];

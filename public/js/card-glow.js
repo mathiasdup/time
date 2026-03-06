@@ -263,7 +263,7 @@ const CardGlow = (() => {
             // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
             const spellDragging = typeof dragged !== 'undefined' && dragged && dragged.type === 'spell';
             if (!spellDragging) {
-                const attackCards = document.querySelectorAll('.card-slot .card.can-attack');
+                const attackCards = document.querySelectorAll('.card-slot .card.can-attack:not([data-has-attacked="true"])');
                 for (const cardEl of attackCards) {
                     if (activeEls.has(cardEl)) continue; // déjà ciblé ou en combat
                     const { borderW, borderR } = getCachedBorder(cardEl);

@@ -1513,6 +1513,28 @@ async function executeAnimationAsync(type, data) {
             await new Promise(r => setTimeout(r, 600));
             break;
         }
+        case 'deflexion': {
+            const dfOwner = data.player === myNum ? 'me' : 'opp';
+            const dfSlot = getSlot(dfOwner, data.row, data.col);
+            if (dfSlot) {
+                dfSlot.classList.add('deflexion-flash');
+                const dfRect = dfSlot.getBoundingClientRect();
+                if (typeof CombatVFX !== 'undefined' && CombatVFX.createShieldEffect) {
+                    CombatVFX.createShieldEffect(dfRect.left + dfRect.width / 2, dfRect.top + dfRect.height / 2, dfRect.width, dfRect.height);
+                }
+                // Floating text
+                const dfText = document.createElement('div');
+                dfText.className = 'floating-combat-text heal-text';
+                dfText.textContent = 'Déflexion!';
+                dfText.style.left = dfRect.left + dfRect.width / 2 + 'px';
+                dfText.style.top = dfRect.top + 'px';
+                document.body.appendChild(dfText);
+                setTimeout(() => dfText.remove(), 1500);
+                setTimeout(() => dfSlot.classList.remove('deflexion-flash'), 800);
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            break;
+        }
         case 'death':
             await animateDeathToGraveyard(data);
             break;
@@ -1580,7 +1602,9 @@ async function executeAnimationAsync(type, data) {
             // Retirer le glow violet de toutes les cartes prÃƒÆ’Ã‚Â©cÃƒÆ’Ã‚Â©dentes
             document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
                 c.dataset.inCombat = 'false';
+                c.dataset.hasAttacked = 'true';
             });
+            CardGlow.markDirty();
             // Marquer uniquement les cartes qui vont combattre
             if (data.activeSlots) {
                 for (const s of data.activeSlots) {
@@ -1597,12 +1621,24 @@ async function executeAnimationAsync(type, data) {
         case 'combatEnd':
             document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
                 c.dataset.inCombat = 'false';
+                c.dataset.hasAttacked = 'true';
             });
             CardGlow.markDirty();
             break;
         case 'powerBuff':
             await handlePowerBuff(data);
             break;
+        case 'buffApply': {
+            // VFX buff (+ATK/+HP) on card — queued so it plays after burn
+            const baOwner = data.player === myNum ? 'me' : 'opp';
+            const baSlot = getSlot(baOwner, data.row, data.col);
+            if (baSlot) {
+                const rect = baSlot.getBoundingClientRect();
+                CombatVFX.createBuffEffect(rect.left + rect.width / 2, rect.top + rect.height / 2, data.atkBuff ?? 1, data.hpBuff ?? 1, rect.width, rect.height);
+            }
+            await new Promise(r => setTimeout(r, 600));
+            break;
+        }
         case 'summon':
             await animateSummon(data);
             break;
@@ -3295,7 +3331,7 @@ function createCardElementForAnimation(card) {
         const abilityNames = {
             fly: 'Vol', shooter: 'Tireur', haste: 'CÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ritÃƒÆ’Ã‚Â©', superhaste: 'SupercÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ritÃƒÆ’Ã‚Â©', intangible: 'Intangible',
             trample: 'PiÃƒÆ’Ã‚Â©tinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'RÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©ration',
-            protection: 'Protection', untargetable: 'Inciblable', provocation: 'Provocation'
+            protection: 'Protection', untargetable: 'Inciblable', provocation: 'Provocation', deflexion: 'Déflexion', soinToxique: 'Soin toxique'
         };
         const abilitiesText = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();
@@ -6539,6 +6575,9 @@ function resetAnimationStates() {
     // RÃƒÆ’Ã‚Â©initialiser les flags de combat sur toutes les cartes
     document.querySelectorAll('.card[data-in-combat="true"]').forEach(card => {
         card.dataset.inCombat = 'false';
+    });
+    document.querySelectorAll('.card[data-has-attacked="true"]').forEach(card => {
+        delete card.dataset.hasAttacked;
     });
 
     // Filet de sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : aucun override visuel ne doit survivre ÃƒÆ’Ã‚Â  un nouveau tour.

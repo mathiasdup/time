@@ -382,6 +382,20 @@ function getValidSlots(card) {
                 }
             }
         }
+        // Sort ciblant toute créature (alliée ou ennemie)
+        else if (card.targetAnyCreature) {
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 2; col++) {
+                    if (state.me.field[row][col]) {
+                        valid.push({ owner: 'me', row, col });
+                    }
+                    const oppTarget = state.opponent.field[row][col];
+                    if (oppTarget && !oppTarget.hasCamouflage && !oppTarget.hasUntargetable) {
+                        valid.push({ owner: 'opp', row, col });
+                    }
+                }
+            }
+        }
         // Sorts ciblés normaux
         else {
             // Sorts offensifs → uniquement les slots ennemis (exclure camouflés/inciblables)

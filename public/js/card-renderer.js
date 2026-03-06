@@ -165,7 +165,7 @@ const CardRenderer = {
             fly: 'Vol', shooter: 'Tireur', haste: 'Célérité', superhaste: 'Supercélérité',
             intangible: 'Intangible', trample: 'Piétinement',
             power: 'Puissance', cleave: 'Clivant', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', lifedrain: 'Drain de vie', antitoxin: 'Anti-toxine', dissipation: 'Dissipation', unsacrificable: 'Non sacrifiable', provocation: 'Provocation'
+            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', lifedrain: 'Drain de vie', antitoxin: 'Anti-toxine', soinToxique: 'Soin toxique', dissipation: 'Dissipation', unsacrificable: 'Non sacrifiable', provocation: 'Provocation', deflexion: 'Déflexion'
         };
         const abilitiesList = (card.abilities || []).map(a => {
             if (a === 'cleave') return `Clivant ${card.cleaveX || ''}`.trim();

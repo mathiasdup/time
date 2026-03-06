@@ -265,12 +265,12 @@ testAsync('Poison tick — poisonHealsAllies does NOT heal enemies', async () =>
     cleanupRoom(room);
 });
 
-testAsync('Poison tick — poisonFeedsSelf heals', async () => {
+testAsync('Poison tick — soinToxique heals', async () => {
     const room = makeRoom();
-    const card = makeCard({ hp: 8, currentHp: 4, poisonFeedsSelf: true }); card.poisonCounters = 3;
+    const card = makeCard({ hp: 8, currentHp: 4, abilities: ['soinToxique'] }); card.poisonCounters = 3;
     room.gameState.players[1].field[0][1] = card;
     await applySlotPoisonDamage(room, 0, 1, [], noopLog, noopSleep, () => null);
-    assertEqual(card.currentHp, 7, 'poisonFeedsSelf should heal');
+    assertEqual(card.currentHp, 7, 'soinToxique should heal');
     cleanupRoom(room);
 });
 
@@ -1151,12 +1151,12 @@ test('Spores onDeath', () => {
 
 test('Immondice onDeath', () => {
     const c = CardByIdMap.get('immondice_des_trefonds');
-    if (c) assert(c.onDeath.absorbAdjacentPoisonThenDamageHero, 'absorbAdjacentPoisonThenDamageHero');
+    if (c) assert(c.onDeath.poisonDamageHero, 'poisonDamageHero');
 });
 
-test('Avatar du poison endOfCombat', () => {
+test('Avatar du poison statsPerPoisonInPlay', () => {
     const c = CardByIdMap.get('avatar_du_poison');
-    if (c) { assert(c.endOfCombat.absorbPoison, 'absorbPoison'); assert(c.abilities.includes('antitoxin'), 'antitoxin'); assert(c.abilities.includes('trample'), 'trample'); }
+    if (c) { assert(c.statsPerPoisonInPlay, 'statsPerPoisonInPlay'); assert(c.abilities.includes('antitoxin'), 'antitoxin'); assert(c.abilities.includes('trample'), 'trample'); assert(c.abilities.includes('soinToxique'), 'soinToxique'); }
 });
 
 test('Nuage toxique aura', () => {
