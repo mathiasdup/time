@@ -1624,7 +1624,1132 @@ function renderHand(hand, energy) {
     //  Slow path : réconciliation (réutilise les éléments existants pour préserver les glow)
     _domVisSnapshot(panel, 'renderHand:BEFORE-slow-path');
 
-    // (FLIP step 1 moved to pre-purge capture above)
+    // FLIP step 1 : snapshot des positions par UID avant de modifier le DOM
+    // Fonctionne pour les retraits joueur (drag) ET serveur (résolution de sorts)
+    const oldPosByUid = {};
+    const oldCommittedPositions = {};
+    const oldCards = panel.querySelectorAll('.card:not(.committed-spell)');
+    oldCards.forEach(card => {
+        const uid = card.dataset.uid;
+        if (uid) {
+            oldPosByUid[uid] = card.getBoundingClientRect().left;
+        }
+    });
+    const oldCommitted = panel.querySelectorAll('.committed-spell');
+    oldCommitted.forEach(card => {
+        const commitId = card.dataset.commitId;
+        oldCommittedPositions[commitId] = card.getBoundingClientRect().left;
+    });
+    // Reset le flag de retrait (utilisé uniquement pour le tracking, pas pour le FLIP)
+    if (handCardRemovedIndex >= 0) handCardRemovedIndex = -1;
+
+    // Indexer les éléments existants par UID pour réutilisation
+    const existingByUid = new Map();
+    oldCards.forEach(el => {
+        const uid = el.dataset.uid;
+        if (uid) existingByUid.set(uid, el);
+    });
+
+    // Retirer les committed spells (seront re-insérés après)
+    oldCommitted.forEach(el => el.remove());
+
+    // Vérifier si Hyrule peut réduire le coût du 2ème sort (uniquement en phase planning)
+    const isHyrule = state.me.hero && state.me.hero.id === 'hyrule';
+    const spellsCast = state.me.spellsCastThisTurn || 0;
+    const hasHyruleDiscount = isHyrule && spellsCast === 1 && state.phase === 'planning';
+
+    // Compter les marqueurs poison en jeu pour la réduction de coût (Reine toxique)
+    const totalPoisonCounters = state.me.totalPoisonCounters || 0;
+
+    // UIDs qu'on va garder (pour savoir quoi supprimer après)
+    const keptUids = new Set();
+
+    hand.forEach((card, i) => {
+        // Calculer le coût effectif pour les sorts avec Hyrule
+        let effectiveCost = card.cost;
+        let hasDiscount = false;
+        if (hasHyruleDiscount && card.type === 'spell') {
+            effectiveCost = Math.max(0, card.cost - 1);
+            hasDiscount = true;
+        }
+        // Réduction de coût par marqueurs poison (Reine toxique)
+        if (card.poisonCostReduction && totalPoisonCounters > 0) {
+            effectiveCost = Math.max(0, effectiveCost - totalPoisonCounters);
+            hasDiscount = true;
+        }
+
+        const uid = card.uid || card.id || '';
+        let el = existingByUid.get(uid);
+        let isNew = false;
+
+        if (el) {
+            // Réutiliser l'élément existant (préserve le glow canvas)
+            keptUids.add(uid);
+            // Mettre à jour le coût affiché et la classe discounted
+            const isDiscounted = effectiveCost < card.cost;
+            const costEl = el.querySelector('.arena-mana') || el.querySelector('.img-cost');
+            if (costEl) {
+                costEl.textContent = effectiveCost;
+                costEl.classList.toggle('discounted', isDiscounted);
+            }
+        } else {
+            // Nouvelle carte : créer depuis zéro
+            el = makeCard(card, true, effectiveCost < card.cost ? effectiveCost : null);
+            isNew = true;
+        }
+
+        el.dataset.idx = i;
+        el.dataset.uid = uid;
+        el.dataset.cost = effectiveCost;
+        el.__cardData = card;
+
+        // Marquer comme jouable si : assez de mana + phase planning + pas encore validé le tour
+        el.classList.remove('playable');
+        if (effectiveCost <= energy && canPlay()) {
+            el.classList.add('playable');
+        }
+
+        // Retirer playable si aucun slot libre sur le board (créatures et pièges)
+        if ((card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) {
+            el.classList.remove('playable');
+        }
+
+        // Z-index incrémental pour éviter les saccades au hover
+        el.style.zIndex = i + 1;
+
+        // Cacher si animation de pioche en attente (index/uid) OU pendingBounce sur la cible exacte
+        const isPBTarget = (() => {
+            if (!pendingBounce || pendingBounce.owner !== 'me') return false;
+            const pbUid = pendingBounce.targetUid || pendingBounce.card?.uid || null;
+            if (pbUid && uid) return pbUid === uid;
+            if (pendingBounce.expectAtEnd) return i === hand.length - 1;
+            if (_isValidHandIndexValue(pendingBounce.targetIndex)) return Number(pendingBounce.targetIndex) === i;
+            if (_isValidHandIndexValue(pendingBounce.handIndex)) return Number(pendingBounce.handIndex) === i;
+            return false;
+        })();
+        const shouldHideByIndex = typeof GameAnimations !== 'undefined' && GameAnimations.shouldHideCard('me', i);
+        const shouldHideByUid = typeof GameAnimations !== 'undefined'
+            && typeof GameAnimations.shouldHideCardByUid === 'function'
+            && GameAnimations.shouldHideCardByUid('me', uid);
+        if (shouldHideByIndex || shouldHideByUid || isPBTarget) {
+            el.style.visibility = 'hidden';
+        } else {
+            el.style.visibility = '';
+        }
+
+        // Vérifier les conditions d'invocation spéciales (ex: Kraken Colossal)
+        let cantSummon = false;
+        if (card.requiresGraveyardCreatures) {
+            const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
+            if (graveyardCreatures < card.requiresGraveyardCreatures) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Réanimation : nécessite au moins 1 créature non-engagée au cimetière
+        if (card.requiresGraveyardCreature) {
+            const availableCreatures = (state.me.graveyard || []).filter(c =>
+                c.type === 'creature' && !committedGraveyardUids.includes(c.uid || c.id)
+            );
+            if (availableCreatures.length === 0) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Sacrifice : nécessite au moins 1 slot vide adjacent à une créature sacrifiable
+        if (card.sacrifice) {
+            const validSlots = getValidSlots(card);
+            if (validSlots.length === 0) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        // Sort ciblant une créature alliée : nécessite au moins 1 créature sur le terrain
+        if (card.targetSelfCreature) {
+            const hasCreature = state.me.field.some(row => row.some(c => c !== null));
+            if (!hasCreature) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+        if (card.targetAnyCreature) {
+            const hasAnyCreature = state.me.field.some(row => row.some(c => c !== null)) || state.opponent.field.some(row => row.some(c => c !== null));
+            if (!hasAnyCreature) {
+                cantSummon = true;
+                el.classList.remove('playable');
+            }
+        }
+
+        // Custom drag (disabled in click-to-select mode)
+        const tooExpensive = effectiveCost > energy || cantSummon;
+        if (!USE_CLICK_TO_SELECT) {
+            CustomDrag.makeDraggable(el, {
+                source: 'hand',
+                card: card,
+                idx: i,
+                effectiveCost: effectiveCost,
+                tooExpensive: tooExpensive
+            });
+        }
+
+        // Preview au survol
+        el.onmouseenter = (e) => showCardPreview(card, e);
+        el.onmouseleave = hideCardPreview;
+
+        // Clic gauche = select (click-to-select) ou zoom (drag mode)
+        el.onclick = (e) => {
+            e.stopPropagation();
+            if (USE_CLICK_TO_SELECT) {
+                selectCard(i);
+            } else {
+                showCardZoom(card);
+            }
+        };
+        // Clic droit = zoom
+        el.oncontextmenu = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showCardZoom(card);
+        };
+
+        // appendChild déplace un élément existant ou ajoute un nouveau
+        panel.appendChild(el);
+
+    });
+
+    // Supprimer les cartes qui ne sont plus dans la main
+    existingByUid.forEach((el, uid) => {
+        if (!keptUids.has(uid)) {
+            el.remove();
+        }
+    });
+
+    // [HAND-TRACK] Log server vs DOM order after reconciliation
+    const _htServer = hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
+    const _htDom = Array.from(panel.querySelectorAll('.card:not(.committed-spell)')).map((el, i) => `${i}:${el.dataset.uid?.slice(-4)}`).join(', ');
+    if (window.HAND_TRACE) {
+        console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
+    }
+
+    // Sorts engagés : toujours afficher à leur position d'origine dans la main.
+    // animateSpell les retire un par un du DOM quand ils sont joués.
+    // L'insertion par insertBefore garantit qu'ils restent en place même quand des tokens arrivent.
+    if (committedSpells.length > 0) {
+        const committedById = new Map();
+        // Calculer les indices d'origine (les sorts sont retirés de la main un par un,
+        // donc chaque handIndex est relatif à la main réduite  on reconstruit la position absolue)
+        const origIndices = [];
+        for (let i = 0; i < committedSpells.length; i++) {
+            let origIdx = committedSpells[i].handIndex;
+            if (origIdx < 0) { origIdx = hand.length + i; } // fallback : fin de main
+            // Trier les positions absolues précédentes en ordre croissant
+            // pour que chaque incrément soit vérifié contre les suivants
+            const sorted = origIndices.slice().sort((a, b) => a - b);
+            for (const prev of sorted) {
+                if (prev <= origIdx) origIdx++;
+                else break;
+            }
+            origIndices.push(origIdx);
+        }
+
+        // Trier par position d'origine pour insérer dans l'ordre
+        const indexed = committedSpells.map((cs, i) => ({ cs, csIdx: i, origIdx: origIndices[i] }));
+        indexed.sort((a, b) => a.origIdx - b.origIdx);
+
+        for (const { cs, csIdx, origIdx } of indexed) {
+            committedById.set(Number(cs.commitId), cs);
+            const el = makeCard(cs.card, false);
+            el.classList.add('committed-spell');
+            el.dataset.commitId = cs.commitId;
+            el.dataset.cardId = cs.card.id;
+            el.dataset.order = cs.order;
+
+            el.onmouseenter = (e) => {
+                showCardPreview(cs.card, e);
+                highlightCommittedSpellTargets(cs);
+            };
+            el.onmouseleave = () => {
+                hideCardPreview();
+                clearCommittedSpellHighlights();
+            };
+            el.onclick = (e) => {
+                e.stopPropagation();
+                showCardZoom(cs.card);
+            };
+            el.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showCardZoom(cs.card);
+            };
+
+            // Insérer à la position d'origine (pas à la fin)
+            const children = panel.children;
+            if (origIdx < children.length) {
+                panel.insertBefore(el, children[origIdx]);
+            } else {
+                panel.appendChild(el);
+            }
+        }
+        panel.__committedSpellByCommitId = committedById;
+    } else {
+        panel.__committedSpellByCommitId = new Map();
+    }
+    _ensureCommittedSpellHoverFallback(panel);
+
+    _domVisSnapshot(panel, 'renderHand:AFTER-committed-insert');
+
+    // Réindexer toute la main après insertion des committed spells.
+    // Sans ça, les committed gardent un z-index bas et passent derrière les cartes voisines.
+    const handChildren = panel.querySelectorAll('.card');
+    handChildren.forEach((el, i) => {
+        el.style.zIndex = i + 1;
+        el.style.setProperty('--hand-z', String(i + 1));
+    });
+
+    // Bounce : cacher la dernière carte si un bounce est en attente
+    if (pendingBounce && pendingBounce.owner === 'me') {
+        if (pendingBounce.completed) {
+            // Animation terminée  révéler la dernière carte et cleanup
+            const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
+            if (!pendingBounce.resolved) checkPendingBounce('me', allCards);
+            let targetEl = null;
+            if (pendingBounce.targetUid) {
+                targetEl = panel.querySelector(`.card:not(.committed-spell)[data-uid="${pendingBounce.targetUid}"]`);
+            }
+            if (!targetEl && _isValidHandIndexValue(pendingBounce.targetIndex)) {
+                const idx = Number(pendingBounce.targetIndex);
+                if (idx >= 0 && idx < allCards.length) targetEl = allCards[idx];
+            }
+            if (!targetEl && pendingBounce.expectAtEnd) {
+                targetEl = allCards[allCards.length - 1] || null;
+            }
+            if (!targetEl && pendingBounce.expectAtEnd) targetEl = allCards[allCards.length - 1];
+            if (targetEl) {
+                targetEl.style.visibility = '';
+                targetEl.style.transition = 'none';
+            }
+            const targetUid = pendingBounce.expectAtEnd
+                ? null
+                : (pendingBounce.targetUid || pendingBounce.card?.uid || targetEl?.dataset?.uid || null);
+            let targetIndex = _isValidHandIndexValue(pendingBounce.targetIndex)
+                ? Number(pendingBounce.targetIndex)
+                : (_isValidHandIndexValue(pendingBounce.handIndex) ? Number(pendingBounce.handIndex) : null);
+            if (!Number.isFinite(Number(targetIndex)) && targetEl) {
+                targetIndex = Array.from(allCards).indexOf(targetEl);
+            }
+            if (!Number.isFinite(Number(targetIndex)) && pendingBounce.expectAtEnd) {
+                targetIndex = allCards.length > 0 ? allCards.length - 1 : null;
+            }
+            if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                GameAnimations.releaseHiddenCard('me', targetIndex, targetUid || targetEl?.dataset?.uid || null);
+            }
+            const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+            _bounceRenderDbg('render:me-completed', {
+                targetUid,
+                targetIndex,
+                pendingHandIndex: pendingBounce.handIndex ?? null,
+                pendingTargetUid: pendingBounce.targetUid || null,
+                pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                hand: _snap
+            });
+            _handIdxEmitAnomalies('render:me-completed', _snap);
+            const wrapper = pendingBounce.wrapper;
+            pendingBounce = null;
+            skipFlipThisPass = true;
+            const hasPreciseTarget = !!targetUid || Number.isFinite(Number(targetIndex));
+            if (hasPreciseTarget) {
+                revealBounceTargetWithBridge(panel, '.card:not(.committed-spell)', wrapper, targetUid, targetIndex);
+            } else if (wrapper && wrapper.isConnected) {
+                wrapper.remove();
+            }
+        } else {
+            const allCards = panel.querySelectorAll('.card:not(.committed-spell)');
+            checkPendingBounce('me', allCards);
+        }
+    }
+
+    // FLIP step 2 : animer les cartes restantes de l'ancienne position vers la nouvelle
+    const hasOldPositions = Object.keys(oldPosByUid).length > 0 || Object.keys(oldCommittedPositions).length > 0;
+    if (hasOldPositions && !skipFlipThisPass) {
+        const newCards = panel.querySelectorAll('.card:not(.committed-spell)');
+        const newCommitted = panel.querySelectorAll('.committed-spell');
+        const toAnimate = [];
+        // Batch : poser tous les transforms d'un coup (sans transition)
+        // Cartes normales  matching par UID
+        newCards.forEach(card => {
+            const uid = card.dataset.uid;
+            if (uid && oldPosByUid[uid] !== undefined) {
+                const dx = oldPosByUid[uid] - card.getBoundingClientRect().left;
+                if (Math.abs(dx) > 1) {
+                    card.style.transition = 'none';
+                    card.style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(card);
+                }
+            }
+        });
+        // Sorts engagés (par commitId)
+        newCommitted.forEach(card => {
+            const commitId = card.dataset.commitId;
+            if (oldCommittedPositions[commitId] !== undefined) {
+                const dx = oldCommittedPositions[commitId] - card.getBoundingClientRect().left;
+                if (Math.abs(dx) > 1) {
+                    card.style.transition = 'none';
+                    card.style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(card);
+                }
+            }
+        });
+
+        if (toAnimate.length > 0) {
+            // Un seul reflow pour tout le batch
+            panel.getBoundingClientRect();
+            // Double rAF : garantit que le navigateur peint l'ancienne position
+            // avant de lancer la transition vers la nouvelle
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    toAnimate.forEach(card => {
+                        card.style.transition = 'transform 0.35s ease-out';
+                        card.style.transform = '';
+                    });
+                    setTimeout(() => {
+                        toAnimate.forEach(card => { card.style.transition = ''; });
+                    }, 380);
+                });
+            });
+        }
+    }
+    if (_handIdxTrackBounce) {
+        const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+        _bounceRenderDbg('render:me:end', {
+            stateHand: hand.map((c, i) => ({ i, uid: c?.uid || c?.id || null, name: c?.name || null })),
+            domAfter: _snap
+        });
+        _handIdxEmitAnomalies('render:me:end', _snap);
+    }
+    _domVisSnapshot(panel, 'renderHand:END');
+}
+
+function _markCommittedHoverSlot(slot) {
+    if (!slot) return;
+    slot.classList.add('committed-hover-target');
+    const card = slot.querySelector('.card');
+    if (card) card.classList.add('spell-hover-target');
+}
+
+function _ensureCommittedSpellHoverFallback(panel) {
+    if (!panel || panel.__committedHoverFallbackBound) return;
+    panel.__committedHoverFallbackBound = true;
+    panel.__activeCommittedHoverId = null;
+
+    const getCommittedById = (id) => {
+        if (!panel.__committedSpellByCommitId || typeof panel.__committedSpellByCommitId.get !== 'function') return null;
+        return panel.__committedSpellByCommitId.get(Number(id)) || null;
+    };
+
+    panel.addEventListener('mousemove', (e) => {
+        const el = e.target?.closest?.('.committed-spell');
+        if (!el || !panel.contains(el)) {
+            if (panel.__activeCommittedHoverId !== null) {
+                panel.__activeCommittedHoverId = null;
+                hideCardPreview();
+                clearCommittedSpellHighlights();
+            }
+            return;
+        }
+        const id = Number(el.dataset.commitId);
+        const cs = getCommittedById(id);
+        if (!cs) return;
+
+        if (panel.__activeCommittedHoverId !== id) {
+            panel.__activeCommittedHoverId = id;
+            highlightCommittedSpellTargets(cs);
+        }
+        showCardPreview(cs.card, e);
+    });
+
+    panel.addEventListener('mouseleave', () => {
+        panel.__activeCommittedHoverId = null;
+        hideCardPreview();
+        clearCommittedSpellHighlights();
+    });
+}
+
+function highlightCommittedSpellTargets(cs) {
+    clearCommittedSpellHighlights();
+    if (cs.targetType === 'hero') {
+        const heroOwner = cs.targetPlayer === myNum ? 'me' : 'opp';
+        const heroEl = document.getElementById(`hero-${heroOwner}`);
+        if (heroEl) heroEl.classList.add('hero-hover-target');
+    } else if (cs.targetType === 'global') {
+        if (cs.card.effect === 'summonZombieWall') {
+            for (let r = 0; r < 4; r++) {
+                const slot = getSlot('me', r, 1);
+                _markCommittedHoverSlot(slot);
+            }
+        } else {
+            const targetSide = cs.card.pattern === 'all' ? null : 'opp';
+            document.querySelectorAll('.card-slot').forEach(slot => {
+                if (!targetSide || slot.dataset.owner === targetSide) {
+                    _markCommittedHoverSlot(slot);
+                }
+            });
+        }
+    } else if (cs.targetType === 'field') {
+        const owner = cs.targetPlayer === myNum ? 'me' : 'opp';
+        if (cs.card.pattern === 'cross') {
+            previewCrossTargets(owner, cs.row, cs.col);
+        } else {
+            const slot = getSlot(owner, cs.row, cs.col);
+            _markCommittedHoverSlot(slot);
+        }
+    }
+
+    CardGlow.markDirty();
+    if (typeof _syncPixiHand === 'function') {
+        const handPanel = document.getElementById('my-hand');
+        _syncPixiHand(handPanel);
+    }
+}
+
+function clearCommittedSpellHighlights() {
+    document.querySelectorAll('.hero-hover-target').forEach(el => {
+        el.classList.remove('hero-hover-target');
+    });
+    document.querySelectorAll('.card-slot.committed-hover-target').forEach(slot => {
+        slot.classList.remove('committed-hover-target');
+    });
+    document.querySelectorAll('.card-slot .card.spell-hover-target').forEach(card => {
+        card.classList.remove('spell-hover-target');
+    });
+    document.querySelectorAll('.card-slot.cross-target').forEach(s => {
+        s.classList.remove('cross-target');
+    });
+    CardGlow.markDirty();
+}
+
+function createOppHandCard(revealedCard) {
+    if (revealedCard) {
+        // Carte révélée : utiliser makeCard pour le design complet
+        const el = makeCard(revealedCard, true);
+        el.classList.add('opp-card-back', 'opp-revealed');
+        if (revealedCard.uid) el.dataset.uid = revealedCard.uid;
+        el.onmouseenter = (e) => showCardPreview(revealedCard, e);
+        el.onmouseleave = hideCardPreview;
+        el.onclick = (e) => { e.stopPropagation(); showCardZoom(revealedCard); };
+        el.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showCardZoom(revealedCard); };
+        return el;
+    } else {
+        // Carte cachée : dos de carte standard
+        const el = document.createElement('div');
+        el.className = 'opp-card-back';
+        el.onmouseenter = () => showCardBackPreview();
+        el.onmouseleave = hideCardPreview;
+        return el;
+    }
+}
+
+function _bounceRenderDbg(stage, payload = {}) {
+    if (!window.HAND_INDEX_DEBUG) return;
+    try {
+        console.log(`[HAND-IDX][RENDER] ${stage}`, payload);
+        console.log(`[HAND-IDX][RENDER][JSON] ${stage} ${JSON.stringify(payload)}`);
+    } catch (_) {}
+}
+
+function _isValidHandIndexValue(value) {
+    if (value === null || value === undefined || value === '') return false;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 && Math.floor(n) === n;
+}
+
+function _bounceIsWaitingForNewCard(cardsLength) {
+    return !!(
+        pendingBounce &&
+        pendingBounce.queued &&
+        typeof pendingBounce.startHandCount === 'number' &&
+        cardsLength <= pendingBounce.startHandCount
+    );
+}
+
+function _handIdxSnapshot(panel, selector) {
+    if (!panel) return [];
+    return Array.from(panel.querySelectorAll(selector)).map((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const nameEl = el.querySelector('.arena-name');
+        const nameFs = nameEl ? parseFloat(getComputedStyle(nameEl).fontSize) : null;
+        const nameLh = nameEl ? parseFloat(getComputedStyle(nameEl).lineHeight) : null;
+        return {
+            i,
+            uid: el.dataset?.uid || null,
+            z: el.style.zIndex || null,
+            hidden: el.style.visibility === 'hidden',
+            w0: el.style.width === '0px',
+            rectW: Number(rect.width.toFixed(1)),
+            rectH: Number(rect.height.toFixed(1)),
+            tf: el.style.transform || '',
+            nameFs: Number.isFinite(nameFs) ? Number(nameFs.toFixed(2)) : null,
+            nameLh: Number.isFinite(nameLh) ? Number(nameLh.toFixed(2)) : null
+        };
+    });
+}
+
+function _handIdxEmitAnomalies(stage, snapshot) {
+    if (!window.HAND_INDEX_DEBUG || !Array.isArray(snapshot) || snapshot.length < 2) return;
+    const finite = (n) => n !== null && n !== '' && Number.isFinite(Number(n));
+    const median = (arr) => {
+        const xs = arr.filter(finite).map(Number).sort((a, b) => a - b);
+        if (!xs.length) return null;
+        const m = Math.floor(xs.length / 2);
+        return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2;
+    };
+    const medW = median(snapshot.map(x => x.rectW));
+    const medH = median(snapshot.map(x => x.rectH));
+    const medFs = median(snapshot.map(x => x.nameFs));
+    const sizeOutliers = snapshot.filter(x =>
+        finite(medW) && finite(medH) &&
+        (Math.abs(Number(x.rectW) - medW) > 1.2 || Math.abs(Number(x.rectH) - medH) > 1.2)
+    );
+    const typoOutliers = snapshot.filter(x =>
+        finite(medFs) && finite(x.nameFs) && Math.abs(Number(x.nameFs) - medFs) > 0.9
+    );
+    if (sizeOutliers.length > 0 || typoOutliers.length > 0) {
+        _bounceRenderDbg('alert:hand:anomaly', {
+            stage,
+            medW,
+            medH,
+            medFs,
+            sizeOutliers,
+            typoOutliers
+        });
+    }
+}
+
+function _oppHandSigFromDomCard(el) {
+    if (!el) return { revealed: false, uid: null };
+    const revealed = el.classList.contains('opp-revealed');
+    const uid = revealed ? (el.dataset?.uid || null) : null;
+    return { revealed, uid };
+}
+
+function _oppHandSigFromStateCard(card) {
+    if (!card) return { revealed: false, uid: null };
+    return { revealed: true, uid: card.uid || card.id || null };
+}
+
+function _oppHandSigMatches(oldSig, newSig) {
+    if (!!oldSig?.revealed !== !!newSig?.revealed) return false;
+    if (!oldSig?.revealed && !newSig?.revealed) return true;
+    const oldUid = oldSig?.uid || null;
+    const newUid = newSig?.uid || null;
+    if (oldUid && newUid) return oldUid === newUid;
+    return true;
+}
+
+function _pickOppResolutionShrinkIndices(oldCards, oppHand, targetCount) {
+    const oldArr = Array.from(oldCards || []);
+    const oldCount = oldArr.length;
+    const target = Math.max(0, Number(targetCount) || 0);
+    const diff = oldCount - target;
+    if (diff <= 0) return [];
+    if (!Array.isArray(oppHand) || oppHand.length < target) return [];
+
+    const oldSig = oldArr.map(_oppHandSigFromDomCard);
+    const newSig = oppHand.slice(0, target).map(_oppHandSigFromStateCard);
+    const removed = [];
+    let i = 0;
+    let j = 0;
+
+    while (i < oldCount && j < target) {
+        if (_oppHandSigMatches(oldSig[i], newSig[j])) {
+            i++;
+            j++;
+            continue;
+        }
+        if (removed.length >= diff) break;
+        removed.push(i);
+        i++;
+    }
+
+    while (removed.length < diff && i < oldCount) {
+        removed.push(i);
+        i++;
+    }
+
+    if (removed.length !== diff) return [];
+    return removed;
+}
+
+function _pickOppQueuedRemovalIndices(diff, oldCount) {
+    if (!Number.isFinite(Number(diff)) || diff <= 0) return [];
+    if (!Array.isArray(animationQueue) || animationQueue.length === 0) return [];
+    const picks = [];
+    const seen = new Set();
+    const getIdx = (data) => {
+        if (!data) return null;
+        const candidates = [
+            data.visualHandIndex,
+            data.handIndex,
+            data.reconstructedHandIndex,
+            data.originalHandIndex,
+            data._oppSourceIndex
+        ];
+        for (const c of candidates) {
+            if (!_isValidHandIndexValue(c)) continue;
+            const n = Number(c);
+            if (n >= 0 && n < oldCount) return n;
+        }
+        return null;
+    };
+    const isOppRemovalAnim = (item) => {
+        if (!item || !item.type || !item.data) return false;
+        if (item.type === 'spell') return item.data.caster !== myNum;
+        if (item.type === 'summon' || item.type === 'trapPlace') return item.data.player !== myNum;
+        return false;
+    };
+
+    for (const item of animationQueue) {
+        if (!isOppRemovalAnim(item)) continue;
+        const idx = getIdx(item.data);
+        if (idx === null || seen.has(idx)) continue;
+        picks.push(idx);
+        seen.add(idx);
+        if (picks.length >= diff) break;
+    }
+    return picks;
+}
+
+const _bounceDetailRevealState = new WeakMap();
+
+function _setBounceDetailsHidden(el, hidden) {
+    if (!el || !el.classList) return;
+    if (hidden) el.classList.add('bounce-details-hidden');
+    else el.classList.remove('bounce-details-hidden');
+}
+
+function _revealBounceDetailsWhenStable(el) {
+    if (!el || !el.isConnected) return;
+
+    const prev = _bounceDetailRevealState.get(el);
+    if (prev) {
+        if (Number.isFinite(prev.rafId)) cancelAnimationFrame(prev.rafId);
+        if (Number.isFinite(prev.timeoutId)) clearTimeout(prev.timeoutId);
+    }
+
+    _setBounceDetailsHidden(el, true);
+
+    const requiredStableFrames = 4;
+    const threshold = 0.35;
+    const maxWaitMs = 700;
+    let stableFrames = 0;
+    let lastRect = null;
+    const t0 = performance.now();
+    let timeoutId = null;
+
+    const finalize = () => {
+        const cur = _bounceDetailRevealState.get(el);
+        if (cur && Number.isFinite(cur.timeoutId)) clearTimeout(cur.timeoutId);
+        _bounceDetailRevealState.delete(el);
+        if (el.isConnected) _setBounceDetailsHidden(el, false);
+    };
+
+    const step = () => {
+        if (!el.isConnected) {
+            _bounceDetailRevealState.delete(el);
+            return;
+        }
+        const r = el.getBoundingClientRect();
+        if (lastRect) {
+            const dx = Math.abs(r.left - lastRect.left);
+            const dy = Math.abs(r.top - lastRect.top);
+            const dw = Math.abs(r.width - lastRect.width);
+            const dh = Math.abs(r.height - lastRect.height);
+            if (dx <= threshold && dy <= threshold && dw <= threshold && dh <= threshold) stableFrames++;
+            else stableFrames = 0;
+        }
+        lastRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+
+        if (stableFrames >= requiredStableFrames || (performance.now() - t0) >= maxWaitMs) {
+            finalize();
+            return;
+        }
+        const nextRaf = requestAnimationFrame(step);
+        const cur = _bounceDetailRevealState.get(el) || {};
+        _bounceDetailRevealState.set(el, { ...cur, rafId: nextRaf, timeoutId });
+    };
+
+    const rafId = requestAnimationFrame(step);
+    timeoutId = setTimeout(finalize, maxWaitMs + 120);
+    _bounceDetailRevealState.set(el, { rafId, timeoutId });
+}
+
+function revealBounceTargetWithBridge(panel, selector, wrapper, targetUid = null, targetIndex = null) {
+    if (!panel) {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
+        return;
+    }
+
+    const cards = panel.querySelectorAll(selector);
+    let last = null;
+    if (targetUid) {
+        last = panel.querySelector(`${selector}[data-uid="${targetUid}"]`);
+    }
+    if (!last && Number.isFinite(Number(targetIndex))) {
+        const idx = Number(targetIndex);
+        if (idx >= 0 && idx < cards.length) last = cards[idx];
+    }
+    if (!last) last = cards[cards.length - 1];
+    _bounceRenderDbg('render:bridge-target', {
+        selector,
+        targetUid,
+        targetIndex,
+        resolvedUid: last?.dataset?.uid || null,
+        resolvedIndex: last ? Array.from(cards).indexOf(last) : null,
+        cards: _handIdxSnapshot(panel, selector)
+    });
+    let cover = null;
+
+    if (last) {
+        const rect = last.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            let coverSource = last;
+            if (wrapper && wrapper.isConnected) {
+                const fromWrapper = wrapper.querySelector('.card, .opp-card-back');
+                if (fromWrapper) coverSource = fromWrapper;
+            }
+            cover = coverSource.cloneNode(true);
+            cover.style.position = 'fixed';
+            cover.style.left = rect.left + 'px';
+            cover.style.top = rect.top + 'px';
+            cover.style.width = rect.width + 'px';
+            cover.style.height = rect.height + 'px';
+            cover.style.margin = '0';
+            cover.style.pointerEvents = 'none';
+            cover.style.zIndex = '10001';
+            cover.style.transition = 'none';
+            cover.style.transform = 'none';
+            cover.style.visibility = 'visible';
+            document.body.appendChild(cover);
+            // Filet de securite: eviter un clone persistant au-dessus de la main.
+            setTimeout(() => {
+                if (cover && cover.isConnected) cover.remove();
+            }, 220);
+        }
+        // Keep target hidden for one extra frame while we settle inner layout.
+        last.style.visibility = 'hidden';
+        last.style.transition = 'none';
+    }
+
+    requestAnimationFrame(() => {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
+        requestAnimationFrame(() => {
+            if (last && last.isConnected) {
+                const nameEl = last.querySelector('.arena-name');
+                if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
+                last.style.visibility = '';
+            }
+            requestAnimationFrame(() => {
+                if (cover && cover.isConnected) cover.remove();
+            });
+        });
+    });
+    // Backup cleanup si un frame est saute.
+    setTimeout(() => {
+        if (wrapper && wrapper.isConnected) wrapper.remove();
+        if (cover && cover.isConnected) cover.remove();
+        if (last && last.isConnected) last.style.visibility = '';
+    }, 220);
+}
+
+function renderOppHand(count, oppHand) {
+    const panel = document.getElementById('opp-hand');
+
+    // Purger les cartes collapsed à width:0 (jouées pendant la résolution)
+    // Pendant pendingBounce, on garde UNIQUEMENT le tout premier stale slot (index 0)
+    // pour éviter le flash historique de la carte la plus à gauche.
+    // Les stale slots non-premiers sont purgés immédiatement pour stabiliser la géométrie
+    // de la main avant la fin du fly (évite "arrive sur une carte puis décale après").
+    const hasPendingBounce = pendingBounce && pendingBounce.owner === 'opp';
+    let purgedCount = 0;
+    {
+        const staleCards = panel.querySelectorAll('.opp-card-back');
+        for (let i = staleCards.length - 1; i >= 0; i--) {
+            if (staleCards[i].style.width !== '0px') continue;
+            if (hasPendingBounce && i === 0) continue;
+            staleCards[i].remove();
+            purgedCount++;
+        }
+        // Réassigner les z-index séquentiels après purge (les anciens z-index sont désordonnés)
+        if (purgedCount > 0) {
+            const remaining = panel.querySelectorAll('.opp-card-back');
+            for (let i = 0; i < remaining.length; i++) {
+                remaining[i].style.zIndex = i + 1;
+            }
+        }
+    }
+    if (window.HAND_INDEX_DEBUG && (purgedCount > 0 || hasPendingBounce)) {
+        _bounceRenderDbg('render:opp:post-purge', {
+            purgedCount,
+            hasPendingBounce: !!hasPendingBounce,
+            domAfterPurge: _handIdxSnapshot(panel, '.opp-card-back')
+        });
+    }
+
+    const oldCards = panel.querySelectorAll('.opp-card-back');
+    const oldCount = oldCards.length;
+    const drawActive = typeof GameAnimations !== 'undefined' && GameAnimations.hasActiveDrawAnimation('opp');
+    if (window.HAND_INDEX_DEBUG) {
+        _bounceRenderDbg('render:opp:start', {
+            count,
+            oldCount,
+            drawActive,
+            pendingBounce: hasPendingBounce ? {
+                owner: pendingBounce.owner,
+                handIndex: pendingBounce.handIndex ?? null,
+                targetUid: pendingBounce.targetUid || null,
+                targetIndex: pendingBounce.targetIndex ?? null,
+                expectAtEnd: !!pendingBounce.expectAtEnd,
+                resolved: !!pendingBounce.resolved,
+                completed: !!pendingBounce.completed,
+                cardUid: pendingBounce.card?.uid || pendingBounce.card?.id || null,
+                cardName: pendingBounce.card?.name || null
+            } : null,
+            stateOppHand: Array.isArray(oppHand) ? oppHand.map((c, i) => ({
+                i,
+                uid: c?.uid || c?.id || null,
+                name: c?.name || null,
+                revealed: !!c
+            })) : [],
+            domBefore: _handIdxSnapshot(panel, '.opp-card-back')
+        });
+    }
+
+    const cacheSize = typeof savedRevealedCardRects !== 'undefined' ? savedRevealedCardRects.size : 0;
+    if (typeof window.visTrace === 'function') {
+        window.visTrace('oppHand:render:start', {
+            statePhase: state?.phase || '?',
+            count,
+            oldCount,
+            drawActive,
+            cacheSize,
+            purgedCount,
+            pendingBounce: !!hasPendingBounce,
+            pendingBounceResolved: !!(pendingBounce && pendingBounce.resolved),
+            pendingBounceCompleted: !!(pendingBounce && pendingBounce.completed),
+        });
+    }
+
+    // --- Mode freeze : ne PAS toucher au DOM pendant la transition de révélation ---
+    // Tant que des cartes revealed sont en attente d'animation et que le count n'a pas changé,
+    // on garde la main telle quelle (la carte revealed reste à sa place visuelle)
+    // Ne pas freezer pendant un pendingBounce adverse (graveyardReturn/bounce),
+    // sinon la carte revealed peut ne jamais être injectée au bon index et
+    // checkPendingBounce ne trouve pas sa cible (timeout -> animation cassée).
+    if (cacheSize > 0 && count === oldCount && !(pendingBounce && pendingBounce.owner === 'opp')) {
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:skip-freeze-reveal', {
+                count,
+                oldCount,
+                cacheSize,
+            });
+        }
+        return;
+    }
+
+    // --- Mode incrémental : ne PAS détruire le DOM pendant une animation de pioche ---
+    if (drawActive && count >= oldCount) {
+        if (count > oldCount) {
+            GameAnimations.remapOppDrawIndices(oldCount);
+        }
+
+        // FLIP : sauvegarder les positions des cartes existantes avant d'ajouter les nouvelles
+        const oldPositions = count > oldCount
+            ? Array.from(oldCards).map(c => c.getBoundingClientRect().left) : null;
+
+        for (let i = 0; i < oldCount; i++) {
+            // Si une carte anciennement cachée est maintenant revealed, la remplacer
+            const revealedCard = oppHand && oppHand[i];
+            const isRevealedEl = oldCards[i].classList.contains('opp-revealed');
+            const elUid = oldCards[i].dataset?.uid || '';
+            const shouldBeRevealed = !!revealedCard;
+            const wrongRevealedUid = shouldBeRevealed && isRevealedEl && revealedCard.uid && elUid !== revealedCard.uid;
+            const shouldReplace =
+                (shouldBeRevealed && !isRevealedEl) ||
+                (!shouldBeRevealed && isRevealedEl) ||
+                wrongRevealedUid;
+
+            if (shouldReplace) {
+                const newEl = createOppHandCard(revealedCard);
+                newEl.style.zIndex = i + 1;
+                const shouldHide = GameAnimations.shouldHideCard('opp', i);
+                if (shouldHide) newEl.style.visibility = 'hidden';
+                oldCards[i].replaceWith(newEl);
+            } else if (count === oldCount) {
+                const shouldHide = GameAnimations.shouldHideCard('opp', i);
+                const isCollapsed = oldCards[i].style.width === '0px';
+                oldCards[i].style.visibility = (shouldHide || isCollapsed) ? 'hidden' : '';
+            } else {
+                const isCollapsed = oldCards[i].style.width === '0px';
+                oldCards[i].style.visibility = isCollapsed ? 'hidden' : '';
+            }
+        }
+        for (let i = oldCount; i < Math.min(count, 12); i++) {
+            const revealedCard = oppHand && oppHand[i];
+            const el = createOppHandCard(revealedCard);
+            el.style.zIndex = i + 1;
+            const shouldHide = GameAnimations.shouldHideCard('opp', i);
+            if (shouldHide) {
+                el.style.visibility = 'hidden';
+            }
+            panel.appendChild(el);
+        }
+
+        const completedOppBounce = pendingBounce && pendingBounce.owner === 'opp' && pendingBounce.completed;
+
+        // FLIP : animer le glissement des cartes existantes vers leurs nouvelles positions.
+        // Si graveyardReturn vient de finir, on skip ce FLIP pour éviter un effet de dédoublement
+        // (overlay volant + carte réelle visibles pendant le slide).
+        if (oldPositions && !completedOppBounce) {
+            const currentCards = panel.querySelectorAll('.opp-card-back');
+            const toAnimate = [];
+            for (let i = 0; i < oldPositions.length; i++) {
+                if (i >= currentCards.length || !currentCards[i].isConnected) continue;
+                const newLeft = currentCards[i].getBoundingClientRect().left;
+                const dx = oldPositions[i] - newLeft;
+                if (Math.abs(dx) > 1) {
+                    currentCards[i].style.transition = 'none';
+                    currentCards[i].style.transform = `translateX(${dx}px)`;
+                    toAnimate.push(currentCards[i]);
+                }
+            }
+            if (toAnimate.length > 0) {
+                panel.getBoundingClientRect(); // force reflow
+                requestAnimationFrame(() => {
+                    for (const card of toAnimate) {
+                        card.style.transition = 'transform 0.3s ease-out';
+                        card.style.transform = '';
+                    }
+                    setTimeout(() => {
+                        for (const card of toAnimate) { card.style.transition = ''; }
+                    }, 350);
+                });
+            }
+        }
+
+        if (pendingBounce && pendingBounce.owner === 'opp') {
+            if (pendingBounce.completed) {
+                // Animation terminée  révéler la dernière carte et cleanup
+                const allCards = panel.querySelectorAll('.opp-card-back');
+                if (!pendingBounce.resolved) checkPendingBounce('opp', allCards);
+                const wrapper = pendingBounce.wrapper;
+                const targetUid = pendingBounce.expectAtEnd ? null : (pendingBounce.targetUid || pendingBounce.card?.uid || null);
+                const targetIndex = pendingBounce.expectAtEnd
+                    ? (allCards.length > 0 ? allCards.length - 1 : null)
+                    : (_isValidHandIndexValue(pendingBounce.targetIndex)
+                        ? Number(pendingBounce.targetIndex)
+                        : (_isValidHandIndexValue(pendingBounce.handIndex) ? Number(pendingBounce.handIndex) : null));
+                if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
+                    GameAnimations.releaseHiddenCard('opp', targetIndex, targetUid);
+                }
+                _bounceRenderDbg('render:opp-completed-draw-mode', {
+                    targetUid,
+                    targetIndex,
+                    pendingHandIndex: pendingBounce.handIndex ?? null,
+                    pendingTargetUid: pendingBounce.targetUid || null,
+                    pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                    cards: _handIdxSnapshot(panel, '.opp-card-back')
+                });
+                pendingBounce = null;
+                const hasPreciseTarget = !!targetUid || Number.isFinite(Number(targetIndex));
+                if (hasPreciseTarget) {
+                    revealBounceTargetWithBridge(panel, '.opp-card-back', wrapper, targetUid, targetIndex);
+                } else if (wrapper && wrapper.isConnected) {
+                    wrapper.remove();
+                }
+            } else {
+                const allCards = panel.querySelectorAll('.opp-card-back');
+                checkPendingBounce('opp', allCards);
+            }
+        }
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:end-draw-mode', {
+                count,
+                oldCount,
+                domCount: panel.querySelectorAll('.opp-card-back').length,
+                hidden: Array.from(panel.querySelectorAll('.opp-card-back')).filter((el) => el.style.visibility === 'hidden').length,
+                revealed: panel.querySelectorAll('.opp-revealed').length,
+            });
+        }
+        if (window.HAND_INDEX_DEBUG) {
+            const _snap = _handIdxSnapshot(panel, '.opp-card-back');
+            _bounceRenderDbg('render:opp:end-draw-mode', {
+                count,
+                oldCount,
+                domAfter: _snap
+            });
+            _handIdxEmitAnomalies('render:opp:end-draw-mode', _snap);
+        }
+        return;
+    }
+
+    // --- Mode freeze résolution : pendant la résolution, NE JAMAIS réduire la main opp ---
+    // Les animations (summon, spell, trap) retirent elles-mêmes les dos de cartes du DOM.
+    // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
+    // donc on ne peut pas se fier à animatingSlots ici.
+    if (count < oldCount && state?.phase === 'resolution') {
+        if (!savedOppHandRects) {
+            savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
+        }
+
+        const diff = oldCount - count;
+        const detectedRemoval = _pickOppResolutionShrinkIndices(oldCards, oppHand, count);
+        const queuedRemoval = detectedRemoval.length === diff ? [] : _pickOppQueuedRemovalIndices(diff, oldCount);
+        const removalIndices = detectedRemoval.length === diff
+            ? detectedRemoval
+            : (queuedRemoval.length === diff ? queuedRemoval : []);
+        const sortedRemoval = [...removalIndices].sort((a, b) => b - a);
+
+        if (window.HAND_INDEX_DEBUG) {
+            _bounceRenderDbg('render:opp:resolution-shrink-targets', {
+                count,
+                oldCount,
+                diff,
+                removalIndices: sortedRemoval,
+                detectedRemoval,
+                queuedRemoval
+            });
+        }
+
+        if (sortedRemoval.length > 0) {
+            for (const i of sortedRemoval) {
+                const stale = oldCards[i];
+                if (!stale) continue;
+                stale.style.visibility = 'hidden';
+                if (stale.style.width !== '0px') smoothCloseOppHandGap(stale);
+            }
+        }
+        if (typeof window.visTrace === 'function') {
+            window.visTrace('oppHand:render:skip-resolution-shrink', {
+                count,
+                oldCount,
+                savedRectCount: savedOppHandRects ? savedOppHandRects.length : 0,
+                shrinkApplied: sortedRemoval.length > 0
+            });
+        }
+        return;
+    }
+
+    const target = Math.min(count, 12);
+    const oldDomCount = panel.children.length;
+    const preservedCount = Math.min(oldDomCount, target);
+
+    // FLIP step 1 : snapshot positions avant modification du DOM
+    // Animer à la fois les retraits et les ajouts (bounce -> +1 carte).
+    let oldPositions = null;
+    if (target !== oldDomCount && preservedCount > 0) {
+        oldPositions = Array.from(panel.children)
+            .slice(0, preservedCount)
+            .map(c => c.getBoundingClientRect().left);
+    }
 
     // Supprimer les éléments en trop
     while (panel.children.length > target) {
@@ -1670,9 +2795,32 @@ function renderHand(hand, energy) {
 
     const completedOppBounce = pendingBounce && pendingBounce.owner === 'opp' && pendingBounce.completed;
 
-    // FLIP step 2 : smooth reposition using pre-purge positions
-    if (!completedOppBounce) {
-        _flipOppHandCards(panel, _prePurgeLefts, 0.35);
+    // FLIP step 2 : animer le glissement des cartes restantes vers leurs nouvelles positions.
+    // Si graveyardReturn vient de finir, on skip ce FLIP pour éviter le dédoublement.
+    if (oldPositions && !completedOppBounce) {
+        const currentCards = panel.querySelectorAll('.opp-card-back');
+        const toAnimate = [];
+        for (let i = 0; i < oldPositions.length && i < currentCards.length; i++) {
+            const newLeft = currentCards[i].getBoundingClientRect().left;
+            const dx = oldPositions[i] - newLeft;
+            if (Math.abs(dx) > 1) {
+                currentCards[i].style.transition = 'none';
+                currentCards[i].style.transform = `translateX(${dx}px)`;
+                toAnimate.push(currentCards[i]);
+            }
+        }
+        if (toAnimate.length > 0) {
+            panel.getBoundingClientRect(); // force reflow
+            requestAnimationFrame(() => {
+                for (const card of toAnimate) {
+                    card.style.transition = 'transform 0.3s ease-out';
+                    card.style.transform = '';
+                }
+                setTimeout(() => {
+                    for (const card of toAnimate) { card.style.transition = ''; }
+                }, 350);
+            });
+        }
     }
 
     // Bounce : cacher la dernière carte si un bounce est en attente
