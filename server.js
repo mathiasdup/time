@@ -1121,6 +1121,7 @@ async function resolveCombatDeathsAndPostEffects(room, postCombatEffects, log, s
         // onEnemyDeath : buff les creatures du camp oppose quand une creature meurt (Boucher des abysses)
         for (const d of deaths) {
             if (d.card._transformed) continue; // deathTransform ne compte pas
+            if (d.card.isBuilding) continue; // les bâtiments ne sont pas des créatures
             const deadPlayerNum = d.player;
             const enemyPlayerNum = deadPlayerNum === 1 ? 2 : 1;
             const enemyPlayer = room.gameState.players[enemyPlayerNum];
@@ -4706,6 +4707,81 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 }
 
                 // Mettre le piÃƒÂ¨ge au cimetiÃƒÂ¨re
+                addToGraveyard(defenderState, trap);
+                defenderState.traps[row] = null;
+
+                emitStateToBoth(room);
+                await sleep(500);
+                continue;
+            }
+
+            // === PIEGE REANIMATE HIGHEST : reanime la creature la plus chere du cimetiere sur le slot avant ===
+            if (trap.effect === 'reanimateHighest') {
+                const frontCol = 1;
+                if (defenderState.field[row][frontCol]) {
+                    // Slot avant occupe -> le piege ne se declenche PAS, reste en place
+                    continue;
+                }
+
+                // Trouver la creature avec le cout le plus eleve (exclure shooters)
+                const graveCreatures = defenderState.graveyard.filter(c =>
+                    c.type === 'creature' &&
+                    c.combatType !== 'shooter' &&
+                    !c.isToken
+                );
+                if (graveCreatures.length === 0) continue; // rien a reanimer
+
+                const maxCost = Math.max(...graveCreatures.map(c => c.cost));
+                const candidates = graveCreatures.filter(c => c.cost === maxCost);
+                const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+                emitAnimation(room, 'trapTrigger', {
+                    player: defenderPlayer,
+                    row: row,
+                    trap: trap,
+                    triggerCol,
+                    attackerPlayer,
+                    targets: [{ player: defenderPlayer, row, col: frontCol }]
+                });
+                await sleep(950);
+
+                log(`\u{1F4A4} Piege "${trap.name}" declenche! ${chosen.name} reanime!`, 'trap');
+
+                // Retirer du cimetiere
+                const graveIdx = defenderState.graveyard.indexOf(chosen);
+                if (graveIdx !== -1) defenderState.graveyard.splice(graveIdx, 1);
+
+                const template = CardByIdMap.get(chosen.id) || chosen;
+                const placed = {
+                    ...template,
+                    abilities: [...(template.abilities || [])],
+                    uid: `${Date.now()}-trapreanimate-${Math.random()}`,
+                    currentHp: template.hp,
+                    atk: 1,
+                    baseAtk: 1,
+                    baseHp: template.hp,
+                    baseRiposte: template.riposte ?? template.atk,
+                    canAttack: false,
+                    turnsOnField: 0,
+                    movedThisTurn: false
+                };
+                if (placed.abilities.includes('protection')) placed.hasProtection = true;
+                if (placed.abilities.includes('camouflage')) placed.hasCamouflage = true;
+                if (placed.abilities.includes('untargetable')) placed.hasUntargetable = true;
+                if (placed.abilities.includes('deflexion')) placed.hasDeflexion = true;
+                placed.summonOrder = ++room.gameState.summonCounter;
+                defenderState.field[row][frontCol] = placed;
+                recalcDynamicAtk(room);
+
+                emitAnimation(room, 'trapSummon', {
+                    player: defenderPlayer,
+                    row: row,
+                    col: frontCol,
+                    card: placed
+                });
+                await sleep(1600);
+
+                // Mettre le piege au cimetiere
                 addToGraveyard(defenderState, trap);
                 defenderState.traps[row] = null;
 

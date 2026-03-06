@@ -417,7 +417,8 @@ const CardDB = {
         { id: 'trappe_secrete', name: 'Trappe secrète', damage: 3, cost: 3, type: 'trap', pattern: 'line', image: 'neutral/trappe_secrete.png', arenaStyle: true, faction: 'neutral', edition: 2, description: 'Inflige 3 blessures à toutes les créatures adverses sur cette ligne.' },
         { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 3, type: 'trap', effect: 'bounce', image: 'neutral/voyage_inattendu.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
         { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' },
-        { id: 'piece_renfermee', name: 'Pièce renfermée', cost: 3, type: 'trap', effect: 'poisonLine', poisonAmount: 3, pattern: 'line', image: 'neutral/piece_renfermee.png', arenaStyle: true, faction: 'neutral', edition: 3, rarity: 3, description: 'Inflige 3 marqueurs poison à toutes les créatures sur la ligne (alliées et ennemies).' }
+        { id: 'piece_renfermee', name: 'Pièce renfermée', cost: 3, type: 'trap', effect: 'poisonLine', poisonAmount: 3, pattern: 'line', image: 'neutral/piece_renfermee.png', arenaStyle: true, faction: 'neutral', edition: 3, rarity: 3, description: 'Inflige 3 marqueurs poison à toutes les créatures sur la ligne (alliées et ennemies).' },
+        { id: 'jouer_avec_les_morts', name: 'Jouer avec les morts', cost: 3, type: 'trap', effect: 'reanimateHighest', image: 'neutral/jouer_avec_les_morts.png', arenaStyle: true, faction: 'neutral', edition: 3, rarity: 3, description: 'Réanime la créature avec le coût en mana le plus élevé de votre cimetière sur le slot avant. Fixe son attaque de base à 1.' }
     ]
 };
 
@@ -744,6 +745,7 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
     trapEffectKeys: Object.freeze({
         bounce: 'trap resolution',
         poisonLine: 'trap resolution',
+        reanimateHighest: 'trap resolution',
         summon: 'trap resolution'
     })
 });

@@ -5,10 +5,12 @@
 // Collapse la carte cachÃƒÆ’Ã‚Â©e (widthÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0, marginÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0) pour que le flexbox ferme le trou naturellement
 function smoothCloseOppHandGap(hiddenCard) {
     if (!hiddenCard) return;
-    hiddenCard.style.transition = 'width 0.3s ease-out, margin-left 0.3s ease-out';
+    hiddenCard.style.overflow = 'hidden';
+    hiddenCard.style.boxShadow = 'none';
+    hiddenCard.style.minWidth = '0';
+    hiddenCard.style.transition = 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
     hiddenCard.style.width = '0px';
     hiddenCard.style.marginLeft = '0px';
-    hiddenCard.style.overflow = 'hidden';
 }
 
 // === Mise ÃƒÆ’Ã‚Â  jour dynamique de la popup cimetiÃƒÆ’Ã‚Â¨re ===
@@ -2394,6 +2396,8 @@ async function animateDeathTransform(data) {
     // Nettoyer le slot (garder la frame SVG + diamant), placer la nouvelle carte
     _clearSlotContent(slot);
     const placedCard = makeCard(data.toCard, false);
+    placedCard.dataset.uid = data.toCard.uid || '';
+    placedCard.__cardData = data.toCard;
     slot.appendChild(placedCard);
     slot.classList.add('has-card');
 
@@ -6830,6 +6834,8 @@ function animateSummon(data) {
         _clearSlotContent(targetSlot);
         targetSlot.classList.add('has-card');
         const cardEl = makeCard(renderCard, false);
+        cardEl.dataset.uid = renderCard.uid || '';
+        cardEl.__cardData = renderCard;
         targetSlot.appendChild(cardEl);
         if (typeof window.visTrace === 'function') {
             window.visTrace('summon:fallback-card', {
@@ -7315,6 +7321,8 @@ function animateTrapSummon(data) {
         cardEl.style.opacity = '0';
         cardEl.style.filter = 'brightness(3) saturate(0)';
         cardEl.style.pointerEvents = 'none';
+        cardEl.dataset.uid = data.card.uid || '';
+        cardEl.__cardData = data.card;
         slot.appendChild(cardEl);
         slot.classList.add('has-card');
 
@@ -7421,6 +7429,8 @@ function animateReanimate(data) {
 
         flyFromGraveyardFaceUp(owner, rect, data.card, 500, slot).then(() => {
             const tempCard = makeCard(data.card, false);
+            tempCard.dataset.uid = data.card.uid || '';
+            tempCard.__cardData = data.card;
             const isFlying = data.card.type === 'creature' && data.card.abilities?.includes('fly');
             if (isFlying) {
                 tempCard.classList.add('flying-creature');

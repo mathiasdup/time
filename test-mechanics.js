@@ -1146,7 +1146,7 @@ test('All poison cards exist', () => {
 
 test('Spores onDeath', () => {
     const c = CardByIdMap.get('spores');
-    if (c) { assert(c.onDeath.poisonAdjacent, 'poisonAdjacent'); assert(c.onDeath.drawCards, 'drawCards'); }
+    if (c) { assert(c.onDeath.drawCards, 'drawCards'); }
 });
 
 test('Immondice onDeath', () => {

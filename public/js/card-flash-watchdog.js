@@ -237,6 +237,8 @@ window.CardFlashWatchdog = (function () {
     }
 
     // === INITIALISATION ===
+    var _boardObserver = null;
+
     function _init() {
         // Card slots (16)
         var cardSlots = document.querySelectorAll('.card-slot');
@@ -265,6 +267,38 @@ window.CardFlashWatchdog = (function () {
         });
 
         console.log('[CARD-FLASH-WATCHDOG] Watching ' + cardCount + ' card slots, ' + trapCount + ' trap slots');
+    }
+
+    // Observe #battlefield for slot creation (buildBattlefield adds them dynamically)
+    function _waitForSlots() {
+        var battlefield = document.getElementById('battlefield');
+        if (!battlefield) {
+            console.warn('[CARD-FLASH-WATCHDOG] #battlefield not found, falling back to polling');
+            setTimeout(_waitForSlots, 1000);
+            return;
+        }
+        // If slots already exist (page reload mid-game), init immediately
+        if (document.querySelector('.card-slot')) {
+            _init();
+            return;
+        }
+        console.log('[CARD-FLASH-WATCHDOG] Waiting for game to start (watching #battlefield)...');
+        _boardObserver = new MutationObserver(function (mutations) {
+            for (var i = 0; i < mutations.length; i++) {
+                for (var j = 0; j < mutations[i].addedNodes.length; j++) {
+                    var node = mutations[i].addedNodes[j];
+                    if (node.nodeType === 1 && (node.classList.contains('card-slot') ||
+                        node.querySelector && node.querySelector('.card-slot'))) {
+                        // Slots are being added — wait a tick for all to be created
+                        _boardObserver.disconnect();
+                        _boardObserver = null;
+                        setTimeout(_init, 100);
+                        return;
+                    }
+                }
+            }
+        });
+        _boardObserver.observe(battlefield, { childList: true, subtree: true });
     }
 
     // === API PUBLIQUE ===
@@ -319,13 +353,11 @@ window.CardFlashWatchdog = (function () {
         console.log('[CARD-FLASH-WATCHDOG] Destroyed');
     }
 
-    // Auto-init quand le DOM est prêt
+    // Auto-init : observe le battlefield pour détecter quand les slots sont créés
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(_init, 500); // Attendre que les slots soient créés
-        });
+        document.addEventListener('DOMContentLoaded', _waitForSlots);
     } else {
-        setTimeout(_init, 500);
+        _waitForSlots();
     }
 
     return { report: report, events: events, clear: clear, destroy: destroy };
