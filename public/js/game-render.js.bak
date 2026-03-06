@@ -2455,11 +2455,6 @@ function revealBounceTargetWithBridge(panel, selector, wrapper, targetUid = null
 
 
 function renderOppHand(count, oppHand) {
-    // DEBUG
-    var _ropPanel = document.getElementById('opp-hand');
-    var _ropCards = _ropPanel ? _ropPanel.querySelectorAll('.opp-card-back, .opp-revealed') : [];
-    console.log('[RENDER-OPP] entry:', { target: arguments[0], oppHandArg: arguments[1] ? 'has oppHand' : 'none', domChildren: _ropPanel ? _ropPanel.children.length : 0, visibleCards: Array.from(_ropCards).filter(function(c){return c.style.visibility !== 'hidden' && c.style.width !== '0px';}).length, hiddenCards: Array.from(_ropCards).filter(function(c){return c.style.visibility === 'hidden' || c.style.width === '0px';}).length });
-
     const panel = document.getElementById('opp-hand');
 
     // Purger les cartes collapsed à width:0 (jouées pendant la résolution)
@@ -2698,19 +2693,11 @@ function renderOppHand(count, oppHand) {
     // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
     // donc on ne peut pas se fier à animatingSlots ici.
     if (count < oldCount && state?.phase === 'resolution') {
-        // Skip cards being lifted by animation code (they handle their own removal)
-        const liftingCards = Array.from(oldCards).filter(c => c.dataset && c.dataset.lifting);
-        const adjustedOldCount = oldCount - liftingCards.length;
-        if (count >= adjustedOldCount) {
-            // Animation lift is handling the removal  don't interfere
-            console.log('[RENDER-OPP] skip resolution-shrink: liftingCards=' + liftingCards.length + ' adjustedOld=' + adjustedOldCount + ' target=' + count);
-            return;
-        }
         if (!savedOppHandRects) {
             savedOppHandRects = Array.from(oldCards).map(c => c.getBoundingClientRect());
         }
 
-        const diff = adjustedOldCount - count;
+        const diff = oldCount - count;
         const detectedRemoval = _pickOppResolutionShrinkIndices(oldCards, oppHand, count);
         const queuedRemoval = detectedRemoval.length === diff ? [] : _pickOppQueuedRemovalIndices(diff, oldCount);
         const removalIndices = detectedRemoval.length === diff
@@ -2760,19 +2747,9 @@ function renderOppHand(count, oppHand) {
             .map(c => c.getBoundingClientRect().left);
     }
 
-    // Supprimer les elements en trop (skip lifting cards)
-    {
-        let _removeAttempts = 0;
-        while (panel.children.length > target && _removeAttempts < 20) {
-            _removeAttempts++;
-            var _last = panel.lastElementChild;
-            if (_last && _last.dataset && _last.dataset.lifting) {
-                // Don't remove a lifting card  move it before the panel's first child instead
-                // so it stays in DOM but doesn't block removal of others
-                break;
-            }
-            _last.remove();
-        }
+    // Supprimer les elements en trop
+    while (panel.children.length > target) {
+        panel.lastElementChild.remove();
     }
 
     // Mettre à jour ou ajouter les éléments manquants

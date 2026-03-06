@@ -4,8 +4,6 @@
 // === Smooth close du trou dans la main adverse aprÃƒÆ’Ã‚Â¨s hide d'une carte ===
 // Collapse la carte cachÃƒÆ’Ã‚Â©e (widthÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0, marginÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0) pour que le flexbox ferme le trou naturellement
 function smoothCloseOppHandGap(hiddenCard) {
-    // DEBUG
-    console.log('[GAP-CLOSE] entry:', { hasCard: !!hiddenCard, cls: hiddenCard ? hiddenCard.className.substring(0,30) : null, w: hiddenCard ? hiddenCard.style.width : null, vis: hiddenCard ? hiddenCard.style.visibility : null, parentChildren: hiddenCard && hiddenCard.parentElement ? hiddenCard.parentElement.children.length : 0 });
     if (!hiddenCard) return;
     var panel = hiddenCard.parentElement;
     if (!panel) {
@@ -3804,22 +3802,16 @@ async function animateSpell(data) {
                         oppAnimIndex !== null &&
                         (resolved.mode === 'visible-index' || resolved.mode === 'logical-index');
                     if (resolved.mode === 'uid-match' || resolvedByIndex) {
-                        // DEBUG
-                        console.log('[OPP-SPELL] beforeLift:', { mode: resolved.mode, elClass: resolved.el.className.substring(0,30), spellName: data.spell ? data.spell.name : null, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                         // Lift card within hand (preserves z-index stacking)
-                        resolved.el.dataset.lifting = 'true';
-                        resolved.el.style.transition = 'transform 0.16s ease-out';
-                        resolved.el.style.transform = 'translateY(-230px)';
-                        await new Promise(function(r) { setTimeout(r, 190); });
+                        resolved.el.style.transition = 'transform 0.12s ease-out';
+                        resolved.el.style.transform = 'translateY(-80px)';
+                        await new Promise(function(r) { setTimeout(r, 140); });
                         // Capture lifted rect as source position
                         if (resolved.el.isConnected) {
                             savedRect = resolved.el.getBoundingClientRect();
                         }
-                        delete resolved.el.dataset.lifting;
                         resolved.el.style.visibility = 'hidden';
                         smoothCloseOppHandGap(resolved.el);
-                        // DEBUG
-                        console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                     }
                 }
             }
@@ -6775,20 +6767,14 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             }
         }
 
-        // DEBUG
-        console.log('[OPP-FLY] sourceEl:', { found: !!_sourceEl, connected: _sourceEl ? _sourceEl.isConnected : false, cls: _sourceEl ? _sourceEl.className.substring(0,30) : null, sourceIndex: sourceIndex, resolvedEl: !!_resolvedEl, spellName: spell ? spell.name : null, savedRect: !!savedSourceRect, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
-
         function _doFlyAfterLift() {
             // Update handRect from lifted element position
             if (_sourceEl && _sourceEl.isConnected) {
                 handRect = _sourceEl.getBoundingClientRect();
             }
-            // DEBUG
-            console.log('[OPP-FLY] afterLift:', { elConnected: _sourceEl ? _sourceEl.isConnected : false, elVis: _sourceEl ? _sourceEl.style.visibility : null, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
 
             // Hide source + close gap
             if (_sourceEl && _sourceEl.isConnected) {
-                delete _sourceEl.dataset.lifting;
                 _sourceEl.style.visibility = 'hidden';
                 smoothCloseOppHandGap(_sourceEl);
             } else if (spell && spell.uid) {
@@ -6798,9 +6784,6 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                     _match.style.visibility = 'hidden';
                     smoothCloseOppHandGap(_match);
                 }
-
-            // DEBUG
-            console.log('[OPP-FLY] afterHide:', { handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
             }
 
             // Create flying card at (lifted) handRect position
@@ -6858,19 +6841,15 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             requestAnimationFrame(animate);
         }
 
-        // DEBUG
-        console.log('[OPP-FLY] liftDecision:', { willLift: !!(_sourceEl && _sourceEl.isConnected) });
-
         // Lift animation: raise source card within hand before flying
         // This preserves natural z-index stacking (middle card stays below right cards)
         if (_sourceEl && _sourceEl.isConnected) {
-            _sourceEl.dataset.lifting = 'true';
-            _sourceEl.style.transition = 'transform 0.16s ease-out';
-            _sourceEl.style.transform = 'translateY(-230px)';
-            setTimeout(_doFlyAfterLift, 190);
+            _sourceEl.style.transition = 'transform 0.12s ease-out';
+            _sourceEl.style.transform = 'translateY(-80px)';
+            setTimeout(_doFlyAfterLift, 140);
         } else {
             // No element to lift - offset handRect manually for visual lift
-            handRect = { left: handRect.left, top: handRect.top - 230, width: handRect.width, height: handRect.height };
+            handRect = { left: handRect.left, top: handRect.top - 80, width: handRect.width, height: handRect.height };
             _doFlyAfterLift();
         }
     });
