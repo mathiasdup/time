@@ -534,6 +534,16 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 continue;
             }
             const card = field[r][c];
+            // Pending death: skip stale re-creation OR clear when state confirms removal
+            if (window._pendingDeathSlots && window._pendingDeathSlots.has(slotKey)) {
+                if (!card) {
+                    // State confirmed card is gone — clear marker
+                    window._pendingDeathSlots.delete(slotKey);
+                } else if (!slot.querySelector('.card')) {
+                    // Card still in stale state but DOM is empty (death anim removed it) — skip
+                    continue;
+                }
+            }
             if (card) {
                 _traceInvalidCardStats('renderField:slot', card, { owner, row: r, col: c });
             }
@@ -1031,6 +1041,7 @@ function getNameFitSize(name, hasFaction) {
 
 // Preview flottante d'une carte
 let previewEl = null;
+let _previewLocked = false; // true during trap preview (priority over hover)
 // Descriptions des capacités
 const ABILITY_DESCRIPTIONS = {
     fly: { name: 'Vol', desc: 'Cette créature peut attaquer n\'importe quel emplacement adverse, pas seulement celui en face.' },
@@ -1063,8 +1074,11 @@ const ABILITY_DESCRIPTIONS = {
     unsacrificable: { name: 'Non sacrifiable', desc: 'Cette créature ne peut pas être sacrifiée.' }
 };
 
-function showCardPreview(card, e) {
+function showCardPreview(card, e, options) {
+    var priority = options && options.priority;
+    if (_previewLocked && !priority) return; // trap preview has priority
     hideCardPreview();
+    if (priority) _previewLocked = true;
     
     // Créer le container
     previewEl = document.createElement('div');
@@ -1137,6 +1151,27 @@ function showCardPreview(card, e) {
     }
 
     document.body.appendChild(previewEl);
+
+    // Anchor positioning (trap activation: next to trap slot)
+    var anchorEl = options && options.anchorEl;
+    if (anchorEl) {
+        var aRect = anchorEl.getBoundingClientRect();
+        var anchorSide = options.anchorSide || 'right';
+        // Preview visual height = 192 * 1.5 = 288, anchor = 192 -> offset = 48
+        var vOffset = (192 * 1.5 - aRect.height) / 2;
+        previewEl.style.top = (aRect.top - vOffset) + 'px';
+        if (anchorSide === 'left') {
+            // My traps (left side): preview to the left
+            previewEl.style.right = (window.innerWidth - aRect.left + 16) + 'px';
+            previewEl.style.left = 'auto';
+            previewEl.style.transformOrigin = 'top right';
+        } else {
+            // Opp traps (right side): preview to the right
+            previewEl.style.left = (aRect.right + 16) + 'px';
+            previewEl.style.right = 'auto';
+            previewEl.style.transformOrigin = 'top left';
+        }
+    }
 
     // Auto-fit du nom (après insertion dans le DOM pour mesurer)
     const previewNameEl = cardEl.querySelector('.arena-name');
@@ -1288,7 +1323,9 @@ function showHeroDetail(hero, hp) {
 function moveCardPreview(e) {
     // Plus besoin de suivre la souris - position fixe
 }
-function hideCardPreview() {
+function hideCardPreview(force) {
+    if (_previewLocked && !force) return; // trap preview active, ignore hover hide
+    _previewLocked = false;
     if (previewEl) {
         previewEl.remove();
         previewEl = null;

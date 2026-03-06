@@ -3587,6 +3587,9 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
                     for (let c = 0; c < 2; c++) {
                         const card = pField[r][c];
                         if (card && card.currentHp > 0 && card.buffOnAnyPoisonDeath) {
+                            if (card.baseAtk === undefined) card.baseAtk = card.atk;
+                            if (card.baseHp === undefined) card.baseHp = card.hp;
+                            if (card.baseRiposte === undefined) card.baseRiposte = card.riposte ?? 0;
                             card.buffCounters = (card.buffCounters || 0) + totalPoisonDeaths;
                             card.atk += totalPoisonDeaths;
                             card.hp += totalPoisonDeaths;
@@ -5426,6 +5429,9 @@ async function applySpell(room, action, log, sleep, options = {}) {
                             for (let c = 0; c < 2; c++) {
                                 const card = pField[r][c];
                                 if (card && card.currentHp > 0 && card.buffOnAnyPoisonDeath) {
+                                    if (card.baseAtk === undefined) card.baseAtk = card.atk;
+                                    if (card.baseHp === undefined) card.baseHp = card.hp;
+                                    if (card.baseRiposte === undefined) card.baseRiposte = card.riposte ?? 0;
                                     card.buffCounters = (card.buffCounters || 0) + totalPoisonDeaths;
                                     card.atk += totalPoisonDeaths;
                                     card.hp += totalPoisonDeaths;

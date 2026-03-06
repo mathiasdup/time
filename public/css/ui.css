@@ -189,6 +189,7 @@
             pointer-events: none;
             transform: scale(1.5);
             transform-origin: top right;
+            
             filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
             opacity: 0;
             transition: opacity 0.2s ease;

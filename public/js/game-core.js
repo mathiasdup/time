@@ -30,6 +30,8 @@ function _cancelPendingResolutionStateRender() {
 }
 
 function _renderFromStateUpdate(phase) {
+    // Clear pending death markers only on phase change (resolution end = deaths fully processed)
+    if (window._pendingDeathSlots && phase !== 'resolution') window._pendingDeathSlots.clear();
     // Fallback debug: window.FORCE_FULL_RENDER = true pour désactiver le delta render
     if (window.FORCE_FULL_RENDER) {
         _cancelPendingResolutionStateRender();

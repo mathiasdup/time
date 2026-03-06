@@ -537,6 +537,8 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
+        if (!window._pendingDeathSlots) window._pendingDeathSlots = new Set();
+        window._pendingDeathSlots.add(slotKey);
         console.log("[SPECTRE-DBG] queue death: slot locked", slotKey);
     }
 
@@ -1691,6 +1693,27 @@ async function executeAnimationAsync(type, data) {
             if (baSlot) {
                 const rect = baSlot.getBoundingClientRect();
                 CombatVFX.createBuffEffect(rect.left + rect.width / 2, rect.top + rect.height / 2, data.atkBuff ?? 1, data.hpBuff ?? 1, rect.width, rect.height);
+                // Clear anti-flicker markers + update DOM directly for buff
+                const buffCardEl = baSlot.querySelector('.card');
+                if (buffCardEl) {
+                    delete buffCardEl.dataset.visualDmgHp;
+                    delete buffCardEl.dataset.visualDmgSetAt;
+                    const buffHpEl = buffCardEl.querySelector('.arena-armor') || buffCardEl.querySelector('.arena-hp') || buffCardEl.querySelector('.img-hp');
+                    const buffAtkEl = buffCardEl.querySelector('.arena-atk') || buffCardEl.querySelector('.img-atk');
+                    if (buffHpEl && data.hpBuff) {
+                        const oldHp = parseInt(buffHpEl.textContent || '0', 10);
+                        if (Number.isFinite(oldHp)) buffHpEl.textContent = String(oldHp + data.hpBuff);
+                    }
+                    if (buffAtkEl && data.atkBuff) {
+                        const oldAtk = parseInt(buffAtkEl.textContent || '0', 10);
+                        if (Number.isFinite(oldAtk)) buffAtkEl.textContent = String(oldAtk + data.atkBuff);
+                    }
+                    const buffRipEl = buffCardEl.querySelector('.arena-riposte');
+                    if (buffRipEl && data.hpBuff) {
+                        const oldRip = parseInt(buffRipEl.textContent || '0', 10);
+                        if (Number.isFinite(oldRip)) buffRipEl.textContent = String(oldRip + data.hpBuff);
+                    }
+                }
             }
             await new Promise(r => setTimeout(r, 600));
             break;
@@ -3431,7 +3454,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 
     // 1. CrÃƒÆ’Ã‚Â©er l'ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment carte (version on-field : juste le nom, comme au cimetiÃƒÆ’Ã‚Â¨re)
     const cardEl = (typeof makeCard === 'function')
-        ? makeCard(card, false)
+        ? makeCard(card, true)
         : createCardElementForAnimation(card);
     cardEl.classList.remove('just-played', 'can-attack');
     const bgImage = cardEl.style.backgroundImage;
@@ -3447,7 +3470,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const gameBoard = document.querySelector('.game-board');
     if (!gameBoard) return;
     const gbRect = gameBoard.getBoundingClientRect();
-    const showcaseScale = 1.8;
+    const showcaseScale = 1.5;
     const showcaseX = isMine
         ? gbRect.left + gbRect.width * 0.20 - (cardWidth * showcaseScale) / 2
         : gbRect.left + gbRect.width * 0.80 - (cardWidth * showcaseScale) / 2;
@@ -3488,7 +3511,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         width: ${cardWidth}px; height: ${cardHeight}px;
         transform-origin: center center;
         transform: scale(${initScale}); opacity: ${initOpacity};
-        perspective: 800px;
+        perspective: 800px; will-change: transform;
     `;
     let spellGhost = _createPixiAnimGhost(card, 11000);
 
@@ -3591,7 +3614,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 
     // 6. DurÃƒÆ’Ã‚Â©es des phases (pas de phase impact ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â le fly est la derniÃƒÆ’Ã‚Â¨re, comme burn)
     const materializeDuration = 500;
-    const holdDuration = 800;
+    const holdDuration = 2000;
     const shrinkDuration = 300;
     const flyDuration = 400;
     const totalDuration = materializeDuration + holdDuration + shrinkDuration + flyDuration;
@@ -3776,7 +3799,7 @@ async function animateSpell(data) {
         const gameBoard = document.querySelector('.game-board');
         if (gameBoard) {
             const gbRect = gameBoard.getBoundingClientRect();
-            const cardW = 144, cardH = 192, sc = 1.8;
+            const cardW = 144, cardH = 192, sc = 1.5;
             const showcaseX = gbRect.left + gbRect.width * 0.80 - (cardW * sc) / 2;
             const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardH * sc) / 2;
             // Prendre le dos de carte du DOM (filtrer les dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  cachÃƒÆ’Ã‚Â©es)
@@ -4783,17 +4806,16 @@ async function animateTrap(data) {
     });
     flipShell.style.transform = 'none';
 
+    // Show trap card preview for both players
+    if (typeof showCardPreview === "function" && data.trap) {
+        showCardPreview(data.trap, null, { priority: true, anchorEl: trapSlot, anchorSide: owner === 'me' ? 'left' : 'right' });
+    }
+
     // Small settle pulse while remaining on board.
     await new Promise((resolve) => setTimeout(resolve, warnedCount > 0 ? 120 : 80));
 
     // 5. Consume sequence (grayscale + fly to graveyard) is delayed so creature animation can play first.
-    const consumeDelay = (() => {
-        const effect = String(data?.trap?.effect || '');
-        if (effect === 'summon') return 3600;
-        if (effect === 'bounce') return 3200;
-        if (shouldHoldUntilDamage) return 3000;
-        return 2600;
-    })();
+    const consumeDelay = 2000;
 
     setTimeout(async () => {
         const slotNow = getTrapSlot(owner, data.row);
@@ -4806,6 +4828,13 @@ async function animateTrap(data) {
             graveRenderBlocked.delete(owner);
             _clearTrapTargetWarnings('trap-consume-missing');
             return;
+        }
+
+        // Fade out trap preview in sync with grayscale
+        var _trapPreview = document.querySelector(".card-preview.visible");
+        if (_trapPreview) {
+            _trapPreview.classList.remove("visible");
+            setTimeout(function() { if (typeof hideCardPreview === "function") hideCardPreview(true); }, 300);
         }
 
         // Grayscale death mark before flying to graveyard.
