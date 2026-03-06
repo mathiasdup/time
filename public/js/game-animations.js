@@ -4437,8 +4437,7 @@ function animateTrapPlace(data) {
                 });
                 if (resolved.el && resolved.rect) {
                     savedRect = resolved.rect;
-                    resolved.el.style.visibility = 'hidden';
-                    smoothCloseOppHandGap(resolved.el);
+                    // Hide + gap close handled by flyFromOppHand lift
                     sourceMode = resolved.mode;
                 }
             }
@@ -6750,6 +6749,16 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
             _resolvedEl = resolved.el;
         }
 
+        // Also resolve element for lift when savedSourceRect was provided
+        if (!_resolvedEl && savedSourceRect && (sourceIndex !== null || preferredUid)) {
+            var _resolved2 = _resolveOppHandSourceByIndexAndUid(
+                sourceIndex,
+                preferredUid,
+                { strictIndex: sourceIndex !== null, strictNoFallback: true }
+            );
+            if (_resolved2 && _resolved2.el) _resolvedEl = _resolved2.el;
+        }
+
         // Cacher la carte revealed dans la main (elle va ÃƒÆ’Ã‚Âªtre remplacÃƒÆ’Ã‚Â©e par le clone volant)
         _oppPlayDbg('flyFromOppHand:source', {
             sourceMode,
@@ -7091,8 +7100,7 @@ function animateSummon(data) {
         );
         if (resolved.el && resolved.rect) {
             savedSourceRect = resolved.rect;
-            resolved.el.style.visibility = 'hidden'; // Cacher sans reflow
-            smoothCloseOppHandGap(resolved.el);
+            // Hide + gap close handled by flyFromOppHand lift
             sourceMode = resolved.mode;
         } else if (!savedSourceRect && revealedCacheRect) {
             savedSourceRect = revealedCacheRect;

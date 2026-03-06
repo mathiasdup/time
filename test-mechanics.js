@@ -822,13 +822,13 @@ testAsync('resolvePostCombatEffects — absorbAdjacentPoisonThenDamageHero cross
     cleanupRoom(room);
 });
 
-testAsync('resolvePostCombatEffects — poisonAdjacent (Spores all 4 dirs)', async () => {
+testAsync('resolvePostCombatEffects — poisonAdjacent (Scribe solitaire all 4 dirs)', async () => {
     const room = makeRoom();
     const above = makeCard({ hp: 5, currentHp: 5 }); room.gameState.players[1].field[0][1] = above;
     const below = makeCard({ hp: 5, currentHp: 5 }); room.gameState.players[1].field[2][1] = below;
     const behind = makeCard({ hp: 5, currentHp: 5 }); room.gameState.players[1].field[1][0] = behind;
     const ef = makeCard({ hp: 5, currentHp: 5 }); room.gameState.players[2].field[1][1] = ef;
-    await resolvePostCombatEffects(room, [{ type: 'poisonAdjacent', sourcePlayer: 1, row: 1, col: 1, poisonAmount: 2, source: 'Spores' }], noopLog, noopSleep);
+    await resolvePostCombatEffects(room, [{ type: 'poisonAdjacent', sourcePlayer: 1, row: 1, col: 1, poisonAmount: 2, source: 'Scribe solitaire' }], noopLog, noopSleep);
     assert(above.poisonCounters >= 2, 'above');
     assert(below.poisonCounters >= 2, 'below');
     assert(behind.poisonCounters >= 2, 'behind');
@@ -1140,12 +1140,12 @@ testAsync('applySpell — destroy kills target', async () => {
 // ==================== TESTS: Card DB validation ====================
 
 test('All poison cards exist', () => {
-    for (const id of ['spores', 'zombie_decharne', 'avatar_du_poison', 'garde_branlante', 'genie_du_sang', 'immondice_des_trefonds', 'nuage_toxique'])
+    for (const id of ['scribe_solitaire', 'zombie_decharne', 'avatar_du_poison', 'garde_branlante', 'genie_du_sang', 'immondice_des_trefonds', 'nuage_toxique'])
         assert(CardByIdMap.get(id), `${id} exists`);
 });
 
-test('Spores onDeath', () => {
-    const c = CardByIdMap.get('spores');
+test('Scribe solitaire onDeath', () => {
+    const c = CardByIdMap.get('scribe_solitaire');
     if (c) { assert(c.onDeath.drawCards, 'drawCards'); }
 });
 

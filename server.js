@@ -2794,7 +2794,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 break;
             }
             case 'poisonAdjacent': {
-                // Spores : poison adjacent (haut/bas/gauche/droite, traverse vers ennemi si front col 1)
+                // Scribe solitaire : poison adjacent (haut/bas/gauche/droite, traverse vers ennemi si front col 1)
                 const adjTargets = [];
                 const srcPlayer = effect.sourcePlayer;
                 const enemyPNum = srcPlayer === 1 ? 2 : 1;
@@ -5144,16 +5144,24 @@ async function applySpell(room, action, log, sleep, options = {}) {
             io.to(room.code).emit('blockSlots', slotsToBlock);
 
             const normalDeaths = [];
+            const sacrificeAnims = [];
+            const transformAnims = [];
             for (const d of deaths) {
-                log(`  Ã°Å¸â€™â‚¬ ${spell.name}: ${d.card.name} de ${room.gameState.players[d.player].heroName} est sacrifiÃƒÂ©!`, 'damage');
+                log(`  \uD83D\uDC80 ${spell.name}: ${d.card.name} de ${room.gameState.players[d.player].heroName} est sacrifi\u00e9!`, 'damage');
                 const result = handleCreatureDeath(room, d.card, d.player, d.row, d.col, log);
                 if (result.transformed) {
-                    emitAnimation(room, 'sacrifice', { player: d.player, row: d.row, col: d.col, card: d.card, noFlyToGrave: true });
-                    emitAnimation(room, 'deathTransform', { player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
+                    sacrificeAnims.push({ type: 'sacrifice', player: d.player, row: d.row, col: d.col, card: d.card, noFlyToGrave: true });
+                    transformAnims.push({ type: 'deathTransform', player: d.player, row: d.row, col: d.col, fromCard: d.card, toCard: result.newCard });
                 } else {
-                    emitAnimation(room, 'sacrifice', { player: d.player, row: d.row, col: d.col, card: d.card });
+                    sacrificeAnims.push({ type: 'sacrifice', player: d.player, row: d.row, col: d.col, card: d.card });
                     normalDeaths.push(d);
                 }
+            }
+            if (sacrificeAnims.length > 0) {
+                emitAnimationBatch(room, sacrificeAnims);
+            }
+            if (transformAnims.length > 0) {
+                emitAnimationBatch(room, transformAnims);
             }
 
             // Buff onAnySacrifice (ex: Luciole bicolore) + onAllySacrifice + Erebeth
