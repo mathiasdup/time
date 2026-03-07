@@ -63,7 +63,7 @@ const HpWatchdog = (() => {
                     }
 
                     // Comparer HP
-                    const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+                    const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
                     if (!hpEl) continue;
 
                     const domHp = parseInt(hpEl.textContent, 10);
@@ -102,7 +102,7 @@ const HpWatchdog = (() => {
                     }
 
                     // Comparer ATK
-                    const atkEl = cardEl.querySelector('.arena-atk') || cardEl.querySelector('.img-atk');
+                    const atkEl = cardEl._cAtk || (cardEl._cAtk = cardEl.querySelector('.arena-atk') || cardEl.querySelector('.img-atk'));
                     if (atkEl && !card.isBuilding) {
                         // Skip si ATK override actif
                         if (typeof RenderLock !== 'undefined') {

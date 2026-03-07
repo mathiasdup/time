@@ -126,18 +126,25 @@ function _traceInvalidCardStats(source, card, meta = {}) {
 // Utilisé pendant la phase de résolution pour éviter les reconstructions DOM massives.
 
 function updateGraveTooltip(side, graveyard, graveyardCount) {
-    const el = dom[side + 'GraveTooltip'];
+    const el = _getDomEls()[side + 'GraveTooltip'];
     if (!el) return;
     const total = graveyardCount || 0;
     const creatures = (graveyard || []).filter(c => c.type === 'creature' && !c.isBuilding).length;
     const traps = (graveyard || []).filter(c => c.type === 'trap').length;
     const spells = (graveyard || []).filter(c => c.type === 'spell').length;
     const buildings = (graveyard || []).filter(c => c.isBuilding).length;
-    el.querySelector('[data-type="total"]').textContent = total;
-    el.querySelector('[data-type="creature"]').textContent = creatures;
-    el.querySelector('[data-type="trap"]').textContent = traps;
-    el.querySelector('[data-type="spell"]').textContent = spells;
-    el.querySelector('[data-type="building"]').textContent = buildings;
+    const _ttChildren = el._ttCache || (el._ttCache = {
+        total: el.querySelector('[data-type="total"]'),
+        creature: el.querySelector('[data-type="creature"]'),
+        trap: el.querySelector('[data-type="trap"]'),
+        spell: el.querySelector('[data-type="spell"]'),
+        building: el.querySelector('[data-type="building"]')
+    });
+    _ttChildren.total.textContent = total;
+    _ttChildren.creature.textContent = creatures;
+    _ttChildren.trap.textContent = traps;
+    _ttChildren.spell.textContent = spells;
+    _ttChildren.building.textContent = buildings;
 }
 
 function renderDelta(d) {
@@ -796,6 +803,8 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 }
                 // Rebind hover/click avec les données fraîches de la carte
                 existingCardEl.onmouseenter = (e) => showCardPreview(card, e);
+                existingCardEl.onmouseleave = hideCardPreview;
+                existingCardEl.onmousemove = (e) => moveCardPreview(e);
                 existingCardEl.onclick = (e) => {
                     e.stopPropagation();
                     if (USE_CLICK_TO_SELECT) {
@@ -813,12 +822,13 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 existingCardEl.classList.toggle('melody-locked', !!card.melodyLocked);
                 // Gaze marker (Medusa)  propriété serveur : medusaGazeMarker
                 const gazeCount = card.medusaGazeMarker || 0;
-                let gazeMarker = existingCardEl.querySelector('.gaze-marker');
+                let gazeMarker = existingCardEl._cGaze || (existingCardEl._cGaze = existingCardEl.querySelector('.gaze-marker'));
                 if (gazeCount > 0 && !gazeMarker) {
                     gazeMarker = document.createElement('div');
                     gazeMarker.className = 'gaze-marker marker-pop';
                     gazeMarker.innerHTML = `<div class="gaze-border"></div><span class="gaze-count">${gazeCount}</span>`;
                     existingCardEl.appendChild(gazeMarker);
+                    existingCardEl._cGaze = gazeMarker;
                 } else if (gazeCount > 0 && gazeMarker) {
                     const countEl = gazeMarker.querySelector('.gaze-count');
                     if (countEl && countEl.textContent !== String(gazeCount)) {
@@ -829,15 +839,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     }
                 } else if (gazeCount === 0 && gazeMarker) {
                     gazeMarker.remove();
+                    existingCardEl._cGaze = null;
                 }
                 // Poison marker  propriété serveur : poisonCounters
                 const poisonCount = card.poisonCounters || 0;
-                let poisonMarker = existingCardEl.querySelector('.poison-marker');
+                let poisonMarker = existingCardEl._cPoison || (existingCardEl._cPoison = existingCardEl.querySelector('.poison-marker'));
                 if (poisonCount > 0 && !poisonMarker) {
                     poisonMarker = document.createElement('div');
                     poisonMarker.className = 'poison-marker marker-pop';
                     poisonMarker.innerHTML = `<div class="poison-border"></div><span class="poison-count">${poisonCount}</span>`;
                     existingCardEl.appendChild(poisonMarker);
+                    existingCardEl._cPoison = poisonMarker;
                 } else if (poisonCount > 0 && poisonMarker) {
                     const countEl = poisonMarker.querySelector('.poison-count');
                     if (countEl && countEl.textContent !== String(poisonCount)) {
@@ -848,15 +860,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     }
                 } else if (poisonCount === 0 && poisonMarker) {
                     poisonMarker.remove();
+                    existingCardEl._cPoison = null;
                 }
                 // Entrave marker  propriété serveur : entraveCounters
                 const entraveCount = card.entraveCounters || 0;
-                let entraveMarker = existingCardEl.querySelector('.entrave-marker');
+                let entraveMarker = existingCardEl._cEntrave || (existingCardEl._cEntrave = existingCardEl.querySelector('.entrave-marker'));
                 if (entraveCount > 0 && !entraveMarker) {
                     entraveMarker = document.createElement('div');
                     entraveMarker.className = 'entrave-marker marker-pop';
                     entraveMarker.innerHTML = `<div class="entrave-border"></div><span class="entrave-count">${entraveCount}</span>`;
                     existingCardEl.appendChild(entraveMarker);
+                    existingCardEl._cEntrave = entraveMarker;
                 } else if (entraveCount > 0 && entraveMarker) {
                     const countEl = entraveMarker.querySelector('.entrave-count');
                     if (countEl && countEl.textContent !== String(entraveCount)) {
@@ -867,15 +881,17 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     }
                 } else if (entraveCount === 0 && entraveMarker) {
                     entraveMarker.remove();
+                    existingCardEl._cEntrave = null;
                 }
                 // Buff marker (Renforcement) propriete serveur : buffCounters
                 const buffCount = card.buffCounters || 0;
-                let buffMarker = existingCardEl.querySelector('.buff-marker');
+                let buffMarker = existingCardEl._cBuff || (existingCardEl._cBuff = existingCardEl.querySelector('.buff-marker'));
                 if (buffCount > 0 && !buffMarker) {
                     buffMarker = document.createElement('div');
                     buffMarker.className = 'buff-marker marker-pop';
                     buffMarker.innerHTML = `<span class="buff-count">${buffCount}</span>`;
                     existingCardEl.appendChild(buffMarker);
+                    existingCardEl._cBuff = buffMarker;
                 } else if (buffCount > 0 && buffMarker) {
                     const countEl = buffMarker.querySelector('.buff-count');
                     if (countEl && countEl.textContent !== String(buffCount)) {
@@ -886,6 +902,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     }
                 } else if (buffCount === 0 && buffMarker) {
                     buffMarker.remove();
+                    existingCardEl._cBuff = null;
                 }
                 // Positionner les marqueurs verticalement (empilés sur le côté droit)
                 const markerBase = 2;
@@ -2210,17 +2227,8 @@ function highlightCommittedSpellTargets(cs) {
 }
 
 function clearCommittedSpellHighlights() {
-    document.querySelectorAll('.hero-hover-target').forEach(el => {
-        el.classList.remove('hero-hover-target');
-    });
-    document.querySelectorAll('.card-slot.committed-hover-target').forEach(slot => {
-        slot.classList.remove('committed-hover-target');
-    });
-    document.querySelectorAll('.card-slot .card.spell-hover-target').forEach(card => {
-        card.classList.remove('spell-hover-target');
-    });
-    document.querySelectorAll('.card-slot.cross-target').forEach(s => {
-        s.classList.remove('cross-target');
+    document.querySelectorAll('.hero-hover-target, .card-slot.committed-hover-target, .card-slot .card.spell-hover-target, .card-slot.cross-target').forEach(el => {
+        el.classList.remove('hero-hover-target', 'committed-hover-target', 'spell-hover-target', 'cross-target');
     });
     CardGlow.markDirty();
 }

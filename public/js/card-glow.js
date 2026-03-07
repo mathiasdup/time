@@ -12,6 +12,7 @@ const CardGlow = (() => {
 
     const TWO_PI = Math.PI * 2;
     const PADDING = 12; // px d'extension du glow au-delà de la carte
+    let _cachedBattlefieldEl = null;
 
     const LAYER_CONFIGS_BLUE = [
         { spread: 3,   alpha: 0.45, lineW: 8, color: '#00aaff' },
@@ -198,6 +199,16 @@ const CardGlow = (() => {
             activeEls.add(cardEl);
         }
 
+        // Sorts commités : glow orange
+        const committedSpells = document.querySelectorAll('.my-hand .committed-spell');
+        for (const cardEl of committedSpells) {
+            if (activeEls.has(cardEl)) continue;
+            const { borderW, borderR } = getCachedBorder(cardEl);
+            const isArena = cardEl.classList.contains('arena-style');
+            newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+            activeEls.add(cardEl);
+        }
+
         // Ghost de drag (élément flottant hors de la main)
         const ghostCard = document.querySelector('.drag-ghost-card');
         if (ghostCard) {
@@ -327,8 +338,8 @@ const CardGlow = (() => {
             }
         }
 
-        const battlefieldEl = document.getElementById('battlefield');
-        const trapWarningMode = !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
+        if (!_cachedBattlefieldEl || !_cachedBattlefieldEl.isConnected) _cachedBattlefieldEl = document.getElementById('battlefield');
+        const trapWarningMode = !!_cachedBattlefieldEl && _cachedBattlefieldEl.classList.contains('trap-warning-mode');
 
         for (const target of _cachedTargets) {
             const { el: cardEl, layers, borderW, borderR } = target;

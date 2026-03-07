@@ -729,7 +729,8 @@ function initSocket() {
             const endTurnBtn = document.getElementById('end-turn-btn');
             endTurnBtn.classList.remove('waiting', 'has-timer');
             endTurnBtn.classList.add('resolving');
-            showPhaseMessage('Résolution', 'resolution');
+            // Phase message will be set by the first phaseMessage from server via animation queue
+            // showPhaseMessage('Résolution', 'resolution');
         }
     });
 
@@ -958,56 +959,11 @@ function initSocket() {
         });
     });
 
-    socket.on('gameOver', async (d) => {
-        if (window.CLIENT_PACED_RESOLUTION) {
-            let waitMs = 0;
-            const maxWait = 30000;
-            while (waitMs < maxWait && _hasActiveResolutionClientWork()) {
-                await new Promise(r => setTimeout(r, 100));
-                waitMs += 100;
-            }
-        }
-        if (window.PerfMon) { window.PerfMon.flush(); window.PerfMon.stop(); }
-        if (typeof window.flushVisTraceLogs === 'function') {
-            if (typeof window.visTrace === 'function') {
-                window.visTrace('visTrace:auto-save:start', {
-                    reason: 'gameOver',
-                    bufferedLines: Array.isArray(window.__visTraceBuffer) ? window.__visTraceBuffer.length : 0
-                });
-            }
-            const flushResult = await window.flushVisTraceLogs('gameOver', { keepalive: false, reset: true });
-            if (!flushResult?.ok) {
-                const flushDetail = (() => {
-                    try { return JSON.stringify(flushResult); } catch (_) { return String(flushResult); }
-                })();
-                console.warn('[VIS-TRACE] auto-save failed on gameOver', flushDetail);
-                if (typeof window.visTrace === 'function') {
-                    window.visTrace('visTrace:auto-save:failed', { detail: flushDetail });
-                }
-            } else {
-                console.log('[VIS-TRACE] auto-saved', flushResult.file || null, flushResult.lineCount || 0);
-                if (typeof window.visTrace === 'function') {
-                    window.visTrace('visTrace:auto-save:success', {
-                        file: flushResult.file || null,
-                        lineCount: flushResult.lineCount || 0,
-                        payloadBytes: flushResult.payloadBytes || null
-                    });
-                }
-            }
-        }
-        let resultText, resultClass;
-        if (d.draw) {
-            resultText = 'ðŸ¤ Match nul !';
-            resultClass = 'draw';
-        } else {
-            const won = d.winner === myNum;
-            resultText = won ? 'ðŸŽ‰ Victoire !' : 'ðŸ˜¢ DÃ©faite';
-            resultClass = won ? 'victory' : 'defeat';
-        }
-        document.getElementById('result').textContent = resultText;
-        document.getElementById('result').className = 'game-over-result ' + resultClass;
-        document.getElementById('game-over').classList.remove('hidden');
-    });
+    socket.on('gameOver', (d) => {
+        // Queue gameOver into animation queue so it displays after the killing animation
+        window._pendingGameOver = d;
+        queueAnimation('gameOver', d);
+    })
 
     socket.on('playerDisconnected', () => log('âš ï¸ Adversaire dÃ©connectÃ©', 'damage'));
 
@@ -1960,11 +1916,7 @@ function openGraveyard(owner) {
             // Ajouter le preview au hover
             cardEl.onmouseenter = (e) => showCardPreview(card, e);
             cardEl.onmouseleave = hideCardPreview;
-            // Clic = zoom (ou sélection en mode réanimation)
-            cardEl.onclick = (e) => {
-                e.stopPropagation();
-                showCardZoom(card);
-            };
+
             cardEl.oncontextmenu = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1976,8 +1928,88 @@ function openGraveyard(owner) {
         });
     }
 
+    // Scroll horizontal avec la molette
+    container.onwheel = (e) => {
+        if (container.scrollWidth > container.clientWidth) {
+            e.preventDefault();
+            container.scrollLeft += e.deltaY;
+        }
+    };
+
     popup.dataset.owner = owner;
     popup.classList.add('active');
+    setupGraveyardScroll(container);
+}
+
+function setupGraveyardScroll(container) {
+    const arrowL = document.getElementById('graveyard-arrow-left');
+    const arrowR = document.getElementById('graveyard-arrow-right');
+    let scrollInterval = null;
+
+    // --- Arrow visibility ---
+    function updateArrows() {
+        if (!arrowL || !arrowR) return;
+        const canScroll = container.scrollWidth > container.clientWidth;
+        arrowL.classList.toggle('visible', canScroll && container.scrollLeft > 2);
+        arrowR.classList.toggle('visible', canScroll && container.scrollLeft < container.scrollWidth - container.clientWidth - 2);
+    }
+    container.addEventListener('scroll', updateArrows);
+    requestAnimationFrame(updateArrows);
+
+    // --- Arrow hold to scroll ---
+    function startArrowScroll(dir) {
+        stopArrowScroll();
+        scrollInterval = setInterval(() => {
+            container.scrollLeft += dir * 6;
+            updateArrows();
+        }, 16);
+    }
+    function stopArrowScroll() {
+        if (scrollInterval) { clearInterval(scrollInterval); scrollInterval = null; }
+    }
+    if (arrowL) {
+        arrowL.onmousedown = (e) => { e.preventDefault(); startArrowScroll(-1); };
+        arrowL.onmouseup = stopArrowScroll;
+        arrowL.onmouseleave = stopArrowScroll;
+    }
+    if (arrowR) {
+        arrowR.onmousedown = (e) => { e.preventDefault(); startArrowScroll(1); };
+        arrowR.onmouseup = stopArrowScroll;
+        arrowR.onmouseleave = stopArrowScroll;
+    }
+
+    // --- Drag to scroll (grab) ---
+    let isDragging = false;
+    let startX = 0;
+    let scrollStart = 0;
+    let hasMoved = false;
+
+    container.onmousedown = (e) => {
+        if (e.button !== 0) return;
+        isDragging = true;
+        hasMoved = false;
+        startX = e.clientX;
+        scrollStart = container.scrollLeft;
+        container.classList.add('grabbing');
+        e.preventDefault();
+    };
+    document.addEventListener('mousemove', _graveDragMove);
+    document.addEventListener('mouseup', _graveDragEnd);
+    container._graveDragMove = _graveDragMove;
+    container._graveDragEnd = _graveDragEnd;
+
+    function _graveDragMove(e) {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        if (Math.abs(dx) > 3) hasMoved = true;
+        container.scrollLeft = scrollStart - dx;
+        updateArrows();
+    }
+    function _graveDragEnd() {
+        if (!isDragging) return;
+        isDragging = false;
+        container.classList.remove('grabbing');
+    }
 }
 
 function closeGraveyard() {
@@ -1989,7 +2021,15 @@ function closeGraveyard() {
     popup.classList.remove('active');
     delete popup.dataset.owner;
     // Nettoyer les cartes du popup pour libÃ©rer le DOM
-    document.getElementById('graveyard-cards').innerHTML = '';
+    const container = document.getElementById('graveyard-cards');
+    if (container._graveDragMove) document.removeEventListener('mousemove', container._graveDragMove);
+    if (container._graveDragEnd) document.removeEventListener('mouseup', container._graveDragEnd);
+    container.innerHTML = '';
+    // Hide arrows
+    const arrowL = document.getElementById('graveyard-arrow-left');
+    const arrowR = document.getElementById('graveyard-arrow-right');
+    if (arrowL) arrowL.classList.remove('visible');
+    if (arrowR) arrowR.classList.remove('visible');
 }
 
 // === RÃ©animation : sÃ©lection de crÃ©ature au cimetiÃ¨re ===
@@ -2121,7 +2161,7 @@ document.addEventListener('click', (e) => {
     if (popup.classList.contains('active')) {
         // Ignorer les clics juste aprÃ¨s l'ouverture de la sÃ©lection (le mouseup du drop dÃ©clenche un click)
         if (popup.classList.contains('selection-mode') && Date.now() - graveyardSelectionOpenedAt < 300) return;
-        if (!popup.contains(e.target) && !e.target.closest('.grave-box')) {
+        if (!popup.contains(e.target) && !e.target.closest('.grave-box') && !e.target.closest('#card-zoom-overlay')) {
             closeGraveyard();
         }
     }
@@ -2184,14 +2224,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update slider values display
     const musicSlider = document.getElementById('musicVolume');
     const sfxSlider = document.getElementById('sfxVolume');
-    if (musicSlider) {
+    const musicValueEl = document.getElementById('musicValue');
+    const sfxValueEl = document.getElementById('sfxValue');
+    if (musicSlider && musicValueEl) {
         musicSlider.addEventListener('input', (e) => {
-            document.getElementById('musicValue').textContent = e.target.value + '%';
+            musicValueEl.textContent = e.target.value + '%';
         });
     }
-    if (sfxSlider) {
+    if (sfxSlider && sfxValueEl) {
         sfxSlider.addEventListener('input', (e) => {
-            document.getElementById('sfxValue').textContent = e.target.value + '%';
+            sfxValueEl.textContent = e.target.value + '%';
         });
     }
 });

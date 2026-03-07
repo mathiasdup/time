@@ -1697,13 +1697,15 @@ function recalcDynamicAtk(room, excludeSlots) {
                 }
 
                 // Bonus atkPerGraveyard : +1 par crÃƒÂ©ature dans le cimetiÃƒÂ¨re du joueur
+                const entraveMalus = card.entraveCounters || 0;
+
                 let graveyardBonus = 0;
                 if (card.atkPerGraveyard) {
                     graveyardBonus = graveyardCreatureCount;
                     // Also update riposte dynamically
                     const baseRip = card.baseRiposte ?? card.riposte ?? 0;
                     if (card.baseRiposte === undefined) card.baseRiposte = baseRip;
-                    card.riposte = baseRip + graveyardCreatureCount + (card.buffCounters || 0);
+                    card.riposte = baseRip + graveyardCreatureCount + (card.buffCounters || 0) - entraveMalus;
                 }
 
                 // Poison dynamique (poisonPerGraveyard / poisonEqualsTotalPoisonInPlay)
@@ -1727,21 +1729,17 @@ function recalcDynamicAtk(room, excludeSlots) {
 
                 // atkPerPoisonInPlay : ATK = nombre total de marqueurs poison en jeu
                 if (card.atkPerPoisonInPlay) {
-                    const entraveMalus = card.entraveCounters || 0;
                     card.atk = totalPoisonInPlay + bc - entraveMalus - poisonedAuraMalus;
                     continue;
                 }
 
                 // statsPerPoisonInPlay : ATK + DEF = total poison en jeu
                 if (card.statsPerPoisonInPlay) {
-                    const entraveMalus = card.entraveCounters || 0;
                     card.atk = totalPoisonInPlay + bc - entraveMalus - poisonedAuraMalus;
-                    card.riposte = totalPoisonInPlay + bc;
+                    card.riposte = totalPoisonInPlay + bc - entraveMalus;
                     continue;
                 }
 
-                // Malus Entrave : -1 ATK par marqueur Entrave
-                const entraveMalus = card.entraveCounters || 0;
 
                 const sab = card.spellAtkBuff || 0;
                 // V2 : Zdejebel aura Ã¢â‚¬â€ +1 ATK par Zdejebel si baseAtk === 1
@@ -1754,6 +1752,12 @@ function recalcDynamicAtk(room, excludeSlots) {
                     card.atk = base + sab + (card.tempAtkBoost || 0) + enhance + bt + pw + sas + adjBonus + graveyardBonus + bc + zdj - entraveMalus - poisonedAuraMalus;
                 } else if (adjBonus > 0 || enhance > 0 || bt > 0 || card.atk !== base + (card.tempAtkBoost || 0)) {
                     card.atk = base + (card.tempAtkBoost || 0) + enhance + bt + adjBonus - poisonedAuraMalus;
+                }
+                // Malus Entrave sur riposte (recalcul idempotent depuis baseRiposte)
+                if (entraveMalus > 0) {
+                    const baseRip = card.baseRiposte ?? card.riposte ?? card.baseAtk ?? card.atk;
+                    if (card.baseRiposte === undefined) card.baseRiposte = baseRip;
+                    card.riposte = Math.max(0, baseRip + (card.buffCounters || 0) - entraveMalus);
                 }
                 // Synchroniser ownerAtk pendant la phase de rÃƒÂ©vÃƒÂ©lation
                 if (card.ownerAtk !== undefined) card.ownerAtk = card.atk;
@@ -4232,6 +4236,23 @@ async function startResolution(room) {
             if (placesP2[i]) {
                 const a = placesP2[i];
                 unrevealed[a.playerNum].delete(`${a.row},${a.col}`);
+            }
+            // Apply deferred selfPoisonOnSummon now that the card is revealed
+            for (const a of [placesP1[i], placesP2[i]]) {
+                if (!a) continue;
+                const card = room.gameState.players[a.playerNum].field[a.row][a.col];
+                if (card && card._pendingSelfPoison) {
+                    card.poisonCounters = (card.poisonCounters || 0) + card._pendingSelfPoison;
+                    delete card._pendingSelfPoison;
+                }
+                if (card && card._pendingTrepasBuff) {
+                    const bc = card._pendingTrepasBuff;
+                    card.buffCounters = (card.buffCounters || 0) + bc;
+                    card.hp += bc;
+                    card.currentHp += bc;
+                    card.riposte = (card.riposte || 0) + bc;
+                    delete card._pendingTrepasBuff;
+                }
             }
             recalcDynamicAtk(room, unrevealed);
             emitStateToBoth(room);
@@ -8100,9 +8121,11 @@ io.on('connection', (socket) => {
             movedThisTurn: false
         };
         if (card.isBuilding) placed.atk = 0;
-        placed.baseAtk = placed.baseAtk ?? placed.atk;
-        placed.baseHp = placed.baseHp ?? placed.hp;
-        placed.baseRiposte = placed.baseRiposte ?? placed.riposte ?? placed.atk;
+        // Use template stats for base values (patchHandCard may have mutated card.atk/riposte)
+        const _tpl = CardByIdMap.get(placed.id);
+        placed.baseAtk = _tpl ? _tpl.atk : (placed.baseAtk ?? placed.atk);
+        placed.baseHp = _tpl ? _tpl.hp : (placed.baseHp ?? placed.hp);
+        placed.baseRiposte = _tpl ? (_tpl.riposte ?? _tpl.atk) : (placed.baseRiposte ?? placed.riposte ?? placed.atk);
         if (placed.abilities?.includes('protection')) placed.hasProtection = true;
         if (placed.abilities?.includes('camouflage')) placed.hasCamouflage = true;
         if (placed.abilities?.includes('untargetable')) placed.hasUntargetable = true;
@@ -8122,20 +8145,18 @@ io.on('connection', (socket) => {
         }
 
         // Trepas : buff conditionnel si 3+ creatures au cimetiere
+        // Deferred to revelation phase for visual clarity
         if (placed.trepasBuffCounters && placed.abilities?.includes('trepas')) {
             const graveyardCreatureCount = (player.graveyard || []).filter(c => c.type === 'creature').length;
             if (graveyardCreatureCount >= 3) {
-                const bc = placed.trepasBuffCounters;
-                placed.buffCounters = (placed.buffCounters || 0) + bc;
-                placed.hp += bc;
-                placed.currentHp += bc;
-                placed.riposte = (placed.riposte || 0) + bc;
+                placed._pendingTrepasBuff = placed.trepasBuffCounters;
             }
         }
 
         // Self-poison on summon (ex: Rat geant pustuleux)
+        // Deferred to revelation phase for visual clarity
         if (placed.selfPoisonOnSummon) {
-            placed.poisonCounters = (placed.poisonCounters || 0) + placed.selfPoisonOnSummon;
+            placed._pendingSelfPoison = placed.selfPoisonOnSummon;
         }
 
         // Recalculer les ATK dynamiques (ex: Lance gobelin compte les gobelins)

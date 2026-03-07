@@ -4,7 +4,7 @@
         /* Popup cimetiÃ¨re - style panneau bronze */
         .graveyard-popup {
             position: fixed;
-            bottom: 130px;
+            bottom: 180px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 500;
@@ -81,28 +81,57 @@
             flex: 1;
         }
 
+        .graveyard-cards-wrapper {
+            position: relative;
+        }
         .graveyard-cards {
             display: flex;
             gap: 10px;
             overflow-x: auto;
             padding: 20px 25px 14px;
             min-height: 140px;
-            scrollbar-width: auto;
-            scrollbar-color: rgba(196, 184, 150, 0.5) rgba(0, 0, 0, 0.4);
+            scrollbar-width: none;
+            cursor: grab;
         }
-        .graveyard-cards::-webkit-scrollbar { height: 14px; }
-        .graveyard-cards::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 7px;
-            border: 1px solid rgba(139, 115, 85, 0.25);
+        .graveyard-cards::-webkit-scrollbar { display: none; }
+        .graveyard-cards.grabbing { cursor: grabbing; }
+        .graveyard-arrow {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 64px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
         }
-        .graveyard-cards::-webkit-scrollbar-thumb {
-            background: linear-gradient(180deg, rgba(196, 184, 150, 0.5) 0%, rgba(139, 115, 85, 0.5) 100%);
-            border-radius: 7px;
-            border: 2px solid rgba(0, 0, 0, 0.3);
+        .graveyard-arrow.visible {
+            opacity: 1;
+            pointer-events: auto;
         }
-        .graveyard-cards::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(180deg, rgba(196, 184, 150, 0.7) 0%, rgba(139, 115, 85, 0.7) 100%);
+        .graveyard-arrow-left {
+            left: 0;
+            background: linear-gradient(to right, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.4) 60%, transparent 100%);
+            border-radius: 16px 0 0 16px;
+        }
+        .graveyard-arrow-right {
+            right: 0;
+            background: linear-gradient(to left, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.4) 60%, transparent 100%);
+            border-radius: 0 16px 16px 0;
+        }
+        .graveyard-arrow svg {
+            width: 48px;
+            height: 80px;
+            fill: rgba(196, 184, 150, 0.5);
+            stroke: none;
+            transition: fill 0.15s ease;
+        }
+        .graveyard-arrow:hover svg {
+            fill: rgba(212, 196, 168, 0.8);
         }
         .graveyard-cards .card {
             flex-shrink: 0;
@@ -887,12 +916,14 @@
 
         /* Sorts engagÃ©s dans la main (jouÃ©s pendant la planification) */
         .committed-spell {
-            filter: grayscale(100%) brightness(0.7);
             pointer-events: auto;
             position: relative;
+        }
+        .committed-spell > *:not(.card-glow-canvas) {
+            filter: grayscale(100%) brightness(0.7);
             transition: filter 0.2s;
         }
-        .committed-spell:hover {
+        .committed-spell:hover > *:not(.card-glow-canvas) {
             filter: grayscale(100%) brightness(0.85);
         }
         .committed-spell::before {

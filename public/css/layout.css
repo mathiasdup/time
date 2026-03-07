@@ -969,10 +969,13 @@
         }
         .end-turn-btn.waiting .end-turn-text,
         .end-turn-btn.waiting .end-turn-timer,
-        .end-turn-btn.waiting .end-turn-phase {
+        .end-turn-btn.waiting .end-turn-phase,
+        .end-turn-btn.resolving:not(.has-phase) .end-turn-text,
+        .end-turn-btn.resolving:not(.has-phase) .end-turn-timer {
             display: none;
         }
-        .end-turn-btn.waiting .end-turn-hourglass {
+        .end-turn-btn.waiting .end-turn-hourglass,
+        .end-turn-btn.resolving:not(.has-phase) .end-turn-hourglass {
             display: block;
             animation: hourglassSpin 3s ease-in-out infinite;
         }
@@ -1290,7 +1293,6 @@
             position: absolute;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.15);
             color: #fff;
             padding: 5px 10px;
             border-radius: 4px;
@@ -1298,14 +1300,15 @@
             font-weight: bold;
             white-space: nowrap;
             opacity: 0;
+            visibility: hidden;
             pointer-events: none;
-            transition: opacity 0.2s ease;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
             z-index: 100;
             background: rgba(0, 0, 0, 0.75);
         }
         .deck-tooltip {
-            bottom: 100%;
-            margin-bottom: 8px;
+            top: 100%;
+            margin-top: 8px;
         }
         .grave-tooltip {
             bottom: 100%;
@@ -1333,6 +1336,7 @@
         .deck-box:hover .deck-tooltip,
         .grave-box:hover .grave-tooltip {
             opacity: 1;
+            visibility: visible;
         }
         /* Cartes empilées style Magic Arena avec effet 3D */
         .deck-card-layer {

@@ -1,0 +1,763 @@
+[HP-WATCHDOG] Loaded — auto-hooks render(). Use HpWatchdog.report() to see issues.
+game-globals.js:48 [HP-MUTOBS] Watching 2 hero-hp-number elements
+card-flash-watchdog.js:285 [CARD-FLASH-WATCHDOG] Waiting for game to start (watching #battlefield)...
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+card-flash-watchdog.js:269 [CARD-FLASH-WATCHDOG] Watching 16 card slots, 8 trap slots
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: Object
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: Object
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: Object
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: Object
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 402180ms ↓ hero-me: 20 -> 18  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 404882ms ↓ opp-1-1: 3 -> 1  [visualDmg:impact] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: Object
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: Object
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+card-flash-watchdog.js:134 [CARD-FLASH] ⚡ FLASH @opp-3-1: card removed then re-added in 2828ms (name: "Serpent d'émeraude", uid: 95018-22)
+  removed by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  re-added by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  removeLocked: true, addLocked: true
+_onCardSlotMutation @ card-flash-watchdog.js:134Understand this warning
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:556 [SPECTRE-DBG] queue reanimate: slot locked me-2-0 queueLen: 0
+game-animations.js?v=20260302-hpfix3:7545 [SPECTRE-DBG] reanimate handler START Object
+game-animations.js?v=20260302-hpfix3:7581 [SPECTRE-DBG] reanimate handler END Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 18     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 503537ms ↓ hero-me: 18 -> 12  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 506232ms ↓ opp-1-1: 1 -> -1  [visualDmg:impact] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked opp-1-1
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 507974ms ↑ opp-2-1: 2 -> 3  [renderField] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-1-0
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+card-flash-watchdog.js:89 [CARD-FLASH] 🟥 card-removed @me-1-0 "Arcaniste maladroit" uid:05234-18 (locked: false)
+  _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-2-0
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+card-flash-watchdog.js:89 [CARD-FLASH] 🟥 card-removed @me-2-0 "Liche blasteuse" uid:685316-5 (locked: false)
+  _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+game-animations.js?v=20260302-hpfix3:3034 [SPECTRE-DBG] death anim END: slot unlocked me-2-0
+game-globals.js:21 [HP] 516591ms ↓ opp-3-1: 4 -> 3  [renderField] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: Object
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: Object
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 573747ms ↓ me-2-1: 2 -> 1  [visualDmg:impact] Object
+game-globals.js:21 [HP] 574426ms ↓ opp-2-1: 3 -> 1  [visualDmg:impact] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 577453ms ↑ opp-2-1: 1 -> 2  [renderField] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 578324ms ↓ hero-me: 12 -> 8  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 579933ms ↓ opp-3-1: 3 -> 2  [poison:after] Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: Object
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: {found: true, connected: true, cls: 'opp-card-back', sourceIndex: 4, resolvedEl: true, …}
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: {willLift: true}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: {elConnected: true, elVis: '', handVisible: 6}
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: {hasCard: true, cls: 'opp-card-back', w: '', vis: 'hidden', parentChildren: 6}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 5, hiddenCards: 1}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:3808 [OPP-SPELL] beforeLift: {mode: 'visible-index', elClass: 'opp-card-back', spellName: 'Vapeur mortelle', handVisible: 5}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=4 target=4
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: {hasCard: true, cls: 'opp-card-back', w: '', vis: 'hidden', parentChildren: 5}
+game-animations.js?v=20260302-hpfix3:3822 [OPP-SPELL] afterHide: {handVisible: 4}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 4, hiddenCards: 1}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 636700ms ↑ opp-2-1: 2 -> 5  [renderField] {card: "Serpent d'émeraude", uid: '018-22'}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 20     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 640094ms ↓ hero-opp: 20 -> 19  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 19     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-0-1
+game-globals.js:21 [HP] 641714ms ↓ me-0-1: 2 -> 0  [poison:after] {card: 'Fossoyeur méthodique'}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 19     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+card-flash-watchdog.js:89 [CARD-FLASH] 🟥 card-removed @me-0-1 "Fossoyeur méthodique" uid:57315-23 (locked: false)
+  _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+hp-watchdog.js:164 [HP-WATCHDOG] Luciole bicolore @opp-3-0: DOM=1 STATE=2 (diff -1) phase=resolution turn=6
+_postRenderCheck @ hp-watchdog.js:164
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+scheduleCheck @ hp-watchdog.js:184
+RenderLock.unlock @ hp-watchdog.js:257
+delete @ render-lock.js:171
+handlePoisonDamage @ game-animations.js?v=20260302-hpfix3:2024
+await in handlePoisonDamage
+(anonymous) @ game-animations.js?v=20260302-hpfix3:1199
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1199
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+queueAnimation @ game-animations.js?v=20260302-hpfix3:923
+handleAnimation @ game-core.js?v=20260302-hpfix3:1343
+(anonymous) @ game-core.js?v=20260302-hpfix3:878
+Emitter.emit @ index.js:136
+emitEvent @ socket.js:552
+onevent @ socket.js:539
+onpacket @ socket.js:507
+Emitter.emit @ index.js:136
+(anonymous) @ manager.js:217
+Promise.then
+(anonymous) @ globals.js:4
+ondecoded @ manager.js:216
+Emitter.emit @ index.js:136
+add @ index.js:142
+ondata @ manager.js:203
+Emitter.emit @ index.js:136
+_onPacket @ socket.js:259
+Emitter.emit @ index.js:136
+onPacket @ transport.js:99
+onData @ transport.js:91
+_proto.addEventListeners.ws.onmessage @ websocket.js:48Understand this warning
+hp-watchdog.js:170 [HP-WATCHDOG] ATK Luciole bicolore @opp-3-0: DOM=1 STATE=2
+_postRenderCheck @ hp-watchdog.js:170
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+scheduleCheck @ hp-watchdog.js:184
+RenderLock.unlock @ hp-watchdog.js:257
+delete @ render-lock.js:171
+handlePoisonDamage @ game-animations.js?v=20260302-hpfix3:2024
+await in handlePoisonDamage
+(anonymous) @ game-animations.js?v=20260302-hpfix3:1199
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1199
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+queueAnimation @ game-animations.js?v=20260302-hpfix3:923
+handleAnimation @ game-core.js?v=20260302-hpfix3:1343
+(anonymous) @ game-core.js?v=20260302-hpfix3:878
+Emitter.emit @ index.js:136
+emitEvent @ socket.js:552
+onevent @ socket.js:539
+onpacket @ socket.js:507
+Emitter.emit @ index.js:136
+(anonymous) @ manager.js:217
+Promise.then
+(anonymous) @ globals.js:4
+ondecoded @ manager.js:216
+Emitter.emit @ index.js:136
+add @ index.js:142
+ondata @ manager.js:203
+Emitter.emit @ index.js:136
+_onPacket @ socket.js:259
+Emitter.emit @ index.js:136
+onPacket @ transport.js:99
+onData @ transport.js:91
+_proto.addEventListeners.ws.onmessage @ websocket.js:48Understand this warning
+game-globals.js:21 [HP] 641755ms ↑ opp-3-0: 1 -> 2  [renderField] {card: 'Luciole bicolore', uid: '9403-0'}
+game-globals.js:21 [HP] 644458ms ↓ me-1-1: 4 -> 0  [visualDmg:impact] {card: 'Évêque corrompu', damage: 4}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-1-1
+game-globals.js:21 [HP] 645142ms ↓ opp-1-1: 6 -> 3  [visualDmg:impact] {card: 'Immondice des tréfonds', damage: 3}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 19     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:498 [EVEQUE-DBG] queue onDeathDmg {target: 'opp', _displayHpBefore: 19, lockSet: true, stateMe: 8, stateOpp: 19}
+game-animations.js?v=20260302-hpfix3:648 [EVEQUE-DBG] queue heroHeal {owner: 'me', amount: 4, _preHeroHp: 8, stateMe: 8, stateOpp: 19, …}
+game-animations.js?v=20260302-hpfix3:2129 [EVEQUE-DBG] handleOnDeathDmg START {owner: 'opp', damage: 3, domHp: 19, hpBefore: 19, hpAfter: 16, …}
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 19     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 647756ms ↓ hero-opp: 19 -> 16  [onDeathDmg:after] 
+game-animations.js?v=20260302-hpfix3:2157 [EVEQUE-DBG] handleOnDeathDmg END {owner: 'opp', domHp: '16', guardSet: true}
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 16     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked opp-1-1
+game-animations.js?v=20260302-hpfix3:4279 [EVEQUE-DBG] handleHeroHeal START {owner: 'me', amount: 4, _preHeroHp: 8, stateHp: 12, domHp: '8', …}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 8     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 648825ms ↑ hero-me: 8 -> 12  [heroHeal:after] 
+game-animations.js?v=20260302-hpfix3:4309 [EVEQUE-DBG] handleHeroHeal END {owner: 'me', finalHp: 12, preHp: 8, amount: 4, domHp: '12'}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:1263 [EVEQUE-DBG] post-heroHeal render() {stateMe: 12, stateOpp: 16, domMe: '12', domOpp: '16', lockedMe: false, …}
+game-animations.js?v=20260302-hpfix3:498 [EVEQUE-DBG] queue onDeathDmg {target: 'me', _displayHpBefore: 12, lockSet: true, stateMe: 12, stateOpp: 16}
+game-globals.js:21 [HP] 649928ms ↑ opp-3-0: 2 -> 3  [renderField] {card: 'Luciole bicolore', uid: '9403-0'}
+game-globals.js:21 [HP] 650238ms ↓ opp-1-1: 3 -> 0  [poison:after] {card: 'Immondice des tréfonds'}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+card-flash-watchdog.js:89 [CARD-FLASH] 🟥 card-removed @opp-1-1 "Immondice des tréfonds" uid:62974-11 (locked: false)
+  _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+game-animations.js?v=20260302-hpfix3:2129 [EVEQUE-DBG] handleOnDeathDmg START {owner: 'me', damage: 3, domHp: 12, hpBefore: 12, hpAfter: 9, …}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 12     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-2-1
+game-globals.js:21 [HP] 651981ms ↓ hero-me: 12 -> 9  [onDeathDmg:after] 
+game-animations.js?v=20260302-hpfix3:2157 [EVEQUE-DBG] handleOnDeathDmg END {owner: 'me', domHp: '9', guardSet: true}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 9     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 653848ms ↓ opp-2-1: 5 -> 3  [visualDmg:impact] {card: "Serpent d'émeraude", damage: 2}
+game-globals.js:21 [HP] 653849ms ↓ me-2-1: 1 -> -2  [visualDmg:impact] {card: 'Liche affaiblie', damage: 3}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-3-1
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked opp-3-1
+game-globals.js:21 [HP] 656304ms ↑ opp-2-1: 3 -> 6  [renderField] {card: "Serpent d'émeraude", uid: '018-22'}
+game-animations.js?v=20260302-hpfix3:556 [SPECTRE-DBG] queue reanimate: slot locked opp-3-1 queueLen: 2
+game-globals.js:21 [HP] 657423ms ↓ opp-3-1: 2 -> -2  [visualDmg:impact] {card: 'Titan des charniers', damage: 4}
+game-globals.js:21 [HP] 657423ms ↓ me-3-1: 3 -> -1  [visualDmg:impact] {card: 'Assassin de la cour', damage: 4}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+card-flash-watchdog.js:134 [CARD-FLASH] ⚡ FLASH @opp-3-1: card removed then re-added in 1127ms (name: "Titan des charniers", uid: 57716-16)
+  removed by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  re-added by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  removeLocked: true, addLocked: true
+_onCardSlotMutation @ card-flash-watchdog.js:134
+(anonymous) @ card-flash-watchdog.js:248
+childList
+(anonymous) @ game-animations.js?v=20260302-hpfix3:7455
+animateTrapSummon @ game-animations.js?v=20260302-hpfix3:7423
+executeAnimationAsync @ game-animations.js?v=20260302-hpfix3:1616
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1380
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1017
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1017
+await in processAnimationQueue
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1508Understand this warning
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: {found: true, connected: true, cls: 'opp-card-back', sourceIndex: 0, resolvedEl: true, …}
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: {willLift: true}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=4 target=4
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: {elConnected: true, elVis: '', handVisible: 5}
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: {hasCard: true, cls: 'opp-card-back', w: '', vis: 'hidden', parentChildren: 5}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 4, hiddenCards: 1}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked opp-2-1
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+card-flash-watchdog.js:134 [CARD-FLASH] ⚡ FLASH @opp-2-1: card removed then re-added in 1113ms (name: "Serpent d'émeraude", uid: 95018-22)
+  removed by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  re-added by: _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+  removeLocked: true, addLocked: false
+_onCardSlotMutation @ card-flash-watchdog.js:134
+(anonymous) @ card-flash-watchdog.js:248
+childList
+renderField @ game-render.js?v=20260302-hpfix3:927
+render @ game-render.js?v=20260302-hpfix3:384
+window.render @ hp-watchdog.js:234
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:965
+processAnimationQueue @ game-animations.js?v=20260302-hpfix3:1017
+await in processAnimationQueue
+(anonymous) @ game-animations.js?v=20260302-hpfix3:918
+setTimeout
+queueAnimation @ game-animations.js?v=20260302-hpfix3:915
+handleAnimation @ game-core.js?v=20260302-hpfix3:1343
+(anonymous) @ game-core.js?v=20260302-hpfix3:878
+Emitter.emit @ index.js:136
+emitEvent @ socket.js:552
+onevent @ socket.js:539
+onpacket @ socket.js:507
+Emitter.emit @ index.js:136
+(anonymous) @ manager.js:217
+Promise.then
+(anonymous) @ globals.js:4
+ondecoded @ manager.js:216
+Emitter.emit @ index.js:136
+add @ index.js:142
+ondata @ manager.js:203
+Emitter.emit @ index.js:136
+_onPacket @ socket.js:259
+Emitter.emit @ index.js:136
+onPacket @ transport.js:99
+onData @ transport.js:91
+_proto.addEventListeners.ws.onmessage @ websocket.js:48Understand this warning
+card-flash-watchdog.js:89 [CARD-FLASH] 🟥 card-removed @opp-2-1 "Serpent d'émeraude" uid:95018-22 (locked: false)
+  _onCardSlotMutation (watchdog.js:50) ← MutationObserver.<anonymous> (watchdog.js:248)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:21 [HP] 719000ms ↓ me-3-0: 4 -> 1  [visualDmg:impact] {card: "Chevaucheur de l'ombre", damage: 3}
+game-globals.js:21 [HP] 719681ms ↓ opp-3-0: 3 -> 1  [visualDmg:impact] {card: 'Luciole bicolore', damage: 2}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+hp-watchdog.js:164 [HP-WATCHDOG] Luciole bicolore @opp-3-0: DOM=1 STATE=3 (diff -2) phase=resolution turn=7
+_postRenderCheck @ hp-watchdog.js:164
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+(anonymous) @ hp-watchdog.js:187
+requestAnimationFrame
+scheduleCheck @ hp-watchdog.js:184
+window.renderDelta @ hp-watchdog.js:245
+(anonymous) @ game-core.js?v=20260302-hpfix3:83
+requestAnimationFrame
+_renderFromStateUpdate @ game-core.js?v=20260302-hpfix3:80
+(anonymous) @ game-core.js?v=20260302-hpfix3:666
+Emitter.emit @ index.js:136
+emitEvent @ socket.js:552
+onevent @ socket.js:539
+onpacket @ socket.js:507
+Emitter.emit @ index.js:136
+(anonymous) @ manager.js:217
+Promise.then
+(anonymous) @ globals.js:4
+ondecoded @ manager.js:216
+Emitter.emit @ index.js:136
+add @ index.js:142
+ondata @ manager.js:203
+Emitter.emit @ index.js:136
+_onPacket @ socket.js:259
+Emitter.emit @ index.js:136
+onPacket @ transport.js:99
+onData @ transport.js:91
+_proto.addEventListeners.ws.onmessage @ websocket.js:48Understand this warning
+game-globals.js:21 [HP] 722950ms ↑ opp-3-0: 1 -> 3  [renderField] {card: 'Luciole bicolore', uid: '9403-0'}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 9     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 723647ms ↓ hero-me: 9 -> 5  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 5     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:556 [SPECTRE-DBG] queue reanimate: slot locked me-1-1 queueLen: 0
+game-animations.js?v=20260302-hpfix3:7545 [SPECTRE-DBG] reanimate handler START {slotKey: 'me-1-1', card: 'Évêque corrompu'}
+game-animations.js?v=20260302-hpfix3:7581 [SPECTRE-DBG] reanimate handler END {slotKey: 'me-1-1', arrived: true}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-globals.js:21 [HP] 780971ms ↓ me-1-1: 4 -> 1  [visualDmg:impact] {card: 'Évêque corrompu', damage: 3}
+game-globals.js:21 [HP] 781654ms ↓ opp-1-1: 4 -> 1  [visualDmg:impact] {card: 'Évêque corrompu', damage: 3}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-3-0
+game-globals.js:21 [HP] 783293ms ↓ opp-3-0: 3 -> 1  [visualDmg:impact] {card: 'Luciole bicolore', damage: 2}
+game-globals.js:21 [HP] 783293ms ↓ me-3-0: 1 -> -2  [visualDmg:impact] {card: "Chevaucheur de l'ombre", damage: 3}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-globals.js:21 [HP] 784429ms ↑ opp-3-0: 1 -> 3  [renderField] {card: 'Luciole bicolore', uid: '9403-0'}
+game-globals.js:21 [HP] 786505ms ↓ me-3-1: 4 -> 0  [visualDmg:impact] {card: 'Blaireau contaminé', damage: 4}
+game-globals.js:21 [HP] 787190ms ↓ opp-3-1: 4 -> 0  [visualDmg:impact] {card: 'Squelette colossal', damage: 4}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-3-1
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked opp-3-1
+game-animations.js?v=20260302-hpfix3:3034 [SPECTRE-DBG] death anim END: slot unlocked opp-3-1
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 6, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:6788 [OPP-FLY] sourceEl: {found: true, connected: true, cls: 'opp-card-back', sourceIndex: 4, resolvedEl: true, …}
+game-animations.js?v=20260302-hpfix3:6871 [OPP-FLY] liftDecision: {willLift: true}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 6, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=5 target=5
+game-animations.js?v=20260302-hpfix3:6796 [OPP-FLY] afterLift: {elConnected: true, elVis: '', handVisible: 6}
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: {hasCard: true, cls: 'opp-card-back', w: '', vis: 'hidden', parentChildren: 6}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 6, visibleCards: 5, hiddenCards: 1}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 5, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:3808 [OPP-SPELL] beforeLift: {mode: 'visible-index', elClass: 'opp-card-back', spellName: 'Coup de poignard', handVisible: 5}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 5, hiddenCards: 0}
+game-render.js?v=20260302-hpfix3:2706 [RENDER-OPP] skip resolution-shrink: liftingCards=1 adjustedOld=4 target=4
+game-animations.js?v=20260302-hpfix3:8 [GAP-CLOSE] entry: {hasCard: true, cls: 'opp-card-back', w: '', vis: 'hidden', parentChildren: 5}
+game-animations.js?v=20260302-hpfix3:3822 [OPP-SPELL] afterHide: {handVisible: 4}
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 5, visibleCards: 4, hiddenCards: 1}
+game-animations.js?v=20260302-hpfix3:540 [SPECTRE-DBG] queue death: slot locked me-1-1
+game-animations.js?v=20260302-hpfix3:498 [EVEQUE-DBG] queue onDeathDmg {target: 'opp', _displayHpBefore: 16, lockSet: true, stateMe: 5, stateOpp: 16}
+game-animations.js?v=20260302-hpfix3:648 [EVEQUE-DBG] queue heroHeal {owner: 'me', amount: 4, _preHeroHp: 5, stateMe: 5, stateOpp: 16, …}
+game-animations.js?v=20260302-hpfix3:498 [EVEQUE-DBG] queue onDeathDmg {target: 'me', _displayHpBefore: 5, lockSet: true, stateMe: 5, stateOpp: 16}
+game-animations.js?v=20260302-hpfix3:3034 [SPECTRE-DBG] death anim END: slot unlocked me-1-1
+game-animations.js?v=20260302-hpfix3:2129 [EVEQUE-DBG] handleOnDeathDmg START {owner: 'opp', damage: 3, domHp: 16, hpBefore: 16, hpAfter: 13, …}
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 16     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 853697ms ↓ hero-opp: 16 -> 13  [onDeathDmg:after] 
+game-animations.js?v=20260302-hpfix3:2157 [EVEQUE-DBG] handleOnDeathDmg END {owner: 'opp', domHp: '13', guardSet: true}
+game-globals.js:42 [HP-MUTOBS] hero-opp changed to: 13     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-animations.js?v=20260302-hpfix3:4279 [EVEQUE-DBG] handleHeroHeal START {owner: 'me', amount: 4, _preHeroHp: 5, stateHp: 3, domHp: '5', …}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 5     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 854782ms ↑ hero-me: 5 -> 9  [heroHeal:after] 
+game-animations.js?v=20260302-hpfix3:4309 [EVEQUE-DBG] handleHeroHeal END {owner: 'me', finalHp: 9, preHp: 5, amount: 4, domHp: '9'}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 9     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-animations.js?v=20260302-hpfix3:1263 [EVEQUE-DBG] post-heroHeal render() {stateMe: 3, stateOpp: 13, domMe: '9', domOpp: '13', lockedMe: true, …}
+game-animations.js?v=20260302-hpfix3:2129 [EVEQUE-DBG] handleOnDeathDmg START {owner: 'me', damage: 6, domHp: 9, hpBefore: 9, hpAfter: 3, …}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 9     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 855396ms ↓ hero-me: 9 -> 3  [onDeathDmg:after] 
+game-animations.js?v=20260302-hpfix3:2157 [EVEQUE-DBG] handleOnDeathDmg END {owner: 'me', domHp: '3', guardSet: true}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 3     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-core.js?v=20260302-hpfix3:977 [VIS-TRACE] auto-save failed on gameOver {"ok":false,"skipped":"empty"}
+(anonymous) @ game-core.js?v=20260302-hpfix3:977
+await in (anonymous)
+Emitter.emit @ index.js:136
+emitEvent @ socket.js:552
+onevent @ socket.js:539
+onpacket @ socket.js:507
+Emitter.emit @ index.js:136
+(anonymous) @ manager.js:217
+Promise.then
+(anonymous) @ globals.js:4
+ondecoded @ manager.js:216
+Emitter.emit @ index.js:136
+add @ index.js:142
+ondata @ manager.js:203
+Emitter.emit @ index.js:136
+_onPacket @ socket.js:259
+Emitter.emit @ index.js:136
+onPacket @ transport.js:99
+onData @ transport.js:91
+_proto.addEventListeners.ws.onmessage @ websocket.js:48Understand this warning
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 3     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-globals.js:21 [HP] 857717ms ↓ hero-me: 3 -> 0  [heroHit:after] 
+game-globals.js:42 [HP-MUTOBS] hero-me changed to: 0     at http://localhost:3000/js/game-globals.js:42:82 <-     at Array.forEach (<anonymous>) <-     at MutationObserver.<anonymous> (http://localhost:3000/js/game-globals.js:38:23)
+game-render.js?v=20260302-hpfix3:2461 [RENDER-OPP] entry: {target: 4, oppHandArg: 'has oppHand', domChildren: 4, visibleCards: 4, hiddenCards: 0}

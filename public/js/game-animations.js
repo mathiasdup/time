@@ -1,9 +1,17 @@
 ﻿// ==================== SYSTÃƒÆ’Ã‹â€ ME D'ANIMATIONS DU JEU ====================
 // File d'attente, handlers combat/mort/sort/piÃƒÆ’Ã‚Â¨ge, effets visuels
 
+// === Cached hand panel refs ===
+let _myHandPanel = null, _oppHandPanel = null;
+function _getHandPanel(id) {
+    if (id === 'my-hand') return (_myHandPanel && _myHandPanel.isConnected) ? _myHandPanel : (_myHandPanel = document.getElementById('my-hand'));
+    if (id === 'opp-hand') return (_oppHandPanel && _oppHandPanel.isConnected) ? _oppHandPanel : (_oppHandPanel = document.getElementById('opp-hand'));
+    return document.getElementById(id);
+}
+
 // === DEBUG: Snapshot DOM main adverse ===
 function _oppHandDomSnap(label) {
-    var p = document.getElementById("opp-hand");
+    var p = _getHandPanel("opp-hand");
     if (!p) { console.log("[OPP-HAND-DOM] " + label + " | panel=null"); return; }
     var kids = Array.from(p.children);
     var details = kids.map(function(el, i) {
@@ -162,7 +170,7 @@ const savedRevealedCardRects = new Map();
 
 function saveRevealedCardPositions() {
     savedRevealedCardRects.clear();
-    const handPanel = document.getElementById('opp-hand');
+    const handPanel = _getHandPanel('opp-hand');
     if (!handPanel) return;
     const allCards = handPanel.querySelectorAll('.opp-card-back');
     const revealedCards = handPanel.querySelectorAll('.opp-revealed[data-uid]');
@@ -239,7 +247,7 @@ function _debugSlotState(owner, row, col) {
     const slotKey = `${owner}-${row}-${col}`;
     const slot = typeof getSlot === 'function' ? getSlot(owner, row, col) : null;
     const cardEl = slot?.querySelector('.card') || null;
-    const hpEl = cardEl?.querySelector('.arena-armor') || cardEl?.querySelector('.arena-hp') || cardEl?.querySelector('.img-hp');
+    const hpEl = (cardEl ? (cardEl._cHp || (cardEl._cHp = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp')))) : null);
     const domHpRaw = hpEl ? parseInt(hpEl.textContent || '', 10) : NaN;
     const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
     const side = owner === 'me' ? 'me' : 'opponent';
@@ -530,7 +538,7 @@ function queueAnimation(type, data) {
     if (type === 'buildingDiscard' && data.handIndex !== undefined) {
         const bdIsMine = data.player === myNum;
         const handId = bdIsMine ? 'my-hand' : 'opp-hand';
-        const handContainer = document.getElementById(handId);
+        const handContainer = _getHandPanel(handId);
         if (handContainer) {
             const selector = bdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
             const cardEls = handContainer.querySelectorAll(selector);
@@ -544,7 +552,7 @@ function queueAnimation(type, data) {
     if (type === 'massDiscard' && data.cards) {
         const mdIsMine = data.player === myNum;
         const handId = mdIsMine ? 'my-hand' : 'opp-hand';
-        const handContainer = document.getElementById(handId);
+        const handContainer = _getHandPanel(handId);
         if (handContainer) {
             const selector = mdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
             const cardEls = handContainer.querySelectorAll(selector);
@@ -607,7 +615,7 @@ function queueAnimation(type, data) {
         // Sans ÃƒÆ’Ã‚Â§a, dans les parties longues avec beaucoup d'animations dans la queue,
         // le state arrive et render() montre la carte en main avant que bounce ne dÃƒÆ’Ã‚Â©marre.
         if (!data.toGraveyard && !pendingBounce) {
-            const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            const handPanel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
             const startHandCount = handPanel
                 ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
                 : 0;
@@ -1717,25 +1725,30 @@ async function executeAnimationAsync(type, data) {
             if (baSlot) {
                 const rect = baSlot.getBoundingClientRect();
                 CombatVFX.createBuffEffect(rect.left + rect.width / 2, rect.top + rect.height / 2, data.atkBuff ?? 1, data.hpBuff ?? 1, rect.width, rect.height);
-                // Clear anti-flicker markers + update DOM directly for buff
+                // Clear anti-flicker markers + sync DOM to current state (absolute, no double-count)
                 const buffCardEl = baSlot.querySelector('.card');
                 if (buffCardEl) {
                     delete buffCardEl.dataset.visualDmgHp;
                     delete buffCardEl.dataset.visualDmgSetAt;
-                    const buffHpEl = buffCardEl.querySelector('.arena-armor') || buffCardEl.querySelector('.arena-hp') || buffCardEl.querySelector('.img-hp');
-                    const buffAtkEl = buffCardEl.querySelector('.arena-atk') || buffCardEl.querySelector('.img-atk');
-                    if (buffHpEl && data.hpBuff) {
-                        const oldHp = parseInt(buffHpEl.textContent || '0', 10);
-                        if (Number.isFinite(oldHp)) buffHpEl.textContent = String(oldHp + data.hpBuff);
-                    }
-                    if (buffAtkEl && data.atkBuff) {
-                        const oldAtk = parseInt(buffAtkEl.textContent || '0', 10);
-                        if (Number.isFinite(oldAtk)) buffAtkEl.textContent = String(oldAtk + data.atkBuff);
-                    }
-                    const buffRipEl = buffCardEl.querySelector('.arena-riposte');
-                    if (buffRipEl && data.hpBuff) {
-                        const oldRip = parseInt(buffRipEl.textContent || '0', 10);
-                        if (Number.isFinite(oldRip)) buffRipEl.textContent = String(oldRip + data.hpBuff);
+                    // Read authoritative values from state (already includes buff)
+                    const stateField = baOwner === 'me' ? state?.me?.field : state?.opponent?.field;
+                    const stateCard = stateField?.[data.row]?.[data.col];
+                    if (stateCard) {
+                        const buffHpEl = buffCardEl.querySelector('.arena-armor') || buffCardEl.querySelector('.arena-hp') || buffCardEl.querySelector('.img-hp');
+                        if (buffHpEl) {
+                            const newHp = stateCard.currentHp ?? stateCard.hp;
+                            if (newHp !== undefined) buffHpEl.textContent = String(newHp);
+                        }
+                        const buffAtkEl = buffCardEl.querySelector('.arena-atk') || buffCardEl.querySelector('.img-atk');
+                        if (buffAtkEl) {
+                            const newAtk = stateCard.atk;
+                            if (newAtk !== undefined) buffAtkEl.textContent = String(newAtk);
+                        }
+                        const buffRipEl = buffCardEl.querySelector('.arena-riposte');
+                        if (buffRipEl) {
+                            const newRip = stateCard.riposte;
+                            if (newRip !== undefined) buffRipEl.textContent = String(newRip);
+                        }
                     }
                 }
             }
@@ -1753,6 +1766,9 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'phaseMessage':
             showPhaseMessage(data.text, data.type);
+            break;
+        case 'gameOver':
+            await handleGameOverAnimation(data);
             break;
     }
     if (typeof window.visTrace === 'function') {
@@ -1776,7 +1792,7 @@ async function handlePowerBuff(data) {
         return;
     }
 
-    const atkEl = cardEl.querySelector('.arena-atk') || cardEl.querySelector('.img-atk');
+    const atkEl = cardEl._cAtk || (cardEl._cAtk = cardEl.querySelector('.arena-atk') || cardEl.querySelector('.img-atk'));
     const fromAtk = data.fromAtk;
     const toAtk = fromAtk + data.amount;
 
@@ -1960,7 +1976,7 @@ async function handlePoisonDamage(data) {
     }
 
     const cardEl = slot.querySelector('.card');
-    const hpEl = cardEl?.querySelector('.arena-armor') || cardEl?.querySelector('.arena-hp') || cardEl?.querySelector('.img-hp');
+    const hpEl = (cardEl ? (cardEl._cHp || (cardEl._cHp = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp')))) : null);
     const cardUid = cardEl?.dataset?.uid || null;
 
     // Lire le HP prÃƒÆ’Ã‚Â©-poison depuis l'override ou le DOM
@@ -2274,7 +2290,7 @@ async function animateTrampleDamage(data) {
     animatingSlots.add(slotKey);
 
     // Sauvegarder les HP d'avant dans l'affichage
-    const hpEl = card.querySelector('.arena-armor') || card.querySelector('.arena-hp') || card.querySelector('.fa-hp') || card.querySelector('.img-hp');
+    const hpEl = card._cHp || (card._cHp = card.querySelector('.arena-armor') || card.querySelector('.arena-hp') || card.querySelector('.fa-hp') || card.querySelector('.img-hp'));
     if (hpEl && data.hpBefore !== undefined) {
         _traceHp(slotKey || "?", hpEl?.textContent, data.hpBefore, "trampleDmg:before", { card: data?.card?.name || data?.cardName || "?" });
         hpEl.textContent = data.hpBefore;
@@ -2516,7 +2532,7 @@ async function animateDeathTransform(data) {
  */
 async function animateDiscard(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
-    const handEl = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+    const handEl = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
     if (!handEl) {
         return;
     }
@@ -2624,8 +2640,8 @@ async function animateBurn(data) {
         graveY = gravePos.y + gtH / 2 - cardHeight / 2;
     }
     const boardRect = gameBoard.getBoundingClientRect();
-    const revealX = Math.max(0, window.innerWidth / 2 - boardRect.left - cardWidth / 2);
-    const revealY = Math.max(0, window.innerHeight / 2 - boardRect.top - cardHeight / 2 - 30);
+    const revealX = gameBoard.offsetWidth / 2 - cardWidth / 2;
+    const revealY = gameBoard.offsetHeight / 2 - cardHeight / 2;
     const deckRect = deckEl.getBoundingClientRect();
     const liftAmplitude = 30;
     const liftDeltaY = deckRect.top < (liftAmplitude + 8) ? liftAmplitude : -liftAmplitude;
@@ -3617,9 +3633,9 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     // 6. DurÃƒÆ’Ã‚Â©es des phases (pas de phase impact ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â le fly est la derniÃƒÆ’Ã‚Â¨re, comme burn)
     const materializeDuration = 500;
     const holdDuration = 2000;
-    const shrinkDuration = 300;
-    const flyDuration = 400;
-    const totalDuration = materializeDuration + holdDuration + shrinkDuration + flyDuration;
+    const exitDuration = 500;   // card shrinks + flies off-screen
+    const enterDuration = 400;  // card enters from below to graveyard
+    const totalDuration = materializeDuration + holdDuration + exitDuration + enterDuration;
 
     await new Promise(resolve => {
         const startTime = performance.now();
@@ -3641,7 +3657,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 
             const t1 = materializeDuration / totalDuration;
             const t2 = (materializeDuration + holdDuration) / totalDuration;
-            const t3 = (materializeDuration + holdDuration + shrinkDuration) / totalDuration;
+            const t3 = (materializeDuration + holdDuration + exitDuration) / totalDuration;
 
             let x, y, scaleX, scaleY, opacity, tiltDeg;
 
@@ -3672,37 +3688,37 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 tiltDeg = 0;
 
             } else if (progress <= t3) {
-                // === PHASE 3: SHRINK === swap to field card (no text)
+                // === PHASE 3: EXIT SCREEN (shrink + fly off-screen) ===
                 if (!wrapper._swappedToField) {
                     wrapper._swappedToField = true;
                     cardEl.classList.add('on-field');
-                    // Switch from zoom to width/height (eliminates zoom+scale interaction bug)
                     cardEl.style.zoom = '';
                     cardEl.style.width = '100%';
                     cardEl.style.height = '100%';
                 }
                 const p = (progress - t2) / (t3 - t2);
                 const ep = easeInOutCubic(p);
-                x = showcaseX;
+                // Exit direction: left for my spells, right for opp spells
+                var _exitX = isMine ? -cardWidth * 1.5 : window.innerWidth + cardWidth * 0.5;
+                x = showcaseX + (_exitX - showcaseX) * ep;
                 y = showcaseY;
-                scaleX = scaleY = showcaseScale + (1.0 - showcaseScale) * ep;
-                opacity = 1;
+                scaleX = scaleY = 1.0 - 0.4 * ep;  // shrink from 1.0 to 0.6 during exit
+                opacity = 1 - Math.max(0, (ep - 0.7) / 0.3);  // fade out last 30%
                 tiltDeg = 0;
 
             } else {
-                // === PHASE 4: FLY TO GRAVEYARD (reparent into gameBoard, like animateBurn) ===
+                // === PHASE 4b: ENTER FROM BELOW (reparent into gameBoard) ===
                 if (!wrapper._flyStarted && gameBoard) {
                     wrapper._flyStarted = true;
-                    var _curRect = wrapper.getBoundingClientRect();
 
-                    // Move wrapper into gameBoard (same 3D space as graveyard)
+                    // Reparent into gameBoard (invisible - card is off-screen)
                     wrapper.remove();
                     wrapper.style.position = 'absolute';
                     wrapper.style.perspective = '';
                     gameBoard.appendChild(wrapper);
                     if (perspContainer) { perspContainer.remove(); perspContainer = null; }
 
-                    // Board-local coords helper (same as animateBurn)
+                    // Board-local coords helper
                     function _getLocalPos(el) {
                         var lx = 0, ly = 0, cur = el;
                         while (cur && cur !== gameBoard) { lx += cur.offsetLeft; ly += cur.offsetTop; cur = cur.offsetParent; }
@@ -3718,7 +3734,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         _lgy = gp.y + (_gt.offsetHeight || cardHeight) / 2 - cardHeight / 2;
                     }
 
-                    // Calibrate graveScale (6 passes, uniform, like animateBurn)
+                    // Calibrate graveScale (6 passes, uniform)
                     if (_gt) {
                         var _tgt = _gt.getBoundingClientRect();
                         for (var _ci = 0; _ci < 6; _ci++) {
@@ -3735,30 +3751,21 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                         }
                     }
 
-                    // Calibrate starting position to match current visual position
-                    var _lsx = 0, _lsy = 0;
-                    wrapper.style.opacity = '0';
-                    for (var _si = 0; _si < 4; _si++) {
-                        wrapper.style.left = _lsx + 'px';
-                        wrapper.style.top = _lsy + 'px';
-                        wrapper.style.transform = 'scale(1) rotateX(' + (-graveTiltDeg) + 'deg)';
-                        var _sm = wrapper.getBoundingClientRect();
-                        _lsx += (_curRect.left + _curRect.width / 2) - (_sm.left + _sm.width / 2);
-                        _lsy += (_curRect.top + _curRect.height / 2) - (_sm.top + _sm.height / 2);
-                    }
-                    wrapper.style.opacity = '1';
+                    // Entry point: off-screen below, from the side of the graveyard
+                    var _entryX = isMine ? _lgx - gameBoard.offsetWidth * 0.3 : _lgx + gameBoard.offsetWidth * 0.3;
+                    var _entryY = _lgy + gameBoard.offsetHeight * 0.4;
 
-                    wrapper._fly = { sx: _lsx, sy: _lsy, gx: _lgx, gy: _lgy, gs: _lgs };
+                    wrapper._fly = { sx: _entryX, sy: _entryY, gx: _lgx, gy: _lgy, gs: _lgs };
                 }
 
-                var fl = wrapper._fly || { sx: 0, sy: 0, gx: 0, gy: 200, gs: 0.5 };
+                var fl = wrapper._fly || { sx: 0, sy: 200, gx: 0, gy: 200, gs: 0.5 };
                 const p = (progress - t3) / (1 - t3);
-                const ep = easeInOutCubic(p);
+                const ep = easeOutCubic(p);
                 x = fl.sx + (fl.gx - fl.sx) * ep;
                 y = fl.sy + (fl.gy - fl.sy) * ep;
-                scaleX = scaleY = 1.0 + (fl.gs - 1.0) * ep;
-                opacity = 1;
-                tiltDeg = -graveTiltDeg * (1 - ep);
+                scaleX = scaleY = fl.gs;  // already at graveyard scale
+                opacity = Math.min(1, ep * 3);  // fade in quickly at start
+                tiltDeg = 0;
             }
 
             // [perf] if (progress > t3 && (!wrapper._lastFlyLog || performance.now() - wrapper._lastFlyLog > 100)) {
@@ -3904,7 +3911,7 @@ async function animateSpell(data) {
                         (resolved.mode === 'visible-index' || resolved.mode === 'logical-index');
                     if (resolved.mode === 'uid-match' || resolvedByIndex) {
                         // DEBUG
-                        console.log('[OPP-SPELL] beforeLift:', { mode: resolved.mode, elClass: resolved.el.className.substring(0,30), spellName: data.spell ? data.spell.name : null, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+                        console.log('[OPP-SPELL] beforeLift:', { mode: resolved.mode, elClass: resolved.el.className.substring(0,30), spellName: data.spell ? data.spell.name : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                         // Lift card within hand (preserves z-index stacking)
                         resolved.el.dataset.lifting = 'true';
                         resolved.el.style.transition = 'transform 0.16s ease-out';
@@ -3919,7 +3926,7 @@ async function animateSpell(data) {
                         smoothCloseOppHandGap(resolved.el);
                         // DEBUG
                         _oppHandDomSnap('spell:afterHide:' + (data.spell ? data.spell.name : '?'));
-                        console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+                        console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                     }
                 }
             }
@@ -3940,7 +3947,7 @@ async function animateSpell(data) {
     }
     // Pour nos propres sorts : rÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer la position du sort engagÃƒÆ’Ã‚Â© dans la main
     if (data.spell && data.caster === myNum && committedSpells.length > 0) {
-        const handPanel = document.getElementById('my-hand');
+        const handPanel = _getHandPanel('my-hand');
         const committedEls = handPanel ? handPanel.querySelectorAll('.committed-spell') : [];
         const csIdx = committedSpells.findIndex(cs => cs.card.id === data.spell.id);
         if (csIdx >= 0) {
@@ -4062,7 +4069,7 @@ function animateSpellReturnToHand(data) {
         console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
     }
     if (owner === 'me') {
-        const hp = document.getElementById('my-hand');
+        const hp = _getHandPanel('my-hand');
         if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'spellReturn:BEFORE-prep');
     }
     prepareGraveyardReturnDraw(data, { trackSpellReturn: true, debugTag: 'BLAST-RET' });
@@ -4074,7 +4081,7 @@ function animateGraveyardReturnToHand(data) {
         console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
     }
     if (owner === 'me') {
-        const hp = document.getElementById('my-hand');
+        const hp = _getHandPanel('my-hand');
         if (typeof _domVisSnapshot === 'function') _domVisSnapshot(hp, 'graveReturn:BEFORE-prep');
     }
     prepareGraveyardReturnDraw(data, { trackSpellReturn: false, debugTag: 'GRAVE-RET' });
@@ -4108,7 +4115,7 @@ async function handleRegenAnim(data) {
 
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 1 : Forcer l'affichage des HP post-dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts (avant regen)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "regen:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
@@ -4138,7 +4145,7 @@ async function handleRegenAnim(data) {
 
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 5 : Mettre ÃƒÆ’Ã‚Â  jour les HP finaux dans le DOM
     if (cardEl) {
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -4202,7 +4209,7 @@ async function handleBuildingDiscard(data) {
     // Chercher la carte dans la main et la cacher MAINTENANT (même frame que le ghost)
     const bdIsMine = data.player === myNum;
     const handId = bdIsMine ? 'my-hand' : 'opp-hand';
-    const handContainer = document.getElementById(handId);
+    const handContainer = _getHandPanel(handId);
     let startRect = data._sourceRect || null;
     if (handContainer) {
         const selector = bdIsMine ? '.card:not(.committed-spell)' : '.opp-card-back';
@@ -4240,7 +4247,7 @@ async function handleMassDiscard(data) {
 
     const isMine = data.player === myNum;
     const handId = isMine ? 'my-hand' : 'opp-hand';
-    const handContainer = document.getElementById(handId);
+    const handContainer = _getHandPanel(handId);
 
     // 1. Capturer les rects et cacher toutes les cartes de la main en meme temps
     const sourceRects = data._sourceRects || [];
@@ -4285,7 +4292,7 @@ async function handleLifestealAnim(data) {
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 1 : Forcer l'affichage des HP post-dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts directement dans le DOM
     // (le state global peut dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  avoir les HP soignÃƒÆ’Ã‚Â©s, on utilise les HP capturÃƒÆ’Ã‚Â©s ÃƒÆ’Ã‚Â  la rÃƒÆ’Ã‚Â©ception)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "lifesteal:creature:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
@@ -4348,7 +4355,7 @@ async function handleLifestealAnim(data) {
         lifestealHeroHealInProgress = false;
     } else if (cardEl) {
         // Lifedrain : mettre ÃƒÆ’Ã‚Â  jour les HP de la crÃƒÆ’Ã‚Â©ature
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -4421,7 +4428,7 @@ async function handleHealOnDeathAnim(data) {
 
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 1 : Forcer l'affichage des HP post-dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts (avant heal)
     if (cardEl && data._preHealHp !== undefined) {
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             _traceHp(slotKey || "?", hpEl?.textContent, data._preHealHp, "healOnDeath:before", { card: data?.card?.name || data?.cardName || "?" });
             hpEl.textContent = data._preHealHp;
@@ -4452,7 +4459,7 @@ async function handleHealOnDeathAnim(data) {
 
     // ÃƒÆ’Ã¢â‚¬Â°TAPE 5 : Mettre ÃƒÆ’Ã‚Â  jour les HP finaux dans le DOM
     if (cardEl) {
-        const hpEl = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp');
+        const hpEl = cardEl._cHp || (cardEl._cHp = cardEl.querySelector('.arena-armor') || cardEl.querySelector('.arena-hp') || cardEl.querySelector('.img-hp'));
         if (hpEl) {
             const side = owner === 'me' ? 'me' : 'opponent';
             const finalCard = state?.[side]?.field?.[data.row]?.[data.col];
@@ -5012,7 +5019,7 @@ function _pickOppAnimIndex(data) {
 }
 
 function _oppHandDomSnapshot() {
-    const panel = document.getElementById('opp-hand');
+    const panel = _getHandPanel('opp-hand');
     if (!panel) return [];
     const cards = panel.querySelectorAll('.opp-card-back');
     return Array.from(cards).map((el, domIndex) => {
@@ -5063,14 +5070,18 @@ function _oppPlayDbg(stage, payload = {}) {
 }
 
 function _resolveOppHandSourceByIndexAndUid(visualHandIndex = null, preferredUid = null, options = {}) {
-    const panel = document.getElementById('opp-hand');
+    const panel = _getHandPanel('opp-hand');
     if (!panel) return { el: null, mode: 'no-panel', rect: null };
     const strictIndex = !!options.strictIndex;
     const strictNoFallback = !!options.strictNoFallback;
 
-    const all = Array.from(panel.querySelectorAll('.opp-card-back'));
-    const logical = all.filter((el) => el.style.width !== '0px');
-    const visible = logical.filter((el) => el.style.visibility !== 'hidden');
+    const logical = [], visible = [];
+    for (const el of panel.querySelectorAll('.opp-card-back')) {
+        if (el.style.width !== '0px') {
+            logical.push(el);
+            if (el.style.visibility !== 'hidden') visible.push(el);
+        }
+    }
 
     let el = null;
     let mode = 'none';
@@ -5123,7 +5134,7 @@ function _resolveOppHandSourceByIndexAndUid(visualHandIndex = null, preferredUid
 }
 
 function _bounceHandSnapshot(owner) {
-    const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+    const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
     if (!panel) return [];
     const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
     return Array.from(panel.querySelectorAll(selector)).map((el, i) => ({
@@ -5166,7 +5177,7 @@ function checkPendingBounce(owner, cardElements) {
     // sinon fallback sur index/derniere carte. En mode forceEndTarget,
     // forcer la carte de fin de main pour eviter toute ambiguite d'index.
     let target = null;
-    const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+    const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
     const hasUid = !!(pendingBounce.card && pendingBounce.card.uid);
 
     if (hasUid && panel && !preferEndForOppUnknownIndex) {
@@ -5252,7 +5263,7 @@ async function animateBounceToHand(data) {
     // Helper: tente de résoudre la cible bounce depuis le DOM courant
     const tryResolveBounceTargetNow = () => {
         if (!pendingBounce || pendingBounce.owner !== owner || pendingBounce.resolved) return false;
-        const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+        const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
         if (!panel) return false;
         const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
         const cards = panel.querySelectorAll(selector);
@@ -5320,7 +5331,7 @@ async function animateBounceToHand(data) {
             }
         } else {
             targetPromise = new Promise(resolve => {
-                const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+                const handPanel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
                 const startHandCount = handPanel
                     ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
                     : 0;
@@ -5365,7 +5376,7 @@ async function animateBounceToHand(data) {
         const targetCard = target?.el || null;
         if (targetCard) targetCard.style.visibility = 'hidden';
         const fallbackRect = (() => {
-            const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
             if (!panel) return null;
 
             const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
@@ -5425,7 +5436,7 @@ async function animateBounceToHand(data) {
         `;
 
         const finish = () => {
-            const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
             const selector = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
             let finalTarget = null;
             if (panel) {
@@ -5669,7 +5680,7 @@ async function animateBounceToHand(data) {
             }
         } else {
             targetPromise = new Promise(resolve => {
-                const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+                const handPanel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
                 const startHandCount = handPanel
                     ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
                     : 0;
@@ -6322,7 +6333,7 @@ async function animateGraveyardReturn(data) {
         targetPromise = data._bounceTargetPromise;
     } else {
         targetPromise = new Promise(resolve => {
-            const handPanel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+            const handPanel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
             const startHandCount = handPanel
                 ? handPanel.querySelectorAll(owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back').length
                 : 0;
@@ -6353,7 +6364,7 @@ async function animateGraveyardReturn(data) {
     // Prendre la taille d'une carte de main existante pour garder exactement
     // le mÃƒÆ’Ã‚Âªme axe/look pendant toute l'animation (pas de reconfiguration visuelle).
     function getHandCardSize() {
-        const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+        const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
         if (!panel) return null;
         const sel = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
         const cards = [...panel.querySelectorAll(sel)].filter(el => el.style.width !== '0px');
@@ -6524,7 +6535,7 @@ async function animateGraveyardReturn(data) {
     }
 
     function revealLastWithBridgeAndCleanup() {
-        const panel = document.getElementById(owner === 'me' ? 'my-hand' : 'opp-hand');
+        const panel = _getHandPanel(owner === 'me' ? 'my-hand' : 'opp-hand');
         const sel = owner === 'me' ? '.card:not(.committed-spell)' : '.opp-card-back';
         let cover = null;
 
@@ -6717,7 +6728,7 @@ function resetAnimationStates() {
             slotsStillNeeded.add(`${owner}-${item.data.row}-${item.data.col}`);
         }
     }
-    for (const key of [...animatingSlots]) {
+    for (const key of animatingSlots) {
         if (activeDeathTransformSlots.has(key)) {
         } else if (!slotsStillNeeded.has(key)) {
             animatingSlots.delete(key);
@@ -6733,7 +6744,7 @@ function resetAnimationStates() {
             trapSlotsStillNeeded.add(`${owner}-${item.data.row}`);
         }
     }
-    for (const key of [...animatingTrapSlots]) {
+    for (const key of animatingTrapSlots) {
         if (trapSlotsStillNeeded.has(key)) continue;
         const [owner, rowStr] = key.split('-');
         const row = Number(rowStr);
@@ -6875,11 +6886,11 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
         // Find source element for lift animation
         var _sourceEl = _resolvedEl || null;
         if (!_sourceEl && spell && spell.uid) {
-            var _hp = document.getElementById('opp-hand');
+            var _hp = _getHandPanel('opp-hand');
             _sourceEl = _hp ? _hp.querySelector('.opp-revealed[data-uid="' + spell.uid + '"]') : null;
         }
         if (!_sourceEl && sourceIndex !== null) {
-            var _hp2 = document.getElementById('opp-hand');
+            var _hp2 = _getHandPanel('opp-hand');
             if (_hp2) {
                 var _allCards = _hp2.querySelectorAll('.opp-card-back, .opp-revealed');
                 if (sourceIndex < _allCards.length) _sourceEl = _allCards[sourceIndex];
@@ -6887,7 +6898,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
         }
 
         // DEBUG
-        console.log('[OPP-FLY] sourceEl:', { found: !!_sourceEl, connected: _sourceEl ? _sourceEl.isConnected : false, cls: _sourceEl ? _sourceEl.className.substring(0,30) : null, sourceIndex: sourceIndex, resolvedEl: !!_resolvedEl, spellName: spell ? spell.name : null, savedRect: !!savedSourceRect, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+        console.log('[OPP-FLY] sourceEl:', { found: !!_sourceEl, connected: _sourceEl ? _sourceEl.isConnected : false, cls: _sourceEl ? _sourceEl.className.substring(0,30) : null, sourceIndex: sourceIndex, resolvedEl: !!_resolvedEl, spellName: spell ? spell.name : null, savedRect: !!savedSourceRect, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
 
         function _doFlyAfterLift() {
             // Update handRect from lifted element position
@@ -6895,7 +6906,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                 handRect = _sourceEl.getBoundingClientRect();
             }
             // DEBUG
-            console.log('[OPP-FLY] afterLift:', { elConnected: _sourceEl ? _sourceEl.isConnected : false, elVis: _sourceEl ? _sourceEl.style.visibility : null, handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+            console.log('[OPP-FLY] afterLift:', { elConnected: _sourceEl ? _sourceEl.isConnected : false, elVis: _sourceEl ? _sourceEl.style.visibility : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
 
             // Hide source + close gap
             if (_sourceEl && _sourceEl.isConnected) {
@@ -6903,7 +6914,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                 _sourceEl.style.visibility = 'hidden';
                 smoothCloseOppHandGap(_sourceEl);
             } else if (spell && spell.uid) {
-                var _panel = document.getElementById('opp-hand');
+                var _panel = _getHandPanel('opp-hand');
                 var _match = _panel ? _panel.querySelector('.opp-revealed[data-uid="' + spell.uid + '"]') : null;
                 if (_match) {
                     _match.style.visibility = 'hidden';
@@ -6911,7 +6922,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                 }
 
             // DEBUG
-            console.log('[OPP-FLY] afterHide:', { handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+            console.log('[OPP-FLY] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
             }
 
             // Create flying card at (lifted) handRect position
@@ -7766,24 +7777,31 @@ function animateMove(data) {
     toSlot.classList.remove('has-card');
 
     // RÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer les positions
-    const fromRect = fromSlot.getBoundingClientRect();
-    const toRect = toSlot.getBoundingClientRect();
-    const dx = toRect.left - fromRect.left;
-    const dy = toRect.top - fromRect.top;
+    // Use offset positions relative to battlefield (immune to CSS perspective distortion)
+    const battlefield = document.getElementById('battlefield');
+    function _getOffsetIn(el, ancestor) {
+        let x = 0, y = 0, cur = el;
+        while (cur && cur !== ancestor) { x += cur.offsetLeft; y += cur.offsetTop; cur = cur.offsetParent; }
+        return { left: x, top: y, width: el.offsetWidth, height: el.offsetHeight };
+    }
+    const fromOff = _getOffsetIn(fromSlot, battlefield);
+    const toOff = _getOffsetIn(toSlot, battlefield);
+    const dx = toOff.left - fromOff.left;
+    const dy = toOff.top - fromOff.top;
 
     // CrÃƒÆ’Ã‚Â©er une carte overlay (makeCard met le backgroundImage en inline, on ne doit pas l'ÃƒÆ’Ã‚Â©craser)
     const movingCard = makeCard(data.card, false);
-    movingCard.style.position = 'fixed';
-    movingCard.style.left = fromRect.left + 'px';
-    movingCard.style.top = fromRect.top + 'px';
-    movingCard.style.width = fromRect.width + 'px';
-    movingCard.style.height = fromRect.height + 'px';
+    movingCard.style.position = 'absolute';
+    movingCard.style.left = fromOff.left + 'px';
+    movingCard.style.top = fromOff.top + 'px';
+    movingCard.style.width = fromOff.width + 'px';
+    movingCard.style.height = fromOff.height + 'px';
     movingCard.style.zIndex = '3000';
     movingCard.style.pointerEvents = 'none';
     movingCard.style.transform = 'translate3d(0px, 0px, 0px)';
     movingCard.style.transition = 'transform 0.5s ease-in-out';
 
-    document.body.appendChild(movingCard);
+    battlefield.appendChild(movingCard);
 
     // Forcer le reflow puis dÃƒÆ’Ã‚Â©clencher la transition via transform
     movingCard.getBoundingClientRect();
@@ -7802,4 +7820,26 @@ function animateMove(data) {
         resolve();
     }, 600);
     });
+}
+
+
+// GameOver via animation queue: displays after the killing blow animation
+async function handleGameOverAnimation(d) {
+    // Small delay so the player sees the final HP drop
+    await new Promise(r => setTimeout(r, 800));
+
+    if (window.PerfMon) { window.PerfMon.flush(); window.PerfMon.stop(); }
+
+    let resultText, resultClass;
+    if (d.draw) {
+        resultText = '\u{1F91D} Match nul !';
+        resultClass = 'draw';
+    } else {
+        const won = d.winner === myNum;
+        resultText = won ? '\u{1F389} Victoire !' : '\u{1F622} D\u00E9faite';
+        resultClass = won ? 'victory' : 'defeat';
+    }
+    document.getElementById('result').textContent = resultText;
+    document.getElementById('result').className = 'game-over-result ' + resultClass;
+    document.getElementById('game-over').classList.remove('hidden');
 }
