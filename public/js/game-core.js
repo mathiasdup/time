@@ -232,7 +232,7 @@ function _applyClientPoisonApply(anim, context = 'unknown') {
             after,
             target: _hpTraceSlot(playerNum, row, col)
         });
-        render();
+        if (!window._poisonRenderRaf) { window._poisonRenderRaf = requestAnimationFrame(() => { window._poisonRenderRaf = 0; render(); }); }
     }
 }
 
@@ -924,7 +924,7 @@ function initSocket() {
             });
         }
         // Forcer un render aprÃ¨s dÃ©blocage pour mettre Ã  jour l'affichage
-        render();
+        if (!window._unblockRaf) { window._unblockRaf = requestAnimationFrame(() => { window._unblockRaf = 0; render(); }); }
     });
 
     // Le serveur demande au client de confirmer que sa queue d'animations est vide
@@ -1275,7 +1275,8 @@ function handleAnimation(data) {
             const existing = RenderLock.getOverride('slot', pdKey);
             const cardUid = card?.uid || null;
             const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, data.row, data.col) : null;
-            const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
+            const pdCardEl = pdSlot?.querySelector('.card');
+            const pdHpEl = pdCardEl?._cHp || (pdCardEl ? (pdCardEl._cHp = pdCardEl.querySelector('.arena-armor') || pdCardEl.querySelector('.arena-hp') || pdCardEl.querySelector('.img-hp')) : null);
             const domHpRaw = pdHpEl ? parseInt(pdHpEl.textContent || '', 10) : NaN;
             const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
 
@@ -1574,7 +1575,8 @@ function handleAnimationBatch(animations) {
             const existing = RenderLock.getOverride('slot', pdKey);
             const cardUid = card?.uid || null;
             const pdSlot = typeof getSlot === 'function' ? getSlot(pdOwner, anim.row, anim.col) : null;
-            const pdHpEl = pdSlot?.querySelector('.card .arena-armor') || pdSlot?.querySelector('.card .arena-hp') || pdSlot?.querySelector('.card .img-hp');
+            const pdCardEl2 = pdSlot?.querySelector('.card');
+            const pdHpEl = pdCardEl2?._cHp || (pdCardEl2 ? (pdCardEl2._cHp = pdCardEl2.querySelector('.arena-armor') || pdCardEl2.querySelector('.arena-hp') || pdCardEl2.querySelector('.img-hp')) : null);
             const domHpRaw = pdHpEl ? parseInt(pdHpEl.textContent || '', 10) : NaN;
             const domHp = Number.isFinite(domHpRaw) ? domHpRaw : null;
             if (!card) {
@@ -1743,7 +1745,8 @@ function selectCard(i) {
     if (effectiveCost > state.me.energy) return;
 
     // Vérifier les conditions de jeu
-    if ((card.type === 'creature' || card.type === 'trap') && getValidSlots(card).length === 0) return;
+    const _validSlots = (card.type === 'creature' || card.type === 'trap') ? getValidSlots(card) : null;
+    if (_validSlots && _validSlots.length === 0) return;
     if (card.requiresGraveyardCreatures) {
         const graveyardCreatures = (state.me.graveyard || []).filter(c => c.type === 'creature').length;
         if (graveyardCreatures < card.requiresGraveyardCreatures) return;
@@ -1754,7 +1757,7 @@ function selectCard(i) {
         );
         if (available.length === 0) return;
     }
-    if (card.sacrifice && getValidSlots(card).length === 0) return;
+    if (card.sacrifice && (_validSlots || getValidSlots(card)).length === 0) return;
     if (card.targetSelfCreature) {
         const hasCreature = state.me.field.some(row => row.some(c => c !== null));
         if (!hasCreature) return;
@@ -1766,7 +1769,8 @@ function selectCard(i) {
 
     clearSel();
     selected = { ...card, idx: i, fromHand: true, effectiveCost };
-    document.querySelectorAll('#my-hand .card:not(.committed-spell)')[i]?.classList.add('selected');
+    const _handCards = document.getElementById('my-hand')?.querySelectorAll('.card:not(.committed-spell)');
+    if (_handCards && _handCards[i]) _handCards[i].classList.add('selected');
     document.getElementById('my-hand')?.classList.add('has-selection');
     hideCardPreview();
     highlightValidSlots(card);
@@ -1849,9 +1853,10 @@ function clickTrap(owner, row) {
     if (selected && selected.fromHand && selected.type === 'trap') {
         if (!state.me.traps[row]) {
             // Sauvegarder la position de la carte pour l'animation de vol
-            const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
-            if (handCards[selected.idx]) {
-                savedTrapSourceRect = handCards[selected.idx].getBoundingClientRect();
+            const _trapPanel = document.getElementById('my-hand');
+            const _trapCards = _trapPanel ? _trapPanel.querySelectorAll('.card:not(.committed-spell)') : [];
+            if (_trapCards[selected.idx]) {
+                savedTrapSourceRect = _trapCards[selected.idx].getBoundingClientRect();
             }
             handCardRemovedIndex = selected.idx;
             socket.emit('placeTrap', { handIndex: selected.idx, trapIndex: row });
@@ -1905,9 +1910,10 @@ function dropOnTrap(owner, row) {
 
     if (dragged.type === 'trap' && !state.me.traps[row]) {
         // Sauvegarder la position de la carte pour l'animation de vol
-        const handCards = document.querySelectorAll('#my-hand .card:not(.committed-spell)');
-        if (handCards[dragged.idx]) {
-            savedTrapSourceRect = handCards[dragged.idx].getBoundingClientRect();
+        const _dtPanel = document.getElementById('my-hand');
+        const _dtCards = _dtPanel ? _dtPanel.querySelectorAll('.card:not(.committed-spell)') : [];
+        if (_dtCards[dragged.idx]) {
+            savedTrapSourceRect = _dtCards[dragged.idx].getBoundingClientRect();
         }
         handCardRemovedIndex = dragged.idx;
         socket.emit('placeTrap', { handIndex: dragged.idx, trapIndex: row });
@@ -2109,8 +2115,9 @@ function cancelReanimation() {
 }
 
 // Fermer le popup cimetiÃ¨re en cliquant ailleurs
+const _graveyardPopup = document.getElementById('graveyard-popup');
 document.addEventListener('click', (e) => {
-    const popup = document.getElementById('graveyard-popup');
+    const popup = _graveyardPopup;
     if (popup.classList.contains('active')) {
         // Ignorer les clics juste aprÃ¨s l'ouverture de la sÃ©lection (le mouseup du drop dÃ©clenche un click)
         if (popup.classList.contains('selection-mode') && Date.now() - graveyardSelectionOpenedAt < 300) return;
@@ -2135,12 +2142,14 @@ function clearSel() {
 }
 
 // ==================== PANNEAUX UI ====================
+const _panelEls = {};
+function _getPanelEl(id) { return _panelEls[id] || (_panelEls[id] = document.getElementById(id)); }
 function closeAllPanels() {
-    document.getElementById('panelJournal').classList.remove('open');
-    document.getElementById('panelSettings').classList.remove('open');
-    document.getElementById('btnJournal').classList.remove('active');
-    document.getElementById('btnSettings').classList.remove('active');
-    document.getElementById('panel-overlay').classList.remove('visible');
+    _getPanelEl('panelJournal').classList.remove('open');
+    _getPanelEl('panelSettings').classList.remove('open');
+    _getPanelEl('btnJournal').classList.remove('active');
+    _getPanelEl('btnSettings').classList.remove('active');
+    _getPanelEl('panel-overlay').classList.remove('visible');
 }
 
 function togglePanel(panelId, btnId) {
@@ -2322,7 +2331,11 @@ function resizeGame() {
         CombatVFX._syncStageTransform();
     }
 }
-window.addEventListener('resize', resizeGame);
+let _resizeRaf = 0;
+window.addEventListener('resize', () => {
+    if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
+    _resizeRaf = requestAnimationFrame(() => { _resizeRaf = 0; resizeGame(); });
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
     const lobbyEl = document.getElementById('lobby');
@@ -2346,14 +2359,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fermer le zoom au clic sur l'overlay
     document.getElementById('card-zoom-overlay').addEventListener('click', hideCardZoom);
 
+    const _logPopup = document.getElementById('log-popup');
+    const _settingsPopup = document.getElementById('settings-popup');
     document.addEventListener('click', (e) => {
         // Fermer le log si on clique en dehors
-        if (!e.target.closest('.log-popup') && !e.target.closest('.log-btn')) {
-            document.getElementById('log-popup')?.classList.remove('active');
+        if (_logPopup && _logPopup.classList.contains('active') && !e.target.closest('.log-popup') && !e.target.closest('.log-btn')) {
+            _logPopup.classList.remove('active');
         }
         // Fermer settings si on clique en dehors
-        if (!e.target.closest('.settings-popup') && !e.target.closest('.options-btn')) {
-            document.getElementById('settings-popup')?.classList.remove('active');
+        if (_settingsPopup && _settingsPopup.classList.contains('active') && !e.target.closest('.settings-popup') && !e.target.closest('.options-btn')) {
+            _settingsPopup.classList.remove('active');
         }
         // DÃ©sÃ©lectionner les cartes
         if (!e.target.closest('.card') && !e.target.closest('.card-slot') && !e.target.closest('.trap-slot') && !e.target.closest('.hero-card') && !e.target.closest('.global-spell-zone')) {
@@ -2375,10 +2390,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // â”€â”€ Curseur fantasy custom â”€â”€
     const cursorEl = document.getElementById('cursor-fantasy');
 
+    let _cursorRaf = 0;
     document.addEventListener('mousemove', e => {
-        cursorEl.style.left = e.clientX + 'px';
-        cursorEl.style.top = e.clientY + 'px';
-        cursorEl.style.opacity = '1';
+        if (_cursorRaf) cancelAnimationFrame(_cursorRaf);
+        _cursorRaf = requestAnimationFrame(() => {
+            cursorEl.style.left = e.clientX + 'px';
+            cursorEl.style.top = e.clientY + 'px';
+            cursorEl.style.opacity = '1';
+            _cursorRaf = 0;
+        });
     });
 
     document.addEventListener('mousedown', e => {

@@ -1304,12 +1304,31 @@
             background: rgba(0, 0, 0, 0.75);
         }
         .deck-tooltip {
-            top: 100%;
-            margin-top: 8px;
+            bottom: 100%;
+            margin-bottom: 8px;
         }
         .grave-tooltip {
-            top: 100%;
-            margin-top: 8px;
+            bottom: 100%;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .grave-tooltip-stat {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .grave-tooltip-stat:first-child {
+            margin-right: 2px;
+            padding-right: 6px;
+            border-right: 1px solid rgba(255,255,255,0.3);
+        }
+        .grave-tooltip-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
         }
         .deck-box:hover .deck-tooltip,
         .grave-box:hover .grave-tooltip {

@@ -54,7 +54,7 @@ const CustomDrag = (function() {
     /**
      * Crée le ghost - utilise makeCard() pour un rendu propre
      */
-    function createGhost(data, sourceEl) {
+    function createGhost(data, sourceEl, cachedRect) {
         const container = document.createElement('div');
         container.className = 'drag-ghost-container';
 
@@ -74,11 +74,12 @@ const CustomDrag = (function() {
         container.appendChild(cleanCard);
 
         // Positionner sur la carte source, taille = slot visuel (--card-w × --card-h × gameScale)
-        const rect = sourceEl.getBoundingClientRect();
-        const rootStyle = getComputedStyle(document.documentElement);
-        const gameScale = parseFloat(rootStyle.getPropertyValue('--game-scale')) || 1;
-        const baseW = parseFloat(rootStyle.getPropertyValue('--card-w')) || 144;
-        const baseH = parseFloat(rootStyle.getPropertyValue('--card-h')) || 192;
+        const rect = cachedRect || sourceEl.getBoundingClientRect();
+        const _rs = window._dragCssCache;
+        const _now = performance.now();
+        let gameScale, baseW, baseH;
+        if (_rs && (_now - _rs.t) < 500) { gameScale = _rs.s; baseW = _rs.w; baseH = _rs.h; }
+        else { const rootStyle = getComputedStyle(document.documentElement); gameScale = parseFloat(rootStyle.getPropertyValue('--game-scale')) || 1; baseW = parseFloat(rootStyle.getPropertyValue('--card-w')) || 144; baseH = parseFloat(rootStyle.getPropertyValue('--card-h')) || 192; window._dragCssCache = { s: gameScale, w: baseW, h: baseH, t: _now }; }
         const ghostW = baseW * gameScale;
         const ghostH = baseH * gameScale;
         // Centrer le ghost sur le centre de la carte source
@@ -422,7 +423,7 @@ const CustomDrag = (function() {
                 isArrowMode = false;
 
                 // Mode classique : créer le ghost (taille slot)
-                ghostEl = createGhost(dragState.data, dragState.sourceEl);
+                ghostEl = createGhost(dragState.data, dragState.sourceEl, dragState.originRect);
 
                 // Mettre à jour originRect/offset pour le ghost slot-sized
                 const ghostRect = ghostEl.getBoundingClientRect();

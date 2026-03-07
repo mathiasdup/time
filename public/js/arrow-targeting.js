@@ -99,8 +99,10 @@ const ArrowTargeting = (function() {
         return m;
     }
 
+    const _mat4Pool = [new Float32Array(16), new Float32Array(16), new Float32Array(16), new Float32Array(16)];
+    let _mat4PoolIdx = 0;
     function multiplyMat4(a, b) {
-        const result = new Float32Array(16);
+        const result = _mat4Pool[_mat4PoolIdx++ & 3];
         for (let i = 0; i < 4; i++) {
             for (let j = 0; j < 4; j++) {
                 result[i * 4 + j] =

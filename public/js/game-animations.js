@@ -1403,10 +1403,11 @@ async function processAnimationQueue(processorId = null) {
         // ExÃƒÆ’Ã‚Â©cuter l'animation avec timeout de sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â©
         try {
             const animationPromise = executeAnimationAsync(type, data);
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
+            let _ato; const timeoutPromise = new Promise((_, reject) =>
+                _ato = setTimeout(() => reject(new Error(`Animation timeout: ${type}`)), 5000)
             );
             await Promise.race([animationPromise, timeoutPromise]);
+            clearTimeout(_ato);
             if (typeof window.visTrace === 'function') {
                 window.visTrace('animQueue:done', {
                     processorId,
@@ -2679,9 +2680,7 @@ async function animateBurn(data) {
         const savedTransform = wrapper.style.transform;
         const target = graveTarget.getBoundingClientRect();
         for (let pass = 0; pass < 6; pass++) {
-            wrapper.style.left = graveX + 'px';
-            wrapper.style.top = graveY + 'px';
-            wrapper.style.transform = 'scale(' + graveScale + ')';
+            wrapper.style.cssText = 'position:absolute;left:' + graveX + 'px;top:' + graveY + 'px;width:' + cardWidth + 'px;height:' + cardHeight + 'px;transform:scale(' + graveScale + ');pointer-events:none;z-index:' + (wrapper.style.zIndex || 9999);
             const m = wrapper.getBoundingClientRect();
             if (m.width > 0 && m.height > 0) {
                 const ratio = Math.min(target.width / m.width, target.height / m.height);
@@ -2692,6 +2691,8 @@ async function animateBurn(data) {
         }
         wrapper.style.left = savedLeft;
         wrapper.style.top = savedTop;
+        wrapper.style.width = cardWidth + 'px';
+        wrapper.style.height = cardHeight + 'px';
         wrapper.style.transform = savedTransform;
     }
     const burnNameFit = frontFace.querySelector('.arena-name');
@@ -2948,9 +2949,7 @@ async function animateDeathToGraveyard(data) {
         const gtCx = gtRect.left + gtRect.width / 2;
         const gtCy = gtRect.top + gtRect.height / 2;
         for (let pass = 0; pass < 6; pass++) {
-            wrapper.style.left = graveX + 'px';
-            wrapper.style.top = graveY + 'px';
-            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY})`;
+            wrapper.style.cssText = 'position:absolute;left:' + graveX + 'px;top:' + graveY + 'px;width:' + cardWidth + 'px;height:' + cardHeight + 'px;transform:scale(' + graveScaleX + ',' + graveScaleY + ');pointer-events:none;z-index:' + (wrapper.style.zIndex || 9999);
             const wRect = wrapper.getBoundingClientRect();
             const wCx = wRect.left + wRect.width / 2;
             const wCy = wRect.top + wRect.height / 2;
@@ -2963,6 +2962,8 @@ async function animateDeathToGraveyard(data) {
         }
         wrapper.style.left = startX + 'px';
         wrapper.style.top = startY + 'px';
+        wrapper.style.width = cardWidth + 'px';
+        wrapper.style.height = cardHeight + 'px';
         wrapper.style.transform = 'scale(1, 1)';
     }
 
@@ -3760,11 +3761,11 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 tiltDeg = -graveTiltDeg * (1 - ep);
             }
 
-            if (progress > t3 && (!wrapper._lastFlyLog || performance.now() - wrapper._lastFlyLog > 100)) {
-                wrapper._lastFlyLog = performance.now();
-                var _wr = wrapper.getBoundingClientRect();
-                console.log('[SPELL-FLY] p=' + ((progress - t3) / (1 - t3)).toFixed(2), 'x=' + Math.round(x), 'y=' + Math.round(y), 'scX=' + scaleX.toFixed(3), 'scY=' + scaleY.toFixed(3), 'tilt=' + tiltDeg.toFixed(1), 'rect={L:' + Math.round(_wr.left) + ' T:' + Math.round(_wr.top) + ' W:' + Math.round(_wr.width) + ' H:' + Math.round(_wr.height) + '}');
-            }
+            // [perf] if (progress > t3 && (!wrapper._lastFlyLog || performance.now() - wrapper._lastFlyLog > 100)) {
+            // [perf] wrapper._lastFlyLog = performance.now();
+            // [perf] var _wr = wrapper.getBoundingClientRect();
+            // [perf] console.log('[SPELL-FLY] p=' + ((progress - t3) / (1 - t3)).toFixed(2), 'x=' + Math.round(x), 'y=' + Math.round(y), 'scX=' + scaleX.toFixed(3), 'scY=' + scaleY.toFixed(3), 'tilt=' + tiltDeg.toFixed(1), 'rect={L:' + Math.round(_wr.left) + ' T:' + Math.round(_wr.top) + ' W:' + Math.round(_wr.width) + ' H:' + Math.round(_wr.height) + '}');
+            // [perf] }
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
@@ -3983,15 +3984,13 @@ async function animateSpell(data) {
                 if (toAnimate.length > 0) {
                     handPanel.getBoundingClientRect(); // force reflow
                     requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            toAnimate.forEach(card => {
-                                card.style.transition = 'transform 0.3s ease-out';
-                                card.style.transform = '';
-                            });
-                            setTimeout(() => {
-                                toAnimate.forEach(card => { card.style.transition = ''; });
-                            }, 350);
+                        toAnimate.forEach(card => {
+                            card.style.transition = 'transform 0.3s ease-out';
+                            card.style.transform = '';
                         });
+                        setTimeout(() => {
+                            toAnimate.forEach(card => { card.style.transition = ''; });
+                        }, 350);
                     });
                 }
             } else if (cachedCommittedRects[commitId]) {
@@ -5133,8 +5132,8 @@ function _bounceHandSnapshot(owner) {
         z: el.style.zIndex || null,
         hidden: el.style.visibility === 'hidden',
         w0: el.style.width === '0px',
-        rectW: Number(el.getBoundingClientRect().width.toFixed(1)),
-        rectH: Number(el.getBoundingClientRect().height.toFixed(1)),
+        rectW: Number((el._snapRect = el.getBoundingClientRect()).width.toFixed(1)),
+        rectH: Number(el._snapRect.height.toFixed(1)),
         tf: el.style.transform || '',
         nameFs: (() => {
             const nameEl = el.querySelector('.arena-name');
@@ -6755,11 +6754,9 @@ function resetAnimationStates() {
     }
 
     // RÃƒÆ’Ã‚Â©initialiser les flags de combat sur toutes les cartes
-    document.querySelectorAll('.card[data-in-combat="true"]').forEach(card => {
-        card.dataset.inCombat = 'false';
-    });
-    document.querySelectorAll('.card[data-has-attacked="true"]').forEach(card => {
-        delete card.dataset.hasAttacked;
+    document.querySelectorAll('.card[data-in-combat="true"], .card[data-has-attacked="true"]').forEach(card => {
+        if (card.dataset.inCombat === 'true') card.dataset.inCombat = 'false';
+        if (card.dataset.hasAttacked === 'true') delete card.dataset.hasAttacked;
     });
 
     // Filet de sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : aucun override visuel ne doit survivre ÃƒÆ’Ã‚Â  un nouveau tour.

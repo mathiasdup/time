@@ -18,7 +18,7 @@ function canPlay() {
     }
     // Vérifier aussi si on a cliqué fin de tour ou si la résolution est encore en cours
     // ('resolving' est retiré uniquement dans le handler newTurn APRÈS la fin des animations)
-    const endTurnBtn = document.getElementById('end-turn-btn');
+    const endTurnBtn = window._endTurnBtnCache || (window._endTurnBtnCache = document.getElementById('end-turn-btn'));
     if (endTurnBtn && (endTurnBtn.classList.contains('waiting') || endTurnBtn.classList.contains('resolving'))) {
         return false;
     }
@@ -26,7 +26,7 @@ function canPlay() {
 }
 
 function updateTimerDisplay(t) {
-    const endTurnBtn = document.getElementById('end-turn-btn');
+    const endTurnBtn = window._endTurnBtnCache || (window._endTurnBtnCache = document.getElementById('end-turn-btn'));
     const timerSpan = endTurnBtn.querySelector('.end-turn-timer');
 
     if (t > 0 && t <= 15 && state && state.phase === 'planning' && !endTurnBtn.classList.contains('waiting')) {

@@ -9,6 +9,7 @@ const HpWatchdog = (() => {
     let _pendingRaf = 0;
 
     function _getSlotEl(owner, r, c) {
+        if (typeof getSlot === 'function') return getSlot(owner, r, c);
         return document.querySelector(`.card-slot[data-owner="${owner}"][data-row="${r}"][data-col="${c}"]`);
     }
 

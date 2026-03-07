@@ -33,20 +33,25 @@ class CombatAnimationSystem {
     getSlotCenter(owner, row, col) {
         const slot = getSlot(owner, row, col);
         if (!slot) return null;
-        const rect = slot.getBoundingClientRect();
+        const now = performance.now();
+        if (!slot._rcCache || (now - slot._rcTime) > 100) { slot._rcCache = slot.getBoundingClientRect(); slot._rcTime = now; }
+        const rect = slot._rcCache;
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     }
 
     getHeroCenter(owner) {
         const heroEl = document.getElementById(owner === 'me' ? 'hero-me' : 'hero-opp');
         if (!heroEl) return null;
-        const rect = heroEl.getBoundingClientRect();
+        const now = performance.now();
+        if (!heroEl._rcCache || (now - heroEl._rcTime) > 100) { heroEl._rcCache = heroEl.getBoundingClientRect(); heroEl._rcTime = now; }
+        const rect = heroEl._rcCache;
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     }
 
     /** Scale factor du game-scaler (zoom) */
     get _S() {
-        const scaler = document.getElementById('game-scaler');
+        if (!this._cachedScaler) this._cachedScaler = document.getElementById('game-scaler');
+        const scaler = this._cachedScaler;
         if (!scaler) return 1;
         return parseFloat(scaler.style.zoom) || 1;
     }
