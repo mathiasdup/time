@@ -3210,9 +3210,29 @@ function makeCard(card, inHand, discountedCost = null) {
             const poisonMarker = (card.poisonCounters || 0) >= 1 ? `<div class="poison-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="poison-count">${card.poisonCounters}</span></div>` : '';
             const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
             const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
-            el.innerHTML = `${artSvg}${frameSvg}
+            
+        const abilityIconMap = {
+            haste: 'haste.png', superhaste: 'superhaste.png',
+            trample: 'trample.png', cleave: 'cleave.png',
+            immovable: 'immobile.png', protection: 'protection.png',
+            camouflage: 'camouflage.png', deflexion: 'deflexion.png',
+            spectral: 'spectre.png', antitoxin: 'anti_toxine.png',
+            regeneration: 'regeneration.png', poison: 'poison.png',
+            lethal: 'toucher_mortel.png', lifelink: 'lifelink.png',
+            lifedrain: 'lifedrain.png', power: 'power.png',
+            spellBoost: 'spellboost.png', soinToxique: 'soin_toxique.png',
+            dissipation: 'dissipation.png',
+            entrave: 'entrave.png'
+        };
+        const abilityTokensHtml = (card.abilities || [])
+            .filter(a => abilityIconMap[a])
+            .map(a => '<div class="ability-token"><img src="/abilities_icons/' + abilityIconMap[a] + '" alt="' + a + '"></div>')
+            .join('');
+        const abilityTokensWrap = abilityTokensHtml ? '<div class="ability-tokens">' + abilityTokensHtml + '</div>' : '';
+
+el.innerHTML = `${artSvg}${frameSvg}
                 <div class="arena-title" ${titleStyle}><div class="arena-name"${nameStyle}>${card.name}</div></div>
-                ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}`;
+                ${gazeMarker}${poisonMarker}${entraveMarker}${buffMarker}${abilityTokensWrap}`;
             autoFitCardName(el);
             return el;
         }

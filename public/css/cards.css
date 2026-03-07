@@ -843,3 +843,34 @@
         .marker-bump {
             animation: markerCountBump 0.3s ease-out;
         }
+
+        /* ========== ABILITY TOKENS (left side of on-field cards) ========== */
+        .ability-tokens {
+            position: absolute;
+            left: 8px;
+            bottom: -10px;
+            display: flex;
+            gap: 2px;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .ability-token {
+            width: 24px;
+            height: 24px;
+            background: #b5b5b5;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .ability-token img {
+            width: 26px;
+            height: 26px;
+        }
+        .card.in-graveyard .ability-tokens {
+            display: none;
+        }
+        .bounce-details-hidden .ability-tokens {
+            opacity: 0 !important;
+        }
