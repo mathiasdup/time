@@ -2669,7 +2669,7 @@ async function animateBurn(data) {
         'transform: rotateY(0deg);' +
         'border-radius: 6px;';
     const frontFace = (typeof makeCard === 'function')
-        ? makeCard(card, true)
+        ? _stripCardToArtOnly(makeCard(card, false))
         : createCardElementForAnimation(card);
     frontFace.classList.remove('just-played', 'can-attack');
     frontFace.classList.add('in-graveyard');
@@ -2711,8 +2711,7 @@ async function animateBurn(data) {
         wrapper.style.height = cardHeight + 'px';
         wrapper.style.transform = savedTransform;
     }
-    const burnNameFit = frontFace.querySelector('.arena-name');
-    if (burnNameFit) fitArenaName(burnNameFit);
+
     const liftDuration = 120;
     const flipDuration = 250;
     const holdDuration = 250;
@@ -3425,6 +3424,18 @@ async function animateSacrifice(data) {
 /**
  * CrÃƒÆ’Ã‚Â©e un ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment carte pour l'animation (copie de celle dans animations.js)
  */
+/**
+ * Strips a card element to art + frame border only (no title, stats, markers, abilities, mana).
+ * Used for burn/draw flight animations to avoid text jitter.
+ */
+function _stripCardToArtOnly(el) {
+    // Remove title, markers, ability tokens
+    el.querySelectorAll('.arena-title, .gaze-marker, .poison-marker, .entrave-marker, .buff-marker, .ability-tokens').forEach(function(n) { n.remove(); });
+    // Remove stat groups and mana from frame SVG
+    el.querySelectorAll('.arena-stat-atk, .arena-stat-riposte, .arena-stat-hp, .arena-mana-group').forEach(function(n) { n.remove(); });
+    return el;
+}
+
 function createCardElementForAnimation(card) {
     const el = document.createElement('div');
     el.className = `card ${card.type === 'trap' ? 'trap-card' : card.type}`;
@@ -5489,7 +5500,7 @@ async function animateBounceToHand(data) {
 
             const faceScaler = document.createElement('div');
             faceScaler.style.cssText = scalerCss;
-            const frontFace = makeCard(data.card, true);
+            const frontFace = _stripCardToArtOnly(makeCard(data.card, false));
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.position = 'absolute';
             frontFace.style.top = '0';
@@ -5500,8 +5511,6 @@ async function animateBounceToHand(data) {
             frontFace.style.boxShadow = 'none';
             frontFace.style.filter = 'none';
             if (bgImage) frontFace.style.backgroundImage = bgImage;
-            const nameEl = frontFace.querySelector('.arena-name');
-            if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
             faceScaler.appendChild(frontFace);
             wrapper.appendChild(faceScaler);
             document.body.appendChild(wrapper);
@@ -5519,7 +5528,7 @@ async function animateBounceToHand(data) {
                 transform: scale(${revealFaceScale});
                 transform-origin: top left;
             `;
-            const frontFace = makeCard(data.card, true);
+            const frontFace = _stripCardToArtOnly(makeCard(data.card, false));
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.position = 'absolute';
             frontFace.style.top = '0';
@@ -5530,8 +5539,6 @@ async function animateBounceToHand(data) {
             frontFace.style.boxShadow = 'none';
             frontFace.style.filter = 'none';
             if (bgImage) frontFace.style.backgroundImage = bgImage;
-            const nameEl = frontFace.querySelector('.arena-name');
-            if (nameEl && typeof fitArenaName === 'function') fitArenaName(nameEl);
             faceScaler.appendChild(frontFace);
             wrapper.appendChild(faceScaler);
             document.body.appendChild(wrapper);

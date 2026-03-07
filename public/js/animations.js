@@ -3,6 +3,17 @@
  */
 
 // Cartes à cacher lors du prochain render
+
+/**
+ * Strips a card element to art + frame border only (no title, stats, markers, abilities, mana).
+ * Used for draw/burn flight animations to avoid text jitter.
+ */
+function _stripCardToArtOnly(el) {
+    el.querySelectorAll('.arena-title, .gaze-marker, .poison-marker, .entrave-marker, .buff-marker, .ability-tokens').forEach(function(n) { n.remove(); });
+    el.querySelectorAll('.arena-stat-atk, .arena-stat-riposte, .arena-stat-hp, .arena-mana-group').forEach(function(n) { n.remove(); });
+    return el;
+}
+
 const pendingDrawAnimations = {
     me: new Map(),   // handIndex -> card
     opp: new Map()   // handIndex -> card
@@ -628,7 +639,7 @@ function animateCardDraw(card, owner, handIndex, onComplete) {
             const frontScaler = document.createElement('div');
             frontScaler.style.cssText = scalerCss;
             const frontFace = (typeof makeCard === 'function')
-                ? makeCard(card, true)
+                ? _stripCardToArtOnly(makeCard(card, false))
                 : createCardElement(card);
             const bgImage = frontFace.style.backgroundImage;
             frontFace.style.position = 'absolute';
