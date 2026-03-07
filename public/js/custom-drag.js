@@ -316,15 +316,9 @@ const CustomDrag = (function() {
         }
         if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
 
-        // Retirer les classes de survol
-        document.querySelectorAll('.drag-hover, .drag-over').forEach(el => {
-            el.classList.remove('drag-hover', 'drag-over');
-        });
-        document.querySelectorAll('.hero-drag-over').forEach(el => {
-            el.classList.remove('hero-drag-over');
-        });
-        document.querySelectorAll('.spell-hover-target').forEach(el => {
-            el.classList.remove('spell-hover-target');
+        // Retirer les classes de survol (single query instead of 3)
+        document.querySelectorAll('.drag-hover, .drag-over, .hero-drag-over, .spell-hover-target').forEach(el => {
+            el.classList.remove('drag-hover', 'drag-over', 'hero-drag-over', 'spell-hover-target');
         });
 
         // Reset global zone

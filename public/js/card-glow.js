@@ -274,11 +274,11 @@ const CardGlow = (() => {
             }
         }
 
-        // Nettoyer les canvas orphelins (cartes qui ne sont plus cibles)
-        const allGlows = document.querySelectorAll('.card-glow-canvas');
-        for (const c of allGlows) {
-            if (!c.parentElement || !activeEls.has(c.parentElement)) {
-                c.remove();
+        // Nettoyer les canvas orphelins — iterate previous targets instead of full DOM query
+        for (const prev of _cachedTargets) {
+            if (!activeEls.has(prev.el)) {
+                const c = prev.el.querySelector('.card-glow-canvas');
+                if (c) c.remove();
             }
         }
 

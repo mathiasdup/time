@@ -1,9 +1,32 @@
 ﻿// ==================== SYSTÃƒÆ’Ã‹â€ ME D'ANIMATIONS DU JEU ====================
 // File d'attente, handlers combat/mort/sort/piÃƒÆ’Ã‚Â¨ge, effets visuels
 
+// === DEBUG: Snapshot DOM main adverse ===
+function _oppHandDomSnap(label) {
+    var p = document.getElementById("opp-hand");
+    if (!p) { console.log("[OPP-HAND-DOM] " + label + " | panel=null"); return; }
+    var kids = Array.from(p.children);
+    var details = kids.map(function(el, i) {
+        var r = el.getBoundingClientRect();
+        return {
+            i: i,
+            tag: el.className.indexOf("opp-card-back") !== -1 ? "back" : el.className.indexOf("opp-revealed") !== -1 ? "revealed" : el.tagName.toLowerCase(),
+            uid: (el.dataset.uid || el.dataset.cardId || "-").slice(-6),
+            vis: el.style.visibility === "hidden" ? "H" : "V",
+            w: Math.round(r.width),
+            opacity: el.style.opacity !== "" && el.style.opacity !== "1" ? el.style.opacity : "-",
+            transform: el.style.transform && el.style.transform !== "none" ? el.style.transform.substring(0, 25) : "-"
+        };
+    });
+    var vis = details.filter(function(d) { return d.vis === "V" && d.w > 0; }).length;
+    var hid = kids.length - vis;
+    console.log("[OPP-HAND-DOM] " + label + " | total=" + kids.length + " vis=" + vis + " hid=" + hid, details);
+}
+
 // === Smooth close du trou dans la main adverse aprÃƒÆ’Ã‚Â¨s hide d'une carte ===
 // Collapse la carte cachÃƒÆ’Ã‚Â©e (widthÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0, marginÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢0) pour que le flexbox ferme le trou naturellement
 function smoothCloseOppHandGap(hiddenCard) {
+    _oppHandDomSnap('gapClose:entry');
     // DEBUG
     console.log('[GAP-CLOSE] entry:', { hasCard: !!hiddenCard, cls: hiddenCard ? hiddenCard.className.substring(0,30) : null, w: hiddenCard ? hiddenCard.style.width : null, vis: hiddenCard ? hiddenCard.style.visibility : null, parentChildren: hiddenCard && hiddenCard.parentElement ? hiddenCard.parentElement.children.length : 0 });
     if (!hiddenCard) return;
@@ -2826,11 +2849,9 @@ async function animateDeathToGraveyard(data) {
     //    Comme le wrapper sera DANS le board, la perspective s'applique naturellement
     const gameBoard = document.querySelector('.game-board');
     const boardRect = gameBoard.getBoundingClientRect();
-    // Showcase = 1.8x hand card size (adapts to any resolution)
-    const _handRefW = startRect ? startRect.width : (function() { var el = document.querySelector('.my-hand .card, .opp-card-back'); return el ? el.getBoundingClientRect().width : 144; })();
-    const cardWidth = Math.round(_handRefW * 1.8);
-    const cardHeight = Math.round(cardWidth * 4 / 3);
-    console.log('[SPELL-SIZE] handRef:', Math.round(_handRefW), 'cardWidth:', cardWidth, 'cardHeight:', cardHeight);
+    // Use slot dimensions (death card should match the slot it came from)
+    const cardWidth = slot.offsetWidth || 144;
+    const cardHeight = slot.offsetHeight || 192;
 
     // Position du slot en coordonnÃƒÆ’Ã‚Â©es locales au board CSS (avant perspective)
     // On utilise offsetLeft/offsetTop rÃƒÆ’Ã‚Â©cursivement jusqu'au board
@@ -3836,6 +3857,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 
 async function animateSpell(data) {
     let startRect = null;
+    _oppHandDomSnap("spell:entry:" + (data.spell ? data.spell.name : "?"));
     // Fly from opponent hand before revealing the spell
     if (data.spell && data.caster !== myNum) {
         const oppAnimIndex = _pickOppAnimIndex(data) ?? (_isValidHandIndex(data?._oppSourceIndex) ? Number(data._oppSourceIndex) : null);
@@ -3895,6 +3917,7 @@ async function animateSpell(data) {
                         resolved.el.style.visibility = 'hidden';
                         smoothCloseOppHandGap(resolved.el);
                         // DEBUG
+                        _oppHandDomSnap('spell:afterHide:' + (data.spell ? data.spell.name : '?'));
                         console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = document.getElementById('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                     }
                 }

@@ -662,9 +662,16 @@ if (typeof window !== 'undefined' && typeof window.PerfMon === 'undefined') {
             t.resolutionLogCount++;
         }
 
+        function stop() {
+            if (flushTimer) { clearInterval(flushTimer); flushTimer = null; }
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+            if (longTaskObserver) { try { longTaskObserver.disconnect(); } catch(_){} longTaskObserver = null; }
+        }
+
         return {
             enabled,
             attachSocket,
+            stop,
             setPlayer,
             onNewTurn,
             recordGameStateUpdate,

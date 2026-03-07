@@ -391,7 +391,7 @@ function emitGameOver(room, data) {
 
 function deepClone(obj) {
     if (obj === null || obj === undefined) return obj;
-    return JSON.parse(JSON.stringify(obj));
+    return structuredClone(obj);
 }
 
 function getGraveyardSig(graveyard) {
@@ -502,13 +502,13 @@ function getPublicGameState(room, forPlayer) {
     // Patch main
     for (const card of me.hand) patchHandCard(card, meGraveyardLen, meGraveyardCreatureCount, 'HAND');
 
-    // Patch terrain Ã¢â‚¬â€ on crÃƒÂ©e toujours une copie mappÃƒÂ©e pour garantir les bonnes valeurs
-    let meField = patchField(me.field, meGraveyardLen, 'ME_FIELD');
-    if (isRevealing) {
-        meField = meField.map(row => row.map(card =>
-            card && card.ownerAtk !== undefined ? { ...card, atk: card.ownerAtk } : card
-        ));
-    }
+    // Patch terrain — single pass (patch poison + ownerAtk override if revealing)
+    let meField = me.field.map(row => row.map(card => {
+        if (!card) return card;
+        patchPoison(card, meGraveyardLen, 'ME_FIELD');
+        if (isRevealing && card.ownerAtk !== undefined) return { ...card, atk: card.ownerAtk };
+        return card;
+    }));
 
     // Patch le terrain adverse aussi
     if (oppField === opp.field) {
@@ -7753,11 +7753,15 @@ function getProvocationPrioritySlots(room, playerNum, card) {
     const opponent = room.gameState.players[oppNum];
     if (!player || !opponent) return [];
 
+    // Pendant le planning, utiliser le snapshot (confirmedField) pour ne pas voir les cartes posées ce tour
+    const isPlanning = room.gameState.phase === 'planning';
+    const oppField = (isPlanning && opponent.confirmedField) ? opponent.confirmedField : opponent.field;
+
     const preferredCol = card.abilities?.includes('shooter') ? 0 : 1;
     const forced = [];
     for (let row = 0; row < 4; row++) {
-        const oppFront = opponent.field[row][1];
-        const oppBack = opponent.field[row][0];
+        const oppFront = oppField[row][1];
+        const oppBack = oppField[row][0];
         const hasProvocation =
             !!(oppFront && oppFront.currentHp > 0 && oppFront.abilities?.includes('provocation')) ||
             !!(oppBack && oppBack.currentHp > 0 && oppBack.abilities?.includes('provocation'));

@@ -472,6 +472,9 @@ function initSocket() {
     socket = io();
     if (window.PerfMon) window.PerfMon.attachSocket(socket);
 
+    // Prevent duplicate handlers on reconnection
+    socket.removeAllListeners();
+
     socket.on('gameStart', (s) => {
         state = s;
         myNum = s.myPlayer;
@@ -598,6 +601,7 @@ function initSocket() {
             }
         }
 
+                if (typeof _oppHandDomSnap === "function") _oppHandDomSnap("gsu:beforeRender phase=" + s.phase + " oppCount=" + (s.opponent ? s.opponent.handCount : "?") + " prev=" + (state && state.opponent ? state.opponent.handCount : "?"));
         // DÃ©tecter si le hÃ©ros a changÃ© (mode complet force Erebeth)
         const heroChanged = window.heroData && s.me.hero && s.me.hero.id !== window.heroData.me?.id;
         state = s;
@@ -963,7 +967,7 @@ function initSocket() {
                 waitMs += 100;
             }
         }
-        if (window.PerfMon) window.PerfMon.flush();
+        if (window.PerfMon) { window.PerfMon.flush(); window.PerfMon.stop(); }
         if (typeof window.flushVisTraceLogs === 'function') {
             if (typeof window.visTrace === 'function') {
                 window.visTrace('visTrace:auto-save:start', {

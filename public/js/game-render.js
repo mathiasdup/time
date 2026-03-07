@@ -522,6 +522,20 @@ function updateGraveTopCard(owner, graveyard) {
     }
 }
 
+function _getAbilityValue(card, a) {
+    if (a === 'cleave') return card.cleaveX || '';
+    if (a === 'power') return card.powerX || '';
+    if (a === 'regeneration') return card.regenerationX || '';
+    if (a === 'spellBoost') return card.spellBoostAmount || '';
+    if (a === 'enhance') return card.enhanceAmount || '';
+    if (a === 'bloodthirst') return card.bloodthirstAmount || '';
+    if (a === 'poison') { var v = card.poisonX || card.basePoisonX; return v || ''; }
+    if (a === 'entrave') return card.entraveX || '';
+    if (a === 'lifedrain') return card.lifedrainX || '';
+    if (a === 'lifelink') return card.lifelinkX || '';
+    return '';
+}
+
 function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
@@ -724,6 +738,43 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                             /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
                             `Poison <span${poisonClass}>${effectivePoison}</span>`
                         );
+                    }
+                }
+                // Mettre a jour les pastilles de capacites (ajout/retrait dynamique)
+                {
+                    var _aim = {
+                        haste: 'haste.png', superhaste: 'superhaste.png',
+                        trample: 'trample.png', cleave: 'cleave.png',
+                        immovable: 'immobile.png', protection: 'protection.png',
+                        camouflage: 'camouflage.png', deflexion: 'deflexion.png',
+                        spectral: 'spectre.png', antitoxin: 'anti_toxine.png',
+                        regeneration: 'regeneration.png', poison: 'poison.png',
+                        lethal: 'toucher_mortel.png', lifelink: 'lifelink.png',
+                        lifedrain: 'lifedrain.png', power: 'power.png',
+                        spellBoost: 'spellboost.png', soinToxique: 'soin_toxique.png',
+                        dissipation: 'dissipation.png', entrave: 'entrave.png'
+                    };
+                    var curAbils = (card.abilities || []).filter(function(a) { return _aim[a]; });
+                    var exWrap = existingCardEl.querySelector('.ability-tokens');
+                    var exAbils = exWrap ? Array.from(exWrap.querySelectorAll('.ability-token img')).map(function(i) { return i.alt; }) : [];
+                    if (curAbils.join(',') !== exAbils.join(',')) {
+                        if (exWrap) exWrap.remove();
+                        if (curAbils.length > 0) {
+                            var tokHtml = curAbils.map(function(a) { var v = _getAbilityValue(card, a); return '<div class="ability-token"><img src="/abilities_icons/' + _aim[a] + '" alt="' + a + '">' + (v ? '<span class="ability-token-value">' + v + '</span>' : '') + '</div>'; }).join('');
+                            existingCardEl.insertAdjacentHTML('beforeend', '<div class="ability-tokens">' + tokHtml + '</div>');
+                        }
+                    } else if (exWrap) {
+                        var toks = exWrap.querySelectorAll('.ability-token');
+                        for (var ti = 0; ti < toks.length; ti++) {
+                            var ab = curAbils[ti];
+                            if (!ab) continue;
+                            var val = _getAbilityValue(card, ab);
+                            var valEl = toks[ti].querySelector('.ability-token-value');
+                            if (val) {
+                                if (valEl) { if (valEl.textContent !== String(val)) valEl.textContent = val; }
+                                else { toks[ti].insertAdjacentHTML('beforeend', '<span class="ability-token-value">' + val + '</span>'); }
+                            } else if (valEl) { valEl.remove(); }
+                        }
                     }
                 }
                 // Rebind hover/click avec les données fraîches de la carte
@@ -2737,12 +2788,18 @@ function renderOppHand(count, oppHand) {
     // blockSlots peut arriver APRS emitStateToBoth (io.to vs socket.emit = pas d'ordre garanti),
     // donc on ne peut pas se fier à animatingSlots ici.
     if (count < oldCount && state?.phase === 'resolution') {
-        // Skip cards being lifted by animation code (they handle their own removal)
+        // Skip cards being lifted, already hidden, or queued for animation
         const liftingCards = Array.from(oldCards).filter(c => c.dataset && c.dataset.lifting);
-        const adjustedOldCount = oldCount - liftingCards.length;
+        const hiddenCards = Array.from(oldCards).filter(c => c.style.visibility === "hidden" || c.style.width === "0px");
+        // Count queued opp spell/summon/trap animations that will also remove a card
+        const queuedOppAnims = (typeof animationQueue !== "undefined" && animationQueue)
+            ? animationQueue.filter(item => (item.type === "spell" || item.type === "summon" || item.type === "trap") && item.data && item.data.caster !== myNum).length
+            : 0;
+        const pendingRemovals = liftingCards.length + hiddenCards.length + queuedOppAnims;
+        const adjustedOldCount = oldCount - pendingRemovals;
         if (count >= adjustedOldCount) {
-            // Animation lift is handling the removal  don't interfere
-            console.log('[RENDER-OPP] skip resolution-shrink: liftingCards=' + liftingCards.length + ' adjustedOld=' + adjustedOldCount + ' target=' + count);
+            // Animations are handling the removal
+            console.log("[RENDER-OPP] skip resolution-shrink: lifting=" + liftingCards.length + " hidden=" + hiddenCards.length + " queued=" + queuedOppAnims + " adjustedOld=" + adjustedOldCount + " target=" + count);
             return;
         }
         if (!savedOppHandRects) {
@@ -3211,6 +3268,7 @@ function makeCard(card, inHand, discountedCost = null) {
             const entraveMarker = (card.entraveCounters || 0) >= 1 ? `<div class="entrave-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="entrave-count">${card.entraveCounters}</span></div>` : '';
             const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
             
+
         const abilityIconMap = {
             haste: 'haste.png', superhaste: 'superhaste.png',
             trample: 'trample.png', cleave: 'cleave.png',
@@ -3226,7 +3284,7 @@ function makeCard(card, inHand, discountedCost = null) {
         };
         const abilityTokensHtml = (card.abilities || [])
             .filter(a => abilityIconMap[a])
-            .map(a => '<div class="ability-token"><img src="/abilities_icons/' + abilityIconMap[a] + '" alt="' + a + '"></div>')
+            .map(a => { var v = _getAbilityValue(card, a); return '<div class="ability-token"><img src="/abilities_icons/' + abilityIconMap[a] + '" alt="' + a + '">' + (v ? '<span class="ability-token-value">' + v + '</span>' : '') + '</div>'; })
             .join('');
         const abilityTokensWrap = abilityTokensHtml ? '<div class="ability-tokens">' + abilityTokensHtml + '</div>' : '';
 

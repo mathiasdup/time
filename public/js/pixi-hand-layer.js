@@ -120,6 +120,12 @@
         });
     }
 
+    // Rect cache: avoid getBoundingClientRect every frame (throttle ~100ms)
+    let _rectCacheDirty = true;
+    const RECT_CACHE_INTERVAL = 100;
+    window.addEventListener('resize', () => { _rectCacheDirty = true; });
+    window.addEventListener('scroll', () => { _rectCacheDirty = true; }, true);
+
     function updateOne(rec, dt) {
         const host = rec.host;
         const view = rec.view;
@@ -133,7 +139,13 @@
             return;
         }
 
-        const rect = host.getBoundingClientRect();
+        const now = performance.now();
+        if (_rectCacheDirty || !rec._cachedRect || (now - (rec._cachedRectTime || 0)) > RECT_CACHE_INTERVAL) {
+            rec._cachedRect = host.getBoundingClientRect();
+            rec._cachedRectTime = now;
+            _rectCacheDirty = false;
+        }
+        const rect = rec._cachedRect;
         if (rect.width <= 1 || rect.height <= 1) {
             view.container.visible = false;
             view.setHovered(false);

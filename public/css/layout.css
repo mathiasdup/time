@@ -1,7 +1,20 @@
 ﻿/* ==================== LAYOUT ====================
    Structure, board, top bar, panels, hÃ©ros, deck/graveyard, slots */
 
-@import url('https://fonts.cdnfonts.com/css/glacial-indifference');
+@font-face {
+    font-family: 'Glacial Indifference';
+    src: url('../fonts/GlacialIndifference-Regular.woff') format('woff');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Glacial Indifference';
+    src: url('../fonts/GlacialIndifference-Bold.woff') format('woff');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
         :root {
             /* Taille de rÃ©fÃ©rence des cartes sur le board */
             --card-w: 144px;
