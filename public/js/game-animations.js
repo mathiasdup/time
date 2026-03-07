@@ -2629,7 +2629,7 @@ async function animateBurn(data) {
         'transform: rotateY(0deg);' +
         'border-radius: 6px;';
     const frontFace = (typeof makeCard === 'function')
-        ? makeCard(card, false)
+        ? makeCard(card, true)
         : createCardElementForAnimation(card);
     frontFace.classList.remove('just-played', 'can-attack');
     frontFace.classList.add('in-graveyard');
@@ -2826,8 +2826,11 @@ async function animateDeathToGraveyard(data) {
     //    Comme le wrapper sera DANS le board, la perspective s'applique naturellement
     const gameBoard = document.querySelector('.game-board');
     const boardRect = gameBoard.getBoundingClientRect();
-    const cardWidth = 144;
-    const cardHeight = 192;
+    // Showcase = 1.8x hand card size (adapts to any resolution)
+    const _handRefW = startRect ? startRect.width : (function() { var el = document.querySelector('.my-hand .card, .opp-card-back'); return el ? el.getBoundingClientRect().width : 144; })();
+    const cardWidth = Math.round(_handRefW * 1.8);
+    const cardHeight = Math.round(cardWidth * 4 / 3);
+    console.log('[SPELL-SIZE] handRef:', Math.round(_handRefW), 'cardWidth:', cardWidth, 'cardHeight:', cardHeight);
 
     // Position du slot en coordonnÃƒÆ’Ã‚Â©es locales au board CSS (avant perspective)
     // On utilise offsetLeft/offsetTop rÃƒÆ’Ã‚Â©cursivement jusqu'au board
@@ -2941,6 +2944,7 @@ async function animateDeathToGraveyard(data) {
         wrapper.style.top = startY + 'px';
         wrapper.style.transform = 'scale(1, 1)';
     }
+
 
     // Auto-fit du nom (les noms longs dÃƒÆ’Ã‚Â©bordent pendant l'animation)
     const deathNameFit = cardFace.querySelector('.arena-name');
@@ -3447,8 +3451,10 @@ function createCardElementForAnimation(card) {
 async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const isMine = casterPlayerNum === myNum;
     const side = isMine ? 'me' : 'opp';
-    const cardWidth = 144;
-    const cardHeight = 192;
+    // Showcase = 1.8x hand card size (adapts to any resolution)
+    const _handRefW = startRect ? startRect.width : (function() { var el = document.querySelector('.my-hand .card, .opp-card-back'); return el ? el.getBoundingClientRect().width : 144; })();
+    const cardWidth = Math.round(_handRefW * 1.8);
+    const cardHeight = Math.round(cardWidth * 4 / 3);
 
     // graveRenderBlocked dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  incrÃƒÆ’Ã‚Â©mentÃƒÆ’Ã‚Â© par queueAnimation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â pas de double add
 
@@ -3461,8 +3467,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     cardEl.style.position = 'absolute';
     cardEl.style.top = '0';
     cardEl.style.left = '0';
-    cardEl.style.width = '100%';
-    cardEl.style.height = '100%';
+    cardEl.style.zoom = String(cardWidth / 144);
     cardEl.style.margin = '0';
     if (bgImage) cardEl.style.backgroundImage = bgImage;
 
@@ -3470,7 +3475,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const gameBoard = document.querySelector('.game-board');
     if (!gameBoard) return;
     const gbRect = gameBoard.getBoundingClientRect();
-    const showcaseScale = 1.5;
+    const showcaseScale = 1.0;
     const showcaseX = isMine
         ? gbRect.left + gbRect.width * 0.20 - (cardWidth * showcaseScale) / 2
         : gbRect.left + gbRect.width * 0.80 - (cardWidth * showcaseScale) / 2;
@@ -3501,6 +3506,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const initX = hasStartRect ? startRect.left + startRect.width / 2 - cardWidth / 2 : showcaseX;
     const initY = hasStartRect ? startRect.top + startRect.height / 2 - cardHeight / 2 : showcaseY;
     const initScale = hasStartRect ? (startRect.width / cardWidth) : 0.3;
+    console.log('[SPELL-SIZE] startRect:', hasStartRect ? { w: Math.round(startRect.width), h: Math.round(startRect.height), left: Math.round(startRect.left), top: Math.round(startRect.top) } : 'none', 'initScale:', initScale.toFixed(3), 'showcaseScale:', showcaseScale, 'visualStart:', Math.round(cardWidth * initScale) + 'px', 'visualEnd:', Math.round(cardWidth * showcaseScale) + 'px');
     const oppFlip = !isMine && hasStartRect;
     const initOpacity = oppFlip ? 1 : (hasStartRect ? 0.85 : 0);
 
@@ -3564,9 +3570,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
         perspContainer.style.cssText = `
             position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
             z-index: 10000; pointer-events: none;
-            perspective: 1000px;
-            perspective-origin: ${gbwRect.left + gbwRect.width / 2}px ${gbwRect.top + gbwRect.height * 0.8}px;
-        `;
+            `;
         document.body.appendChild(perspContainer);
         perspContainer.appendChild(wrapper);
     } else {
@@ -3582,31 +3586,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     }
 
 
-    // Calibrer graveScaleX/Y : 3 passes itÃƒÆ’Ã‚Â©ratives, correction indÃƒÆ’Ã‚Â©pendante W et H
-    if (spellGraveTop) {
-        const savedLeft = wrapper.style.left;
-        const savedTop = wrapper.style.top;
-        const savedTransform = wrapper.style.transform;
-        const savedOpacity = wrapper.style.opacity;
-        wrapper.style.opacity = '0';
-        const target = spellGraveTop.getBoundingClientRect();
-        for (let pass = 0; pass < 3; pass++) {
-            wrapper.style.left = graveX + 'px';
-            wrapper.style.top = graveY + 'px';
-            wrapper.style.transform = `scale(${graveScaleX}, ${graveScaleY}) rotateX(${graveTiltDeg}deg)`;
-            const m = wrapper.getBoundingClientRect();
-            if (m.width > 0 && m.height > 0) {
-                graveScaleX *= target.width / m.width;
-                graveScaleY *= target.height / m.height;
-                graveX += (target.left + target.width / 2) - (m.left + m.width / 2);
-                graveY += (target.top + target.height / 2) - (m.top + m.height / 2);
-            }
-        }
-        wrapper.style.left = savedLeft;
-        wrapper.style.top = savedTop;
-        wrapper.style.transform = savedTransform;
-        wrapper.style.opacity = savedOpacity;
-    }
+
 
     // Auto-fit du nom (les noms longs dÃƒÆ’Ã‚Â©bordent pendant l'animation)
     const spellNameFit = cardEl.querySelector('.arena-name');
@@ -3670,7 +3650,15 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 tiltDeg = 0;
 
             } else if (progress <= t3) {
-                // === PHASE 3: SHRINK ===
+                // === PHASE 3: SHRINK === swap to field card (no text)
+                if (!wrapper._swappedToField) {
+                    wrapper._swappedToField = true;
+                    cardEl.classList.add('on-field');
+                    // Switch from zoom to width/height (eliminates zoom+scale interaction bug)
+                    cardEl.style.zoom = '';
+                    cardEl.style.width = '100%';
+                    cardEl.style.height = '100%';
+                }
                 const p = (progress - t2) / (t3 - t2);
                 const ep = easeInOutCubic(p);
                 x = showcaseX;
@@ -3680,17 +3668,82 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
                 tiltDeg = 0;
 
             } else {
-                // === PHASE 4: FLY TO GRAVEYARD (derniÃƒÆ’Ã‚Â¨re phase, comme burn) ===
+                // === PHASE 4: FLY TO GRAVEYARD (reparent into gameBoard, like animateBurn) ===
+                if (!wrapper._flyStarted && gameBoard) {
+                    wrapper._flyStarted = true;
+                    var _curRect = wrapper.getBoundingClientRect();
+
+                    // Move wrapper into gameBoard (same 3D space as graveyard)
+                    wrapper.remove();
+                    wrapper.style.position = 'absolute';
+                    wrapper.style.perspective = '';
+                    gameBoard.appendChild(wrapper);
+                    if (perspContainer) { perspContainer.remove(); perspContainer = null; }
+
+                    // Board-local coords helper (same as animateBurn)
+                    function _getLocalPos(el) {
+                        var lx = 0, ly = 0, cur = el;
+                        while (cur && cur !== gameBoard) { lx += cur.offsetLeft; ly += cur.offsetTop; cur = cur.offsetParent; }
+                        return { x: lx, y: ly };
+                    }
+
+                    // Grave target in board-local coords
+                    var _gt = spellGraveTop || graveEl;
+                    var _lgx = 0, _lgy = 200, _lgs = 1;
+                    if (_gt) {
+                        var gp = _getLocalPos(_gt);
+                        _lgx = gp.x + (_gt.offsetWidth || cardWidth) / 2 - cardWidth / 2;
+                        _lgy = gp.y + (_gt.offsetHeight || cardHeight) / 2 - cardHeight / 2;
+                    }
+
+                    // Calibrate graveScale (6 passes, uniform, like animateBurn)
+                    if (_gt) {
+                        var _tgt = _gt.getBoundingClientRect();
+                        for (var _ci = 0; _ci < 6; _ci++) {
+                            wrapper.style.left = _lgx + 'px';
+                            wrapper.style.top = _lgy + 'px';
+                            wrapper.style.transform = 'scale(' + _lgs + ')';
+                            var _cm = wrapper.getBoundingClientRect();
+                            if (_cm.width > 0 && _cm.height > 0) {
+                                var _cr = Math.min(_tgt.width / _cm.width, _tgt.height / _cm.height);
+                                _lgs *= _cr;
+                                _lgx += (_tgt.left + _tgt.width / 2) - (_cm.left + _cm.width / 2);
+                                _lgy += (_tgt.top + _tgt.height / 2) - (_cm.top + _cm.height / 2);
+                            }
+                        }
+                    }
+
+                    // Calibrate starting position to match current visual position
+                    var _lsx = 0, _lsy = 0;
+                    wrapper.style.opacity = '0';
+                    for (var _si = 0; _si < 4; _si++) {
+                        wrapper.style.left = _lsx + 'px';
+                        wrapper.style.top = _lsy + 'px';
+                        wrapper.style.transform = 'scale(1) rotateX(' + (-graveTiltDeg) + 'deg)';
+                        var _sm = wrapper.getBoundingClientRect();
+                        _lsx += (_curRect.left + _curRect.width / 2) - (_sm.left + _sm.width / 2);
+                        _lsy += (_curRect.top + _curRect.height / 2) - (_sm.top + _sm.height / 2);
+                    }
+                    wrapper.style.opacity = '1';
+
+                    wrapper._fly = { sx: _lsx, sy: _lsy, gx: _lgx, gy: _lgy, gs: _lgs };
+                }
+
+                var fl = wrapper._fly || { sx: 0, sy: 0, gx: 0, gy: 200, gs: 0.5 };
                 const p = (progress - t3) / (1 - t3);
                 const ep = easeInOutCubic(p);
-                x = showcaseX + (graveX - showcaseX) * ep;
-                y = showcaseY + (graveY - showcaseY) * ep;
-                scaleX = 1.0 + (graveScaleX - 1.0) * ep;
-                scaleY = 1.0 + (graveScaleY - 1.0) * ep;
+                x = fl.sx + (fl.gx - fl.sx) * ep;
+                y = fl.sy + (fl.gy - fl.sy) * ep;
+                scaleX = scaleY = 1.0 + (fl.gs - 1.0) * ep;
                 opacity = 1;
-                tiltDeg = ep * graveTiltDeg;
+                tiltDeg = -graveTiltDeg * (1 - ep);
             }
 
+            if (progress > t3 && (!wrapper._lastFlyLog || performance.now() - wrapper._lastFlyLog > 100)) {
+                wrapper._lastFlyLog = performance.now();
+                var _wr = wrapper.getBoundingClientRect();
+                console.log('[SPELL-FLY] p=' + ((progress - t3) / (1 - t3)).toFixed(2), 'x=' + Math.round(x), 'y=' + Math.round(y), 'scX=' + scaleX.toFixed(3), 'scY=' + scaleY.toFixed(3), 'tilt=' + tiltDeg.toFixed(1), 'rect={L:' + Math.round(_wr.left) + ' T:' + Math.round(_wr.top) + ' W:' + Math.round(_wr.width) + ' H:' + Math.round(_wr.height) + '}');
+            }
             wrapper.style.left = x + 'px';
             wrapper.style.top = y + 'px';
             wrapper.style.opacity = opacity;
@@ -3799,7 +3852,7 @@ async function animateSpell(data) {
         const gameBoard = document.querySelector('.game-board');
         if (gameBoard) {
             const gbRect = gameBoard.getBoundingClientRect();
-            const cardW = 144, cardH = 192, sc = 1.5;
+            var _refEl = document.querySelector('.opp-card-back, .my-hand .card'); var _refW = _refEl ? _refEl.getBoundingClientRect().width : 144; const cardW = Math.round(_refW * 1.8), cardH = Math.round(cardW * 4 / 3), sc = 1.0;
             const showcaseX = gbRect.left + gbRect.width * 0.80 - (cardW * sc) / 2;
             const showcaseY = gbRect.top + gbRect.height * 0.45 - (cardH * sc) / 2;
             // Prendre le dos de carte du DOM (filtrer les dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  cachÃƒÆ’Ã‚Â©es)

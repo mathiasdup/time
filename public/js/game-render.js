@@ -534,13 +534,15 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 continue;
             }
             const card = field[r][c];
-            // Pending death: skip stale re-creation OR clear when state confirms removal
+            // Pending death: let death animation handle card removal, skip renderField interference
             if (window._pendingDeathSlots && window._pendingDeathSlots.has(slotKey)) {
-                if (!card) {
-                    // State confirmed card is gone — clear marker
+                if (!card && !slot.querySelector('.card')) {
+                    // State and DOM both confirm card is gone — clear marker
                     window._pendingDeathSlots.delete(slotKey);
-                } else if (!slot.querySelector('.card')) {
-                    // Card still in stale state but DOM is empty (death anim removed it) — skip
+                } else {
+                    // Either stale state (card in state, not in DOM) or
+                    // pending removal (card in DOM, not in state) — skip entirely
+                    // Death animation will handle the visual removal
                     continue;
                 }
             }
