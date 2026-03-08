@@ -40,7 +40,6 @@ function _vfxRect(rect) {
         h: rect.height
     };
 }
-function _vfxPos(x, y) { return { x, y }; }
 
 // Pendant la resolution, plusieurs gameStateUpdate peuvent arriver en rafale.
 // On limite le render a 1/frame sans changer l'ordre des animations.

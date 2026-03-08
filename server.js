@@ -344,10 +344,6 @@ function createCombatPhaseTracker(log, row, col) {
     };
 }
 
-function markCombatPhase(log, row, col, phase, meta = '') {
-    if (!COMBAT_PHASE_TRACE) return;
-    log(`[PHASE] slot=${row},${col} phase=${phase}${meta ? ` ${meta}` : ''}`, 'action');
-}
 
 // GÃƒÂ©nÃƒÂ©rer un code de room unique
 function generateRoomCode() {
@@ -848,15 +844,6 @@ function formatRadjawakDebugCard(card) {
     return `${card.name}[uid=${card.uid || '-'} atk=${atk} hp=${hp}/${maxHp}]`;
 }
 
-function rowContainsRadjawak(room, row) {
-    for (let p = 1; p <= 2; p++) {
-        for (let c = 0; c < 2; c++) {
-            const card = room.gameState.players[p].field[row]?.[c];
-            if (isRadjawakDebugCard(card)) return true;
-        }
-    }
-    return false;
-}
 
 async function applySlotRegeneration(room, row, col, log, sleep) {
     const regenBatch = [];

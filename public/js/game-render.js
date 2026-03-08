@@ -329,7 +329,6 @@ function renderDelta(d) {
 
     // Field: only re-render if any slots changed
     if (d.fieldChanges && d.fieldChanges.length > 0) {
-        // DeflexionVFX beginFrame no longer needed (GPU via CombatVFX)
         const activeShieldKeys = new Set();
         const activeCamoKeys = new Set();
         const activeDeflexionKeys = new Set();
@@ -494,8 +493,6 @@ function render() {
     // Mettre à jour l'affichage de la pile du cimetière
     updateGraveDisplay('me', me.graveyard);
     updateGraveDisplay('opp', opp.graveyard);
-    
-    // DeflexionVFX beginFrame no longer needed (GPU via CombatVFX)
     const activeShieldKeys = new Set();
     const activeCamoKeys = new Set();
     const activeDeflexionKeys = new Set();

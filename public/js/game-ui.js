@@ -158,17 +158,6 @@ function startGame() {
     // Pas de popup "Phase de repositionnement" au tour 1 car pas de créatures
 }
 
-// Helper pour vérifier si j'ai des créatures sur le terrain
-function hasCreaturesOnMyField() {
-    if (!state || !state.me || !state.me.field) return false;
-    for (let r = 0; r < 4; r++) {
-        for (let c = 0; c < 2; c++) {
-            if (state.me.field[r][c]) return true;
-        }
-    }
-    return false;
-}
-
 function keepHand() {
     if (mulliganDone) return;
     mulliganDone = true;
@@ -1351,7 +1340,6 @@ function showRoundBanner(turnNumber) {
     overlay.querySelectorAll('.round-banner-particle').forEach(p => p.remove());
 
     // Create floating golden particles
-    const ribbonEl = overlay.querySelector('.round-banner-ribbon');
     for (let i = 0; i < 20; i++) {
         const particle = document.createElement('div');
         particle.className = 'round-banner-particle';

@@ -508,31 +508,6 @@
         }
 
 
-        /* Carte fantome pour animation de deplacement */
-        .card-moving {
-            position: fixed;
-            z-index: 3000;
-            pointer-events: none;
-            transition: left 0.5s ease-in-out, top 0.5s ease-in-out;
-        }
-
-        /* Carte affichee lors des sorts/pieges */
-        .card-showcase {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(2);
-            z-index: 2000;
-            animation: showcaseAnim 1.5s ease-out forwards;
-            pointer-events: none;
-        }
-        @keyframes showcaseAnim {
-            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-            20% { opacity: 1; transform: translate(-50%, -50%) scale(2.2); }
-            70% { opacity: 1; transform: translate(-50%, -50%) scale(2); }
-            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
-        }
-
         /* Vibration pour carte non jouable */
         .card.shake { animation: shakeAnim 0.4s ease-out; }
         @keyframes shakeAnim {
