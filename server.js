@@ -3614,6 +3614,28 @@ async function processOnPoisonDeathEffects(room, normalDeaths, log, sleep) {
         }
     }
 
+
+    // Amzra, roi incontesté : se soigne de 1 PV par mort poison
+    {
+        const totalPoisonDeaths = normalDeaths.length;
+        if (totalPoisonDeaths > 0) {
+            for (let p = 1; p <= 2; p++) {
+                const player = room.gameState.players[p];
+                if (player.hero && player.hero.id === 'amzra') {
+                    const oldHp = player.hp;
+                    player.hp = Math.min(20, player.hp + totalPoisonDeaths);
+                    const healed = player.hp - oldHp;
+                    if (healed > 0) {
+                        log(`  \uD83D\uDC9A ${player.heroName} (Amzra) se soigne de ${healed} PV (${totalPoisonDeaths} mort(s) poison)`, 'heal');
+                        emitAnimation(room, 'heroHeal', { player: p, amount: healed });
+                    }
+                }
+            }
+            emitStateToBoth(room);
+            await sleep(600);
+        }
+    }
+
     await applyHealOnEnemyPoisonDeath(room, normalDeaths, log);
 }
 
@@ -4673,6 +4695,12 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
                 if (!isMelee) continue; // Tireur/volant Ã¢â€ â€™ le piÃƒÂ¨ge ne se dÃƒÂ©clenche pas
             }
 
+            // === PIÈGE FLY ONLY : ne se déclenche que si l'attaquant est volant ===
+            if (trap.flyOnly) {
+                const firstCard = attackers[0].card;
+                if (!firstCard.abilities?.includes('fly')) continue;
+            }
+
             const trapPreviewTargets = trap.pattern === 'line'
                 ? [0, 1]
                     .filter((col) => !!attackerState.field[row][col])
@@ -4972,6 +5000,30 @@ async function processTrapsForRow(room, row, triggerCol, log, sleep) {
 
                 emitStateToBoth(room);
                 await sleep(500);
+            } else if (trap.effect === 'destroyAttacker') {
+                // === PIÈGE DESTROY : détruit la créature attaquante (Viser haut) ===
+                const firstAttacker = attackers[0];
+                log(`\uD83E\uDEA4 Pi\u00e8ge "${trap.name}" d\u00e9clench\u00e9 sur ${firstAttacker.card.name}!`, 'trap');
+
+                const result = handleCreatureDeath(room, firstAttacker.card, attackerPlayer, row, firstAttacker.col, log);
+                if (result.transformed) {
+                    emitAnimation(room, 'deathTransform', { player: attackerPlayer, row: row, col: firstAttacker.col, fromCard: firstAttacker.card, toCard: result.newCard });
+                } else {
+                    emitAnimation(room, 'death', { player: attackerPlayer, row: row, col: firstAttacker.col, card: firstAttacker.card });
+                }
+                await sleep(1100);
+
+                if (!result.transformed) {
+                    await processOnDeathAbility(room, firstAttacker.card, attackerPlayer, row, firstAttacker.col, log, sleep);
+                }
+                await applyPendingHealOnDeath(room, log);
+
+                addToGraveyard(defenderState, trap);
+                defenderState.traps[row] = null;
+
+                recalcDynamicAtk(room);
+                emitStateToBoth(room);
+                await sleep(500);
             } else {
                 // === PIÃƒË†GE STANDARD : blesse le premier attaquant ===
                 const firstAttacker = attackers[0];
@@ -5220,6 +5272,60 @@ async function applySpell(room, action, log, sleep, options = {}) {
             await applyPendingHealOnDeath(room, log);
         }
 
+        recalcDynamicAtk(room);
+        emitStateToBoth(room);
+    }
+    else if (spell.pattern === 'all' && spell.effect === 'sacrificeHighestAtkEnemy') {
+        // Justice perverse : l'adversaire sacrifie sa créature avec l'ATK la plus haute
+        const enemyNum = playerNum === 1 ? 2 : 1;
+        const enemyState = room.gameState.players[enemyNum];
+        let bestAtk = -1;
+        let candidates = [];
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 2; c++) {
+                const card = enemyState.field[r][c];
+                if (card && card.currentHp > 0) {
+                    const effectiveAtk = (card.atk || 0) + (card.buffCounters || 0) + (card.powerStacks || 0);
+                    if (effectiveAtk > bestAtk) {
+                        bestAtk = effectiveAtk;
+                        candidates = [{ card, row: r, col: c }];
+                    } else if (effectiveAtk === bestAtk) {
+                        candidates.push({ card, row: r, col: c });
+                    }
+                }
+            }
+        }
+        if (candidates.length > 0) {
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            log(`  \uD83D\uDC80 ${action.heroName}: ${spell.name} \u2192 ${chosen.card.name} (ATK ${bestAtk}) est sacrifi\u00e9!`, 'damage');
+            const result = handleCreatureDeath(room, chosen.card, enemyNum, chosen.row, chosen.col, log);
+            if (result.transformed) {
+                emitAnimation(room, 'sacrifice', { player: enemyNum, row: chosen.row, col: chosen.col, card: chosen.card, noFlyToGrave: true });
+                emitAnimation(room, 'deathTransform', { player: enemyNum, row: chosen.row, col: chosen.col, fromCard: chosen.card, toCard: result.newCard });
+            } else {
+                emitAnimation(room, 'sacrifice', { player: enemyNum, row: chosen.row, col: chosen.col, card: chosen.card });
+            }
+            emitStateToBoth(room);
+            await sleep(1100);
+            if (!result.transformed) {
+                await processOnDeathAbility(room, chosen.card, enemyNum, chosen.row, chosen.col, log, sleep);
+            }
+            await applyPendingHealOnDeath(room, log);
+
+            // Buff onAnySacrifice + onAllySacrifice + Erebeth
+            applyOnAnySacrifice(room, 1, log);
+            applyOnAllySacrifice(room, enemyNum, 1, log);
+            applyErebethSacrifice(room, enemyNum, 1, log);
+
+            // onSacrifice effects
+            if (chosen.card.onSacrifice && chosen.card.onSacrifice.damageOpponent) {
+                const opNum = enemyNum === 1 ? 2 : 1;
+                const dmg = chosen.card.onSacrifice.damageOpponent;
+                room.gameState.players[opNum].hp -= dmg;
+                log(`  \uD83D\uDCA5 ${chosen.card.name} inflige ${dmg} d\u00e9g\u00e2t(s) \u00e0 ${room.gameState.players[opNum].heroName} (sacrifice)`, 'damage');
+                emitAnimation(room, 'heroHit', { defender: opNum, damage: dmg });
+            }
+        }
         recalcDynamicAtk(room);
         emitStateToBoth(room);
     }
@@ -6477,6 +6583,24 @@ async function applySpell(room, action, log, sleep, options = {}) {
                     log(`  Ã°Å¸â€™Âª ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${target.name} (+${spell.atkBuff} ATK)`, 'action');
                     emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col, atk: spell.atkBuff, hp: 0 });
                     await sleep(800);
+                }
+                // Grant déflexion (Fumigène de secours)
+                if (spell.effect === 'grantDeflexion') {
+                    if (!target.abilities.includes('deflexion')) {
+                        target.abilities.push('deflexion');
+                        target.addedAbilities = target.addedAbilities || [];
+                        target.addedAbilities.push('deflexion');
+                        target.hasDeflexion = true;
+                    }
+                    if (!target.appliedEffects) target.appliedEffects = [];
+                    if (target.appliedEffects.length < 20) target.appliedEffects.push({
+                        name: spell.name,
+                        description: 'D\u00e9flexion'
+                    });
+                    log(`  \uD83D\uDEE1\uFE0F ${action.heroName}: ${spell.name} \u2192 ${target.name} gagne D\u00e9flexion!`, 'buff');
+                    emitAnimation(room, 'buff', { player: action.targetPlayer, row: action.row, col: action.col });
+                    await sleep(800);
+                    emitStateToBoth(room);
                 }
                 // Sacrifice + pioche (Pacte bÃƒÂ©nÃƒÂ©fique)
                 if (spell.effect === 'sacrificeAndDraw' && !target.isBuilding) {

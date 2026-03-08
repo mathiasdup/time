@@ -2144,11 +2144,15 @@ function renderHand(hand, energy) {
     _domVisSnapshot(panel, 'renderHand:END');
 }
 
+const _committedHighlightEls = new Set();
+window._committedHighlightEls = _committedHighlightEls;
+
 function _markCommittedHoverSlot(slot) {
     if (!slot) return;
     slot.classList.add('committed-hover-target');
+    _committedHighlightEls.add(slot);
     const card = slot.querySelector('.card');
-    if (card) card.classList.add('spell-hover-target');
+    if (card) { card.classList.add('spell-hover-target'); _committedHighlightEls.add(card); }
 }
 
 function _ensureCommittedSpellHoverFallback(panel) {
@@ -2194,7 +2198,7 @@ function highlightCommittedSpellTargets(cs) {
     if (cs.targetType === 'hero') {
         const heroOwner = cs.targetPlayer === myNum ? 'me' : 'opp';
         const heroEl = document.getElementById(`hero-${heroOwner}`);
-        if (heroEl) heroEl.classList.add('hero-hover-target');
+        if (heroEl) { heroEl.classList.add('hero-hover-target'); _committedHighlightEls.add(heroEl); }
     } else if (cs.targetType === 'global') {
         if (cs.card.effect === 'summonZombieWall') {
             for (let r = 0; r < 4; r++) {
@@ -2227,9 +2231,10 @@ function highlightCommittedSpellTargets(cs) {
 }
 
 function clearCommittedSpellHighlights() {
-    document.querySelectorAll('.hero-hover-target, .card-slot.committed-hover-target, .card-slot .card.spell-hover-target, .card-slot.cross-target').forEach(el => {
+    for (const el of _committedHighlightEls) {
         el.classList.remove('hero-hover-target', 'committed-hover-target', 'spell-hover-target', 'cross-target');
-    });
+    }
+    _committedHighlightEls.clear();
     CardGlow.markDirty();
 }
 

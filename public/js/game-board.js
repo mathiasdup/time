@@ -490,8 +490,9 @@ function previewCrossTargets(targetOwner, row, col) {
     const centerSlot = getSlot(targetOwner, row, col);
     if (centerSlot) {
         centerSlot.classList.add('cross-target');
+        if (window._committedHighlightEls) window._committedHighlightEls.add(centerSlot);
         const centerCard = centerSlot.querySelector('.card');
-        if (centerCard) centerCard.classList.add('spell-hover-target');
+        if (centerCard) { centerCard.classList.add('spell-hover-target'); if (window._committedHighlightEls) window._committedHighlightEls.add(centerCard); }
     }
 
     // Adjacents en orange + bordure orange sur les créatures présentes
@@ -500,8 +501,9 @@ function previewCrossTargets(targetOwner, row, col) {
         const slot = getSlot(owner, t.row, t.col);
         if (slot) {
             slot.classList.add('cross-target');
+            if (window._committedHighlightEls) window._committedHighlightEls.add(slot);
             const card = slot.querySelector('.card');
-            if (card) card.classList.add('spell-hover-target');
+            if (card) { card.classList.add('spell-hover-target'); if (window._committedHighlightEls) window._committedHighlightEls.add(card); }
         }
     });
 }

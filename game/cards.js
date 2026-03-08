@@ -410,7 +410,9 @@ const CardDB = {
         { id: 'pacte_benefique', name: 'Pacte bénéfique', cost: 3, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'défensif', pattern: 'single', targetSelfCreature: true, effect: 'sacrificeAndDraw', drawAmount: 3, excludeBuildings: true, image: 'black/pacte_benefique.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Sacrifiez une créature alliée ciblée, piochez 3 cartes.' },
         { id: 'expurger_le_poison', name: 'Expurger le poison', cost: 2, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'single', effect: 'destroyIfPoisoned', image: 'black/expurger_poison.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Détruit la créature ciblée si elle possède au moins un marqueur poison.' },
         { id: 'invoquer_les_damnes', name: 'Invoquer les damnés', cost: 1, type: 'spell', spellSpeed: 4, offensive: false, spellType: 'défensif', pattern: 'hero', targetSelf: true, effect: 'addTokensToHand', tokenId: 'damne', tokenCount: 3, image: 'black/invoquer_les_damnes.png', arenaStyle: true, faction: 'black', edition: 2, description: 'Ajoutez 3 Damnés dans votre main.' },
-        { id: 'purger_par_effroi', name: 'Purger par effroi', cost: 3, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'single', targetAnyCreature: true, effect: 'poisonTarget', poisonAmount: 5, image: 'black/purger_par_effroi.png', arenaStyle: true, faction: 'black', edition: 2, rarity: 2, description: 'Met 5 marqueurs poison sur la créature ciblée.' }
+        { id: 'purger_par_effroi', name: 'Purger par effroi', cost: 3, type: 'spell', spellSpeed: 2, offensive: true, spellType: 'offensif', pattern: 'single', targetAnyCreature: true, effect: 'poisonTarget', poisonAmount: 5, image: 'black/purger_par_effroi.png', arenaStyle: true, faction: 'black', edition: 2, rarity: 2, description: 'Met 5 marqueurs poison sur la créature ciblée.' },
+        { id: 'justice_perverse', name: 'Justice perverse', cost: 5, type: 'spell', spellSpeed: 1, offensive: true, spellType: 'offensif', pattern: 'all', effect: 'sacrificeHighestAtkEnemy', image: 'black/justice_perverse.png', arenaStyle: true, faction: 'black', edition: 2, rarity: 2, description: 'L\'adversaire sacrifie sa créature avec l\'attaque la plus haute.' },
+        { id: 'fumigene_de_secours', name: 'Fumigène de secours', cost: 2, type: 'spell', spellSpeed: 5, offensive: false, spellType: 'défensif', pattern: 'single', targetSelfCreature: true, effect: 'grantDeflexion', image: 'black/fumigene_de_secours.png', arenaStyle: true, faction: 'black', edition: 2, rarity: 2, description: 'La créature alliée ciblée gagne déflexion.' }
     ],
     traps: [
         { id: 'troubeant', name: 'Trou béant', damage: 6, cost: 2, type: 'trap', meleeOnly: true, image: 'neutral/troubeant.png', arenaStyle: true, faction: 'neutral', edition: 1, description: 'Inflige 6 dégâts à la première créature de mêlée adverse qui attaque sur la ligne.' },
@@ -418,7 +420,8 @@ const CardDB = {
         { id: 'voyage_inattendu', name: 'Voyage inattendu', cost: 3, type: 'trap', effect: 'bounce', image: 'neutral/voyage_inattendu.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 'uncommon', description: 'Renvoyez la créature dans la main de son propriétaire.' },
         { id: 'piege_a_gobelin', name: 'Piège à gobelin', cost: 2, type: 'trap', effect: 'summon', summonId: 'gobelin_jumele', image: 'neutral/piege_a_gobelin.png', arenaStyle: true, faction: 'neutral', edition: 3, description: 'Invoque un Gobelin jumelé sur l\'emplacement adjacent. Ne se déclenche que si cet emplacement est vide.' },
         { id: 'piece_renfermee', name: 'Pièce renfermée', cost: 3, type: 'trap', effect: 'poisonLine', poisonAmount: 3, pattern: 'line', image: 'neutral/piece_renfermee.png', arenaStyle: true, faction: 'neutral', edition: 3, rarity: 3, description: 'Inflige 3 marqueurs poison à toutes les créatures sur la ligne (alliées et ennemies).' },
-        { id: 'jouer_avec_les_morts', name: 'Jouer avec les morts', cost: 3, type: 'trap', effect: 'reanimateHighest', image: 'neutral/jouer_avec_les_morts.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 2, description: 'Réanime la créature avec le coût en mana le plus élevé de votre cimetière sur le slot avant. Fixe son attaque de base à 1.' }
+        { id: 'jouer_avec_les_morts', name: 'Jouer avec les morts', cost: 3, type: 'trap', effect: 'reanimateHighest', image: 'neutral/jouer_avec_les_morts.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 2, description: 'Réanime la créature avec le coût en mana le plus élevé de votre cimetière sur le slot avant. Fixe son attaque de base à 1.' },
+        { id: 'viser_haut', name: 'Viser haut', cost: 3, type: 'trap', flyOnly: true, effect: 'destroyAttacker', image: 'neutral/viser_haut.png', arenaStyle: true, faction: 'neutral', edition: 2, rarity: 2, description: 'Détruit la créature volante attaquante.' }
     ]
 };
 
@@ -449,7 +452,17 @@ const HEROES = {
         edition: 3,
         ability: 'Aura passive : toutes les créatures avec 1 ATK de base gagnent +1/+0. Cumulable.'
     },
-    erebeth: {
+    amzra: {
+        id: 'amzra',
+        name: 'Amzra, roi incontesté',
+        image: 'black/amzra_roi_inconteste.png',
+        titleColor: '#2a1a3dba',
+        faction: 'black',
+        edition: 3,
+        rarity: 3,
+        ability: 'Quand une créature meurt du poison, se soigne de 1.'
+    },
+        erebeth: {
         id: 'erebeth',
         name: 'Erebeth, ange de la mort',
         image: 'black/Erebeth_ange_de_la_mort.png',
@@ -727,6 +740,8 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
         reanimateWeakened: 'spell resolution',
         sacrificeAndDraw: 'spell resolution',
         sacrificeLastAndDamage: 'spell resolution',
+        sacrificeHighestAtkEnemy: 'spell resolution',
+        grantDeflexion: 'spell resolution',
         selfDamageAndDraw: 'spell resolution',
         summonZombieWall: 'spell resolution',
         triSelectif: 'spell resolution',
@@ -746,7 +761,8 @@ const ABILITY_RESOLUTION_CONTRACT = Object.freeze({
         bounce: 'trap resolution',
         poisonLine: 'trap resolution',
         reanimateHighest: 'trap resolution',
-        summon: 'trap resolution'
+        summon: 'trap resolution',
+        destroyAttacker: 'trap resolution'
     })
 });
 
