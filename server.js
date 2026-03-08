@@ -8037,6 +8037,26 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==================== HERO CATALOG (Complete Mode) ====================
+    socket.on('requestHeroCatalog', (callback) => {
+        // Return only black faction heroes
+        const blackHeroes = Object.values(HEROES).filter(h => h.faction === 'black');
+        callback(blackHeroes);
+    });
+
+    socket.on('setCompleteHero', (heroId) => {
+        const info = playerRooms.get(socket.id);
+        if (!info) return;
+        const room = rooms.get(info.code);
+        if (!room || room.gameState.phase !== 'mulligan') return;
+        const player = room.gameState.players[info.playerNum];
+        const hero = HEROES[heroId];
+        if (!hero || hero.faction !== 'black') return;
+        player.hero = { ...hero };
+        player.heroName = hero.name;
+        emitStateToBoth(room);
+    });
+
     // ==================== MODE TEST ====================
     socket.on('requestCardCatalog', (callback) => {
         const catalog = {
@@ -8190,10 +8210,14 @@ io.on('connection', (socket) => {
         player.hand = deck.splice(0, 5);
         player.deck = deck;
 
-        // Forcer le hÃƒÂ©ros Erebeth
-        const erebeth = { ...HEROES.erebeth };
-        player.hero = erebeth;
-        player.heroName = erebeth.name;
+        // Use the hero chosen by the player (via setCompleteHero), or default to first black hero
+        if (!player.hero || player.hero.faction !== 'black') {
+            const defaultHero = Object.values(HEROES).find(h => h.faction === 'black');
+            if (defaultHero) {
+                player.hero = { ...defaultHero };
+                player.heroName = defaultHero.name;
+            }
+        }
 
         emitStateToBoth(room);
         callback({ success: true });

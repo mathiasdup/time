@@ -14,6 +14,7 @@ class GameVFXSystem {
         this.activeEffects = [];
         this.activeShields = new Map(); // slotKey → { container, element, startTime }
         this.activeCamouflages = new Map(); // slotKey → { container, element, startTime, particles }
+        this.activeDeflexions = new Map(); // slotKey → { container, element, startTime, ringGfx, runeTexts }
         this._camoNoiseA = null; // Noise generators (initialized lazily)
         this._camoNoiseB = null;
     }
@@ -127,6 +128,28 @@ class GameVFXSystem {
         return { x: (vx - rect.left) / zoom, y: (vy - rect.top) / zoom };
     }
 
+    /** Get the true visual center of a DOM element in viewport coords,
+     *  accounting for CSS perspective/3D transforms.
+     *  Falls back to bounding rect center if no perspective distortion. */
+    _getElementCenter(element) {
+        // Cache DOM reads — cards don't move during combat, refresh every 200ms
+        const now = performance.now();
+        const cache = element._vfxCache;
+        if (cache && (now - cache.t) < 50) return cache;
+
+        const rect = element.getBoundingClientRect();
+        const result = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            width: rect.width,
+            height: rect.height,
+            t: now,
+        };
+        element._vfxCache = result;
+        return result;
+    }
+
+
     /** Push effect into activeEffects */
     _pushEffect(effect) {
         this.activeEffects.push(effect);
@@ -138,6 +161,7 @@ class GameVFXSystem {
             this.activeEffects.length === 0 &&
             this.activeShields.size === 0 &&
             this.activeCamouflages.size === 0 &&
+            this.activeDeflexions.size === 0 &&
             !this._shakeActive
         ) {
             return;
@@ -174,9 +198,10 @@ class GameVFXSystem {
 
         this.updateShields();
         this.updateCamouflages();
+        this.updateDeflexions();
 
         // Render shieldApp manually only when there are shields or camouflages
-        if (this.shieldApp && (this.activeShields.size > 0 || this.activeCamouflages.size > 0)) {
+        if (this.shieldApp && (this.activeShields.size > 0 || this.activeCamouflages.size > 0 || this.activeDeflexions.size > 0)) {
             this.shieldApp.render();
         }
     }
@@ -3510,10 +3535,12 @@ class GameVFXSystem {
             if (this._shakeActive && shield._cachedRect) {
                 rect = shield._cachedRect;
             } else {
-                rect = element.getBoundingClientRect();
+                rect = this._getElementCenter(element);
                 shield._cachedRect = rect;
             }
-            const p = this._toScaler(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            const stagePos = this.shieldApp.stage.position;
+            const stageScale = this.shieldApp.stage.scale.x;
+            const p = { x: (rect.x - stagePos.x) / stageScale, y: (rect.y - stagePos.y) / stageScale };
 
             // Bob vertical subtil (3s cycle, ±3px)
             const elapsed = (now - startTime) / 1000;
@@ -4414,6 +4441,290 @@ class GameVFXSystem {
         }
     }
 
+    // ==================== DEFLEXION SYSTEM (ANNEAU RUNIQUE PIXIJS) ====================
+
+    _buildDeflexionRing(outerR, innerR, midR) {
+        const RUNES = ['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛜ','ᛞ','ᛟ'];
+        const RUNE_COUNT = 10;
+
+        // Container that will rotate as a whole
+        const ringGroup = new PIXI.Container();
+
+        // Static ring graphics — drawn once, never cleared
+        const ringGfx = new PIXI.Graphics();
+        ringGfx.circle(0, 0, outerR);
+        ringGfx.stroke({ color: 0x7755ff, width: 1.5, alpha: 0.85 });
+        ringGfx.circle(0, 0, innerR);
+        ringGfx.stroke({ color: 0x7755ff, width: 1.5, alpha: 0.85 });
+        ringGfx.circle(0, 0, outerR);
+        ringGfx.fill({ color: 0x3322aa, alpha: 0.08 });
+        // Tick marks
+        for (let ti = 0; ti < RUNE_COUNT; ti++) {
+            const ta = ((ti + 0.5) / RUNE_COUNT) * Math.PI * 2 - Math.PI / 2;
+            ringGfx.moveTo(Math.cos(ta) * (innerR + 2), Math.sin(ta) * (innerR + 2));
+            ringGfx.lineTo(Math.cos(ta) * (outerR - 2), Math.sin(ta) * (outerR - 2));
+            ringGfx.stroke({ color: 0x5544cc, width: 0.8, alpha: 0.5 });
+        }
+        ringGroup.addChild(ringGfx);
+
+        // Glow ring
+        const glowGfx = new PIXI.Graphics();
+        glowGfx.circle(0, 0, outerR);
+        glowGfx.stroke({ color: 0x8866ff, width: 6, alpha: 0.15 });
+        glowGfx.circle(0, 0, outerR);
+        glowGfx.stroke({ color: 0x7755ff, width: 2, alpha: 0.25 });
+        glowGfx.circle(0, 0, innerR);
+        glowGfx.stroke({ color: 0x8866ff, width: 6, alpha: 0.15 });
+        glowGfx.circle(0, 0, innerR);
+        glowGfx.stroke({ color: 0x7755ff, width: 2, alpha: 0.25 });
+        // No blur filter — wide soft strokes simulate glow without GPU cost
+        ringGroup.addChild(glowGfx);
+
+        // Rune texts
+        const runeTexts = [];
+        for (let i = 0; i < RUNE_COUNT; i++) {
+            const angle = (i / RUNE_COUNT) * Math.PI * 2 - Math.PI / 2;
+            const t = new PIXI.Text({
+                text: RUNES[i % RUNES.length],
+                style: {
+                    fontFamily: 'Georgia, "Times New Roman", serif',
+                    fontSize: 11,
+                    fill: 0xBBBBFF,
+                }
+            });
+            t.anchor.set(0.5);
+            t.x = Math.cos(angle) * midR;
+            t.y = Math.sin(angle) * midR;
+            ringGroup.addChild(t);
+            runeTexts.push({ text: t, baseAngle: angle });
+        }
+
+        return { ringGroup, runeTexts };
+    }
+
+    registerDeflexion(slotKey, element) {
+        if (!this.initialized) return;
+
+        if (this.activeDeflexions.has(slotKey)) {
+            this.activeDeflexions.get(slotKey).element = element;
+            return;
+        }
+
+        // Fixed design radius — will be scaled to match card size
+        const DESIGN_OUTER = 60;
+        const DESIGN_INNER = DESIGN_OUTER * 0.72;
+        const DESIGN_MID = (DESIGN_OUTER + DESIGN_INNER) / 2;
+
+        const container = new PIXI.Container();
+        this.shieldLayer.addChild(container);
+
+        const { ringGroup, runeTexts } = this._buildDeflexionRing(DESIGN_OUTER, DESIGN_INNER, DESIGN_MID);
+        container.addChild(ringGroup);
+
+        // Mask for clipping to card bounds
+        const maskGfx = new PIXI.Graphics();
+        container.addChild(maskGfx);
+        container.mask = maskGfx;
+
+        this.activeDeflexions.set(slotKey, {
+            container,
+            element,
+            startTime: performance.now(),
+            ringGroup,
+            runeTexts,
+            maskGfx,
+            designOuter: DESIGN_OUTER,
+            shattering: false,
+            shatterStart: 0,
+            frags: null,
+            _lastW: 0,
+            _lastH: 0,
+        });
+    }
+
+    removeDeflexion(slotKey) {
+        const def = this.activeDeflexions.get(slotKey);
+        if (!def) return;
+        if (def.container.mask) def.container.mask = null;
+        def.container.parent?.removeChild(def.container);
+        def.container.destroy({ children: true });
+        this.activeDeflexions.delete(slotKey);
+    }
+
+    syncDeflexions(activeSlotKeys) {
+        for (const slotKey of this.activeDeflexions.keys()) {
+            if (!activeSlotKeys.has(slotKey)) {
+                this.removeDeflexion(slotKey);
+            }
+        }
+    }
+
+    shatterDeflexion(slotKey) {
+        const def = this.activeDeflexions.get(slotKey);
+        if (!def || def.shattering) return;
+
+        const RUNES = ['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛜ','ᛞ','ᛟ'];
+        const NUM_FRAGS = 9;
+
+        // Hide idle ring + remove mask so fragments fly out
+        def.ringGroup.visible = false;
+        def.container.mask = null;
+
+        const scale = def.ringGroup.scale.x || 1;
+        const outerR = def.designOuter * scale;
+        const innerR = outerR * 0.72;
+        const midR = (outerR + innerR) / 2;
+
+        const elapsed = (performance.now() - def.startTime) / 1000;
+        const currentRot = elapsed * 0.4;
+
+        const frags = [];
+        for (let i = 0; i < NUM_FRAGS; i++) {
+            const baseSlice = (Math.PI * 2) / NUM_FRAGS;
+            const jitter = (Math.random() - 0.5) * 0.3;
+            const a0 = i * baseSlice + jitter + currentRot;
+            const a1 = a0 + baseSlice * (0.75 + Math.random() * 0.2);
+            const midAngle = (a0 + a1) / 2;
+            const driftDir = midAngle + (Math.random() - 0.5) * 0.5;
+            const speed = 60 + Math.random() * 40;
+
+            const fragContainer = new PIXI.Container();
+            def.container.addChild(fragContainer);
+
+            const g = new PIXI.Graphics();
+            const steps = 16;
+            g.moveTo(Math.cos(a0) * outerR, Math.sin(a0) * outerR);
+            for (let s = 1; s <= steps; s++) {
+                const a = a0 + (a1 - a0) * (s / steps);
+                g.lineTo(Math.cos(a) * outerR, Math.sin(a) * outerR);
+            }
+            for (let s = steps; s >= 0; s--) {
+                const a = a0 + (a1 - a0) * (s / steps);
+                g.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
+            }
+            g.closePath();
+            g.fill({ color: 0x220044, alpha: 0.5 });
+            g.stroke({ color: 0x9977ff, width: 1.5, alpha: 1.0 });
+            fragContainer.addChild(g);
+
+            const gGlow = new PIXI.Graphics();
+            gGlow.moveTo(Math.cos(a0) * outerR, Math.sin(a0) * outerR);
+            for (let s = 1; s <= steps; s++) {
+                const a = a0 + (a1 - a0) * (s / steps);
+                gGlow.lineTo(Math.cos(a) * outerR, Math.sin(a) * outerR);
+            }
+            for (let s = steps; s >= 0; s--) {
+                const a = a0 + (a1 - a0) * (s / steps);
+                gGlow.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
+            }
+            gGlow.closePath();
+            gGlow.stroke({ color: 0xbb99ff, width: 3, alpha: 0.5 });
+            gGlow.filters = [new PIXI.BlurFilter({ strength: 3, quality: 2 })];
+            fragContainer.addChild(gGlow);
+
+            const runeIdx = Math.floor((midAngle / (Math.PI * 2)) * 16 + 16) % RUNES.length;
+            const rt = new PIXI.Text({
+                text: RUNES[runeIdx],
+                style: { fontFamily: 'Georgia, serif', fontSize: 10, fill: 0xccaaff }
+            });
+            rt.anchor.set(0.5);
+            rt.x = Math.cos(midAngle) * midR;
+            rt.y = Math.sin(midAngle) * midR;
+            fragContainer.addChild(rt);
+
+            frags.push({
+                container: fragContainer,
+                vx: Math.cos(driftDir) * speed,
+                vy: Math.sin(driftDir) * speed,
+                rotSpeed: (Math.random() - 0.5) * 2,
+            });
+        }
+
+        def.shattering = true;
+        def.shatterStart = performance.now();
+        def.frags = frags;
+    }
+
+    updateDeflexions() {
+        if (this.activeDeflexions.size === 0) return;
+        const now = performance.now();
+        const toRemove = [];
+
+        for (const [slotKey, def] of this.activeDeflexions) {
+            const { container, element, startTime } = def;
+
+            if (!element || !document.contains(element)) {
+                container.visible = false;
+                continue;
+            }
+            container.visible = true;
+
+            let rect;
+            if (this._shakeActive && def._cachedRect) {
+                rect = def._cachedRect;
+            } else {
+                rect = this._getElementCenter(element);
+                def._cachedRect = rect;
+            }
+            // Position directly using viewport coords, accounting for stage transform
+            const stagePos = this.shieldApp.stage.position;
+            const stageScale = this.shieldApp.stage.scale.x;
+            const px = (rect.x - stagePos.x) / stageScale;
+            const py = (rect.y - stagePos.y) / stageScale;
+            container.position.set(px, py);
+
+            if (def.shattering) {
+                const elapsed = (now - def.shatterStart) / 1000;
+                if (elapsed >= 1.0) { toRemove.push(slotKey); continue; }
+                const progress = elapsed;
+                const alpha = progress < 0.3 ? 1.0 : Math.max(0, 1 - (progress - 0.3) / 0.7);
+                const dt = 1 / 60;
+                for (const f of def.frags) {
+                    f.container.x += f.vx * dt;
+                    f.container.y += f.vy * dt;
+                    f.container.rotation += f.rotSpeed * dt;
+                    f.container.alpha = alpha;
+                }
+            } else {
+                // Idle: scale + rotate + counter-rotate runes — NO redraw
+                const elapsed = (now - startTime) / 1000;
+                const sw = rect.width / stageScale;
+                const sh = rect.height / stageScale;
+                const hw = sw / 2;
+                const hh = sh / 2;
+
+                // Scale ring to fit card
+                const targetR = Math.min(hw, hh) * 0.92;
+                const s = targetR / def.designOuter;
+                def.ringGroup.scale.set(s);
+
+                // Rotate
+                def.ringGroup.rotation = elapsed * 0.4;
+
+                // Counter-rotate rune texts
+                const rot = def.ringGroup.rotation;
+                for (const r of def.runeTexts) {
+                    r.text.rotation = r.baseAngle + Math.PI / 2 - rot;
+                }
+
+                // Update mask if card size changed
+                if (Math.abs(sw - def._lastW) > 2 || Math.abs(sh - def._lastH) > 2) {
+                    def._lastW = sw;
+                    def._lastH = sh;
+                    def.maskGfx.clear();
+                    def.maskGfx.roundRect(-hw, -hh, sw, sh, 4);
+                    def.maskGfx.fill({ color: 0xffffff });
+                }
+            }
+        }
+
+        for (const key of toRemove) this.removeDeflexion(key);
+    }
+
+
+
+
+
     updateCamouflages() {
         if (this.activeCamouflages.size === 0) return;
         const now = performance.now();
@@ -4436,11 +4747,13 @@ class GameVFXSystem {
             if (this._shakeActive && camo._cachedRect) {
                 rect = camo._cachedRect;
             } else {
-                rect = element.getBoundingClientRect();
+                rect = this._getElementCenter(element);
                 camo._cachedRect = rect;
             }
             const { zoom } = this._getScalerInfo();
-            const pp = this._toScaler(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            const stagePos2 = this.shieldApp.stage.position;
+            const stageScale2 = this.shieldApp.stage.scale.x;
+            const pp = { x: (rect.x - stagePos2.x) / stageScale2, y: (rect.y - stagePos2.y) / stageScale2 };
             const sw = rect.width / zoom;
             const sh = rect.height / zoom;
             const hw = sw / 2;

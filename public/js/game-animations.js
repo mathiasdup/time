@@ -1603,14 +1603,22 @@ async function executeAnimationAsync(type, data) {
             await new Promise(r => setTimeout(r, 600));
             break;
         }
-        case 'deflexion': {
+case 'deflexion': {
             const dfOwner = data.player === myNum ? 'me' : 'opp';
+            const dfSlotKey = dfOwner + '-' + data.row + '-' + data.col;
             const dfSlot = getSlot(dfOwner, data.row, data.col);
             if (dfSlot) {
-                dfSlot.classList.add('deflexion-flash');
+                // Shatter the runic ring
+                if (typeof CombatVFX !== 'undefined') {
+                    CombatVFX.shatterDeflexion(dfSlotKey);
+                }
+                // Spell miss cross on the creature
                 const dfRect = dfSlot.getBoundingClientRect();
-                if (typeof CombatVFX !== 'undefined' && CombatVFX.createShieldEffect) {
-                    CombatVFX.createShieldEffect(dfRect.left + dfRect.width / 2, dfRect.top + dfRect.height / 2, dfRect.width, dfRect.height);
+                if (typeof CombatVFX !== 'undefined') {
+                    CombatVFX.createSpellMissEffect(
+                        dfRect.left + dfRect.width / 2,
+                        dfRect.top + dfRect.height / 2
+                    );
                 }
                 // Floating text
                 const dfText = document.createElement('div');
@@ -1620,7 +1628,6 @@ async function executeAnimationAsync(type, data) {
                 dfText.style.top = dfRect.top + 'px';
                 document.body.appendChild(dfText);
                 setTimeout(() => dfText.remove(), 1500);
-                setTimeout(() => dfSlot.classList.remove('deflexion-flash'), 800);
             }
             await new Promise(r => setTimeout(r, 1000));
             break;
@@ -3875,6 +3882,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 }
 
 async function animateSpell(data) {
+    console.log("[SPELL-GLOW] animateSpell entry", { caster: data.caster, myNum, spell: data.spell?.name, time: performance.now().toFixed(1) });
     let startRect = null;
     _oppHandDomSnap("spell:entry:" + (data.spell ? data.spell.name : "?"));
     // Fly from opponent hand before revealing the spell
@@ -3973,6 +3981,10 @@ async function animateSpell(data) {
             }
 
             if (foundEl) {
+                                console.log("[SPELL-GLOW] foundEl in DOM, about to remove glow+el", { commitId: foundEl.dataset.commitId, hasGlow: !!foundEl.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
+                // Retirer le glow orange avant le remove pour eviter le flash
+                var _glowC = foundEl.querySelector(".card-glow-canvas");
+                if (_glowC) _glowC.remove();
                 // ÃƒÆ’Ã¢â‚¬Â°lÃƒÆ’Ã‚Â©ment trouvÃƒÆ’Ã‚Â© dans le DOM ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â rÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer sa position et le retirer
                 startRect = foundEl.getBoundingClientRect();
                 if (typeof _domVisSnapshot === 'function') _domVisSnapshot(handPanel, 'animateSpell:BEFORE-remove-committed');
@@ -3986,6 +3998,7 @@ async function animateSpell(data) {
                 }
 
                 foundEl.remove();
+                console.log("[SPELL-GLOW] foundEl removed from DOM", { time: performance.now().toFixed(1) });
 
                 // FLIP : animer les cartes restantes vers leurs nouvelles positions
                 const toAnimate = [];

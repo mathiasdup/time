@@ -600,6 +600,106 @@
         .mode-test .mode-btn-icon { color: #e67e22; }
         .mode-complete .mode-btn-icon { color: #9b59b6; }
 
+        /* ==================== HERO SELECTOR ==================== */
+        .hero-selector-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.97);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .hero-selector-overlay.hidden { display: none; }
+        .hero-selector-title {
+            font-family: 'Glacial Indifference', sans-serif;
+            font-size: 2em;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255,215,0,0.5);
+            margin-bottom: 8px;
+        }
+        .hero-selector-subtitle {
+            font-size: 1.1em;
+            color: #9b59b6;
+            margin-bottom: 30px;
+            letter-spacing: 1px;
+        }
+        .hero-selector-grid {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .hero-selector-card {
+            width: 220px;
+            background: rgba(30,30,50,0.9);
+            border: 2px solid rgba(155,89,182,0.4);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+        }
+        .hero-selector-card:hover {
+            border-color: #ffd700;
+            background: rgba(40,40,70,0.95);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(255,215,0,0.2);
+        }
+        .hero-selector-card.selected {
+            border-color: #ffd700;
+            background: rgba(50,45,30,0.95);
+            box-shadow: 0 0 20px rgba(255,215,0,0.3);
+        }
+        .hero-selector-portrait {
+            width: 180px;
+            height: 240px;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-bottom: 12px;
+            border: 2px solid rgba(155,89,182,0.3);
+        }
+        .hero-selector-card:hover .hero-selector-portrait,
+        .hero-selector-card.selected .hero-selector-portrait {
+            border-color: #ffd700;
+        }
+        .hero-selector-name {
+            font-family: 'Glacial Indifference', sans-serif;
+            font-size: 1.1em;
+            color: #fff;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .hero-selector-ability {
+            font-size: 0.85em;
+            color: #aaa;
+            line-height: 1.4;
+            min-height: 40px;
+        }
+        .hero-selector-confirm {
+            margin-top: 30px;
+            padding: 12px 40px;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #9b59b6, #6c3483);
+            border: 2px solid #9b59b6;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+        .hero-selector-confirm.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .hero-selector-confirm.active:hover {
+            background: linear-gradient(135deg, #a66bbe, #7d3c98);
+            box-shadow: 0 0 15px rgba(155,89,182,0.4);
+        }
+
         /* ==================== CARD PICKER ==================== */
         .card-picker-overlay {
             position: fixed;

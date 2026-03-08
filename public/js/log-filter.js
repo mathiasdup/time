@@ -1,14 +1,24 @@
-// log-filter.js — Only suppress truly spammy noise (same value repeated 50x)
-// Set window.DEBUG_LOGS = true to disable filtering entirely
+// log-filter.js — Suppress diagnostic logs by default
+// REACTIVATE: type  window.DEBUG_LOGS = true  in console (instant, no reload)
 // Loaded BEFORE all game scripts
 (function() {
     var _origLog = console.log;
     var _origWarn = console.warn;
 
-    // Only suppress the worst offender: HP-MUTOBS fires on every render
-    // even when the value hasn't changed (hero-me changed to: 20 x50)
+    // All diagnostic prefixes — suppressed by default, DEBUG_LOGS = true to see them
     var SUPPRESS = [
-        '[HP-MUTOBS]'
+        '[HP-MUTOBS]',
+        '[HP-WATCHDOG]',
+        '[HP]',
+        '[CARD-FLASH-WATCHDOG]',
+        '[CARD-FLASH]',
+        '[HAND-ORDER-WATCHDOG]',
+        '[HAND-ORDER]',
+        '[RENDER-OPP]',
+        '[OPP-HAND-DOM]',
+        '[SPECTRE-DBG]',
+        '[EVEQUE-DBG]',
+        '[GAP-CLOSE]'
     ];
 
     function _check(args) {

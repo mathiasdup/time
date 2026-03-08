@@ -199,12 +199,13 @@ const CardGlow = (() => {
             activeEls.add(cardEl);
         }
 
-        // Sorts commités : glow orange
-        const committedSpells = document.querySelectorAll('.my-hand .committed-spell');
+        // Sorts commités : glow orange (skip pendant la résolution pour éviter le flash)
+        const committedSpells = (typeof state !== "undefined" && state && state.phase === "resolution") ? [] : document.querySelectorAll(".my-hand .committed-spell");
         for (const cardEl of committedSpells) {
             if (activeEls.has(cardEl)) continue;
             const { borderW, borderR } = getCachedBorder(cardEl);
             const isArena = cardEl.classList.contains('arena-style');
+            console.log("[SPELL-GLOW] CardGlow painting orange on committed-spell", { time: performance.now().toFixed(1) });
             newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
             activeEls.add(cardEl);
         }

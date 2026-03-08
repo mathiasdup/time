@@ -194,6 +194,7 @@ function doMulligan() {
 // ==================== MODE TEST / MODE COMPLET ====================
 
 let pickerMode = 'test'; // 'test' ou 'complete'
+let selectedHeroId = null; // Héros choisi en mode complet
 
 function showModeSelector() {
     document.getElementById('mode-selector-overlay').classList.remove('hidden');
@@ -209,8 +210,71 @@ function selectMode(mode) {
         showCardPicker();
     } else if (mode === 'complete') {
         pickerMode = 'complete';
-        showCardPicker();
+        showHeroSelector();
     }
+}
+
+function showHeroSelector() {
+    selectedHeroId = null;
+    const overlay = document.getElementById('hero-selector-overlay');
+    const grid = document.getElementById('hero-selector-grid');
+    grid.innerHTML = '<div style="color:#aaa;">Chargement...</div>';
+    overlay.classList.remove('hidden');
+
+    // Remove old confirm button if any
+    const oldBtn = overlay.querySelector('.hero-selector-confirm');
+    if (oldBtn) oldBtn.remove();
+
+    socket.emit('requestHeroCatalog', (heroes) => {
+        grid.innerHTML = '';
+        if (!heroes || heroes.length === 0) {
+            grid.innerHTML = '<div style="color:#e74c3c;">Aucun héros disponible</div>';
+            return;
+        }
+
+        heroes.forEach(hero => {
+            const card = document.createElement('div');
+            card.className = 'hero-selector-card';
+            card.dataset.heroId = hero.id;
+
+            const img = document.createElement('img');
+            img.className = 'hero-selector-portrait';
+            img.src = '/cards/' + hero.image;
+            img.alt = hero.name;
+
+            const name = document.createElement('div');
+            name.className = 'hero-selector-name';
+            name.textContent = hero.name;
+
+            const ability = document.createElement('div');
+            ability.className = 'hero-selector-ability';
+            ability.textContent = hero.ability || 'Aucune capacité';
+
+            card.appendChild(img);
+            card.appendChild(name);
+            card.appendChild(ability);
+
+            card.onclick = () => {
+                grid.querySelectorAll('.hero-selector-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedHeroId = hero.id;
+                confirmBtn.classList.add('active');
+            };
+
+            grid.appendChild(card);
+        });
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'hero-selector-confirm';
+        confirmBtn.textContent = 'Confirmer';
+        confirmBtn.onclick = () => {
+            if (!selectedHeroId) return;
+            socket.emit('setCompleteHero', selectedHeroId);
+            overlay.classList.add('hidden');
+            showCardPicker();
+        };
+        overlay.appendChild(confirmBtn);
+    });
 }
 
 function showCardPicker() {

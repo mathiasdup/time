@@ -239,13 +239,16 @@ function renderDelta(d) {
 
     // Field: only re-render if any slots changed
     if (d.fieldChanges && d.fieldChanges.length > 0) {
+        // DeflexionVFX beginFrame no longer needed (GPU via CombatVFX)
         const activeShieldKeys = new Set();
         const activeCamoKeys = new Set();
-        renderField('me', me.field, activeShieldKeys, activeCamoKeys);
-        renderField('opp', opp.field, activeShieldKeys, activeCamoKeys);
+        const activeDeflexionKeys = new Set();
+        renderField('me', me.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
+        renderField('opp', opp.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
         _syncPixiBoard();
         CombatVFX.syncShields(activeShieldKeys);
         CombatVFX.syncCamouflages(activeCamoKeys);
+        CombatVFX.syncDeflexions(activeDeflexionKeys);
     }
 
     // Traps
@@ -402,13 +405,16 @@ function render() {
     updateGraveDisplay('me', me.graveyard);
     updateGraveDisplay('opp', opp.graveyard);
     
+    // DeflexionVFX beginFrame no longer needed (GPU via CombatVFX)
     const activeShieldKeys = new Set();
     const activeCamoKeys = new Set();
-    renderField('me', me.field, activeShieldKeys, activeCamoKeys);
-    renderField('opp', opp.field, activeShieldKeys, activeCamoKeys);
+    const activeDeflexionKeys = new Set();
+    renderField('me', me.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
+    renderField('opp', opp.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
     _syncPixiBoard();
     CombatVFX.syncShields(activeShieldKeys);
     CombatVFX.syncCamouflages(activeCamoKeys);
+    CombatVFX.syncDeflexions(activeDeflexionKeys);
     renderTraps();
     renderHand(me.hand, me.energy);
 
@@ -560,7 +566,7 @@ function _getAbilityValue(card, a) {
     return '';
 }
 
-function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
+function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys) {
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
             const slot = getSlot(owner, r, c);
@@ -928,6 +934,10 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                     CombatVFX.registerCamouflage(slotKey, existingCardEl);
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
                 }
+                if (card.hasDeflexion) {
+                    CombatVFX.registerDeflexion(slotKey, existingCardEl);
+                    if (activeDeflexionKeys) activeDeflexionKeys.add(slotKey);
+                }
                 // Custom drag pour redéploiement (fast path  réattacher si conditions remplies)
                 if (!USE_CLICK_TO_SELECT && owner === 'me' && !state.me.inDeployPhase && !card.isBuilding && !card.movedThisTurn && !card.melodyLocked && !card.petrified) {
                     if (!existingCardEl.dataset.draggable) {
@@ -988,6 +998,10 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys) {
                 if (card.hasCamouflage) {
                     CombatVFX.registerCamouflage(slotKey, cardEl);
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
+                }
+                if (card.hasDeflexion) {
+                    CombatVFX.registerDeflexion(slotKey, cardEl);
+                    if (activeDeflexionKeys) activeDeflexionKeys.add(slotKey);
                 }
 
                 // Hover preview pour voir la carte en grand
@@ -1975,6 +1989,7 @@ function renderHand(hand, energy) {
             committedById.set(Number(cs.commitId), cs);
             const el = makeCard(cs.card, false);
             el.classList.add('committed-spell');
+            console.log("[SPELL-GLOW] committed-spell re-inserted in DOM", { commitId: el.dataset?.commitId, hasGlow: !!el.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
             el.dataset.commitId = cs.commitId;
             el.dataset.cardId = cs.card.id;
             el.dataset.order = cs.order;
@@ -3166,7 +3181,8 @@ function makeCard(card, inHand, discountedCost = null) {
             golem: 'Golem',
             plant: 'Plante',
             vampire: 'Vampire',
-            insect: 'Insecte'
+            insect: 'Insecte',
+            avatar: 'Avatar'
         };
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 

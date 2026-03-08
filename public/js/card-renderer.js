@@ -143,7 +143,8 @@ const CardRenderer = {
                 undead: 'Mort-vivant', goblin: 'Gobelin', spirit: 'Esprit', demon: 'Démon',
                 human: 'Humain', beast: 'Bête', parasite: 'Parasite', dragon: 'Dragon',
                 monstrosity: 'Monstruosité', elemental: 'Élémentaire', plant: 'Plante',
-                serpent: 'Serpent', spider: 'Araignée', vampire: 'Vampire', insect: 'Insecte'
+                serpent: 'Serpent', spider: 'Araignée', vampire: 'Vampire', insect: 'Insecte',
+            avatar: 'Avatar'
             };
             const typeName = creatureTypeNames[card.creatureType] || card.creatureType;
             typeStr += ` - ${typeName}`;

@@ -711,6 +711,7 @@ function initSocket() {
         }
 
         if (p === 'resolution') {
+            console.log("[SPELL-GLOW] phase=resolution received", { committedCount: committedSpells.length, time: performance.now().toFixed(1) });
             _deferredPostResolutionState = null;
             // Annuler la rÃ©animation en cours si la popup est ouverte
             if (pendingReanimation) cancelReanimation();
@@ -1157,7 +1158,7 @@ function handleAnimation(data) {
     // En mode client-paced, on ajoute aussi les reveals (summon/move/trapPlace)
     // pour eviter les chevauchements quand le serveur n'attend plus entre les phases.
     const clientPacedResolution = !!window.CLIENT_PACED_RESOLUTION;
-    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'massDiscard', 'heroHeal', 'powerBuff', 'buffApply', 'trapSummon', 'reanimate', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
+    const queuedTypes = ['attack', 'damage', 'spellDamage', 'death', 'deathTransform', 'heroHit', 'discard', 'burn', 'zdejebel', 'onDeathDamage', 'spell', 'spellDual', 'spellDualEnd', 'trapTrigger', 'trampleDamage', 'trampleHeroHit', 'bounce', 'sacrifice', 'poisonDamage', 'lifesteal', 'healOnDeath', 'regen', 'combatRowStart', 'combatEnd', 'buildingActivate', 'buildingDiscard', 'buildingMiss', 'massDiscard', 'heroHeal', 'powerBuff', 'buffApply', 'trapSummon', 'reanimate', 'deflexion', ...(clientPacedResolution ? ['summon', 'move', 'trapPlace'] : [])];
 
     const needsOppHandSnapshot =
         (type === 'summon' && data?.player !== myNum) ||
