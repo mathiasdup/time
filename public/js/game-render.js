@@ -1602,8 +1602,14 @@ let _lastHandSig = '';
 let _lastCommittedSig = '';
 let _lastHandPhase = '';
 
+// OPT: memoize by hand array reference
+let _lastHandRef = null;
+let _lastHandSigVal = '';
 function _computeHandSig(hand) {
-    return hand.map(c => c.uid || c.id).join(',');
+    if (hand === _lastHandRef && _lastHandSigVal) return _lastHandSigVal;
+    _lastHandRef = hand;
+    _lastHandSigVal = hand.map(c => c.uid || c.id).join(',');
+    return _lastHandSigVal;
 }
 function _computeCommittedSig() {
     return committedSpells.map(cs => cs.commitId).join(',');
@@ -2178,16 +2184,18 @@ function renderHand(hand, energy) {
             if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
                 GameAnimations.releaseHiddenCard('me', targetIndex, targetUid || targetEl?.dataset?.uid || null);
             }
-            const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
-            _bounceRenderDbg('render:me-completed', {
-                targetUid,
-                targetIndex,
-                pendingHandIndex: pendingBounce.handIndex ?? null,
-                pendingTargetUid: pendingBounce.targetUid || null,
-                pendingTargetIndex: pendingBounce.targetIndex ?? null,
-                hand: _snap
-            });
-            _handIdxEmitAnomalies('render:me-completed', _snap);
+            if (window.HAND_INDEX_DEBUG) {
+                const _snap = _handIdxSnapshot(panel, '.card:not(.committed-spell)');
+                _bounceRenderDbg('render:me-completed', {
+                    targetUid,
+                    targetIndex,
+                    pendingHandIndex: pendingBounce.handIndex ?? null,
+                    pendingTargetUid: pendingBounce.targetUid || null,
+                    pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                    hand: _snap
+                });
+                _handIdxEmitAnomalies('render:me-completed', _snap);
+            }
             const wrapper = pendingBounce.wrapper;
             pendingBounce = null;
             skipFlipThisPass = true;
@@ -2629,14 +2637,16 @@ function revealBounceTargetWithBridge(panel, selector, wrapper, targetUid = null
         if (idx >= 0 && idx < cards.length) last = cards[idx];
     }
     if (!last) last = cards[cards.length - 1];
-    _bounceRenderDbg('render:bridge-target', {
-        selector,
-        targetUid,
-        targetIndex,
-        resolvedUid: last?.dataset?.uid || null,
-        resolvedIndex: last ? Array.from(cards).indexOf(last) : null,
-        cards: _handIdxSnapshot(panel, selector)
-    });
+    if (window.HAND_INDEX_DEBUG) {
+        _bounceRenderDbg('render:bridge-target', {
+            selector,
+            targetUid,
+            targetIndex,
+            resolvedUid: last?.dataset?.uid || null,
+            resolvedIndex: last ? Array.from(cards).indexOf(last) : null,
+            cards: _handIdxSnapshot(panel, selector)
+        });
+    }
     let cover = null;
 
     if (last) {
@@ -2893,14 +2903,16 @@ function renderOppHand(count, oppHand) {
                 if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
                     GameAnimations.releaseHiddenCard('opp', targetIndex, targetUid);
                 }
-                _bounceRenderDbg('render:opp-completed-draw-mode', {
-                    targetUid,
-                    targetIndex,
-                    pendingHandIndex: pendingBounce.handIndex ?? null,
-                    pendingTargetUid: pendingBounce.targetUid || null,
-                    pendingTargetIndex: pendingBounce.targetIndex ?? null,
-                    cards: _handIdxSnapshot(panel, '.opp-card-back')
-                });
+                if (window.HAND_INDEX_DEBUG) {
+                    _bounceRenderDbg('render:opp-completed-draw-mode', {
+                        targetUid,
+                        targetIndex,
+                        pendingHandIndex: pendingBounce.handIndex ?? null,
+                        pendingTargetUid: pendingBounce.targetUid || null,
+                        pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                        cards: _handIdxSnapshot(panel, '.opp-card-back')
+                    });
+                }
                 pendingBounce = null;
                 const hasPreciseTarget = !!targetUid || Number.isFinite(Number(targetIndex));
                 if (hasPreciseTarget) {
@@ -3106,14 +3118,16 @@ function renderOppHand(count, oppHand) {
             if (typeof GameAnimations !== 'undefined' && typeof GameAnimations.releaseHiddenCard === 'function') {
                 GameAnimations.releaseHiddenCard('opp', targetIndex, targetUid);
             }
-            _bounceRenderDbg('render:opp-completed', {
-                targetUid,
-                targetIndex,
-                pendingHandIndex: pendingBounce.handIndex ?? null,
-                pendingTargetUid: pendingBounce.targetUid || null,
-                pendingTargetIndex: pendingBounce.targetIndex ?? null,
-                cards: _handIdxSnapshot(panel, '.opp-card-back')
-            });
+            if (window.HAND_INDEX_DEBUG) {
+                _bounceRenderDbg('render:opp-completed', {
+                    targetUid,
+                    targetIndex,
+                    pendingHandIndex: pendingBounce.handIndex ?? null,
+                    pendingTargetUid: pendingBounce.targetUid || null,
+                    pendingTargetIndex: pendingBounce.targetIndex ?? null,
+                    cards: _handIdxSnapshot(panel, '.opp-card-back')
+                });
+            }
             pendingBounce = null;
             const hasPreciseTarget = !!targetUid || Number.isFinite(Number(targetIndex));
             if (hasPreciseTarget) {

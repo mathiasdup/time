@@ -263,6 +263,8 @@ class GameVFXSystem {
         this.container.addChild(effectContainer);
 
         const flash = new PIXI.Graphics();
+        flash.circle(0, 0, 1);
+        flash.fill({ color });
         effectContainer.addChild(flash);
 
         const effect = { container: effectContainer, finished: false, startTime: performance.now(), duration };
@@ -272,9 +274,9 @@ class GameVFXSystem {
             if (progress >= 1) { effect.finished = true; return; }
             const r = maxRadius * progress;
             const a = 1 - progress;
-            flash.clear();
-            flash.circle(0, 0, r);
-            flash.fill({ color, alpha: a * 0.6 });
+            // OPT-2: pre-drawn circle, animate scale + alpha (zero .clear())
+            flash.scale.set(r);
+            flash.alpha = a * 0.6;
 
         };
         effect._tick = animate;
@@ -1144,8 +1146,13 @@ class GameVFXSystem {
             duration: 600,
         };
 
-        // Flash central
+        // Flash central (OPT-2: pre-drawn, animate scale+alpha)
         const flash = new PIXI.Graphics();
+        flash.circle(0, 0, 1);
+        flash.fill({ color: 0xFFFFFF, alpha: 0.5 });
+        flash.circle(0, 0, 0.5);
+        flash.fill({ color: 0xFFDD66 });
+        flash.alpha = 0;
         effectContainer.addChild(flash);
 
         // Anneau
@@ -1154,8 +1161,11 @@ class GameVFXSystem {
 
         // 8 éclats de lumière
         const sparks = [];
+        // OPT-2: Sprite particles instead of Graphics (zero .clear())
         for (let i = 0; i < 8; i++) {
-            const gfx = new PIXI.Graphics();
+            const gfx = new PIXI.Sprite(_getParticleCircleTex(this.app));
+            gfx.anchor.set(0.5);
+            gfx.tint = 0xFFDD88;
             gfx.alpha = 0;
             const angle = (i / 8) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
             const speed = 25 + Math.random() * 20;
@@ -1168,16 +1178,14 @@ class GameVFXSystem {
             const progress = (performance.now() - effect.startTime) / effect.duration;
             if (progress >= 1) { effect.finished = true; return; }
 
-            // Flash (0 → 0.4)
-            flash.clear();
+            // Flash (0 → 0.4) (OPT-2: scale + alpha, zero .clear())
             if (progress < 0.4) {
                 const fp = progress / 0.4;
                 const a = Math.sin(fp * Math.PI) * 0.6;
-                const r = 8 + fp * 16;
-                flash.circle(0, 0, r);
-                flash.fill({ color: 0xFFFFFF, alpha: a * 0.5 });
-                flash.circle(0, 0, r * 0.5);
-                flash.fill({ color: 0xFFDD66, alpha: a });
+                flash.scale.set(8 + fp * 16);
+                flash.alpha = a;
+            } else {
+                flash.alpha = 0;
             }
 
             // Anneau
@@ -1191,15 +1199,15 @@ class GameVFXSystem {
                 ring.stroke({ color: 0xFFCC44, width: w, alpha: a });
             }
 
-            // Éclats
+            // Éclats (OPT-2: Sprite particles, zero .clear())
             for (const s of sparks) {
                 if (progress < 0.05 || progress > 0.7) { s.gfx.alpha = 0; continue; }
                 const sp = (progress - 0.05) / 0.65;
                 const dist = sp * s.speed;
-                s.gfx.clear();
-                s.gfx.circle(Math.cos(s.angle) * dist, Math.sin(s.angle) * dist, 1.5 - sp * 0.8);
-                s.gfx.fill({ color: 0xFFDD88, alpha: (1 - sp) * 0.8 });
-                s.gfx.alpha = 1;
+                s.gfx.x = Math.cos(s.angle) * dist;
+                s.gfx.y = Math.sin(s.angle) * dist;
+                s.gfx.scale.set((1.5 - sp * 0.8) / 3);
+                s.gfx.alpha = (1 - sp) * 0.8;
             }
 
         };
@@ -1461,24 +1469,10 @@ class GameVFXSystem {
         }
 
         // ===== 7) Texte "IMMUNE" avec slam-in =====
-        const text = new PIXI.Text({
-            text: 'IMMUNE',
-            style: {
-                fontFamily: 'Arial Black, Impact, sans-serif',
-                fontSize: 22,
-                fontWeight: '900',
-                fill: 0x00DDFF,
-                letterSpacing: 3,
-                dropShadow: {
-                    alpha: 0.9,
-                    angle: Math.PI / 2,
-                    blur: 8,
-                    color: 0x006688,
-                    distance: 0,
-                },
-            },
+        const text = _getCachedTextSprite(this.app, 'IMMUNE', {
+            fontFamily: 'Arial Black, Impact, sans-serif', fontSize: 22, fontWeight: '900',
+            fill: 0x00DDFF, letterSpacing: 3,
         });
-        text.anchor.set(0.5);
         text.position.set(0, 0);
         text.alpha = 0;
         text.scale.set(0);
@@ -1781,22 +1775,10 @@ class GameVFXSystem {
         }
 
         // ===== COUCHE 7 : Texte "+X ATK" =====
-        const text = new PIXI.Text({
-            text: `+${boost} ATK`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 40,
-                fontWeight: 'bold',
-                fill: 0xFFDD00,
-                stroke: { color: 0x331100, width: 6 },
-                dropShadow: {
-                    color: 0xFF4400,
-                    blur: 12,
-                    distance: 0,
-                },
-            }
+        const text = _getCachedTextSprite(this.app, `+${boost} ATK`, {
+            fontFamily: 'Arial Black, Arial', fontSize: 40, fontWeight: 'bold',
+            fill: 0xFFDD00, stroke: { color: 0x331100, width: 6 },
         });
-        text.anchor.set(0.5);
         text.alpha = 0;
         text.scale.set(0);
         effectContainer.addChild(text);
@@ -2871,8 +2853,11 @@ class GameVFXSystem {
             bloodParticles.push(particle);
         }
 
-        // Aura démoniaque
+        // Aura démoniaque (OPT-2: pre-drawn, animate scale+alpha)
         const aura = new PIXI.Graphics();
+        aura.circle(0, 0, 1);
+        aura.fill({ color: darkRed });
+        aura.alpha = 0;
         effectContainer.addChildAt(aura, 0);
 
         let frameCount = 0;
@@ -2894,14 +2879,13 @@ class GameVFXSystem {
                 flash.alpha = 0;
             }
 
-            // Aura démoniaque pulsante
-            aura.clear();
+            // Aura démoniaque pulsante (OPT-2: scale + alpha, zero .clear())
             if (progress < 0.7) {
                 const auraProgress = progress / 0.7;
-                const auraRadius = 60 + auraProgress * 40;
-                const auraAlpha = (1 - auraProgress) * 0.4;
-                aura.circle(0, 0, auraRadius);
-                aura.fill({ color: darkRed, alpha: auraAlpha });
+                aura.scale.set(60 + auraProgress * 40);
+                aura.alpha = (1 - auraProgress) * 0.4;
+            } else {
+                aura.alpha = 0;
             }
 
             // Griffures
@@ -3047,13 +3031,16 @@ class GameVFXSystem {
         for (let i = 0; i < 5; i++) {
             const angle = (Math.PI * 2 * i / 5) + (Math.random() - 0.5) * 0.6;
             const speed = 50 + Math.random() * 40;
-            const spark = new PIXI.Graphics();
+            // OPT-2: Sprite particle instead of Graphics (zero .clear())
+            const spark = new PIXI.Sprite(_getParticleCircleTex(this.app));
+            spark.anchor.set(0.5);
+            spark.tint = Math.random() > 0.5 ? 0xFF8800 : 0xFFAA33;
+            spark.alpha = 0;
             effectContainer.addChild(spark);
             sparks.push({
                 gfx: spark,
                 angle,
                 speed,
-                color: Math.random() > 0.5 ? 0xFF8800 : 0xFFAA33,
             });
         }
 
@@ -3079,16 +3066,17 @@ class GameVFXSystem {
             }
 
             // Étincelles
+            // OPT-2: Sprite particles — position + scale + alpha (zero .clear())
             sparks.forEach(s => {
-                s.gfx.clear();
                 if (progress < 0.65) {
                     const sp = progress / 0.65;
                     const dist = sp * s.speed;
-                    const sx = Math.cos(s.angle) * dist;
-                    const sy = Math.sin(s.angle) * dist;
-                    const alpha = (1 - sp) * 0.8;
-                    s.gfx.circle(sx, sy, 1.5 * (1 - sp));
-                    s.gfx.fill({ color: s.color, alpha });
+                    s.gfx.x = Math.cos(s.angle) * dist;
+                    s.gfx.y = Math.sin(s.angle) * dist;
+                    s.gfx.scale.set((1.5 * (1 - sp)) / 3);
+                    s.gfx.alpha = (1 - sp) * 0.8;
+                } else {
+                    s.gfx.alpha = 0;
                 }
             });
 
@@ -3190,9 +3178,11 @@ class GameVFXSystem {
         const hw = w / 2, hh = h / 2;
 
         // Flash central rouge sang (pulse)
+        // OPT-2: pre-draw once, animate container alpha (zero .clear())
         const flash = new PIXI.Graphics();
         flash.roundRect(-hw, -hh, w, h, 8);
-        flash.fill({ color: 0x8B0000, alpha: 0 });
+        flash.fill({ color: 0x8B0000 });
+        flash.alpha = 0;
         effectContainer.addChild(flash);
 
         // 16 particules de sang aspirées vers le centre (viennent de l'extérieur)
@@ -3241,17 +3231,13 @@ class GameVFXSystem {
                 return;
             }
 
-            // Flash central : pulse in-out
-            flash.clear();
-            flash.roundRect(-hw, -hh, w, h, 8);
+            // Flash central : pulse in-out (OPT-2: alpha only, zero .clear())
             if (progress < 0.3) {
-                const p = progress / 0.3;
-                flash.fill({ color: 0x8B0000, alpha: p * 0.25 });
+                flash.alpha = (progress / 0.3) * 0.25;
             } else if (progress < 0.6) {
-                flash.fill({ color: 0x8B0000, alpha: 0.25 });
+                flash.alpha = 0.25;
             } else {
-                const p = (progress - 0.6) / 0.4;
-                flash.fill({ color: 0x8B0000, alpha: 0.25 * (1 - p) });
+                flash.alpha = 0.25 * (1 - (progress - 0.6) / 0.4);
             }
 
             // Particules de sang : convergent vers le centre
@@ -3320,23 +3306,10 @@ class GameVFXSystem {
         };
 
         // Texte "+X" rouge sang
-        const text = new PIXI.Text({
-            text: `+${amount}`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 48,
-                fontWeight: 'bold',
-                fill: 0xCC0000,
-                stroke: { color: 0x000000, width: 6 },
-                dropShadow: {
-                    color: 0x000000,
-                    blur: 4,
-                    angle: Math.PI / 4,
-                    distance: 3,
-                },
-            }
+        const text = _getCachedTextSprite(this.app, `+${amount}`, {
+            fontFamily: 'Arial Black, Arial', fontSize: 48, fontWeight: 'bold',
+            fill: 0xCC0000, stroke: { color: 0x000000, width: 6 },
         });
-        text.anchor.set(0.5);
         effectContainer.addChild(text);
 
         // Glow rouge sang
@@ -3410,13 +3383,16 @@ class GameVFXSystem {
         const sparks = [];
         for (let i = 0; i < 5; i++) {
             const angle = (Math.PI * 2 * i / 5) + (Math.random() - 0.5) * 0.8;
-            const spark = new PIXI.Graphics();
+            // OPT-2: Sprite particle instead of Graphics (zero .clear())
+            const spark = new PIXI.Sprite(_getParticleCircleTex(this.app));
+            spark.anchor.set(0.5);
+            spark.tint = Math.random() > 0.5 ? 0xFF3300 : 0xFF6644;
+            spark.alpha = 0;
             effectContainer.addChild(spark);
             sparks.push({
                 gfx: spark,
                 angle,
                 speed: 35 + Math.random() * 35,
-                color: Math.random() > 0.5 ? 0xFF3300 : 0xFF6644,
             });
         }
 
@@ -3433,16 +3409,17 @@ class GameVFXSystem {
             }
 
             // Étincelles
+            // OPT-2: Sprite particles — position + scale + alpha (zero .clear())
             sparks.forEach(s => {
-                s.gfx.clear();
                 if (progress > 0.05 && progress < 0.6) {
                     const sp = (progress - 0.05) / 0.55;
                     const dist = sp * s.speed;
-                    const sx = Math.cos(s.angle) * dist;
-                    const sy = Math.sin(s.angle) * dist;
-                    const alpha = (1 - sp) * 0.7;
-                    s.gfx.circle(sx, sy, 1.2 * (1 - sp));
-                    s.gfx.fill({ color: s.color, alpha });
+                    s.gfx.x = Math.cos(s.angle) * dist;
+                    s.gfx.y = Math.sin(s.angle) * dist;
+                    s.gfx.scale.set((1.2 * (1 - sp)) / 3);
+                    s.gfx.alpha = (1 - sp) * 0.7;
+                } else {
+                    s.gfx.alpha = 0;
                 }
             });
 
@@ -3493,16 +3470,9 @@ class GameVFXSystem {
         container.addChild(sweepGfx);
 
         // Rune centrale
-        const runeText = new PIXI.Text({
-            text: '\u16DF',
-            style: {
-                fontFamily: 'serif',
-                fontSize: 14,
-                fill: 0xB4D2FF,
-                align: 'center',
-            }
+                const runeText = _getCachedTextSprite(this.app, '\u16DF', {
+            fontFamily: 'serif', fontSize: 14, fill: 0xB4D2FF,
         });
-        runeText.anchor.set(0.5, 0.5);
         container.addChild(runeText);
 
         this.activeShields.set(slotKey, {
@@ -4498,15 +4468,9 @@ class GameVFXSystem {
         const runeTexts = [];
         for (let i = 0; i < RUNE_COUNT; i++) {
             const angle = (i / RUNE_COUNT) * Math.PI * 2 - Math.PI / 2;
-            const t = new PIXI.Text({
-                text: RUNES[i % RUNES.length],
-                style: {
-                    fontFamily: 'Georgia, "Times New Roman", serif',
-                    fontSize: 11,
-                    fill: 0xBBBBFF,
-                }
+            const t = _getCachedTextSprite(this.app, RUNES[i % RUNES.length], {
+                fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 11, fill: 0xBBBBFF,
             });
-            t.anchor.set(0.5);
             t.x = Math.cos(angle) * midR;
             t.y = Math.sin(angle) * midR;
             ringGroup.addChild(t);
@@ -4637,11 +4601,9 @@ class GameVFXSystem {
             fragContainer.addChild(gGlow);
 
             const runeIdx = Math.floor((midAngle / (Math.PI * 2)) * 16 + 16) % RUNES.length;
-            const rt = new PIXI.Text({
-                text: RUNES[runeIdx],
-                style: { fontFamily: 'Georgia, serif', fontSize: 10, fill: 0xccaaff }
+            const rt = _getCachedTextSprite(this.app, RUNES[runeIdx], {
+                fontFamily: 'Georgia, serif', fontSize: 10, fill: 0xccaaff,
             });
-            rt.anchor.set(0.5);
             rt.x = Math.cos(midAngle) * midR;
             rt.y = Math.sin(midAngle) * midR;
             fragContainer.addChild(rt);
@@ -5081,18 +5043,9 @@ class GameVFXSystem {
         }
 
         // ═══════ NOMBRE DE DÉGÂTS POISON ═══════
-        const dmgText = new PIXI.Text({
-            text: `-${poisonDamage}`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 52,
-                fontWeight: 'bold',
-                fill: 0x2ecc71,
-                stroke: { color: 0x0a2a0a, width: 6 },
-                dropShadow: { color: 0x000000, blur: 4, angle: Math.PI / 4, distance: 3 },
-            }
+        const dmgText = _getCachedTextSprite(this.app, `-${poisonDamage}`, {
+            fontFamily: 'Arial Black, Arial', fontSize: 52, fontWeight: 'bold', fill: 0x2ecc71, stroke: { color: 0x0a2a0a, width: 6 },
         });
-        dmgText.anchor.set(0.5);
         dmgText.position.set(x, y);
         dmgText.alpha = 0;
         dmgText.scale.set(0.3);
@@ -5218,8 +5171,6 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        effect._tick = animate;
-        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
         const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
@@ -5290,18 +5241,9 @@ class GameVFXSystem {
         }
 
         // ═══════ NOMBRE "-X" QUI S'ENVOLE ═══════
-        const flyText = new PIXI.Text({
-            text: `-${amount}`,
-            style: {
-                fontFamily: 'Georgia, serif',
-                fontSize: 36,
-                fontWeight: 'bold',
-                fill: 0xe74c3c,
-                stroke: { color: 0x000000, width: 4 },
-                dropShadow: { alpha: 0.6, color: 0xff0000, blur: 12, distance: 0 },
-            }
+        const flyText = _getCachedTextSprite(this.app, `-${amount}`, {
+            fontFamily: 'Georgia, serif', fontSize: 36, fontWeight: 'bold', fill: 0xe74c3c, stroke: { color: 0x000000, width: 4 },
         });
-        flyText.anchor.set(0.5);
         flyText.x = cardLeft + 25;
         flyText.y = y + cardH * 0.25;
         flyText.alpha = 0;
@@ -5419,9 +5361,6 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        effect._tick = animate;
-        this._pushEffect(effect);
-
         const rand = (a, b) => Math.random() * (b - a) + a;
         const lerp = (a, b, t) => a + (b - a) * t;
         const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
@@ -5531,16 +5470,9 @@ class GameVFXSystem {
         const runeCount = 6;
         const runeRadius = Math.max(halfW, halfH) * 0.85;
         for (let i = 0; i < runeCount; i++) {
-            const text = new PIXI.Text({
-                text: runeChars[i % runeChars.length],
-                style: {
-                    fontFamily: 'Georgia, serif',
-                    fontSize: 14,
-                    fill: COLORS.rune,
-                    stroke: { color: 0x000000, width: 2 },
-                }
+            const text = _getCachedTextSprite(this.app, runeChars[i % runeChars.length], {
+                fontFamily: 'Georgia, serif', fontSize: 14, fill: COLORS, stroke: { color: 0x000000, width: 2 },
             });
-            text.anchor.set(0.5);
             text.alpha = 0;
             effectContainer.addChild(text);
             runes.push({
@@ -5562,18 +5494,9 @@ class GameVFXSystem {
         const atkStr = atkBuff >= 0 ? `+${atkBuff}` : `${atkBuff}`;
         const hpStr = hpBuff >= 0 ? `+${hpBuff}` : `${hpBuff}`;
         const buffStr = `${atkStr}/${hpStr}`;
-        const flyText = new PIXI.Text({
-            text: buffStr,
-            style: {
-                fontFamily: 'Arial Black, Impact, sans-serif',
-                fontSize: 40,
-                fontWeight: 'bold',
-                fill: COLORS.text,
-                stroke: { color: 0x000000, width: 5 },
-                dropShadow: { alpha: 0.7, color: COLORS.textShadow, blur: 16, distance: 0 },
-            }
+        const flyText = _getCachedTextSprite(this.app, buffStr, {
+            fontFamily: 'Arial Black, Impact, sans-serif', fontSize: 40, fontWeight: 'bold', fill: COLORS, stroke: { color: 0x000000, width: 5 },
         });
-        flyText.anchor.set(0.5);
         flyText.position.set(x, y - 8);
         flyText.alpha = 0;
         flyText.scale.set(0);
@@ -5782,6 +5705,9 @@ class GameVFXSystem {
             }
         };
 
+        effect._tick = animate;
+        this._pushEffect(effect);
+
         return effect;
     }
 
@@ -5840,16 +5766,9 @@ class GameVFXSystem {
         const runeChars = ['◇', '△', '○', '☆', '◈', '▽'];
         const runes = [];
         for (let i = 0; i < 6; i++) {
-            const text = new PIXI.Text({
-                text: runeChars[i],
-                style: {
-                    fontFamily: 'Georgia, serif',
-                    fontSize: 12,
-                    fill: GOLD,
-                    stroke: { color: 0x000000, width: 2 },
-                }
+            const text = _getCachedTextSprite(this.app, runeChars[i], {
+                fontFamily: 'Georgia, serif', fontSize: 12, fill: GOLD, stroke: { color: 0x000000, width: 2 },
             });
-            text.anchor.set(0.5);
             text.alpha = 0;
             effectContainer.addChild(text);
             runes.push({
@@ -6401,8 +6320,6 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
-        effect._tick = animate;
-        this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
 
@@ -6969,17 +6886,9 @@ class SleepAnimationSystem {
         // Créer 3 "Z" qui s'animent
         const zTexts = [];
         for (let i = 0; i < 3; i++) {
-            const z = new PIXI.Text({
-                text: 'Z',
-                style: {
-                    fontFamily: 'Arial Black, Arial',
-                    fontSize: 16 - i * 2,
-                    fontWeight: 'bold',
-                    fill: 0xFFFFFF,
-                    stroke: { color: 0x000000, width: 2 },
-                }
+            const z = _getCachedTextSprite(CombatVFX.app, 'Z', {
+                fontFamily: 'Arial Black, Arial', fontSize: 16 - i * 2, fontWeight: 'bold', fill: 0xFFFFFF, stroke: { color: 0x000000, width: 2 },
             });
-            z.anchor.set(0.5);
             z.alpha = 0;
             z.zData = {
                 index: i,
@@ -7008,7 +6917,13 @@ class SleepAnimationSystem {
     }
 
     updateAnimationPosition(card, animData) {
-        const rect = card.getBoundingClientRect();
+        // OPT: cache rect every 50ms instead of every frame
+        const now = performance.now();
+        if (!animData._cachedRect || (now - animData._cachedRectTime) > 50) {
+            animData._cachedRect = card.getBoundingClientRect();
+            animData._cachedRectTime = now;
+        }
+        const rect = animData._cachedRect;
         const vx = rect.right - 5;
         const vy = rect.top + 10;
         animData.container.position.set(vx, vy);
