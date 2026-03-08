@@ -3044,7 +3044,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3122,7 +3122,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3218,7 +3218,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3409,7 +3409,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -5970,7 +5970,7 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             } else {
                 requestAnimationFrame(animate);
             }
@@ -6376,7 +6376,7 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             } else {
                 requestAnimationFrame(animate);
             }
@@ -6535,7 +6535,7 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             } else {
                 requestAnimationFrame(animate);
             }

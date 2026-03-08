@@ -6,29 +6,14 @@
     var _origWarn = console.warn;
 
     // All diagnostic prefixes — suppressed by default, DEBUG_LOGS = true to see them
-    var SUPPRESS = [
-        '[HP-MUTOBS]',
-        '[HP-WATCHDOG]',
-        '[HP]',
-        '[CARD-FLASH-WATCHDOG]',
-        '[CARD-FLASH]',
-        '[HAND-ORDER-WATCHDOG]',
-        '[HAND-ORDER]',
-        '[RENDER-OPP]',
-        '[OPP-HAND-DOM]',
-        '[SPECTRE-DBG]',
-        '[EVEQUE-DBG]',
-        '[GAP-CLOSE]'
-    ];
+    var _suppressRx = /\[(HP-MUTOBS|HP-WATCHDOG|HP|CARD-FLASH-WATCHDOG|CARD-FLASH|HAND-ORDER-WATCHDOG|HAND-ORDER|RENDER-OPP|OPP-HAND-DOM|SPECTRE-DBG|EVEQUE-DBG|GAP-CLOSE)\]/;
 
     function _check(args) {
         if (window.DEBUG_LOGS) return false;
         if (args.length === 0) return false;
-        var first = String(args[0]);
-        for (var i = 0; i < SUPPRESS.length; i++) {
-            if (first.indexOf(SUPPRESS[i]) !== -1) return true;
-        }
-        return false;
+        var first = args[0];
+        if (typeof first !== 'string') return false;
+        return _suppressRx.test(first);
     }
 
     console.log = function() {

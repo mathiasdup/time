@@ -1,4 +1,34 @@
 ﻿// ==================== CÅ’UR DU JEU ====================
+
+// ===== HOISTED DEBUG FUNCTIONS (perf: avoid closure re-creation per state update) =====
+function _logRadjawakState(sideLabel, sideState, phase) {
+    var field = sideState && sideState.field;
+    if (!Array.isArray(field)) return;
+    for (var rr = 0; rr < field.length; rr++) {
+        for (var cc = 0; cc < (field[rr] ? field[rr].length : 0); cc++) {
+            var card = field[rr][cc];
+            if (!card || typeof card.name !== 'string') continue;
+            if (card.name.toLowerCase().indexOf('radjawak') === -1) continue;
+            console.log('[RADJ-DBG] state-update phase=' + phase + ' side=' + sideLabel + ' slot=' + rr + ',' + cc + ' uid=' + (card.uid || '-') + ' atk=' + card.atk + ' hp=' + card.currentHp + '/' + card.hp + ' canAttack=' + card.canAttack);
+        }
+    }
+}
+function _logHpStateAnomalies(sideLabel, sideState, phase) {
+    var field = sideState && sideState.field;
+    if (!Array.isArray(field)) return;
+    for (var rr = 0; rr < field.length; rr++) {
+        for (var cc = 0; cc < (field[rr] ? field[rr].length : 0); cc++) {
+            var card = field[rr][cc];
+            if (!card) continue;
+            var cur = Number(card.currentHp);
+            var max = Number(card.hp);
+            if (Number.isFinite(cur) && cur <= 0) {
+                console.log('[HP-VIS-DBG] state-zero-card phase=' + phase + ' side=' + sideLabel + ' slot=' + rr + ',' + cc + ' card=' + (card.name || '?') + ' uid=' + (card.uid || '-') + ' hp=' + cur + '/' + (Number.isFinite(max) ? max : '?'));
+            }
+        }
+    }
+}
+
 // Socket/rÃ©seau, drag & drop, interactions utilisateur, initialisation
 
 // VFX coordinate helpers â€” viewport coords passÃ©es directement (main app sans stage transform)
@@ -610,42 +640,15 @@ function initSocket() {
         if (s.me?.hand) {
             const _ht = s.me.hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
             if (window.HAND_TRACE) {
-                console.log(`[HAND-TRACK] stateUpdate phase=${s.phase} turn=${s.turn} | hand=[${_ht}]`);
+                if (window.DEBUG_LOGS) console.log(`[HAND-TRACK] stateUpdate phase=${s.phase} turn=${s.turn} | hand=[${_ht}]`);
             }
         }
 
-        const logRadjawakState = (sideLabel, sideState) => {
-            const field = sideState?.field;
-            if (!Array.isArray(field)) return;
-            for (let rr = 0; rr < field.length; rr++) {
-                for (let cc = 0; cc < (field[rr]?.length || 0); cc++) {
-                    const card = field[rr][cc];
-                    if (!card || typeof card.name !== 'string') continue;
-                    if (!card.name.toLowerCase().includes('radjawak')) continue;
-                    if (window.DEBUG_LOGS) console.log(`[RADJ-DBG] state-update phase=${s.phase} side=${sideLabel} slot=${rr},${cc} uid=${card.uid || '-'} atk=${card.atk} hp=${card.currentHp}/${card.hp} canAttack=${card.canAttack}`);
-                }
-            }
-        };
-        const logHpStateAnomalies = (sideLabel, sideState) => {
-            const field = sideState?.field;
-            if (!Array.isArray(field)) return;
-            for (let rr = 0; rr < field.length; rr++) {
-                for (let cc = 0; cc < (field[rr]?.length || 0); cc++) {
-                    const card = field[rr][cc];
-                    if (!card) continue;
-                    const cur = Number(card.currentHp);
-                    const max = Number(card.hp);
-                    if (Number.isFinite(cur) && cur <= 0) {
-                        if (window.DEBUG_LOGS) console.log(`[HP-VIS-DBG] state-zero-card phase=${s.phase} side=${sideLabel} slot=${rr},${cc} card=${card.name || '?'} uid=${card.uid || '-'} hp=${cur}/${Number.isFinite(max) ? max : '?'}`);
-                    }
-                }
-            }
-        };
         if (window.DEBUG_LOGS) {
-            logRadjawakState('me', s.me);
-            logRadjawakState('opp', s.opponent);
-            logHpStateAnomalies('me', s.me);
-            logHpStateAnomalies('opp', s.opponent);
+            _logRadjawakState("me", s.me, s.phase);
+            _logRadjawakState("opp", s.opponent, s.phase);
+            _logHpStateAnomalies("me", s.me, s.phase);
+            _logHpStateAnomalies("opp", s.opponent, s.phase);
         }
 
         if (heroChanged) {
@@ -711,7 +714,7 @@ function initSocket() {
         }
 
         if (p === 'resolution') {
-            console.log("[SPELL-GLOW] phase=resolution received", { committedCount: committedSpells.length, time: performance.now().toFixed(1) });
+            if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] phase=resolution received", { committedCount: committedSpells.length, time: performance.now().toFixed(1) });
             _deferredPostResolutionState = null;
             // Annuler la rÃ©animation en cours si la popup est ouverte
             if (pendingReanimation) cancelReanimation();
@@ -969,8 +972,12 @@ function initSocket() {
     socket.on('playerDisconnected', () => log('âš ï¸ Adversaire dÃ©connectÃ©', 'damage'));
 
     // Resync quand la fenÃªtre revient au premier plan
+    var _lastSyncRequest = 0;
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && state && state.phase) {
+            var now = Date.now();
+            if (now - _lastSyncRequest < 2000) return;
+            _lastSyncRequest = now;
             socket.emit('requestSync');
         }
     });
@@ -1174,7 +1181,7 @@ function handleAnimation(data) {
             data._oppSourceIndex = _isAnimHandIndexValue(snap.sourceIndex) ? Number(snap.sourceIndex) : null;
             if (window.HAND_INDEX_DEBUG) {
                 try {
-                    console.log(`[HAND-IDX][CORE][JSON] opp-source-snapshot ${JSON.stringify({
+                    if (window.DEBUG_LOGS) console.log(`[HAND-IDX][CORE][JSON] opp-source-snapshot ${JSON.stringify({
                         type,
                         rect: snap.rect || null,
                         mode: snap.mode || null,
@@ -1240,7 +1247,7 @@ function handleAnimation(data) {
             if (!card) {
                 if (existing) RenderLock.clearOverride('slot', pdKey);
                 if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                    console.log('[HP-SEQ-DBG] core-poison-override-clear:no-card', {
+                    if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-clear:no-card', {
                         key: pdKey,
                         owner: pdOwner,
                         row: data.row,
@@ -1269,7 +1276,7 @@ function handleAnimation(data) {
                         updatedAt: Date.now()
                     });
                     if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                        console.log('[HP-SEQ-DBG] core-poison-override-set:single', {
+                        if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-set:single', {
                             key: pdKey,
                             owner: pdOwner,
                             row: data.row,
@@ -1287,7 +1294,7 @@ function handleAnimation(data) {
                         });
                     }
                 } else if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                    console.log('[HP-SEQ-DBG] core-poison-override-keep:single', {
+                    if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-keep:single', {
                         key: pdKey,
                         owner: pdOwner,
                         row: data.row,
@@ -1332,13 +1339,13 @@ function handleAnimation(data) {
             case 'spellMiss': animateSpellMiss(data); break;
             case 'spellReturnToHand':
                 if (window.HAND_TRACE) {
-                    console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                    if (window.DEBUG_LOGS) console.log(`[HAND-TRACK] spellReturnToHand | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
                 }
                 animateSpellReturnToHand(data);
                 break;
             case 'graveyardReturn':
                 if (window.HAND_TRACE) {
-                    console.log(`[HAND-TRACK] graveyardReturn | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
+                    if (window.DEBUG_LOGS) console.log(`[HAND-TRACK] graveyardReturn | card=${data.card?.name} uid=${(data.card?.uid||data.card?.id||'').slice(-4)} handIndex=${data.handIndex} isMe=${data.player === myNum}`);
                 }
                 animateGraveyardReturnToHand(data);
                 break;
@@ -1389,7 +1396,7 @@ function handleAnimation(data) {
                 if (data.cards) {
                     const _draws = data.cards.map(d => `${d.card?.name || '?'}(${(d.card?.uid||d.card?.id||'').slice(-4)}) idx=${d.handIndex} p=${d.player}`).join(', ');
                     if (window.HAND_TRACE) {
-                        console.log(`[HAND-TRACK] draw | cards=[${_draws}] isMe=${data.cards.some(d => d.player === myNum)}`);
+                        if (window.DEBUG_LOGS) console.log(`[HAND-TRACK] draw | cards=[${_draws}] isMe=${data.cards.some(d => d.player === myNum)}`);
                     }
                 }
                 if (typeof GameAnimations !== 'undefined') {
@@ -1539,7 +1546,7 @@ function handleAnimationBatch(animations) {
             if (!card) {
                 if (existing) RenderLock.clearOverride('slot', pdKey);
                 if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                    console.log('[HP-SEQ-DBG] core-poison-override-clear:batch', {
+                    if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-clear:batch', {
                         key: pdKey,
                         owner: pdOwner,
                         row: anim.row,
@@ -1568,7 +1575,7 @@ function handleAnimationBatch(animations) {
                         updatedAt: Date.now()
                     });
                     if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                        console.log('[HP-SEQ-DBG] core-poison-override-set:batch', {
+                        if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-set:batch', {
                             key: pdKey,
                             owner: pdOwner,
                             row: anim.row,
@@ -1586,7 +1593,7 @@ function handleAnimationBatch(animations) {
                         });
                     }
                 } else if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                    console.log('[HP-SEQ-DBG] core-poison-override-keep:batch', {
+                    if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] core-poison-override-keep:batch', {
                         key: pdKey,
                         owner: pdOwner,
                         row: anim.row,
@@ -1930,12 +1937,12 @@ function openGraveyard(owner) {
     }
 
     // Scroll horizontal avec la molette
-    container.onwheel = (e) => {
+    container.addEventListener("wheel", (e) => {
         if (container.scrollWidth > container.clientWidth) {
             e.preventDefault();
             container.scrollLeft += e.deltaY;
         }
-    };
+    }, { passive: false });
 
     popup.dataset.owner = owner;
     popup.classList.add('active');

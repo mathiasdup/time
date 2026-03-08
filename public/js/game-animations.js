@@ -12,7 +12,7 @@ function _getHandPanel(id) {
 // === DEBUG: Snapshot DOM main adverse ===
 function _oppHandDomSnap(label) {
     var p = _getHandPanel("opp-hand");
-    if (!p) { console.log("[OPP-HAND-DOM] " + label + " | panel=null"); return; }
+    if (!p) { if (window.DEBUG_LOGS) console.log("[OPP-HAND-DOM] " + label + " | panel=null"); return; }
     var kids = Array.from(p.children);
     var details = kids.map(function(el, i) {
         var r = el.getBoundingClientRect();
@@ -28,7 +28,7 @@ function _oppHandDomSnap(label) {
     });
     var vis = details.filter(function(d) { return d.vis === "V" && d.w > 0; }).length;
     var hid = kids.length - vis;
-    console.log("[OPP-HAND-DOM] " + label + " | total=" + kids.length + " vis=" + vis + " hid=" + hid, details);
+    if (window.DEBUG_LOGS) console.log("[OPP-HAND-DOM] " + label + " | total=" + kids.length + " vis=" + vis + " hid=" + hid, details);
 }
 
 // === Smooth close du trou dans la main adverse aprÃƒÆ’Ã‚Â¨s hide d'une carte ===
@@ -36,7 +36,7 @@ function _oppHandDomSnap(label) {
 function smoothCloseOppHandGap(hiddenCard) {
     _oppHandDomSnap('gapClose:entry');
     // DEBUG
-    console.log('[GAP-CLOSE] entry:', { hasCard: !!hiddenCard, cls: hiddenCard ? hiddenCard.className.substring(0,30) : null, w: hiddenCard ? hiddenCard.style.width : null, vis: hiddenCard ? hiddenCard.style.visibility : null, parentChildren: hiddenCard && hiddenCard.parentElement ? hiddenCard.parentElement.children.length : 0 });
+    if (window.DEBUG_LOGS) console.log('[GAP-CLOSE] entry:', { hasCard: !!hiddenCard, cls: hiddenCard ? hiddenCard.className.substring(0,30) : null, w: hiddenCard ? hiddenCard.style.width : null, vis: hiddenCard ? hiddenCard.style.visibility : null, parentChildren: hiddenCard && hiddenCard.parentElement ? hiddenCard.parentElement.children.length : 0 });
     if (!hiddenCard) return;
     var panel = hiddenCard.parentElement;
     if (!panel) {
@@ -237,10 +237,10 @@ function _setHeroHpText(hpElement, value, _trSrc) {
 function _debugHpSeq(label, payload = null) {
     if (!(window.DEBUG_LOGS || window.HP_SEQ_TRACE)) return;
     if (payload === null || payload === undefined) {
-        console.log('[HP-SEQ-DBG]', label);
+        if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG]', label);
         return;
     }
-    console.log('[HP-SEQ-DBG]', label, payload);
+    if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG]', label, payload);
 }
 
 function _debugSlotState(owner, row, col) {
@@ -526,7 +526,7 @@ function queueAnimation(type, data) {
         const target = data.targetPlayer === myNum ? 'me' : 'opp';
         RenderLock.lock('heroHp', target, 'onDeathDmg-pre');
         data._onDeathDmgPreLock = target;
-        console.log("[EVEQUE-DBG] queue onDeathDmg", { target, _displayHpBefore: data._displayHpBefore, lockSet: true, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp });
+        if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] queue onDeathDmg", { target, _displayHpBefore: data._displayHpBefore, lockSet: true, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp });
     }
 
     // Pour burn, death, sacrifice, spell, trapTrigger, massDiscard, bloquer le render du cimetiÃƒÆ’Ã‚Â¨re IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT
@@ -570,7 +570,7 @@ function queueAnimation(type, data) {
         animatingSlots.add(slotKey);
         if (!window._pendingDeathSlots) window._pendingDeathSlots = new Set();
         window._pendingDeathSlots.add(slotKey);
-        console.log("[SPECTRE-DBG] queue death: slot locked", slotKey);
+        if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] queue death: slot locked", slotKey);
     }
 
     // Pour deathTransform, bloquer le slot IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT pour que render() ne remplace pas la carte
@@ -586,7 +586,7 @@ function queueAnimation(type, data) {
         const owner = data.player === myNum ? 'me' : 'opp';
         const slotKey = `${owner}-${data.row}-${data.col}`;
         animatingSlots.add(slotKey);
-        console.log("[SPECTRE-DBG] queue reanimate: slot locked", slotKey, "queueLen:", animationQueue.length);
+        if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] queue reanimate: slot locked", slotKey, "queueLen:", animationQueue.length);
     }
 
     // Pour bounce, bloquer le slot pour que render() ne retire pas la carte
@@ -678,7 +678,7 @@ function queueAnimation(type, data) {
         const hpEl = document.querySelector(`#${owner === 'me' ? 'me' : 'opp'}-hp .hero-hp-number`);
         data._preHeroHp = hpEl ? parseInt(hpEl.textContent) : undefined;
         lifestealHeroHealInProgress = true;
-        console.log("[EVEQUE-DBG] queue heroHeal", { owner, amount: data.amount, _preHeroHp: data._preHeroHp, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, locked: RenderLock.isLocked("heroHp", "all") });
+        if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] queue heroHeal", { owner, amount: data.amount, _preHeroHp: data._preHeroHp, stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, locked: RenderLock.isLocked("heroHp", "all") });
     }
 
     // Pour regen, capturer les HP ACTUELS (avant le heal) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mÃƒÆ’Ã‚Âªme technique que lifesteal
@@ -1293,7 +1293,7 @@ async function processAnimationQueue(processorId = null) {
             _perfRecordAnimationStep(_perfStepStart, batch.length);
             lifestealHeroHealInProgress = false;
             render();
-            console.log("[EVEQUE-DBG] post-heroHeal render()", { stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, domMe: document.querySelector('#me-hp .hero-hp-number')?.textContent, domOpp: document.querySelector('#opp-hp .hero-hp-number')?.textContent, lockedMe: RenderLock.isLocked('heroHp', 'me'), lockedOpp: RenderLock.isLocked('heroHp', 'opp'), lockedAll: RenderLock.isLocked('heroHp', 'all') });
+            if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] post-heroHeal render()", { stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, domMe: document.querySelector('#me-hp .hero-hp-number')?.textContent, domOpp: document.querySelector('#opp-hp .hero-hp-number')?.textContent, lockedMe: RenderLock.isLocked('heroHp', 'me'), lockedOpp: RenderLock.isLocked('heroHp', 'opp'), lockedAll: RenderLock.isLocked('heroHp', 'all') });
             processAnimationQueue(processorId);
             return;
         }
@@ -2196,7 +2196,7 @@ async function handleOnDeathDamage(data) {
     const hpBefore = domHp ?? data._displayHpBefore ?? ((owner === 'me' ? state?.me?.hp : state?.opponent?.hp) + data.damage);
     const hpAfter = hpBefore - data.damage;
 
-    console.log("[EVEQUE-DBG] handleOnDeathDmg START", { owner, damage: data.damage, domHp, hpBefore, hpAfter, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp) });
+    if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] handleOnDeathDmg START", { owner, damage: data.damage, domHp, hpBefore, hpAfter, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp) });
 
     // Afficher les HP d'avant pendant l'animation
     _setHeroHpText(hpElement, hpBefore, "onDeathDmg:before");
@@ -2224,7 +2224,7 @@ async function handleOnDeathDamage(data) {
     // DÃƒÆ’Ã‚Â©bloquer render()
     zdejebelAnimationInProgress = false;
     _heroHpGuard(owner);
-    console.log("[EVEQUE-DBG] handleOnDeathDmg END", { owner, domHp: document.querySelector("#" + (owner === "me" ? "me" : "opp") + "-hp .hero-hp-number")?.textContent, guardSet: true });
+    if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] handleOnDeathDmg END", { owner, domHp: document.querySelector("#" + (owner === "me" ? "me" : "opp") + "-hp .hero-hp-number")?.textContent, guardSet: true });
 
     await new Promise(r => setTimeout(r, 200));
 }
@@ -3102,7 +3102,7 @@ async function animateDeathToGraveyard(data) {
                 animateDissipationVanish(sourceCanvas, wrapperRect.left, wrapperRect.top, cardWidth, cardHeight, 0, null).then(() => {
                     wrapper.remove();
                     graveRenderBlocked.delete(ownerKey);
-                console.log("[SPECTRE-DBG] death anim END: slot unlocked", deathSlotKey);
+                if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] death anim END: slot unlocked", deathSlotKey);
                     animatingSlots.delete(deathSlotKey);
                     resolve();
                 });
@@ -3562,7 +3562,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
     const initX = hasStartRect ? startRect.left + startRect.width / 2 - cardWidth / 2 : showcaseX;
     const initY = hasStartRect ? startRect.top + startRect.height / 2 - cardHeight / 2 : showcaseY;
     const initScale = hasStartRect ? (startRect.width / cardWidth) : 0.3;
-    console.log('[SPELL-SIZE] startRect:', hasStartRect ? { w: Math.round(startRect.width), h: Math.round(startRect.height), left: Math.round(startRect.left), top: Math.round(startRect.top) } : 'none', 'initScale:', initScale.toFixed(3), 'showcaseScale:', showcaseScale, 'visualStart:', Math.round(cardWidth * initScale) + 'px', 'visualEnd:', Math.round(cardWidth * showcaseScale) + 'px');
+    if (window.DEBUG_LOGS) console.log('[SPELL-SIZE] startRect:', hasStartRect ? { w: Math.round(startRect.width), h: Math.round(startRect.height), left: Math.round(startRect.left), top: Math.round(startRect.top) } : 'none', 'initScale:', initScale.toFixed(3), 'showcaseScale:', showcaseScale, 'visualStart:', Math.round(cardWidth * initScale) + 'px', 'visualEnd:', Math.round(cardWidth * showcaseScale) + 'px');
     const oppFlip = !isMine && hasStartRect;
     const initOpacity = oppFlip ? 1 : (hasStartRect ? 0.85 : 0);
 
@@ -3882,7 +3882,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 }
 
 async function animateSpell(data) {
-    console.log("[SPELL-GLOW] animateSpell entry", { caster: data.caster, myNum, spell: data.spell?.name, time: performance.now().toFixed(1) });
+    if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] animateSpell entry", { caster: data.caster, myNum, spell: data.spell?.name, time: performance.now().toFixed(1) });
     let startRect = null;
     _oppHandDomSnap("spell:entry:" + (data.spell ? data.spell.name : "?"));
     // Fly from opponent hand before revealing the spell
@@ -3930,7 +3930,7 @@ async function animateSpell(data) {
                         (resolved.mode === 'visible-index' || resolved.mode === 'logical-index');
                     if (resolved.mode === 'uid-match' || resolvedByIndex) {
                         // DEBUG
-                        console.log('[OPP-SPELL] beforeLift:', { mode: resolved.mode, elClass: resolved.el.className.substring(0,30), spellName: data.spell ? data.spell.name : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+                        if (window.DEBUG_LOGS) console.log('[OPP-SPELL] beforeLift:', { mode: resolved.mode, elClass: resolved.el.className.substring(0,30), spellName: data.spell ? data.spell.name : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                         // Lift card within hand (preserves z-index stacking)
                         resolved.el.dataset.lifting = 'true';
                         resolved.el.style.transition = 'transform 0.16s ease-out';
@@ -3945,7 +3945,7 @@ async function animateSpell(data) {
                         smoothCloseOppHandGap(resolved.el);
                         // DEBUG
                         _oppHandDomSnap('spell:afterHide:' + (data.spell ? data.spell.name : '?'));
-                        console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+                        if (window.DEBUG_LOGS) console.log('[OPP-SPELL] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
                     }
                 }
             }
@@ -3981,7 +3981,7 @@ async function animateSpell(data) {
             }
 
             if (foundEl) {
-                                console.log("[SPELL-GLOW] foundEl in DOM, about to remove glow+el", { commitId: foundEl.dataset.commitId, hasGlow: !!foundEl.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
+                                if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] foundEl in DOM, about to remove glow+el", { commitId: foundEl.dataset.commitId, hasGlow: !!foundEl.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
                 // Retirer le glow orange avant le remove pour eviter le flash
                 var _glowC = foundEl.querySelector(".card-glow-canvas");
                 if (_glowC) _glowC.remove();
@@ -3998,7 +3998,7 @@ async function animateSpell(data) {
                 }
 
                 foundEl.remove();
-                console.log("[SPELL-GLOW] foundEl removed from DOM", { time: performance.now().toFixed(1) });
+                if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] foundEl removed from DOM", { time: performance.now().toFixed(1) });
 
                 // FLIP : animer les cartes restantes vers leurs nouvelles positions
                 const toAnimate = [];
@@ -4090,7 +4090,7 @@ function prepareGraveyardReturnDraw(data, options = {}) {
 function animateSpellReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     if (window.HAND_TRACE) {
-        console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+        if (window.DEBUG_LOGS) console.log(`[DOM-VIS] spellReturnToHand owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
     }
     if (owner === 'me') {
         const hp = _getHandPanel('my-hand');
@@ -4102,7 +4102,7 @@ function animateSpellReturnToHand(data) {
 function animateGraveyardReturnToHand(data) {
     const owner = data.player === myNum ? 'me' : 'opp';
     if (window.HAND_TRACE) {
-        console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
+        if (window.DEBUG_LOGS) console.log(`[DOM-VIS] graveyardReturn owner=${owner} card=${data.card?.name} handIndex=${data.handIndex}`);
     }
     if (owner === 'me') {
         const hp = _getHandPanel('my-hand');
@@ -4405,7 +4405,7 @@ async function handleHeroHealAnim(data) {
     const hpElement = hpContainer?.querySelector('.hero-hp-number') || hpContainer;
     const heroEl = document.getElementById(`hero-${owner === 'me' ? 'me' : 'opp'}`);
 
-    console.log("[EVEQUE-DBG] handleHeroHeal START", { owner, amount, _preHeroHp: data._preHeroHp, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp), domHp: hpElement?.textContent, lockedAll: RenderLock.isLocked("heroHp", "all"), lockedOwner: RenderLock.isLocked("heroHp", owner) });
+    if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] handleHeroHeal START", { owner, amount, _preHeroHp: data._preHeroHp, stateHp: (owner === "me" ? state?.me?.hp : state?.opponent?.hp), domHp: hpElement?.textContent, lockedAll: RenderLock.isLocked("heroHp", "all"), lockedOwner: RenderLock.isLocked("heroHp", owner) });
     if (data._preHeroHp !== undefined) {
         _setHeroHpText(hpElement, data._preHeroHp, "heroHeal:before");
     }
@@ -4435,7 +4435,7 @@ async function handleHeroHealAnim(data) {
             finalHp = owner === 'me' ? state?.me?.hp : state?.opponent?.hp;
         }
         if (finalHp !== undefined) _setHeroHpText(hpElement, finalHp, "heroHeal:after");
-        console.log("[EVEQUE-DBG] handleHeroHeal END", { owner, finalHp, preHp: data._preHeroHp, amount, domHp: hpElement?.textContent });
+        if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] handleHeroHeal END", { owner, finalHp, preHp: data._preHeroHp, amount, domHp: hpElement?.textContent });
     }
 
 }
@@ -4994,8 +4994,8 @@ let pendingBounce = null;   // { owner, card, wrapper, resolveTarget }
 function _bounceDbg(stage, payload = {}) {
     if (!window.HAND_INDEX_DEBUG) return;
     try {
-        console.log(`[HAND-IDX][ANIM] ${stage}`, payload);
-        console.log(`[HAND-IDX][ANIM][JSON] ${stage} ${JSON.stringify(payload)}`);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][ANIM] ${stage}`, payload);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][ANIM][JSON] ${stage} ${JSON.stringify(payload)}`);
     } catch (_) {}
 }
 
@@ -5088,8 +5088,8 @@ function _oppPlayDbg(stage, payload = {}) {
             dom,
             visible
         };
-        console.log(`[HAND-IDX][OPP-PLAY] ${stage}`, fullPayload);
-        console.log(`[HAND-IDX][OPP-PLAY][JSON] ${stage} ${JSON.stringify(fullPayload)}`);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][OPP-PLAY] ${stage}`, fullPayload);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][OPP-PLAY][JSON] ${stage} ${JSON.stringify(fullPayload)}`);
     } catch (_) {}
 }
 
@@ -6918,7 +6918,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
         }
 
         // DEBUG
-        console.log('[OPP-FLY] sourceEl:', { found: !!_sourceEl, connected: _sourceEl ? _sourceEl.isConnected : false, cls: _sourceEl ? _sourceEl.className.substring(0,30) : null, sourceIndex: sourceIndex, resolvedEl: !!_resolvedEl, spellName: spell ? spell.name : null, savedRect: !!savedSourceRect, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+        if (window.DEBUG_LOGS) console.log('[OPP-FLY] sourceEl:', { found: !!_sourceEl, connected: _sourceEl ? _sourceEl.isConnected : false, cls: _sourceEl ? _sourceEl.className.substring(0,30) : null, sourceIndex: sourceIndex, resolvedEl: !!_resolvedEl, spellName: spell ? spell.name : null, savedRect: !!savedSourceRect, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
 
         function _doFlyAfterLift() {
             // Update handRect from lifted element position
@@ -6926,7 +6926,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                 handRect = _sourceEl.getBoundingClientRect();
             }
             // DEBUG
-            console.log('[OPP-FLY] afterLift:', { elConnected: _sourceEl ? _sourceEl.isConnected : false, elVis: _sourceEl ? _sourceEl.style.visibility : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+            if (window.DEBUG_LOGS) console.log('[OPP-FLY] afterLift:', { elConnected: _sourceEl ? _sourceEl.isConnected : false, elVis: _sourceEl ? _sourceEl.style.visibility : null, handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
 
             // Hide source + close gap
             if (_sourceEl && _sourceEl.isConnected) {
@@ -6942,7 +6942,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
                 }
 
             // DEBUG
-            console.log('[OPP-FLY] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
+            if (window.DEBUG_LOGS) console.log('[OPP-FLY] afterHide:', { handVisible: (function() { var p = _getHandPanel('opp-hand'); if (!p) return 0; var c = p.querySelectorAll('.opp-card-back, .opp-revealed'); return Array.from(c).filter(function(x){return x.style.visibility !== 'hidden' && x.style.width !== '0px';}).length; })() });
             }
 
             // Create flying card at (lifted) handRect position
@@ -7001,7 +7001,7 @@ function flyFromOppHand(targetRect, duration = 300, spell = null, savedSourceRec
         }
 
         // DEBUG
-        console.log('[OPP-FLY] liftDecision:', { willLift: !!(_sourceEl && _sourceEl.isConnected) });
+        if (window.DEBUG_LOGS) console.log('[OPP-FLY] liftDecision:', { willLift: !!(_sourceEl && _sourceEl.isConnected) });
 
         // Lift animation: raise source card within hand before flying
         // This preserves natural z-index stacking (middle card stays below right cards)
@@ -7675,7 +7675,7 @@ function animateReanimate(data) {
         const slotKey = `${owner}-${data.row}-${data.col}`;
 
         animatingSlots.add(slotKey);
-        console.log("[SPECTRE-DBG] reanimate handler START", { slotKey, card: data.card?.name });
+        if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] reanimate handler START", { slotKey, card: data.card?.name });
 
         const slot = getSlot(owner, data.row, data.col);
         if (!slot) {
@@ -7711,7 +7711,7 @@ function animateReanimate(data) {
                 const field = owner === 'me' ? state?.me?.field : state?.opponent?.field;
                 const arrived = !!field?.[data.row]?.[data.col];
                 if (arrived || (performance.now() - waitStart) > waitMax) {
-                    console.log("[SPECTRE-DBG] reanimate handler END", { slotKey, arrived: !!((owner === "me" ? state?.me?.field : state?.opponent?.field)?.[data.row]?.[data.col]) });
+                    if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] reanimate handler END", { slotKey, arrived: !!((owner === "me" ? state?.me?.field : state?.opponent?.field)?.[data.row]?.[data.col]) });
                     animatingSlots.delete(slotKey);
                     // Sync tempCard uid with state so renderField fast-path works
                     // (slow path is deferred while isAnimating=true)

@@ -205,7 +205,7 @@ const CardGlow = (() => {
             if (activeEls.has(cardEl)) continue;
             const { borderW, borderR } = getCachedBorder(cardEl);
             const isArena = cardEl.classList.contains('arena-style');
-            console.log("[SPELL-GLOW] CardGlow painting orange on committed-spell", { time: performance.now().toFixed(1) });
+            if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] CardGlow painting orange on committed-spell", { time: performance.now().toFixed(1) });
             newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
             activeEls.add(cardEl);
         }

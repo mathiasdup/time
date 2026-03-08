@@ -1,4 +1,30 @@
 // ==================== RENDU DU JEU ====================
+// ===== HOISTED CONSTANTS (perf: avoid re-creating per call) =====
+var _ABILITY_ICON_MAP = {
+    haste: "haste.png", superhaste: "superhaste.png",
+    trample: "trample.png", cleave: "cleave.png",
+    immovable: "immobile.png", protection: "protection.png",
+    camouflage: "camouflage.png", deflexion: "deflexion.png",
+    spectral: "spectre.png", antitoxin: "anti_toxine.png",
+    regeneration: "regeneration.png", poison: "poison.png",
+    lethal: "toucher_mortel.png", lifelink: "lifelink.png",
+    lifedrain: "lifedrain.png", power: "power.png",
+    spellBoost: "spellboost.png", soinToxique: "soin_toxique.png",
+    dissipation: "dissipation.png", entrave: "entrave.png", provocation: "provocation.png"
+};
+var _COMMON_ABILITY_NAMES = {
+    haste: "Célérité", superhaste: "Supercélérité", intangible: "Intangible",
+    trample: "Piétinement", power: "Puissance", immovable: "Immobile", wall: "Mur", regeneration: "Régénération",
+    protection: "Protection", spellBoost: "Sort renforcé", enhance: "Amélioration", bloodthirst: "Soif de sang", melody: "Mélodie", camouflage: "Camouflage", lethal: "Toucher mortel", spectral: "Spectral", poison: "Poison", untargetable: "Inciblable", entrave: "Entrave", lifelink: "Lien vital", lifedrain: "Drain de vie", dissipation: "Dissipation", antitoxin: "Antitoxine", soinToxique: "Soin toxique", unsacrificable: "Non sacrifiable", provocation: "Provocation", deflexion: "Déflexion"
+};
+var _CREATURE_TYPE_NAMES = {
+    undead: "Mort-vivant", human: "Humain", goblin: "Gobelin", demon: "Démon",
+    elemental: "Élémentaire", beast: "Bête", spirit: "Esprit", dragon: "Dragon",
+    serpent: "Serpent", monstrosity: "Monstruosité", ogre: "Ogre", spider: "Araignée",
+    parasite: "Parasite", golem: "Golem", plant: "Plante", vampire: "Vampire",
+    insect: "Insecte", avatar: "Avatar"
+};
+var _RARITY_MAP = { 1: "common", 2: "uncommon", 3: "rare", 4: "mythic", 5: "platinum" };
 // Render principal, champ de bataille, main, cartes, preview, cimetière
 
 // [DOM-VIS] Snapshot du DOM de la main tel qu'un humain le verrait
@@ -15,7 +41,7 @@ function _domVisSnapshot(panel, label) {
         const tx = el.style.transform || 'none';
         return `${i}:${name}(${uid})${isCommitted?'[C]':''} x=${Math.round(r.left)} ${vis} ${tx !== 'none' ? tx : ''}`.trim();
     });
-    console.log(`[DOM-VIS] ${label} | phase=${state?.phase||'?'} | ${all.length} cards | ${snap.join(' | ')}`);
+    if (window.DEBUG_LOGS) console.log(`[DOM-VIS] ${label} | phase=${state?.phase||'?'} | ${all.length} cards | ${snap.join(' | ')}`);
 }
 
 // Safety cleanup : retirer les wrappers d'animation DIV orphelins (> 10s)
@@ -634,7 +660,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     const staleConsumed = poisonOv.consumed && ovAge > 2600;
                     if (ovUidMismatch || (poisonOv.consumed && hpVal <= poisonOv.hp) || staleConsumed) {
                         if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                            console.log('[HP-SEQ-DBG] render-poison-override-clear', {
+                            if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] render-poison-override-clear', {
                                 slotKey,
                                 owner,
                                 row: r,
@@ -651,7 +677,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                         RenderLock.clearOverride('slot', slotKey);
                     } else {
                         if (window.DEBUG_LOGS || window.HP_SEQ_TRACE) {
-                            console.log('[HP-SEQ-DBG] render-poison-override-apply', {
+                            if (window.DEBUG_LOGS) console.log('[HP-SEQ-DBG] render-poison-override-apply', {
                                 slotKey,
                                 owner,
                                 row: r,
@@ -772,18 +798,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                 }
                 // Mettre a jour les pastilles de capacites (ajout/retrait dynamique)
                 {
-                    var _aim = {
-                        haste: 'haste.png', superhaste: 'superhaste.png',
-                        trample: 'trample.png', cleave: 'cleave.png',
-                        immovable: 'immobile.png', protection: 'protection.png',
-                        camouflage: 'camouflage.png', deflexion: 'deflexion.png',
-                        spectral: 'spectre.png', antitoxin: 'anti_toxine.png',
-                        regeneration: 'regeneration.png', poison: 'poison.png',
-                        lethal: 'toucher_mortel.png', lifelink: 'lifelink.png',
-                        lifedrain: 'lifedrain.png', power: 'power.png',
-                        spellBoost: 'spellboost.png', soinToxique: 'soin_toxique.png',
-                        dissipation: 'dissipation.png', entrave: 'entrave.png', provocation: 'provocation.png'
-                    };
+                    var _aim = _ABILITY_ICON_MAP;
                     var curAbils = (card.abilities || []).filter(function(a) { return _aim[a]; });
                     var exWrap = existingCardEl.querySelector('.ability-tokens');
                     var exAbils = exWrap ? Array.from(exWrap.querySelectorAll('.ability-token img')).map(function(i) { return i.alt; }) : [];
@@ -1304,7 +1319,7 @@ function makeHeroCard(hero, hp) {
     el.className = `card hero arena-style faction-${faction}`;
 
     // Rareté star
-    const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+    const rarityMap = _RARITY_MAP;
     const rarityClass = rarityMap[hero.edition] || 'common';
     const rarity = CARD_RARITIES[rarityClass];
 
@@ -1957,7 +1972,7 @@ function renderHand(hand, energy) {
     const _htServer = hand.map((c, i) => `${i}:${c.name}(${(c.uid||c.id||'').slice(-4)})`).join(', ');
     const _htDom = Array.from(panel.querySelectorAll('.card:not(.committed-spell)')).map((el, i) => `${i}:${el.dataset.uid?.slice(-4)}`).join(', ');
     if (window.HAND_TRACE) {
-        console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
+        if (window.DEBUG_LOGS) console.log(`[HAND-TRACK] renderHand | server=[${_htServer}] | dom=[${_htDom}]`);
     }
 
     // Sorts engagés : toujours afficher à leur position d'origine dans la main.
@@ -1989,7 +2004,7 @@ function renderHand(hand, energy) {
             committedById.set(Number(cs.commitId), cs);
             const el = makeCard(cs.card, false);
             el.classList.add('committed-spell');
-            console.log("[SPELL-GLOW] committed-spell re-inserted in DOM", { commitId: el.dataset?.commitId, hasGlow: !!el.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
+            if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] committed-spell re-inserted in DOM", { commitId: el.dataset?.commitId, hasGlow: !!el.querySelector(".card-glow-canvas"), time: performance.now().toFixed(1) });
             el.dataset.commitId = cs.commitId;
             el.dataset.cardId = cs.card.id;
             el.dataset.order = cs.order;
@@ -2277,8 +2292,8 @@ function createOppHandCard(revealedCard) {
 function _bounceRenderDbg(stage, payload = {}) {
     if (!window.HAND_INDEX_DEBUG) return;
     try {
-        console.log(`[HAND-IDX][RENDER] ${stage}`, payload);
-        console.log(`[HAND-IDX][RENDER][JSON] ${stage} ${JSON.stringify(payload)}`);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][RENDER] ${stage}`, payload);
+        if (window.DEBUG_LOGS) console.log(`[HAND-IDX][RENDER][JSON] ${stage} ${JSON.stringify(payload)}`);
     } catch (_) {}
 }
 
@@ -2593,7 +2608,7 @@ function renderOppHand(count, oppHand) {
     // DEBUG
     var _ropPanel;
     var _ropCards = _ropPanel ? _ropPanel.querySelectorAll('.opp-card-back, .opp-revealed') : [];
-    console.log('[RENDER-OPP] entry:', { target: arguments[0], oppHandArg: arguments[1] ? 'has oppHand' : 'none', domChildren: _ropPanel ? _ropPanel.children.length : 0, visibleCards: Array.from(_ropCards).filter(function(c){return c.style.visibility !== 'hidden' && c.style.width !== '0px';}).length, hiddenCards: Array.from(_ropCards).filter(function(c){return c.style.visibility === 'hidden' || c.style.width === '0px';}).length });
+    if (window.DEBUG_LOGS) console.log('[RENDER-OPP] entry:', { target: arguments[0], oppHandArg: arguments[1] ? 'has oppHand' : 'none', domChildren: _ropPanel ? _ropPanel.children.length : 0, visibleCards: Array.from(_ropCards).filter(function(c){return c.style.visibility !== 'hidden' && c.style.width !== '0px';}).length, hiddenCards: Array.from(_ropCards).filter(function(c){return c.style.visibility === 'hidden' || c.style.width === '0px';}).length });
 
     const panel = document.getElementById('opp-hand');
     _ropPanel = panel;
@@ -2845,7 +2860,7 @@ function renderOppHand(count, oppHand) {
         const adjustedOldCount = oldCount - pendingRemovals;
         if (count >= adjustedOldCount) {
             // Animations are handling the removal
-            console.log("[RENDER-OPP] skip resolution-shrink: lifting=" + liftingCards.length + " hidden=" + hiddenCards.length + " queued=" + queuedOppAnims + " adjustedOld=" + adjustedOldCount + " target=" + count);
+            if (window.DEBUG_LOGS) console.log("[RENDER-OPP] skip resolution-shrink: lifting=" + liftingCards.length + " hidden=" + hiddenCards.length + " queued=" + queuedOppAnims + " adjustedOld=" + adjustedOldCount + " target=" + count);
             return;
         }
         if (!savedOppHandRects) {
@@ -3123,11 +3138,7 @@ function makeCard(card, inHand, discountedCost = null) {
         const nameStyle = fitSize ? ` style="font-size:${fitSize}"` : '';
 
         // Capacités communes (sans shooter/fly car déjà dans le type)
-        const commonAbilityNames = {
-            haste: 'Célérité', superhaste: 'Supercélérité', intangible: 'Intangible',
-            trample: 'Piétinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur', regeneration: 'Régénération',
-            protection: 'Protection', spellBoost: 'Sort renforcé', enhance: 'Amélioration', bloodthirst: 'Soif de sang', melody: 'Mélodie', camouflage: 'Camouflage', lethal: 'Toucher mortel', spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave', lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation', antitoxin: 'Antitoxine', soinToxique: 'Soin toxique', unsacrificable: 'Non sacrifiable', provocation: 'Provocation', deflexion: 'Déflexion'
-        };
+        const commonAbilityNames = _COMMON_ABILITY_NAMES;
         // Filtrer shooter et fly des capacités affichées
         const addedAbils = card.addedAbilities || [];
         const commonAbilities = (card.abilities || [])
@@ -3164,26 +3175,7 @@ function makeCard(card, inHand, discountedCost = null) {
         else if (card.combatType === 'fly' || card.abilities?.includes('fly')) combatTypeText = 'Volant';
 
         // Type de créature (mort-vivant, humain, dragon...)
-        const creatureTypeNames = {
-            undead: 'Mort-vivant',
-            human: 'Humain',
-            goblin: 'Gobelin',
-            demon: 'Démon',
-            elemental: 'Élémentaire',
-            beast: 'Bête',
-            spirit: 'Esprit',
-            dragon: 'Dragon',
-            serpent: 'Serpent',
-            monstrosity: 'Monstruosité',
-            ogre: 'Ogre',
-            spider: 'Araignée',
-            parasite: 'Parasite',
-            golem: 'Golem',
-            plant: 'Plante',
-            vampire: 'Vampire',
-            insect: 'Insecte',
-            avatar: 'Avatar'
-        };
+        const creatureTypeNames = _CREATURE_TYPE_NAMES;
         const creatureTypeName = card.creatureType ? creatureTypeNames[card.creatureType] : null;
 
         // Capacité spéciale/unique si présente
@@ -3220,7 +3212,7 @@ function makeCard(card, inHand, discountedCost = null) {
         if (card.isBuilding) el.classList.add('card-building');
 
         // Rareté — étoile ✦ avec glow pulsé
-        const rarityMap = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+        const rarityMap = _RARITY_MAP;
         const rarityClass = rarityMap[card.edition] || 'common';
         const rarity = CARD_RARITIES[rarityClass];
 
@@ -3316,20 +3308,7 @@ function makeCard(card, inHand, discountedCost = null) {
             const buffMarker = (card.buffCounters || 0) >= 1 ? `<div class="buff-marker" style="top:${mkBase + mkIdx++ * 28}px"><span class="buff-count">${card.buffCounters}</span></div>` : '';
             
 
-        const abilityIconMap = {
-            haste: 'haste.png', superhaste: 'superhaste.png',
-            trample: 'trample.png', cleave: 'cleave.png',
-            immovable: 'immobile.png', protection: 'protection.png',
-            camouflage: 'camouflage.png', deflexion: 'deflexion.png',
-            spectral: 'spectre.png', antitoxin: 'anti_toxine.png',
-            regeneration: 'regeneration.png', poison: 'poison.png',
-            lethal: 'toucher_mortel.png', lifelink: 'lifelink.png',
-            lifedrain: 'lifedrain.png', power: 'power.png',
-            spellBoost: 'spellboost.png', soinToxique: 'soin_toxique.png',
-            dissipation: 'dissipation.png',
-            entrave: 'entrave.png',
-            provocation: 'provocation.png'
-        };
+        const abilityIconMap = _ABILITY_ICON_MAP;
         const abilityTokensHtml = (card.abilities || [])
             .filter(a => abilityIconMap[a])
             .map(a => { var v = _getAbilityValue(card, a); return '<div class="ability-token"><img src="/abilities_icons/' + abilityIconMap[a] + '" alt="' + a + '">' + (v ? '<span class="ability-token-value">' + v + '</span>' : '') + '</div>'; })

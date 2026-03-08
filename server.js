@@ -121,10 +121,11 @@ const STATE_EMIT_COALESCE_MS = Number.isFinite(_STATE_EMIT_COALESCE_RAW)
 function perfWrite(event, data) {
     if (!PERF_ENABLED) return;
     try {
-        fs.appendFileSync(
+        fs.appendFile(
             PERF_LOG_FILE,
             JSON.stringify({ ts: Date.now(), event, ...data }) + '\n',
-            'utf8'
+            'utf8',
+            function() {}
         );
     } catch (_) {}
 }
