@@ -4,6 +4,45 @@
  * Le canvas overlay est transparent et superposé au DOM (pointer-events: none)
  */
 
+
+// Text texture cache — avoids creating new PIXI.Text + GPU texture upload per effect
+const _vfxTextCache = new Map();
+const _VFX_TEXT_CACHE_MAX = 200;
+
+// Pre-rendered circle texture for projectile particles (avoids new Graphics per particle)
+let _particleCircleTex = null;
+function _getParticleCircleTex(app) {
+    if (_particleCircleTex && !_particleCircleTex.destroyed) return _particleCircleTex;
+    const g = new PIXI.Graphics();
+    g.circle(0, 0, 3);
+    g.fill({ color: 0xFFFFFF });
+    _particleCircleTex = app.renderer.generateTexture(g);
+    g.destroy(true);
+    return _particleCircleTex;
+}
+function _getCachedTextSprite(app, label, style) {
+    const key = label + '|' + style.fontSize + '|' + (style.fill || 0);
+    const cached = _vfxTextCache.get(key);
+    if (cached && !cached.destroyed) {
+        const spr = new PIXI.Sprite(cached);
+        spr.anchor.set(0.5);
+        return spr;
+    }
+    if (_vfxTextCache.size >= _VFX_TEXT_CACHE_MAX) {
+        const first = _vfxTextCache.keys().next().value;
+        const old = _vfxTextCache.get(first);
+        if (old && !old.destroyed) old.destroy(true);
+        _vfxTextCache.delete(first);
+    }
+    const t = new PIXI.Text({ text: label, style });
+    const tex = app.renderer.generateTexture(t);
+    t.destroy(true);
+    _vfxTextCache.set(key, tex);
+    const spr = new PIXI.Sprite(tex);
+    spr.anchor.set(0.5);
+    return spr;
+}
+
 class GameVFXSystem {
     constructor() {
         this.app = null;
@@ -196,6 +235,12 @@ class GameVFXSystem {
             return true;
         });
 
+        // Centralized tick: drive effect animations from the PIXI ticker
+        for (let _ei = 0; _ei < this.activeEffects.length; _ei++) {
+            const _eff = this.activeEffects[_ei];
+            if (_eff._tick && !_eff.finished) _eff._tick();
+        }
+
         this.updateShields();
         this.updateCamouflages();
         this.updateDeflexions();
@@ -230,10 +275,11 @@ class GameVFXSystem {
             flash.clear();
             flash.circle(0, 0, r);
             flash.fill({ color, alpha: a * 0.6 });
-            effect._rafId = requestAnimationFrame(animate);
+
         };
+        effect._tick = animate;
         this._pushEffect(effect);
-        effect._rafId = requestAnimationFrame(animate);
+
     }
 
     /**
@@ -259,10 +305,11 @@ class GameVFXSystem {
             ring.clear();
             ring.circle(0, 0, r);
             ring.stroke({ color, width: lineWidth, alpha: a });
-            effect._rafId = requestAnimationFrame(animate);
+
         };
+        effect._tick = animate;
         this._pushEffect(effect);
-        effect._rafId = requestAnimationFrame(animate);
+
     }
 
     // ==================== CLICK RING ====================
@@ -303,13 +350,11 @@ class GameVFXSystem {
 
             if (allDone || elapsed > 700) {
                 effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
             }
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== SUMMON RING (INVOCATION) ====================
@@ -409,11 +454,10 @@ class GameVFXSystem {
                 for (const p of particles) p.gfx.alpha = 0;
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== TRAP REVEAL RING ====================
@@ -510,11 +554,10 @@ class GameVFXSystem {
                 for (const s of sparks) s.gfx.alpha = 0;
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== WIND GUST (DÉPLACEMENT) ====================
@@ -635,11 +678,10 @@ class GameVFXSystem {
                 d.gfx.alpha = Math.sin(dp * Math.PI) * 0.7;
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== EFFET D'EXPLOSION/SPLASH (DÉGÂTS) ====================
@@ -666,12 +708,19 @@ class GameVFXSystem {
         flash.fill({ color: 0xFFFFFF });
         effectContainer.addChild(flash);
 
-        // Onde de choc 1
+        // Onde de choc 1 (pre-drawn at unit size, OPT-2)
         const ring1 = new PIXI.Graphics();
+        ring1.circle(0, 0, 1);
+        ring1.stroke({ width: 1, color: color });
+        ring1.scale.set(0);
         effectContainer.addChild(ring1);
 
-        // Onde de choc 2
+        // Onde de choc 2 (pre-drawn at unit size, OPT-2)
         const ring2 = new PIXI.Graphics();
+        ring2.circle(0, 0, 1);
+        ring2.stroke({ width: 1, color: 0xFFFFFF });
+        ring2.scale.set(0);
+        ring2.alpha = 0;
         effectContainer.addChild(ring2);
 
         const animate = () => {
@@ -687,28 +736,25 @@ class GameVFXSystem {
                 flash.scale.set(1 + (progress - 0.2) * 0.5);
             }
 
-            // Ondes de choc
-            ring1.clear();
-            const ring1Radius = progress * 100;
-            ring1.circle(0, 0, ring1Radius);
-            ring1.stroke({ width: 5 * (1 - progress), color: color, alpha: (1 - progress) * 0.8 });
+            // Ondes de choc (OPT-2: scale + alpha, no .clear())
+            ring1.scale.set(progress * 100);
+            ring1.alpha = (1 - progress) * 0.8;
 
-            ring2.clear();
             if (progress > 0.15) {
                 const ring2Progress = (progress - 0.15) / 0.85;
-                const ring2Radius = ring2Progress * 80;
-                ring2.circle(0, 0, ring2Radius);
-                ring2.stroke({ width: 3 * (1 - ring2Progress), color: 0xFFFFFF, alpha: (1 - ring2Progress) * 0.6 });
+                ring2.scale.set(ring2Progress * 80);
+                ring2.alpha = (1 - ring2Progress) * 0.6;
             }
 
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // Afficher les dégâts
@@ -733,24 +779,11 @@ class GameVFXSystem {
             duration: 1200,
         };
 
-        // Texte des dégâts
-        const text = new PIXI.Text({
-            text: `-${damage}`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 52,
-                fontWeight: 'bold',
-                fill: 0xFF0000,
-                stroke: { color: 0x000000, width: 6 },
-                dropShadow: {
-                    color: 0x000000,
-                    blur: 4,
-                    angle: Math.PI / 4,
-                    distance: 3,
-                },
-            }
+        // Texte des dégâts (cached texture)
+        const text = _getCachedTextSprite(this.app, `-${damage}`, {
+            fontFamily: 'Arial Black, Arial', fontSize: 52, fontWeight: 'bold',
+            fill: 0xFF0000, stroke: { color: 0x000000, width: 6 },
         });
-        text.anchor.set(0.5);
         effectContainer.addChild(text);
 
         // Glow
@@ -791,11 +824,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         return effect;
@@ -815,24 +849,12 @@ class GameVFXSystem {
             duration: 1200,
         };
 
-        // Texte du soin
-        const text = new PIXI.Text({
-            text: `+${amount}`,
-            style: {
-                fontFamily: 'Arial Black, Arial',
-                fontSize: 48,
-                fontWeight: 'bold',
-                fill: 0x2ECC71,
-                stroke: { color: 0x000000, width: 6 },
-                dropShadow: {
-                    color: 0x000000,
-                    blur: 4,
-                    angle: Math.PI / 4,
-                    distance: 3,
-                },
-            }
+        // Texte du soin (cached texture)
+        const text = _getCachedTextSprite(this.app, `+${amount}`, {
+            fontFamily: 'Arial Black, Arial', fontSize: 48, fontWeight: 'bold',
+            fill: 0x2ECC71, stroke: { color: 0x000000, width: 6 },
+            dropShadow: { color: 0x000000, blur: 4, angle: Math.PI / 4, distance: 3 },
         });
-        text.anchor.set(0.5);
         effectContainer.addChild(text);
 
         // Glow vert
@@ -873,11 +895,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         return effect;
@@ -1091,11 +1114,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         return effect;
@@ -1178,11 +1202,10 @@ class GameVFXSystem {
                 s.gfx.alpha = 1;
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== SPELL MISS (SORT MANQUÉ) ====================
@@ -1264,11 +1287,10 @@ class GameVFXSystem {
                 bgFlash.fill({ color: 0xFF2200, alpha: Math.sin(fp * Math.PI) * 0.15 });
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== SHIELD BREAK (VERRE BRISÉ) ====================
@@ -1603,11 +1625,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         return effect;
@@ -1931,11 +1954,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
         this.screenShake(5, 0.88, 150);
 
@@ -2302,11 +2326,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // Screen shake INTENSE en 2 phases
@@ -2466,11 +2491,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // Afficher les dégâts si spécifié
@@ -2502,13 +2528,9 @@ class GameVFXSystem {
         const angle = Math.atan2(dy, dx);
         const perpX = -Math.sin(angle), perpY = Math.cos(angle);
 
-        // ===== Couches de traînée (dessinées en continu) =====
-        const trailOuter = new PIXI.Graphics();
-        const trailMid = new PIXI.Graphics();
-        const trailCore = new PIXI.Graphics();
-        effectContainer.addChild(trailOuter);
-        effectContainer.addChild(trailMid);
-        effectContainer.addChild(trailCore);
+        // ===== Traînée unifiée (OPT-2: 1 seul Graphics au lieu de 5) =====
+        const trailGfx = new PIXI.Graphics();
+        effectContainer.addChild(trailGfx);
 
         // ===== Orbe (noyau du projectile) =====
         const orb = new PIXI.Container();
@@ -2548,10 +2570,7 @@ class GameVFXSystem {
             { phase: 0, amp: 5, freq: 12, color: 0x44CCFF },
             { phase: Math.PI, amp: 4, freq: 14, color: 0x0088DD },
         ];
-        for (const f of filaments) {
-            f.gfx = new PIXI.Graphics();
-            effectContainer.addChild(f.gfx);
-        }
+
         // Remettre l'orbe au premier plan
         effectContainer.addChild(orb);
 
@@ -2591,11 +2610,13 @@ class GameVFXSystem {
 
                     // Spawner des particules
                     if (now - lastParticleTime > particleRate) {
-                        const gfx = new PIXI.Graphics();
-                        // Particule = petit disque lumineux
+                        // Particule = sprite depuis texture cached (OPT-2)
+                        const gfx = new PIXI.Sprite(_getParticleCircleTex(this.app));
+                        gfx.anchor.set(0.5);
                         const r = 1 + Math.random() * 2;
-                        gfx.circle(0, 0, r);
-                        gfx.fill({ color: Math.random() > 0.3 ? 0x66DDFF : 0xFFFFFF, alpha: 0.7 });
+                        gfx.scale.set(r / 3);
+                        gfx.tint = Math.random() > 0.3 ? 0x66DDFF : 0xFFFFFF;
+                        gfx.alpha = 0.7;
                         // Position : derrière l'orbe avec dispersion latérale
                         const back = 6 + Math.random() * 10;
                         const lateral = (Math.random() - 0.5) * 10;
@@ -2624,52 +2645,48 @@ class GameVFXSystem {
                     trail.shift();
                 }
 
-                // --- Dessiner le sillage (3 couches : large diffuse → fine brillante) ---
-                trailOuter.clear();
-                trailMid.clear();
-                trailCore.clear();
+                // --- Dessiner le sillage + filaments (OPT-2: 1 seul .clear()) ---
+                trailGfx.clear();
 
                 if (trail.length >= 2) {
-                    const layers = [
-                        { gfx: trailOuter, maxW: 10, color: 0x004488, alphaScale: 0.08 },
-                        { gfx: trailMid,   maxW: 5,  color: 0x0099DD, alphaScale: 0.25 },
-                        { gfx: trailCore,  maxW: 2,  color: 0x88EEFF, alphaScale: 0.5  },
+                    const _layers = [
+                        { maxW: 10, color: 0x004488, alphaScale: 0.08 },
+                        { maxW: 5,  color: 0x0099DD, alphaScale: 0.25 },
+                        { maxW: 2,  color: 0x88EEFF, alphaScale: 0.5  },
                     ];
 
-                    for (const layer of layers) {
+                    for (const layer of _layers) {
                         for (let i = 1; i < trail.length; i++) {
                             const age = (now - trail[i].time) / trailLife;
                             const freshness = 1 - age;
                             const w = layer.maxW * freshness;
                             const a = layer.alphaScale * freshness;
                             if (w < 0.3) continue;
-                            layer.gfx.moveTo(trail[i - 1].x, trail[i - 1].y);
-                            layer.gfx.lineTo(trail[i].x, trail[i].y);
-                            layer.gfx.stroke({ color: layer.color, width: w, alpha: a, cap: 'round' });
+                            trailGfx.moveTo(trail[i - 1].x, trail[i - 1].y);
+                            trailGfx.lineTo(trail[i].x, trail[i].y);
+                            trailGfx.stroke({ color: layer.color, width: w, alpha: a, cap: 'round' });
                         }
                     }
                 }
 
-                // --- Filaments d'énergie ---
-                for (const f of filaments) {
-                    f.gfx.clear();
-                    if (trail.length < 3) continue;
-                    // Dessiner le filament le long des derniers points du sillage
-                    const count = Math.min(trail.length, 20);
-                    const startIdx = trail.length - count;
-                    let first = true;
-                    for (let i = startIdx; i < trail.length; i++) {
-                        const age = (now - trail[i].time) / trailLife;
-                        const freshness = 1 - age;
-                        const t = (i - startIdx) / count;
-                        // Ondulation sinusoïdale autour de la trajectoire
-                        const wave = Math.sin(t * f.freq + fp * 30 + f.phase) * f.amp * freshness;
-                        const px = trail[i].x + perpX * wave;
-                        const py = trail[i].y + perpY * wave;
-                        if (first) { f.gfx.moveTo(px, py); first = false; }
-                        else { f.gfx.lineTo(px, py); }
+                // Filaments dans le même Graphics
+                if (trail.length >= 3) {
+                    for (const f of filaments) {
+                        const count = Math.min(trail.length, 20);
+                        const startIdx = trail.length - count;
+                        let first = true;
+                        for (let i = startIdx; i < trail.length; i++) {
+                            const age = (now - trail[i].time) / trailLife;
+                            const freshness = 1 - age;
+                            const t = (i - startIdx) / count;
+                            const wave = Math.sin(t * f.freq + fp * 30 + f.phase) * f.amp * freshness;
+                            const px = trail[i].x + perpX * wave;
+                            const py = trail[i].y + perpY * wave;
+                            if (first) { trailGfx.moveTo(px, py); first = false; }
+                            else { trailGfx.lineTo(px, py); }
+                        }
+                        trailGfx.stroke({ color: f.color, width: 1.2, alpha: 0.3 });
                     }
-                    f.gfx.stroke({ color: f.color, width: 1.2, alpha: 0.3 });
                 }
 
                 // --- Particules : drift + fade ---
@@ -2695,12 +2712,13 @@ class GameVFXSystem {
                 if (arrived && trail.length === 0 && particles.length === 0) {
                     effect.finished = true;
                 } else {
-                    effect._rafId = requestAnimationFrame(animate);
+
                 }
             };
 
+            effect._tick = animate;
             this._pushEffect(effect);
-            effect._rafId = requestAnimationFrame(animate);
+
         });
     }
 
@@ -2769,11 +2787,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // Afficher les dégâts
@@ -2928,11 +2947,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // Afficher les dégâts
@@ -2992,11 +3012,12 @@ class GameVFXSystem {
                 ring.stroke({ color: 0xFF2200, width: 1.5 * (1 - rp), alpha: ringAlpha });
             }
 
-            effect._rafId = requestAnimationFrame(animate);
+
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        effect._rafId = requestAnimationFrame(animate);
+
     }
 
     // ==================== SLOT HIT EFFECT (FLASH ORANGE + ONDE DE CHOC) ====================
@@ -3044,7 +3065,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3071,11 +3092,10 @@ class GameVFXSystem {
                 }
             });
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== HEAL EFFECT (AURA VERTE + PARTICULES MONTANTES) ====================
@@ -3122,7 +3142,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3147,11 +3167,10 @@ class GameVFXSystem {
                 }
             });
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== LIFESTEAL (PARTICULES SANG ASPIRÉES + FLASH ROUGE) ====================
@@ -3218,7 +3237,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3282,11 +3301,10 @@ class GameVFXSystem {
                 }
             });
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     showLifestealNumber(x, y, amount) {
@@ -3359,11 +3377,12 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
             } else {
-                effect._rafId = requestAnimationFrame(animate);
+
             }
         };
 
-        effect._rafId = requestAnimationFrame(animate);
+
+        effect._tick = animate;
         this._pushEffect(effect);
 
         return effect;
@@ -3409,7 +3428,7 @@ class GameVFXSystem {
             if (progress >= 1) {
                 effect.finished = true;
                 effectContainer.parent?.removeChild(effectContainer);
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
                 return;
             }
 
@@ -3427,11 +3446,10 @@ class GameVFXSystem {
                 }
             });
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== SPELL HIGHLIGHT (GLOW SUR SLOT + CARTE) ====================
@@ -3742,9 +3760,7 @@ class GameVFXSystem {
                 cracks.alpha = Math.max(0, cracks.alpha - 0.1);
             }
 
-            requestAnimationFrame(animate);
         };
-        requestAnimationFrame(animate);
     }
 
     /**
@@ -3768,6 +3784,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
+        effect._tick = animate;
         this._pushEffect(effect);
 
         // --- Géométrie ---
@@ -3966,9 +3983,7 @@ class GameVFXSystem {
                 for (const p of beamParticles) p.gfx.alpha = 0;
             }
 
-            requestAnimationFrame(animate);
         };
-        requestAnimationFrame(animate);
     }
 
     // ==================== TRAP SUMMON (Piège à gobelin — invocation magique) ====================
@@ -4248,11 +4263,10 @@ class GameVFXSystem {
                 s.gfx.alpha = Math.max(0, s.life / s.maxLife);
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== CAMOUFLAGE (FUMÉE PERSISTANTE) ====================
@@ -4797,8 +4811,8 @@ class GameVFXSystem {
                 }
 
                 // Noise-driven drift
-                const nx = nA.fbm(p.nox + elapsed * 0.12, p.noy, 3);
-                const ny = nB.fbm(p.nox, p.noy + elapsed * 0.12, 3);
+                const nx = nA.fbm(p.nox + elapsed * 0.12, p.noy, 2);
+                const ny = nB.fbm(p.nox, p.noy + elapsed * 0.12, 2);
 
                 p.sprite.x = p.ox + nx * p.drift;
                 p.sprite.y = p.oy + ny * p.drift * 0.6 - t * p.riseSpeed;
@@ -5176,12 +5190,9 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
         this.screenShake(3, 0.90, 100);
         return effect;
     }
@@ -5207,6 +5218,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
+        effect._tick = animate;
         this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
@@ -5360,12 +5372,9 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
         return effect;
     }
 
@@ -5410,6 +5419,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
+        effect._tick = animate;
         this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
@@ -5769,12 +5779,9 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-            } else {
-                requestAnimationFrame(animate);
             }
         };
 
-        requestAnimationFrame(animate);
         return effect;
     }
 
@@ -5970,13 +5977,10 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
-            } else {
-                requestAnimationFrame(animate);
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             }
         };
 
-        requestAnimationFrame(animate);
         return effect;
     }
 
@@ -6152,11 +6156,10 @@ class GameVFXSystem {
                 }
             }
 
-            requestAnimationFrame(animate);
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
     }
 
     // ==================== DESTROY (ANNIHILATION SOMBRE) ====================
@@ -6376,13 +6379,10 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
-            } else {
-                requestAnimationFrame(animate);
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             }
         };
 
-        requestAnimationFrame(animate);
         return effect;
     }
 
@@ -6401,6 +6401,7 @@ class GameVFXSystem {
             startTime: performance.now(),
             duration,
         };
+        effect._tick = animate;
         this._pushEffect(effect);
 
         const rand = (a, b) => Math.random() * (b - a) + a;
@@ -6535,14 +6536,12 @@ class GameVFXSystem {
 
             if (t >= 1) {
                 effect.finished = true;
-                if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
-            } else {
-                requestAnimationFrame(animate);
+                if (!effectContainer.destroyed) if (!effectContainer.destroyed) effectContainer.destroy({ children: true });
             }
         };
 
+        effect._tick = animate;
         this._pushEffect(effect);
-        requestAnimationFrame(animate);
         return effect;
     }
 
@@ -6614,13 +6613,22 @@ class GameVFXSystem {
      * Rend un frame de griffures (3 lames parallèles diagonales)
      * @returns HTMLCanvasElement
      */
-    _renderClawFrame(progresses, size) {
-        const canvas = document.createElement('canvas');
+    _renderClawFrame(progresses, size, _reuse) {
         const res = window.devicePixelRatio || 1;
-        canvas.width = size * res;
-        canvas.height = size * res;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(res, res);
+        let canvas, ctx;
+        if (_reuse && _reuse.canvas && _reuse.canvas.width === (size * res | 0)) {
+            canvas = _reuse.canvas; ctx = _reuse.ctx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.scale(res, res);
+        } else {
+            canvas = document.createElement('canvas');
+            canvas.width = size * res | 0;
+            canvas.height = size * res | 0;
+            ctx = canvas.getContext('2d');
+            ctx.scale(res, res);
+            if (_reuse) { _reuse.canvas = canvas; _reuse.ctx = ctx; }
+        }
 
         const cx = size / 2, cy = size / 2;
         const halfLen = size * 0.40;
@@ -6649,13 +6657,22 @@ class GameVFXSystem {
      * Rend un frame de croix (X) — 2 lames croisées
      * @returns HTMLCanvasElement
      */
-    _renderCrossFrame(prog1, prog2, size) {
-        const canvas = document.createElement('canvas');
+    _renderCrossFrame(prog1, prog2, size, _reuse) {
         const res = window.devicePixelRatio || 1;
-        canvas.width = size * res;
-        canvas.height = size * res;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(res, res);
+        let canvas, ctx;
+        if (_reuse && _reuse.canvas && _reuse.canvas.width === (size * res | 0)) {
+            canvas = _reuse.canvas; ctx = _reuse.ctx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.scale(res, res);
+        } else {
+            canvas = document.createElement('canvas');
+            canvas.width = size * res | 0;
+            canvas.height = size * res | 0;
+            ctx = canvas.getContext('2d');
+            ctx.scale(res, res);
+            if (_reuse) { _reuse.canvas = canvas; _reuse.ctx = ctx; }
+        }
 
         const cx = size / 2, cy = size / 2;
         const halfLen = size * 0.40;
@@ -6692,9 +6709,10 @@ class GameVFXSystem {
         const numPhases = isClaw ? 3 : 2;
         const progs = new Array(numPhases).fill(0);
 
+        const _canvasReuse = {};
         const renderFn = isClaw
-            ? (p) => self._renderClawFrame(p, slashSize)
-            : (p) => self._renderCrossFrame(p[0], p[1], slashSize);
+            ? (p) => self._renderClawFrame(p, slashSize, _canvasReuse)
+            : (p) => self._renderCrossFrame(p[0], p[1], slashSize, _canvasReuse);
 
         let currentCanvas = renderFn(progs);
         let currentTex = PIXI.Texture.from(currentCanvas);
@@ -6783,29 +6801,37 @@ class GameVFXSystem {
         effectContainer.position.set(x, y);
         this.container.addChild(effectContainer);
 
+        // Pre-draw rings at unit size (OPT-2: no .clear() per frame)
         const ring1 = new PIXI.Graphics();
+        ring1.circle(0, 0, 1);
+        ring1.stroke({ color: 0xDDEEFF, width: 1 });
+        ring1.scale.set(0);
         effectContainer.addChild(ring1);
         const ring2 = new PIXI.Graphics();
+        ring2.circle(0, 0, 1);
+        ring2.stroke({ color: 0xFFFFFF, width: 1 });
+        ring2.scale.set(0);
         effectContainer.addChild(ring2);
 
         const effect = { container: effectContainer, finished: false, startTime: performance.now(), duration };
         const animate = () => {
             const p = Math.min((performance.now() - effect.startTime) / duration, 1);
             const a = 1 - p;
-            const th = 3 + 5 * (1 - p);
-            ring1.clear();
-            ring1.circle(0, 0, maxRadius * p);
-            ring1.stroke({ color: 0xDDEEFF, alpha: a * 0.45, width: th });
-            ring2.clear();
+            // Animate via scale + alpha (zero .clear())
+            ring1.scale.set(maxRadius * p);
+            ring1.alpha = a * 0.45;
             if (p < 0.65) {
-                ring2.circle(0, 0, maxRadius * p * 0.78);
-                ring2.stroke({ color: 0xFFFFFF, alpha: a * 0.2, width: 2 });
+                ring2.scale.set(maxRadius * p * 0.78);
+                ring2.alpha = a * 0.2;
+            } else {
+                ring2.alpha = 0;
             }
             if (p >= 1) { effect.finished = true; }
-            else effect._rafId = requestAnimationFrame(animate);
+
         };
+        effect._tick = animate;
         this._pushEffect(effect);
-        effect._rafId = requestAnimationFrame(animate);
+
     }
 
     /**

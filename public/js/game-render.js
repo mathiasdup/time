@@ -25,6 +25,15 @@ var _CREATURE_TYPE_NAMES = {
     insect: "Insecte", avatar: "Avatar"
 };
 var _RARITY_MAP = { 1: "common", 2: "uncommon", 3: "rare", 4: "mythic", 5: "platinum" };
+// Pre-cache mana pill sub-elements for textContent updates (avoid innerHTML)
+function _initManaPill(pill) {
+    if (!pill || pill._mCur) return;
+    // Ensure structure: <span class='mana-cur'></span><span class='slash'>/</span><span class='mana-max'></span>
+    pill.innerHTML = '<span class="mana-cur"></span><span class="slash">/</span><span class="mana-max"></span>';
+    pill._mCur = pill.children[0];
+    pill._mMax = pill.children[2];
+}
+
 // Render principal, champ de bataille, main, cartes, preview, cimetière
 
 // [DOM-VIS] Snapshot du DOM de la main tel qu'un humain le verrait
@@ -65,6 +74,54 @@ setInterval(() => {
 // Slots dont le slow path (makeCard) a été différé pendant les animations de combat
 var deferredSlots = new Set();
 
+// === OPT-9: Per-slot snapshot for surgical renderField ===
+var _lastFieldSnap = {};
+var _lastFieldPhase = null;
+var _lastFieldDeploy = null;
+
+function _snapCard(c) {
+    if (!c) return null;
+    return (c.uid || '') + '|' +
+        (c.currentHp ?? c.hp ?? '') + '|' +
+        (c.baseHp ?? '') + '|' +
+        (c.atk ?? '') + '|' +
+        (c.baseAtk ?? '') + '|' +
+        (c.riposte ?? '') + '|' +
+        (c.baseRiposte ?? '') + '|' +
+        (c.poisonCounters || 0) + '|' +
+        (c.entraveCounters || 0) + '|' +
+        (c.buffCounters || 0) + '|' +
+        (c.medusaGazeMarker || 0) + '|' +
+        (c.canAttack ? 1 : 0) + '|' +
+        (c.turnsOnField ?? '') + '|' +
+        (c.petrified ? 1 : 0) + '|' +
+        (c.melodyLocked ? 1 : 0) + '|' +
+        (c.hasProtection ? 1 : 0) + '|' +
+        (c.hasCamouflage ? 1 : 0) + '|' +
+        (c.hasDeflexion ? 1 : 0) + '|' +
+        (c.movedThisTurn ? 1 : 0) + '|' +
+        (c.isBuilding ? 1 : 0) + '|' +
+        (c.poisonX ?? '') + '|' +
+        (c.basePoisonX ?? '') + '|' +
+        (c.spellAtkBuff || 0) + '|' +
+        (c.tempAtkBoost || 0) + '|' +
+        (c.poisonPerGraveyard || 0) + '|' +
+        (c.poisonEqualsTotalPoisonInPlay ? 1 : 0) + '|' +
+        (c.type || '') + '|' +
+        (c.name || '') + '|' +
+        (c.cleaveX || '') + '|' +
+        (c.powerX || '') + '|' +
+        (c.regenerationX || '') + '|' +
+        (c.spellBoostAmount || '') + '|' +
+        (c.enhanceAmount || '') + '|' +
+        (c.bloodthirstAmount || '') + '|' +
+        (c.entraveX || '') + '|' +
+        (c.lifedrainX || '') + '|' +
+        (c.lifelinkX || '') + '|' +
+        ((c.abilities || []).join(','));
+}
+
+
 // Cache des éléments DOM statiques (initialisé au premier render)
 let _cachedDomEls = null;
 function _getDomEls() {
@@ -79,6 +136,13 @@ function _getDomEls() {
             meGraveTooltip: document.getElementById('me-grave-tooltip'),
             oppGraveTooltip: document.getElementById('opp-grave-tooltip'),
             endTurnBtn: document.getElementById('end-turn-btn'),
+            // OPT-7: Cached deck/grave elements
+            meDeckStack: document.getElementById('me-deck-stack'),
+            oppDeckStack: document.getElementById('opp-deck-stack'),
+            meGraveStack: document.getElementById('me-grave-stack'),
+            oppGraveStack: document.getElementById('opp-grave-stack'),
+            meGraveTop: document.getElementById('me-grave-top'),
+            oppGraveTop: document.getElementById('opp-grave-top'),
         };
     }
     return _cachedDomEls;
@@ -228,13 +292,13 @@ function renderDelta(d) {
     // Mana
     if (d.meMana) {
         if (dom.meManaPill) {
-            dom.meManaPill.innerHTML = `${d.meMana.energy}<span class="slash">/</span>${d.meMana.max}`;
+            _initManaPill(dom.meManaPill); dom.meManaPill._mCur.textContent = d.meMana.energy; dom.meManaPill._mMax.textContent = d.meMana.max;
             dom.meManaPill.classList.toggle('empty', d.meMana.energy <= 0);
         }
     }
     if (d.oppMana) {
         if (dom.oppManaPill) {
-            dom.oppManaPill.innerHTML = `${d.oppMana.energy}<span class="slash">/</span>${d.oppMana.max}`;
+            _initManaPill(dom.oppManaPill); dom.oppManaPill._mCur.textContent = d.oppMana.energy; dom.oppManaPill._mMax.textContent = d.oppMana.max;
             dom.oppManaPill.classList.toggle('empty', d.oppMana.energy <= 0);
         }
     }
@@ -403,11 +467,11 @@ function render() {
         }
     }
     if (dom.meManaPill) {
-        dom.meManaPill.innerHTML = `${me.energy}<span class="slash">/</span>${me.maxEnergy}`;
+        _initManaPill(dom.meManaPill); dom.meManaPill._mCur.textContent = me.energy; dom.meManaPill._mMax.textContent = me.maxEnergy;
         dom.meManaPill.classList.toggle('empty', me.energy <= 0);
     }
     if (dom.oppManaPill) {
-        dom.oppManaPill.innerHTML = `${opp.energy}<span class="slash">/</span>${opp.maxEnergy}`;
+        _initManaPill(dom.oppManaPill); dom.oppManaPill._mCur.textContent = opp.energy; dom.oppManaPill._mMax.textContent = opp.maxEnergy;
         dom.oppManaPill.classList.toggle('empty', opp.energy <= 0);
     }
     // Mettre à jour les tooltips du deck
@@ -477,7 +541,8 @@ function render() {
 // _monitorBattlefield supprimé  boucle RAF inutile (branches vides) qui forçait getBoundingClientRect à 60fps
 
 function updateDeckDisplay(owner, deckCount) {
-    const stack = document.getElementById(`${owner}-deck-stack`);
+    const dom = _getDomEls();
+    const stack = owner === 'me' ? dom.meDeckStack : dom.oppDeckStack;
     if (!stack) return;
     
     // Gérer l'état vide
@@ -490,7 +555,7 @@ function updateDeckDisplay(owner, deckCount) {
     // Ajuster le nombre de couches visibles selon le nombre de cartes
     // CSS inversé : nth-child(1) = fond (décalé), nth-child(5) = dessus (pas de décalage)
     // Quand le deck diminue, on masque les couches du DESSUS (index élevés dans le DOM)
-    const layers = stack.querySelectorAll('.deck-card-layer');
+    const layers = stack._layers || (stack._layers = stack.querySelectorAll('.deck-card-layer'));
     const totalLayers = layers.length;
     const visibleLayers = Math.min(totalLayers, Math.ceil(deckCount / 8)); // 1 couche par 8 cartes
 
@@ -512,7 +577,8 @@ const pendingSpellReturns = new Map(); // spellId   { handIndex, player } pour s
 
 function updateGraveDisplay(owner, graveyard) {
     if (RenderLock.isLocked('grave', owner)) return;
-    const stack = document.getElementById(`${owner}-grave-stack`);
+    const dom = _getDomEls();
+    const stack = owner === 'me' ? dom.meGraveStack : dom.oppGraveStack;
     if (!stack) return;
 
     const count = graveyard ? graveyard.length : 0;
@@ -521,7 +587,7 @@ function updateGraveDisplay(owner, graveyard) {
 
     // Nombre de couches visibles proportionnel au nombre de cartes (comme le deck)
     // 1 carte = 0 couches (juste la top card), puis 1 couche par ~6 cartes, max 3
-    const layers = stack.querySelectorAll('.grave-card-layer');
+    const layers = stack._layers || (stack._layers = stack.querySelectorAll('.grave-card-layer'));
     const visibleLayers = count <= 1 ? 0 : Math.min(layers.length, Math.ceil(count / 6));
 
     // Variable CSS pour l'ombre proportionnelle au nombre de couches
@@ -555,7 +621,8 @@ function updateGraveDisplay(owner, graveyard) {
 
 function updateGraveTopCard(owner, graveyard) {
     if (RenderLock.isLocked('grave', owner)) return;
-    const container = document.getElementById(`${owner}-grave-top`);
+    const dom = _getDomEls();
+    const container = owner === 'me' ? dom.meGraveTop : dom.oppGraveTop;
     if (!container) return;
 
     if (graveyard && graveyard.length > 0) {
@@ -593,6 +660,11 @@ function _getAbilityValue(card, a) {
 }
 
 function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys) {
+    // OPT-9: Track global state for skip logic
+    if (typeof state !== 'undefined' && state) {
+        _lastFieldPhase = state.phase;
+        _lastFieldDeploy = state.me ? state.me.inDeployPhase : undefined;
+    }
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 2; c++) {
             const slot = getSlot(owner, r, c);
@@ -615,6 +687,16 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     // Death animation will handle the visual removal
                     continue;
                 }
+            }
+            // OPT-9: Skip slot if nothing changed since last render
+            if (!window.FORCE_FULL_RENDER) {
+                var _curSnap = _snapCard(card);
+                var _globalsOk = (typeof state !== 'undefined' && state) ?
+                    (state.phase === _lastFieldPhase && (state.me ? state.me.inDeployPhase : undefined) === _lastFieldDeploy) : true;
+                if (_globalsOk && !RenderLock.getOverride('slot', slotKey) && _curSnap === _lastFieldSnap[slotKey]) {
+                    continue;
+                }
+                _lastFieldSnap[slotKey] = _curSnap;
             }
             if (card) {
                 _traceInvalidCardStats('renderField:slot', card, { owner, row: r, col: c });
@@ -789,11 +871,15 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     if (abilitiesEl) {
                         const effectivePoison = _getPoisonDisplayValue(card);
                         const basePoison = _getPoisonBaseValue(card);
-                        const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : ' class="stat-value"';
-                        abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
-                            /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
-                            `Poison <span${poisonClass}>${effectivePoison}</span>`
-                        );
+                        // DOM-targeted poison update (avoids innerHTML destroy/recreate)
+                        var _pSpans = abilitiesEl.querySelectorAll(".stat-value, .boosted");
+                        for (var _pi = 0; _pi < _pSpans.length; _pi++) {
+                            if (_pSpans[_pi].previousSibling && _pSpans[_pi].previousSibling.textContent && _pSpans[_pi].previousSibling.textContent.indexOf("Poison") !== -1) {
+                                _pSpans[_pi].textContent = effectivePoison;
+                                _pSpans[_pi].className = effectivePoison > basePoison ? "boosted" : "stat-value";
+                                break;
+                            }
+                        }
                     }
                 }
                 // Mettre a jour les pastilles de capacites (ajout/retrait dynamique)
@@ -1662,11 +1748,15 @@ function _updateHandInPlace(panel, hand, energy) {
             if (abilitiesEl) {
                 const effectivePoison = _getPoisonDisplayValue(card);
                 const basePoison = _getPoisonBaseValue(card);
-                const poisonClass = effectivePoison > basePoison ? ' class="boosted"' : ' class="stat-value"';
-                abilitiesEl.innerHTML = abilitiesEl.innerHTML.replace(
-                    /Poison\s*(<span[^>]*>)?\d+(<\/span>)?/,
-                    `Poison <span${poisonClass}>${effectivePoison}</span>`
-                );
+                // DOM-targeted poison update (avoids innerHTML destroy/recreate)
+                var _pSpans = abilitiesEl.querySelectorAll(".stat-value, .boosted");
+                for (var _pi = 0; _pi < _pSpans.length; _pi++) {
+                    if (_pSpans[_pi].previousSibling && _pSpans[_pi].previousSibling.textContent && _pSpans[_pi].previousSibling.textContent.indexOf("Poison") !== -1) {
+                        _pSpans[_pi].textContent = effectivePoison;
+                        _pSpans[_pi].className = effectivePoison > basePoison ? "boosted" : "stat-value";
+                        break;
+                    }
+                }
             }
         }
 

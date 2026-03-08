@@ -9,6 +9,20 @@ function _getHandPanel(id) {
     return document.getElementById(id);
 }
 
+// === Cached CSS custom properties (avoid getComputedStyle per animation) ===
+var _cssCardW = 144, _cssCardH = 192, _cssGameScale = 1;
+function _refreshCssVars() {
+    var rs = getComputedStyle(document.documentElement);
+    var w = parseFloat(rs.getPropertyValue("--card-w"));
+    var h = parseFloat(rs.getPropertyValue("--card-h"));
+    var gs = parseFloat(rs.getPropertyValue("--game-scale"));
+    if (Number.isFinite(w) && w > 0) _cssCardW = w;
+    if (Number.isFinite(h) && h > 0) _cssCardH = h;
+    if (Number.isFinite(gs) && gs > 0) _cssGameScale = gs;
+}
+try { _refreshCssVars(); } catch(e) {}
+window.addEventListener("resize", _refreshCssVars);
+
 // === DEBUG: Snapshot DOM main adverse ===
 function _oppHandDomSnap(label) {
     var p = _getHandPanel("opp-hand");
@@ -2615,9 +2629,8 @@ async function animateBurn(data) {
         graveRenderBlocked.delete(ownerKey);
         return;
     }
-    const rootStyle = getComputedStyle(document.documentElement);
-    const cardWidth = parseFloat(rootStyle.getPropertyValue('--card-w')) || 144;
-    const cardHeight = parseFloat(rootStyle.getPropertyValue('--card-h')) || 192;
+    const cardWidth = _cssCardW;
+    const cardHeight = _cssCardH;
     function getLocalPos(el) {
         let x = 0;
         let y = 0;
@@ -5415,10 +5428,9 @@ async function animateBounceToHand(data) {
             }
 
             const r = panel.getBoundingClientRect();
-            const rs = getComputedStyle(document.documentElement);
-            const baseW = parseFloat(rs.getPropertyValue('--card-w')) || 144;
-            const baseH = parseFloat(rs.getPropertyValue('--card-h')) || 192;
-            const gs = parseFloat(rs.getPropertyValue('--game-scale'));
+            const baseW = _cssCardW;
+            const baseH = _cssCardH;
+            const gs = _cssGameScale;
             const gameScale = Number.isFinite(gs) && gs > 0 ? gs : 1;
             const w = baseW * gameScale;
             const h = baseH * gameScale;
@@ -5440,8 +5452,7 @@ async function animateBounceToHand(data) {
         const startX = slotRect.left + slotRect.width / 2 - cardWidth / 2;
         const startY = slotRect.top + slotRect.height / 2 - cardHeight / 2;
 
-        const _rs = getComputedStyle(document.documentElement);
-        const designW = parseFloat(_rs.getPropertyValue('--card-w'));
+        const designW = _cssCardW;
         const faceScale = cardWidth / Math.max(1, designW);
 
         const wrapper = document.createElement('div');
@@ -5506,7 +5517,7 @@ async function animateBounceToHand(data) {
 
             const scalerCss = `
                 position: absolute; top: 0; left: 0;
-                width: ${designW}px; height: ${parseFloat(_rs.getPropertyValue('--card-h'))}px;
+                width: ${designW}px; height: ${_cssCardH}px;
                 transform: scale(${revealFaceScale});
                 transform-origin: top left;
             `;
@@ -5537,7 +5548,7 @@ async function animateBounceToHand(data) {
             const faceScaler = document.createElement('div');
             faceScaler.style.cssText = `
                 position: absolute; top: 0; left: 0;
-                width: ${designW}px; height: ${parseFloat(_rs.getPropertyValue('--card-h'))}px;
+                width: ${designW}px; height: ${_cssCardH}px;
                 transform: scale(${revealFaceScale});
                 transform-origin: top left;
             `;
@@ -5590,9 +5601,7 @@ async function animateBounceToHand(data) {
 
     const cardInSlot = slot.querySelector('.card');
     const slotRect = slot.getBoundingClientRect();
-    const rootStyle = getComputedStyle(document.documentElement);
-    const gameScaleRaw = parseFloat(rootStyle.getPropertyValue('--game-scale'));
-    const gameScale = Number.isFinite(gameScaleRaw) && gameScaleRaw > 0 ? gameScaleRaw : 1;
+    const gameScale = _cssGameScale;
     const applyGameScaleToFace = (el) => {
         if (!el) return;
         if (gameScale >= 0.999) {

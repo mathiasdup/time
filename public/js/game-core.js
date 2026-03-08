@@ -695,11 +695,28 @@ function initSocket() {
         // Plus de message ici - tout est gÃ©rÃ© par newTurn avec "Planification"
     });
 
-    socket.on('timerUpdate', (t) => {
-        currentTimer = t;
-        if(state) state.timeLeft = t;
-        updateTimerDisplay(t);
-    });
+    // Client-side countdown (server sends timerStart once instead of 90 broadcasts)
+            var _timerInterval = null;
+            socket.on('timerStart', (data) => {
+                if (_timerInterval) clearInterval(_timerInterval);
+                var remaining = data.duration;
+                currentTimer = remaining;
+                if (state) state.timeLeft = remaining;
+                updateTimerDisplay(remaining);
+                _timerInterval = setInterval(() => {
+                    remaining--;
+                    currentTimer = remaining;
+                    if (state) state.timeLeft = remaining;
+                    updateTimerDisplay(remaining);
+                    if (remaining <= 0) clearInterval(_timerInterval);
+                }, 1000);
+            });
+            // Legacy support: still accept timerUpdate if server sends it
+            socket.on('timerUpdate', (t) => {
+                currentTimer = t;
+                if(state) state.timeLeft = t;
+                updateTimerDisplay(t);
+            });
 
     socket.on('phaseChange', (p) => {
         if(state) state.phase = p;
@@ -714,6 +731,7 @@ function initSocket() {
         }
 
         if (p === 'resolution') {
+            if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
             if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] phase=resolution received", { committedCount: committedSpells.length, time: performance.now().toFixed(1) });
             _deferredPostResolutionState = null;
             // Annuler la rÃ©animation en cours si la popup est ouverte

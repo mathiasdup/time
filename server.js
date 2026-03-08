@@ -367,7 +367,7 @@ function cleanupRoom(roomCode) {
     const room = rooms.get(roomCode);
     if (!room) return;
     perfWrite('roomCleanup', { room: roomCode });
-    if (room.timer) clearInterval(room.timer);
+    if (room.timer) clearTimeout(room.timer);
     if (room._stateFlushTimer) clearTimeout(room._stateFlushTimer);
     room._stateFlushTimer = null;
     room._stateFlushPending = false;
@@ -1607,7 +1607,41 @@ function handleCreatureDeath(room, card, playerNum, row, col, log) {
  * Compte les crÃƒÂ©atures vivantes du type alliÃƒÂ© sur le terrain du joueur,
  * et met ÃƒÂ  jour card.atk = baseAtk + count (+ tempAtkBoost ÃƒÂ©ventuel).
  */
+// Fast input hash for recalcDynamicAtk dedup (skip if nothing changed)
+function _atkInputHash(room) {
+    let h = 0;
+    for (let p = 1; p <= 2; p++) {
+        const pl = room.gameState.players[p];
+        h = (h * 31 + (pl.graveyard ? pl.graveyard.length : 0)) | 0;
+        const heroId = pl.hero ? pl.hero.id : '';
+        for (let i = 0; i < heroId.length; i++) h = (h * 31 + heroId.charCodeAt(i)) | 0;
+        for (let r = 0; r < pl.field.length; r++) {
+            for (let c = 0; c < pl.field[r].length; c++) {
+                const cr = pl.field[r][c];
+                if (!cr) { h = (h * 31) | 0; continue; }
+                h = (h * 31 + (cr.baseAtk || 0)) | 0;
+                h = (h * 31 + (cr.currentHp > 0 ? 1 : 0)) | 0;
+                h = (h * 31 + (cr.poisonCounters || 0)) | 0;
+                h = (h * 31 + (cr.buffCounters || 0)) | 0;
+                h = (h * 31 + (cr.spellAtkBuff || 0)) | 0;
+                h = (h * 31 + (cr.powerStacks || 0)) | 0;
+                h = (h * 31 + (cr.entraveCounters || 0)) | 0;
+                h = (h * 31 + (cr.bloodthirstStacks || 0)) | 0;
+                h = (h * 31 + (cr.sacrificeAtkStacks || 0)) | 0;
+                h = (h * 31 + (cr.tempAtkBoost || 0)) | 0;
+            }
+        }
+    }
+    return h;
+}
+
 function recalcDynamicAtk(room, excludeSlots) {
+    // Dedup: skip if field inputs haven't changed since last recalc
+    if (!excludeSlots) {
+        const _h = _atkInputHash(room);
+        if (_h === room._lastAtkHash) return;
+        room._lastAtkHash = _h;
+    }
     // V2 : Zdejebel aura Ã¢â‚¬â€ compter combien de joueurs ont Zdejebel
     let zdjebelCount = 0;
     const totalPoisonInPlay = countTotalPoisonCounters(room);
@@ -3288,23 +3322,19 @@ async function processOnDeathAbility(room, card, ownerPlayer, row, col, log, sle
 }
 
 function startTurnTimer(room) {
-    if (room.timer) clearInterval(room.timer);
-    
-    room.timer = setInterval(() => {
-        room.gameState.timeLeft--;
-        io.to(room.code).emit('timerUpdate', room.gameState.timeLeft);
-        if (room.gameState.timeLeft <= 0) {
-            clearInterval(room.timer);
-            // DÃƒÂ©lai de grÃƒÂ¢ce (500ms) pour laisser les derniÃƒÂ¨res actions en transit arriver
-            // avant de forcer la transition vers la rÃƒÂ©solution
-            setTimeout(() => {
-                if (room.gameState.phase !== 'planning') return; // DÃƒÂ©jÃƒÂ  rÃƒÂ©solu par checkBothReady
-                room.gameState.players[1].ready = true;
-                room.gameState.players[2].ready = true;
-                startResolution(room);
-            }, 500);
-        }
-    }, 1000);
+    if (room.timer) clearTimeout(room.timer);
+
+    // Emit once — client counts down locally (saves 90 broadcasts/turn)
+    const duration = room.gameState.timeLeft;
+    io.to(room.code).emit('timerStart', { duration, serverTime: Date.now() });
+
+    // Server still enforces the timeout
+    room.timer = setTimeout(() => {
+        if (room.gameState.phase !== 'planning') return;
+        room.gameState.players[1].ready = true;
+        room.gameState.players[2].ready = true;
+        startResolution(room);
+    }, duration * 1000 + 500); // +500ms grace period
 }
 
 function checkBothReady(room) {
@@ -3885,7 +3915,7 @@ async function resolveSpellsV2(room, spellsByPlayer, log, sleep, checkVictory, r
 }
 
 async function startResolution(room) {
-    if (room.timer) clearInterval(room.timer);
+    if (room.timer) clearTimeout(room.timer);
     room.gameState.phase = 'resolution';
     perfMarkTurnStart(room, room.gameState.turn);
     perfMarkResolutionStart(room);
@@ -8621,7 +8651,7 @@ io.on('connection', (socket) => {
                 io.to(room.code).emit('playerDisconnected', info.playerNum);
                 setTimeout(() => {
                     if (room && !room.gameState.players[info.playerNum].connected) {
-                        if (room.timer) clearInterval(room.timer);
+                        if (room.timer) clearTimeout(room.timer);
                         rooms.delete(info.code);
                     }
                 }, 60000);

@@ -1114,6 +1114,7 @@
             border-radius: 50%;
             mask-image: radial-gradient(circle, white 20%, transparent 70%);
             -webkit-mask-image: radial-gradient(circle, white 20%, transparent 70%);
+            will-change: transform;
         }
         .round-banner-overlay.active .round-banner-rays {
             animation: raysRotate 8s linear infinite, raysPulse 3s ease forwards;
