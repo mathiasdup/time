@@ -1,6 +1,6 @@
 ﻿// ==================== HP TRACE (debug temporaire) ====================
 // Désactiver avec : window.HP_TRACE = false
-window.HP_TRACE = true; // activé par défaut (debug temporaire)
+window.HP_TRACE = false; // désactivé par défaut (activer avec window.HP_TRACE=true)
 // Logs tous les changements de HP dans le DOM (héros + créatures)
 const _hpTraceLog = [];
 const _hpTraceT0 = performance.now();
@@ -30,7 +30,9 @@ window._traceHpDump = _traceHpDump;
 
 // ==================== MUTATION OBSERVER HERO HP (debug temporaire) ====================
 // Surveille TOUT changement de textContent sur les hero-hp-number, même hors de nos traces
+// GUARDED: Only runs when HP_TRACE is explicitly enabled (performance cost: new Error().stack per mutation)
 (function() {
+    if (!window.HP_TRACE) return;
     function _watchHeroHp() {
         var targets = document.querySelectorAll('.hero-hp-number');
         if (targets.length === 0) { setTimeout(_watchHeroHp, 500); return; }

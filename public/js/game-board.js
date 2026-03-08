@@ -382,7 +382,16 @@ function getValidSlots(card) {
                 }
             }
         }
-        // Sort ciblant toute créature (alliée ou ennemie)
+        // Sort ciblant n'importe quel slot (vide ou plein, allié ou ennemi)
+        else if (card.targetAnySlot) {
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 2; col++) {
+                    valid.push({ owner: 'me', row, col });
+                    valid.push({ owner: 'opp', row, col });
+                }
+            }
+        }
+                // Sort ciblant toute créature (alliée ou ennemie)
         else if (card.targetAnyCreature) {
             for (let row = 0; row < 4; row++) {
                 for (let col = 0; col < 2; col++) {

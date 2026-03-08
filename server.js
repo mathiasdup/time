@@ -408,6 +408,7 @@ function resetPlayerForNewTurn(player) {
         for (let c = 0; c < 2; c++) {
             if (player.field[r][c]) {
                 player.field[r][c].movedThisTurn = false;
+                if (player.field[r][c].hasCamouflage) player.field[r][c].hasCamouflage = false;
             }
         }
     }
@@ -500,7 +501,9 @@ function getPublicGameState(room, forPlayer) {
     for (const card of me.hand) patchHandCard(card, meGraveyardLen, meGraveyardCreatureCount, 'HAND');
 
     // Patch terrain — single pass (patch poison + ownerAtk override if revealing)
-    let meField = me.field.map(row => row.map(card => {
+        // CAMO DEBUG
+    for (let _r = 0; _r < 4; _r++) for (let _c = 0; _c < 2; _c++) { const _card = me.field[_r][_c]; if (_card && _card.abilities && _card.abilities.includes("camouflage")) console.log("[CAMO-SRV] player="+forPlayer+" slot="+_r+"-"+_c+" card="+_card.name+" hasCamouflage="+_card.hasCamouflage+" phase="+state.phase); }
+let meField = me.field.map(row => row.map(card => {
         if (!card) return card;
         patchPoison(card, meGraveyardLen, 'ME_FIELD');
         if (isRevealing && card.ownerAtk !== undefined) return { ...card, atk: card.ownerAtk };
@@ -528,7 +531,7 @@ function getPublicGameState(room, forPlayer) {
             maxEnergy: me.maxEnergy,
             hand: me.hand,
             deckCount: me.deck.length,
-            field: meField,
+            field: (() => { for (let _r3=0;_r3<meField.length;_r3++) for (let _c3=0;_c3<meField[_r3].length;_c3++) { const _cc3=meField[_r3][_c3]; if (_cc3 && _cc3.abilities && _cc3.abilities.includes("camouflage")) console.log("[CAMO-TRACE] getPublic forP="+forPlayer+" meField["+_r3+"]["+_c3+"] "+_cc3.name+" hasCamo="+_cc3.hasCamouflage+" phase="+state.phase+" revealing="+state.revealing); } return meField; })(),
             traps: me.traps,
             trapCards: me.trapCards, // Cartes piÃƒÂ¨ges pour l'affichage hover
             graveyard: includeMeGraveyard ? me.graveyard : undefined,
@@ -571,7 +574,7 @@ function getPublicGameState(room, forPlayer) {
                 return baseHand;
             })(),
             deckCount: opp.deck.length,
-            field: oppField,
+            field: (() => { for (let _r2=0;_r2<oppField.length;_r2++) for (let _c2=0;_c2<oppField[_r2].length;_c2++) { const _cc=oppField[_r2][_c2]; if (_cc && _cc.abilities && _cc.abilities.includes("camouflage")) console.log("[CAMO-TRACE] getPublic forP="+forPlayer+" oppField["+_r2+"]["+_c2+"] "+_cc.name+" hasCamo="+_cc.hasCamouflage+" phase="+state.phase+" revealing="+state.revealing); } return oppField; })(),
             traps: oppTraps,
             graveyard: includeOppGraveyard ? opp.graveyard : undefined,
             graveyardCount: opp.graveyard.length,
@@ -2360,7 +2363,7 @@ async function processOnSummonAbility(room, card, playerNum, row, col, log, slee
             log(`  Ã°Å¸ÂªÂ¦ ${heroName}: ${card.name} Ã¢â€ â€™ ${gc.name} revient du cimetiÃƒÂ¨re en main!`, 'special');
             emitAnimation(room, 'graveyardReturn', { player: playerNum, card: gc, handIndex: player.hand.length - 1 });
             emitStateToBoth(room);
-            await sleep(900);
+            await sleep(1800);
             anyReturned = true;
         }
         if (anyReturned) {
@@ -3098,7 +3101,7 @@ async function resolvePostCombatEffects(room, effects, log, sleep) {
                 if (returned > 0) {
                     recalcDynamicAtk(room);
                     emitStateToBoth(room);
-                    maxSleepTime = Math.max(maxSleepTime, 900 * returned);
+                    maxSleepTime = Math.max(maxSleepTime, 1800 * returned);
                 }
                 break;
             }
@@ -4536,8 +4539,6 @@ async function startResolution(room) {
                     card.turnsOnField++;
                     card.canAttack = !card.petrified;
                     card.movedThisTurn = false;
-                    // Camouflage se dissipe au dÃƒÂ©but du prochain tour
-                    if (card.hasCamouflage) card.hasCamouflage = false;
                 }
             }
         }
@@ -4665,7 +4666,7 @@ async function startResolution(room) {
                     log(`Ã°Å¸ÂªÂ¦ ${card.name} revient du cimetiÃƒÂ¨re dans la main de ${player.heroName}! (${creatureCount} crÃƒÂ©atures au cimetiÃƒÂ¨re)`, 'action');
                     emitAnimation(room, 'graveyardReturn', { player: playerNum, card, handIndex: player.hand.length - 1 });
                     emitStateToBoth(room);
-                    await sleep(900);
+                    await sleep(1800);
                     anyGraveyardReturn = true;
                 }
             }
@@ -5404,7 +5405,7 @@ async function applySpell(room, action, log, sleep, options = {}) {
             player.hand.push(creature);
             log(`  Ã°Å¸ÂªÂ¦ ${action.heroName}: ${spell.name} Ã¢â€ â€™ ${creature.name} revient du cimetiÃƒÂ¨re en main!`, 'special');
             emitAnimation(room, 'graveyardReturn', { player: playerNum, card: creature, handIndex: player.hand.length - 1 });
-            await sleep(900);
+            await sleep(1800);
             recalcDynamicAtk(room);
             emitStateToBoth(room);
         }
@@ -6476,8 +6477,16 @@ async function applySpell(room, action, log, sleep, options = {}) {
                 else if (spell.effect === 'poisonTarget') {
                     if (!target.abilities?.includes('antitoxin')) {
                         const amount = spell.poisonAmount || 1;
-                        target.poisonCounters = (target.poisonCounters || 0) + amount;
-                        log(`  ☠️ ${action.heroName}: ${spell.name} → ${target.name} reçoit ${amount} marqueurs poison`, 'damage');
+                        addPoisonCounters(target, amount, {
+                            source: 'spell.poisonTarget',
+                            turn: room.gameState.turn,
+                            row: action.row,
+                            col: action.col,
+                            sourcePlayer: playerNum,
+                            byCard: spell.name,
+                            byUid: spell.uid || null
+                        }, room);
+                        log(`  ☠️ ${action.heroName}: ${spell.name} → ${target.name} reçoit ${amount} marqueurs poison (total: ${target.poisonCounters})`, 'damage');
                         emitAnimation(room, 'poisonApply', { player: action.targetPlayer, row: action.row, col: action.col, amount });
                         await sleep(800);
                     } else {
@@ -8294,6 +8303,7 @@ io.on('connection', (socket) => {
         placed.baseRiposte = _tpl ? (_tpl.riposte ?? _tpl.atk) : (placed.baseRiposte ?? placed.riposte ?? placed.atk);
         if (placed.abilities?.includes('protection')) placed.hasProtection = true;
         if (placed.abilities?.includes('camouflage')) placed.hasCamouflage = true;
+        if (placed.hasCamouflage) console.log("[CAMO-TRACE] placeCard: " + placed.name + " hasCamouflage=" + placed.hasCamouflage + " uid=" + placed.uid);
         if (placed.abilities?.includes('untargetable')) placed.hasUntargetable = true;
         if (placed.abilities?.includes('deflexion')) placed.hasDeflexion = true;
         placed.summonOrder = ++room.gameState.summonCounter;

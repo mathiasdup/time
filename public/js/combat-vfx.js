@@ -3512,7 +3512,7 @@ class GameVFXSystem {
 
             // Si l'élément DOM est détaché, masquer le bouclier
             if (!element || !document.contains(element)) {
-                container.visible = false;
+                this.removeShield(slotKey);
                 continue;
             }
             container.visible = true;
@@ -4596,8 +4596,8 @@ class GameVFXSystem {
                 gGlow.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
             }
             gGlow.closePath();
-            gGlow.stroke({ color: 0xbb99ff, width: 3, alpha: 0.5 });
-            gGlow.filters = [new PIXI.BlurFilter({ strength: 3, quality: 2 })];
+            gGlow.stroke({ color: 0xbb99ff, width: 5, alpha: 0.2 });
+            gGlow.stroke({ color: 0x9977ff, width: 2, alpha: 0.3 });
             fragContainer.addChild(gGlow);
 
             const runeIdx = Math.floor((midAngle / (Math.PI * 2)) * 16 + 16) % RUNES.length;
@@ -4630,7 +4630,7 @@ class GameVFXSystem {
             const { container, element, startTime } = def;
 
             if (!element || !document.contains(element)) {
-                container.visible = false;
+                toRemove.push(slotKey);
                 continue;
             }
             container.visible = true;
@@ -4711,8 +4711,7 @@ class GameVFXSystem {
             const { container, element, particles, domOverlay, smokeMask, baseTime } = camo;
 
             if (!element || !document.contains(element)) {
-                container.visible = false;
-                if (domOverlay) domOverlay.style.display = 'none';
+                this.removeCamouflage(slotKey);
                 continue;
             }
             container.visible = true;

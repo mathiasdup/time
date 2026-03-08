@@ -506,6 +506,9 @@ function initSocket() {
 
     socket.on('gameStart', (s) => {
         state = s;
+        // CAMO-TRACE client
+        if (s.me && s.me.field) { for (var _cr=0;_cr<s.me.field.length;_cr++) for (var _cc2=0;_cc2<s.me.field[_cr].length;_cc2++) { var _ccc=s.me.field[_cr][_cc2]; if (_ccc && _ccc.abilities && _ccc.abilities.indexOf("camouflage")!==-1) console.log("[CAMO-TRACE-CLI] me["+_cr+"]["+_cc2+"] "+_ccc.name+" hasCamo="+_ccc.hasCamouflage+" phase="+s.phase); } }
+        if (s.opponent && s.opponent.field) { for (var _cr2=0;_cr2<s.opponent.field.length;_cr2++) for (var _cc3=0;_cc3<s.opponent.field[_cr2].length;_cc3++) { var _ccc2=s.opponent.field[_cr2][_cc3]; if (_ccc2 && _ccc2.abilities && _ccc2.abilities.indexOf("camouflage")!==-1) console.log("[CAMO-TRACE-CLI] opp["+_cr2+"]["+_cc3+"] "+_ccc2.name+" hasCamo="+_ccc2.hasCamouflage+" phase="+s.phase); } }
         myNum = s.myPlayer;
         if (typeof window !== 'undefined') {
             window.__visTraceContext = window.__visTraceContext || {};

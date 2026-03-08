@@ -117,7 +117,7 @@ window.CardFlashWatchdog = (function () {
                 var pending = _pendingRemovals[slotKey];
                 if (pending) {
                     var delta = time - pending.time;
-                    if (delta <= FLASH_THRESHOLD_MS) {
+                    if (delta <= FLASH_THRESHOLD_MS && (pending.uid === addUid || !pending.uid || !addUid)) {
                         var flash = {
                             slot: slotKey,
                             uid: pending.uid || addUid,
@@ -140,6 +140,11 @@ window.CardFlashWatchdog = (function () {
                             '\n  re-added by: ' + stack +
                             '\n  removeLocked: ' + pending.locked + ', addLocked: ' + locked
                         );
+                    } else if (delta <= FLASH_THRESHOLD_MS && pending.uid && addUid && pending.uid !== addUid) {
+                        // Different card replaced on same slot — not a flash
+                        console.log('[CARD-FLASH] \u267B slot-replace @' + slotKey +
+                            ': "' + (pending.name || '?') + '" -> "' + (addName || '?') +
+                            '" in ' + delta + 'ms');
                     }
                     delete _pendingRemovals[slotKey];
                 }

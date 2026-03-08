@@ -586,6 +586,13 @@ function queueAnimation(type, data) {
         window._pendingDeathSlots.add(slotKey);
         if (window.DEBUG_LOGS) console.log("[SPECTRE-DBG] queue death: slot locked", slotKey);
     }
+    // Pour poisonApply, masquer les marqueurs poison jusqu'aux animations
+    if (type === 'poisonApply' && data.row !== undefined && data.col !== undefined) {
+        const paOwner = data.player === myNum ? 'me' : 'opp';
+        const paSlotKey = paOwner + '-' + data.row + '-' + data.col;
+        if (!window._pendingPoisonSlots) window._pendingPoisonSlots = new Set();
+        window._pendingPoisonSlots.add(paSlotKey);
+    }
 
     // Pour deathTransform, bloquer le slot IMMÃƒÆ’Ã¢â‚¬Â°DIATEMENT pour que render() ne remplace pas la carte
     if (type === 'deathTransform') {
@@ -1605,6 +1612,8 @@ async function executeAnimationAsync(type, data) {
             break;
         case 'poisonApply': {
             const paOwner = data.player === myNum ? 'me' : 'opp';
+            const paSlotKey = paOwner + '-' + data.row + '-' + data.col;
+            if (window._pendingPoisonSlots) window._pendingPoisonSlots.delete(paSlotKey);
             const paSlot = getSlot(paOwner, data.row, data.col);
             if (paSlot) {
                 const rect = paSlot.getBoundingClientRect();
@@ -1613,6 +1622,26 @@ async function executeAnimationAsync(type, data) {
                     rect.top + rect.height / 2,
                     rect.width, rect.height
                 );
+                // Force-show poison marker now (was hidden by _pendingPoisonSlots)
+                const paCardEl = paSlot.querySelector('.card');
+                if (paCardEl) {
+                    const stField = paOwner === 'me' ? state?.me?.field : state?.opponent?.field;
+                    const stCard = stField?.[data.row]?.[data.col];
+                    const pc = stCard?.poisonCounters || 0;
+                    if (pc > 0) {
+                        let pm = paCardEl.querySelector('.poison-marker');
+                        if (!pm) {
+                            pm = document.createElement('div');
+                            pm.className = 'poison-marker marker-pop';
+                            pm.innerHTML = '<div class="poison-border"></div><span class="poison-count">' + pc + '</span>';
+                            paCardEl.appendChild(pm);
+                            paCardEl._cPoison = pm;
+                        } else {
+                            const cnt = pm.querySelector('.poison-count');
+                            if (cnt) cnt.textContent = String(pc);
+                        }
+                    }
+                }
             }
             await new Promise(r => setTimeout(r, 600));
             break;

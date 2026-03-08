@@ -670,6 +670,13 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
             // Si ce slot est en cours d'animation, ne pas y toucher
             const slotKey = `${owner}-${r}-${c}`;
             if (RenderLock.isLocked('slot', slotKey)) {
+                // Preserve active VFX keys even when slot is locked
+                var _lockedCard = field[r][c];
+                if (_lockedCard) {
+                    if (_lockedCard.hasProtection && activeShieldKeys) activeShieldKeys.add(slotKey);
+                    if (_lockedCard.hasCamouflage && activeCamoKeys) activeCamoKeys.add(slotKey);
+                    if (_lockedCard.hasDeflexion && activeDeflexionKeys) activeDeflexionKeys.add(slotKey);
+                }
                 continue;
             }
             const card = field[r][c];
@@ -682,6 +689,12 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     // Either stale state (card in state, not in DOM) or
                     // pending removal (card in DOM, not in state) — skip entirely
                     // Death animation will handle the visual removal
+                    // Preserve active VFX keys even when pending death
+                    if (card) {
+                        if (card.hasProtection && activeShieldKeys) activeShieldKeys.add(slotKey);
+                        if (card.hasCamouflage && activeCamoKeys) activeCamoKeys.add(slotKey);
+                        if (card.hasDeflexion && activeDeflexionKeys) activeDeflexionKeys.add(slotKey);
+                    }
                     continue;
                 }
             }
@@ -691,6 +704,12 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                 var _globalsOk = (typeof state !== 'undefined' && state) ?
                     (state.phase === _lastFieldPhase && (state.me ? state.me.inDeployPhase : undefined) === _lastFieldDeploy) : true;
                 if (_globalsOk && !RenderLock.getOverride('slot', slotKey) && _curSnap === _lastFieldSnap[slotKey]) {
+                    // Preserve active VFX keys even when skipping render
+                    if (card) {
+                        if (card.hasProtection && activeShieldKeys) activeShieldKeys.add(slotKey);
+                        if (card.hasCamouflage && activeCamoKeys) activeCamoKeys.add(slotKey);
+                        if (card.hasDeflexion && activeDeflexionKeys) activeDeflexionKeys.add(slotKey);
+                    }
                     continue;
                 }
                 _lastFieldSnap[slotKey] = _curSnap;
@@ -790,7 +809,11 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     // avec un state stale (HP plus élevé = dégâts pas encore dans le state)
                     const visualDmgHp = existingCardEl.dataset.visualDmgHp;
                     const visualDmgSetAt = parseInt(existingCardEl.dataset.visualDmgSetAt || '0', 10);
-                    const visualDmgExpired = visualDmgHp !== undefined && visualDmgSetAt > 0 && (Date.now() - visualDmgSetAt > 1800);
+                    const stateHpSyncAt = parseInt(existingCardEl.dataset.stateHpSyncAt || '0', 10);
+                    const visualDmgExpired = visualDmgHp !== undefined && visualDmgSetAt > 0 && (
+                        (Date.now() - visualDmgSetAt > 1800) ||
+                        (stateHpSyncAt > visualDmgSetAt)
+                    );
                     if (visualDmgHp !== undefined && hpVal > parseInt(visualDmgHp) && !visualDmgExpired) {
                         // State stale  garder le visual damage
                         if (parseInt(visualDmgHp, 10) <= 0 && hpVal > 0) {
@@ -946,7 +969,8 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     existingCardEl._cGaze = null;
                 }
                 // Poison marker  propriété serveur : poisonCounters
-                const poisonCount = card.poisonCounters || 0;
+                const _poisonPending = window._pendingPoisonSlots && window._pendingPoisonSlots.has(slotKey);
+                const poisonCount = _poisonPending ? 0 : (card.poisonCounters || 0);
                 let poisonMarker = existingCardEl._cPoison || (existingCardEl._cPoison = existingCardEl.querySelector('.poison-marker'));
                 if (poisonCount > 0 && !poisonMarker) {
                     poisonMarker = document.createElement('div');
@@ -1092,7 +1116,7 @@ function renderField(owner, field, activeShieldKeys, activeCamoKeys, activeDefle
                     if (activeShieldKeys) activeShieldKeys.add(slotKey);
                 }
 
-                // Effet de camouflage (fumée PixiJS)  même z-index que Protection
+// Effet de camouflage (fumée PixiJS)  même z-index que Protection
                 if (card.hasCamouflage) {
                     CombatVFX.registerCamouflage(slotKey, cardEl);
                     if (activeCamoKeys) activeCamoKeys.add(slotKey);
@@ -1690,7 +1714,7 @@ function _updateHandInPlace(panel, hand, energy) {
             const hasCreature = state.me.field.some(row => row.some(c => c !== null));
             if (!hasCreature) playable = false;
         }
-        if (playable && card.targetAnyCreature) {
+        if (playable && (card.targetAnyCreature || card.targetAnySlot)) {
             const hasAnyCreature = state.me.field.some(row => row.some(c => c !== null)) || state.opponent.field.some(row => row.some(c => c !== null));
             if (!hasAnyCreature) playable = false;
         }

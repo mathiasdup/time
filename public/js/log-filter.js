@@ -6,7 +6,7 @@
     var _origWarn = console.warn;
 
     // All diagnostic prefixes — suppressed by default, DEBUG_LOGS = true to see them
-    var _suppressRx = /\[(HP-MUTOBS|HP-WATCHDOG|HP|CARD-FLASH-WATCHDOG|CARD-FLASH|HAND-ORDER-WATCHDOG|HAND-ORDER|RENDER-OPP|OPP-HAND-DOM|SPECTRE-DBG|EVEQUE-DBG|GAP-CLOSE)\]/;
+    var _suppressRx = /\[(HP-MUTOBS)\]/;
 
     function _check(args) {
         if (window.DEBUG_LOGS) return false;
