@@ -12,7 +12,7 @@ const CardGlow = (() => {
 
     const TWO_PI = Math.PI * 2;
     const PADDING = 12; // px d'extension du glow au-delà de la carte
-    let _cachedBattlefieldEl = null;
+
 
     const LAYER_CONFIGS_BLUE = [
         { spread: 3,   alpha: 0.45, lineW: 8, color: '#00aaff' },
@@ -169,9 +169,7 @@ const CardGlow = (() => {
         _dirty = false;
         const newTargets = [];
         const activeEls = new Set();
-        const battlefieldEl = document.getElementById('battlefield');
-        // Keep normal glow behavior for non-target cards even in trap warning mode.
-        const trapWarningMode = false && !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
+        // Only hero glows remain in CardGlow — hand/board glows handled by Pixi
 
         // Build a map of previous targets by element for fast lookup & canvas reuse
         const prevByEl = new Map();
@@ -216,107 +214,19 @@ const CardGlow = (() => {
             return { borderW: el._glowBorderW, borderR: el._glowBorderR };
         }
 
-        const playableCards = document.querySelectorAll('.my-hand .card.playable');
-        for (const cardEl of playableCards) {
-            if (cardEl.classList.contains('committed') || cardEl.classList.contains('custom-dragging')) {
-                const existing = cardEl.querySelector('.card-glow-canvas');
-                if (existing) existing.style.display = 'none';
-                continue;
-            }
-            const isHovered = cardEl.matches(':hover');
-            const { borderW, borderR } = getCachedBorder(cardEl);
-            const isSelected = cardEl.classList.contains('selected');
-            const layers = isSelected ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
-            const isArena = cardEl.classList.contains('arena-style');
-            newTargets.push(reuseCanvasState({ el: cardEl, layers, borderW, borderR, isArena }));
-            activeEls.add(cardEl);
-        }
+        // Hand cards & committed spells: handled by pixi-hand-layer + pixi-card-glow (skip)
+        // Board cards (can-attack, spell-targetable, in-combat): handled by pixi-board-layer (skip)
 
-        // Sorts commités : glow orange (skip pendant la résolution pour éviter le flash)
-        const committedSpells = (typeof state !== "undefined" && state && state.phase === "resolution") ? [] : document.querySelectorAll(".my-hand .committed-spell");
-        for (const cardEl of committedSpells) {
-            if (activeEls.has(cardEl)) continue;
-            const { borderW, borderR } = getCachedBorder(cardEl);
-            const isArena = cardEl.classList.contains('arena-style');
-            if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] CardGlow painting orange on committed-spell", { time: performance.now().toFixed(1) });
-            newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
-            activeEls.add(cardEl);
-        }
-
-        // Ghost de drag (élément flottant hors de la main)
-        const ghostCard = document.querySelector('.drag-ghost-card');
-        if (ghostCard) {
-            const { borderW, borderR } = getCachedBorder(ghostCard);
-            const isArena = ghostCard.classList.contains('arena-style');
-            newTargets.push(reuseCanvasState({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
-            activeEls.add(ghostCard);
-        }
-
-        // Mode warning piège : couper tous les glows du board, ne garder qu'un glow orange sur les cibles.
-        if (trapWarningMode) {
-            const trapTargetCards = document.querySelectorAll('#battlefield .card-slot .card.spell-hover-target');
-            for (const cardEl of trapTargetCards) {
-                const { borderW, borderR } = getCachedBorder(cardEl);
-                const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
-                activeEls.add(cardEl);
-            }
-        } else {
-            // Cartes ciblées par un sort (hover sur sort commité) — glow orange, prioritaire
-            const spellHoverCards = document.querySelectorAll('.card-slot .card.spell-hover-target');
-            for (const cardEl of spellHoverCards) {
-                if (activeEls.has(cardEl)) continue;
-                const { borderW, borderR } = getCachedBorder(cardEl);
-                const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
-                activeEls.add(cardEl);
-            }
-
-            // Cartes ciblables par un sort sélectionné — glow bleu (ou orange si hover)
-            const spellTargetableCards = document.querySelectorAll('.card-slot .card.spell-targetable');
-            for (const cardEl of spellTargetableCards) {
-                if (activeEls.has(cardEl)) continue;
-                const { borderW, borderR } = getCachedBorder(cardEl);
-                const isArena = cardEl.classList.contains('arena-style');
-                const isHover = cardEl.closest('.card-slot')?.matches(':hover');
-                newTargets.push(reuseCanvasState({ el: cardEl, layers: isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR, isArena }));
-                activeEls.add(cardEl);
-            }
-
-            // Héros ciblables / ciblés par un sort
-            const heroCards = document.querySelectorAll('.hero-card.hero-targetable, .hero-card.hero-hover-target');
-            for (const heroEl of heroCards) {
-                if (activeEls.has(heroEl)) continue;
-                const { borderW, borderR } = getCachedBorder(heroEl);
-                const isHoverTarget = heroEl.classList.contains('hero-hover-target');
-                const isHover = heroEl.matches(':hover');
-                const layers = isHoverTarget ? LAYER_CONFIGS_ORANGE : (isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE);
-                newTargets.push(reuseCanvasState({ el: heroEl, layers, borderW, borderR, isArena: true }));
-                activeEls.add(heroEl);
-            }
-
-            // Cartes en combat (glow violet) — prioritaire sur le glow vert
-            const combatCards = document.querySelectorAll('.card-slot .card[data-in-combat="true"]');
-            for (const cardEl of combatCards) {
-                if (activeEls.has(cardEl)) continue;
-                const { borderW, borderR } = getCachedBorder(cardEl);
-                const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR, isArena }));
-                activeEls.add(cardEl);
-            }
-
-            // Cartes sur le terrain qui peuvent attaquer (glow vert) — masqué pendant le drag d'un sort
-            const spellDragging = typeof dragged !== 'undefined' && dragged && dragged.type === 'spell';
-            if (!spellDragging) {
-                const attackCards = document.querySelectorAll('.card-slot .card.can-attack:not([data-has-attacked="true"])');
-                for (const cardEl of attackCards) {
-                    if (activeEls.has(cardEl)) continue; // déjà ciblé ou en combat
-                    const { borderW, borderR } = getCachedBorder(cardEl);
-                    const isArena = cardEl.classList.contains('arena-style');
-                    newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR, isArena }));
-                    activeEls.add(cardEl);
-                }
-            }
+        // Héros ciblables / ciblés par un sort (stays in DOM glow)
+        const heroCards = document.querySelectorAll('.hero-card.hero-targetable, .hero-card.hero-hover-target');
+        for (const heroEl of heroCards) {
+            if (activeEls.has(heroEl)) continue;
+            const { borderW, borderR } = getCachedBorder(heroEl);
+            const isHoverTarget = heroEl.classList.contains('hero-hover-target');
+            const isHover = heroEl.matches(':hover');
+            const layers = isHoverTarget ? LAYER_CONFIGS_ORANGE : (isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE);
+            newTargets.push(reuseCanvasState({ el: heroEl, layers, borderW, borderR, isArena: true }));
+            activeEls.add(heroEl);
         }
 
         // Hide canvases on cards that lost glow status but remain in the DOM.
@@ -382,29 +292,13 @@ const CardGlow = (() => {
 
         animId = requestAnimationFrame(update);
 
-        // Mettre à jour le glow hover à chaque frame (pas besoin de rebuild complet)
+        // Mettre à jour le glow hover à chaque frame (héros uniquement)
         for (const target of _cachedTargets) {
-            // Cartes en main : hover blanc / selected orange
-            if (target.el.closest('.my-hand') && target.el.classList.contains('playable')
-                ) {
-                const isSelTarget = target.el.classList.contains('selected');
-                const handHasSel = target.el.closest('.has-selection');
-                target.layers = isSelTarget ? LAYER_CONFIGS_ORANGE
-                    : (handHasSel ? LAYER_CONFIGS_BLUE : (target.el.matches(':hover') ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE));
-            }
-            // Cartes ciblables sur le board : hover orange / sinon bleu
-            if (target.el.classList.contains('spell-targetable')) {
-                const isHover = target.el.closest('.card-slot')?.matches(':hover');
-                target.layers = isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE;
-            }
             // Héros ciblables : hover orange / sinon bleu
             if (target.el.classList.contains('hero-targetable') && !target.el.classList.contains('hero-hover-target')) {
                 target.layers = target.el.matches(':hover') ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE;
             }
         }
-
-        if (!_cachedBattlefieldEl || !_cachedBattlefieldEl.isConnected) _cachedBattlefieldEl = document.getElementById('battlefield');
-        const trapWarningMode = !!_cachedBattlefieldEl && _cachedBattlefieldEl.classList.contains('trap-warning-mode');
 
         for (const target of _cachedTargets) {
             const { el: cardEl, layers, borderW, borderR } = target;

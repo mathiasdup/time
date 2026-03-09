@@ -40,6 +40,7 @@
     let texTrapWhite = null;
     let texGraveWhite = null;
     let texDeckWhite = null;
+    let texCardBack = null;
 
     // Load image as HTMLImageElement (not via Pixi which closes ImageBitmaps after GPU upload)
     function loadImg(src) {
@@ -183,11 +184,23 @@
             }
         }
 
+
+        // Card-back sprite for trap slots
+        let cardBack = null;
+        if (type === 'trap' && texCardBack) {
+            cardBack = new PIXI.Sprite(texCardBack);
+            cardBack.anchor.set(0, 0);
+            cardBack.width = SLOT_W;
+            cardBack.height = SLOT_H;
+            cardBack.zIndex = 10;
+            cardBack.visible = false;
+            container.addChild(cardBack);
+        }
         app.stage.addChild(container);
 
         slotViews.set(key, {
-            container, gfx, icon, slotEl, type,
-            lastState: 'default'
+            container, gfx, icon, cardBack, slotEl, type,
+            lastState: 'default', lastHasTrap: false
         });
     }
 
@@ -218,6 +231,18 @@
                 const vis = view.slotEl.classList.contains('empty');
                 view.container.visible = vis;
                 if (!vis) continue;
+            }
+
+            // Trap card-back visibility
+            if (view.type === 'trap' && view.cardBack) {
+                const hasTrap = view.slotEl.classList.contains('has-trap');
+                if (hasTrap !== view.lastHasTrap) {
+                    view.lastHasTrap = hasTrap;
+                    view.cardBack.visible = hasTrap;
+                    // Hide frame/icon when trap is set
+                    view.gfx.visible = !hasTrap;
+                    if (view.icon) view.icon.visible = !hasTrap;
+                }
             }
 
             const newState = resolveState(view.slotEl);
@@ -297,6 +322,21 @@
         texGraveWhite = makeWhiteTexture(imgGrave);
         texDeckWhite = imgDeck ? makeWhiteTexture(imgDeck) : null;
 
+        // Card back texture for trap slots
+        try {
+            const imgBack = await loadImg('/cardback/back_1.png');
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const bw = Math.ceil(SLOT_W * dpr);
+            const bh = Math.ceil(SLOT_H * dpr);
+            const bc = document.createElement('canvas');
+            bc.width = bw; bc.height = bh;
+            const bctx = bc.getContext('2d');
+            bctx.imageSmoothingEnabled = true;
+            bctx.imageSmoothingQuality = 'high';
+            bctx.drawImage(imgBack, 0, 0, bw, bh);
+            texCardBack = PIXI.Texture.from(bc);
+        } catch (e) { console.warn('[PixiBoardSlots] card back load failed', e); }
+
         // Build slot views from the DOM caches
         if (typeof _slotCache !== 'undefined') {
             for (const key of Object.keys(_slotCache)) {
@@ -336,6 +376,7 @@
             .pixi-board-slots-active .trap-slot > .slot-center,
             .pixi-board-slots-active .grave-top-card.empty > .slot-frame,
             .pixi-board-slots-active .grave-top-card.empty > .slot-center,
+            .pixi-board-slots-active .trap-card-back,
             .pixi-board-slots-active .deck-stack.empty .deck-card-top {
                 display: none !important;
             }

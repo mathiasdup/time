@@ -547,24 +547,44 @@
             z-index: 1;
             transform-origin: bottom center;
         }
-        /* Mode host Pixi: la logique reste DOM, le visuel est dessine en overlay Pixi */
-        .my-hand .card.pixi-hand-host.pixi-hand-ready {
+        /* Full Pixi: ALL card visuals are rendered by Pixi, DOM cards are invisible hitboxes */
+        .my-hand .card {
             background: transparent !important;
             background-image: none !important;
             border-color: transparent !important;
             box-shadow: none !important;
         }
-        .my-hand .card.pixi-hand-host.pixi-hand-ready > * {
+        .my-hand .card > * {
             visibility: hidden !important;
         }
-        /* Board host Pixi: garder les marqueurs DOM, masquer le rendu carte DOM */
-        .card-slot .card.pixi-board-host.pixi-board-ready {
+        .card-slot .card {
             background: transparent !important;
             background-image: none !important;
             border-color: transparent !important;
             box-shadow: none !important;
         }
-        .card-slot .card.pixi-board-host.pixi-board-ready > :not(.gaze-marker):not(.poison-marker):not(.entrave-marker):not(.buff-marker):not(.card-glow-canvas) {
+        .card-slot .card > * {
+            visibility: hidden !important;
+        }
+        /* Graveyard cards: Pixi renders them */
+        .grave-card-layer .card,
+        .grave-top-card .card {
+            background: transparent !important;
+            background-image: none !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
+        .grave-card-layer .card > *,
+        .grave-top-card .card > * {
+            visibility: hidden !important;
+        }
+        /* Opp hand: Pixi renders card backs */
+        .opp-hand .opp-card-back {
+            background: transparent !important;
+            background-image: none !important;
+            box-shadow: none !important;
+        }
+        .opp-hand .opp-card-back > * {
             visibility: hidden !important;
         }
         .my-hand .card:first-child { margin-left: 0; }

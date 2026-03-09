@@ -281,6 +281,7 @@ function renderDelta(d) {
             _traceHp('hero-me', dom.meHpNum.textContent, hpVal, 'renderDelta');
             dom.meHpNum.textContent = String(hpVal);
         }
+        if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("me", d.meHp);
     }
     if (d.oppHp !== undefined && !RenderLock.isLocked('heroHp', 'all') && !RenderLock.isLocked('heroHp', 'opp') && !_deltaHeroBlock.opp) {
         const hpVal = Math.max(0, Math.floor(d.oppHp));
@@ -288,6 +289,7 @@ function renderDelta(d) {
             _traceHp('hero-opp', dom.oppHpNum.textContent, hpVal, 'renderDelta');
             dom.oppHpNum.textContent = String(hpVal);
         }
+        if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("opp", d.oppHp);
     }
 
     // Mana
@@ -461,12 +463,14 @@ function render() {
             _traceHp('hero-me', dom.meHpNum.textContent, _clampHeroHp(me.hp), 'render()', { stateHp: me.hp });
             dom.meHpNum.textContent = String(_clampHeroHp(me.hp));
         }
+        if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("me", me.hp);
     }
     if (!hpBlockedOpp) {
         if (dom.oppHpNum) {
             _traceHp('hero-opp', dom.oppHpNum.textContent, _clampHeroHp(opp.hp), 'render()', { stateHp: opp.hp });
             dom.oppHpNum.textContent = String(_clampHeroHp(opp.hp));
         }
+        if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("opp", opp.hp);
     }
     if (dom.meManaPill) {
         _initManaPill(dom.meManaPill); dom.meManaPill._mCur.textContent = me.energy; dom.meManaPill._mMax.textContent = me.maxEnergy;
@@ -556,10 +560,12 @@ function renderPartial(opts) {
         if (!hpBlockedMe && dom.meHpNum) {
             const v = Math.max(0, Math.floor(Number(me.hp) || 0));
             dom.meHpNum.textContent = String(v);
+            if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("me", me.hp);
         }
         if (!hpBlockedOpp && dom.oppHpNum) {
             const v = Math.max(0, Math.floor(Number(opp.hp) || 0));
             dom.oppHpNum.textContent = String(v);
+            if (window.PixiHeroRenderer) window.PixiHeroRenderer.updateHp("opp", opp.hp);
         }
     }
 
@@ -790,6 +796,9 @@ function updateDeckDisplay(owner, deckCount) {
             layer.style.display = 'none';
         }
     });
+
+    // Pixi deck renderer
+    if (window.PixiDeckRenderer) PixiDeckRenderer.update(owner, deckCount);
 }
 
 // [LEGACY] graveRenderBlocked/graveReturnAnimActive → migré vers RenderLock.lock('grave', ...)
@@ -837,6 +846,9 @@ function updateGraveDisplay(owner, graveyard) {
             layer.appendChild(cardEl);
         }
     });
+
+    // Pixi grave renderer
+    if (window.PixiGraveRenderer) PixiGraveRenderer.update(owner, graveyard);
 }
 
 function updateGraveTopCard(owner, graveyard) {
@@ -863,6 +875,9 @@ function updateGraveTopCard(owner, graveyard) {
         const framePath = 'M4,0 L68,0 L72,-3 L76,0 L140,0 A4,4 0 0,1 144,4 L144,92 L147,96 L144,100 L144,188 A4,4 0 0,1 140,192 L76,192 L72,195 L68,192 L4,192 A4,4 0 0,1 0,188 L0,100 L-3,96 L0,92 L0,4 A4,4 0 0,1 4,0 Z';
         container.innerHTML = `<svg class="slot-frame" viewBox="-4 -4 152 200" aria-hidden="true"><path d="${framePath}" class="slot-frame-outline"/><path d="${framePath}" class="slot-frame-fill"/></svg><div class="slot-center"><img src="/battlefield_elements/graveyard.png" class="slot-icon" alt="" draggable="false"></div>`;
     }
+
+    // Pixi grave renderer (also update for top card changes)
+    if (window.PixiGraveRenderer) PixiGraveRenderer.update(owner, graveyard);
 }
 
 function _getAbilityValue(card, a) {
@@ -1864,16 +1879,22 @@ function _computeCommittedSig() {
 function _syncPixiHand(panel) {
     if (!window.PixiHandLayer || !window.PixiHandLayer.isEnabled || !window.PixiHandLayer.isEnabled()) return;
     try {
-        window.PixiHandLayer.sync(panel);
-    } catch (err) {
-        // Keep DOM path functional if Pixi overlay fails.
-    }
+        if (window.PixiHandLayer.onStateChange && state) {
+            window.PixiHandLayer.onStateChange(state);
+        }
+    } catch (err) { /* silent */ }
 }
 
 function _syncPixiBoard() {
     if (!window.PixiBoardLayer || !window.PixiBoardLayer.isEnabled || !window.PixiBoardLayer.isEnabled()) return;
     try {
-        window.PixiBoardLayer.sync();
+        if (window.PixiBoardLayer.update && state) {
+            var myField = (state.me && state.me.field) ? state.me.field : [];
+            var oppField = (state.opponent && state.opponent.field) ? state.opponent.field : [];
+            window.PixiBoardLayer.update(myField, oppField);
+        } else {
+            window.PixiBoardLayer.sync();
+        }
     } catch (err) {
         // Keep DOM path functional if Pixi overlay fails.
     }
@@ -2516,6 +2537,7 @@ function renderHand(hand, energy) {
         _handIdxEmitAnomalies('render:me:end', _snap);
     }
     _domVisSnapshot(panel, 'renderHand:END');
+    _syncPixiHand(panel);
 }
 
 const _committedHighlightEls = new Set();
@@ -3189,6 +3211,7 @@ function renderOppHand(count, oppHand) {
             });
             _handIdxEmitAnomalies('render:opp:end-draw-mode', _snap);
         }
+        if (typeof PixiOppHandLayer !== 'undefined') PixiOppHandLayer.sync();
         return;
     }
 
@@ -3250,6 +3273,7 @@ function renderOppHand(count, oppHand) {
                 shrinkApplied: sortedRemoval.length > 0
             });
         }
+        if (typeof PixiOppHandLayer !== 'undefined') PixiOppHandLayer.sync();
         return;
     }
 
@@ -3404,6 +3428,8 @@ function renderOppHand(count, oppHand) {
         });
         _handIdxEmitAnomalies('render:opp:end', _snap);
     }
+    // Sync Pixi opponent hand layer
+    if (typeof PixiOppHandLayer !== 'undefined') PixiOppHandLayer.sync();
 }
 
 function makeCard(card, inHand, discountedCost = null) {

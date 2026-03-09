@@ -1,191 +1,137 @@
 /**
- * Pixi board overlay layer.
+ * Pixi board card layer — FULL PIXI (no DOM card dependency).
  *
- * Gameplay/input stays DOM on slots/cards.
- * Card visuals are rendered by Pixi on top for a progressive migration.
+ * Canvas is placed INSIDE .game-board to inherit CSS perspective/rotateX.
+ * Slot positions read from DOM .card-slot elements (which remain for click handling).
+ * Card data received directly via update() — no DOM card elements needed.
  */
 (function () {
     'use strict';
 
-    const DEFAULT_ENABLED = (typeof window !== 'undefined' && window.ENABLE_PIXI_BOARD_OVERLAY === true);
+    var PAD = 5;
 
-    const STATE = {
-        enabled: DEFAULT_ENABLED,
+    var STATE = {
+        enabled: true,
         app: null,
         root: null,
+        boardEl: null,
         viewByKey: new Map(),
+        glowByKey: new Map(),
         ready: false,
         initializing: false,
-        tickerBound: false,
-        mouseX: 0,
-        mouseY: 0
+        tickerBound: false
     };
 
-    function cardVisualSig(data, host) {
-        const c = data || {};
-        const hp = c.currentHp ?? c.hp ?? '';
-        const atk = c.atk ?? '';
-        const ab = Array.isArray(c.abilities) ? c.abilities.join(',') : '';
-        const atkText = host?.querySelector?.('.arena-atk, .img-atk')?.textContent?.trim?.() || '';
-        const hpText = host?.querySelector?.('.arena-hp, .arena-armor, .img-hp')?.textContent?.trim?.() || '';
-        const manaText = host?.querySelector?.('.arena-mana, .img-cost')?.textContent?.trim?.() || '';
-        const markers = [
-            c.medusaGazeMarker || 0,
-            c.poisonCounters || 0,
-            c.entraveCounters || 0,
-            c.buffCounters || 0
-        ].join(',');
-        return [
-            c.uid || c.id || '',
-            c.name || '',
-            c.image || '',
-            c.type || '',
-            c.cost ?? '',
-            atk,
-            hp,
-            ab,
-            markers,
-            atkText,
-            hpText,
-            manaText
-        ].join('|');
-    }
-
-    function isHostVisible(host) {
-        if (!host || !host.isConnected) return false;
-        if (host.style.visibility === 'hidden') return false;
-        return true;
-    }
-
-    function setCanvasStyle(canvas) {
-        if (!canvas) return;
-        canvas.style.position = 'fixed';
-        canvas.style.left = '0';
-        canvas.style.top = '0';
-        canvas.style.width = '100vw';
-        canvas.style.height = '100vh';
-        canvas.style.pointerEvents = 'none';
-        canvas.style.zIndex = '55';
-    }
-
-    function trackMouse() {
-        if (trackMouse._bound) return;
-        trackMouse._bound = true;
-        window.addEventListener('mousemove', (evt) => {
-            STATE.mouseX = evt.clientX;
-            STATE.mouseY = evt.clientY;
-        }, { passive: true });
-    }
-
-    async function ensureSharedApp() {
-        let shared = window.__PixiCardOverlayShared;
-        if (shared && shared.app && shared.ready) return shared;
-        if (shared && shared.initPromise) return shared.initPromise;
-
-        shared = shared || {};
-        shared.initPromise = (async () => {
-            const app = new PIXI.Application();
-            await app.init({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                backgroundAlpha: 0,
-                antialias: true,
-                autoDensity: true,
-                resolution: Math.min(window.devicePixelRatio || 1, 2)
-            });
-
-            app.stage.sortableChildren = true;
-            setCanvasStyle(app.canvas);
-            document.body.appendChild(app.canvas);
-
-            shared.app = app;
-            shared.ready = true;
-            return shared;
-        })();
-
-        window.__PixiCardOverlayShared = shared;
-        return shared.initPromise;
-    }
-
     function resizeApp() {
-        if (!STATE.app || !STATE.ready) return;
-        STATE.app.renderer.resize(window.innerWidth, window.innerHeight);
-        setCanvasStyle(STATE.app.canvas);
+        if (!STATE.app || !STATE.boardEl) return;
+        var w = STATE.boardEl.offsetWidth + PAD * 2;
+        var h = STATE.boardEl.offsetHeight + PAD * 2;
+        if (w > 0 && h > 0) {
+            STATE.app.renderer.resize(w, h);
+        }
+    }
+
+    // Determine which glow color a slot's card should have
+    function resolveGlowLayers(slot) {
+        var cl = slot.classList;
+        var cardEl = slot.querySelector('.card');
+        if (!cardEl) return null;
+
+        // During resolution phase: no glows
+        if (typeof state !== 'undefined' && state && state.phase === 'resolution') return null;
+
+        // Spell hover target (orange)
+        if (cardEl.classList.contains('spell-hover-target')) {
+            return window.PixiCardGlow ? window.PixiCardGlow.ORANGE : null;
+        }
+        // In combat (purple)
+        if (cardEl.getAttribute('data-in-combat') === 'true') {
+            return window.PixiCardGlow ? window.PixiCardGlow.PURPLE : null;
+        }
+        // Spell targetable (blue, orange on hover)
+        if (cardEl.classList.contains('spell-targetable')) {
+            var isHover = cl.contains('drag-over') || slot.matches(':hover');
+            return window.PixiCardGlow ? (isHover ? window.PixiCardGlow.ORANGE : window.PixiCardGlow.BLUE) : null;
+        }
+        // Can attack and hasn't attacked (green)
+        if (cardEl.classList.contains('can-attack') && cardEl.getAttribute('data-has-attacked') !== 'true') {
+            return window.PixiCardGlow ? window.PixiCardGlow.GREEN : null;
+        }
+        return null;
+    }
+
+    function updateBoardGlows() {
+        if (!window.PixiCardGlow || !window.PixiCardGlow.createBoardGlow) return;
+
+        var allSlots = document.querySelectorAll('.card-slot');
+        var activeKeys = new Set();
+
+        for (var i = 0; i < allSlots.length; i++) {
+            var slot = allSlots[i];
+            var owner = slot.dataset.owner;
+            var row = Number(slot.dataset.row);
+            var col = Number(slot.dataset.col);
+            var slotKey = owner + '-' + row + '-' + col;
+
+            var rec = STATE.viewByKey.get(slotKey);
+            if (!rec || !rec.view || !rec.view.container.visible) {
+                // No card — destroy glow if exists
+                var oldGlow = STATE.glowByKey.get(slotKey);
+                if (oldGlow) { oldGlow.destroy(); STATE.glowByKey.delete(slotKey); }
+                continue;
+            }
+
+            var layers = resolveGlowLayers(slot);
+            if (!layers) {
+                // No glow needed
+                var g = STATE.glowByKey.get(slotKey);
+                if (g) { g.setVisible(false); }
+                continue;
+            }
+
+            activeKeys.add(slotKey);
+
+            var glow = STATE.glowByKey.get(slotKey);
+            if (!glow) {
+                glow = window.PixiCardGlow.createBoardGlow(
+                    slot.offsetWidth, slot.offsetHeight, STATE.root
+                );
+                if (!glow) continue;
+                STATE.glowByKey.set(slotKey, glow);
+            }
+
+            glow.setLayers(layers);
+
+            // Position glow centered on the card
+            var pos = getSlotPos(slot);
+            var cx = pos.x + pos.w * 0.5 + PAD;
+            var cy = pos.y + pos.h * 0.5 + PAD;
+            var cardZ = Number(slot.style.zIndex || 1) || 1;
+            glow.setPosition(cx, cy, cardZ - 0.5);
+            glow.setVisible(true);
+        }
+
+        // Destroy glows for cards no longer present
+        for (var entry of STATE.glowByKey.entries()) {
+            if (!activeKeys.has(entry[0]) && !STATE.viewByKey.has(entry[0])) {
+                entry[1].destroy();
+                STATE.glowByKey.delete(entry[0]);
+            }
+        }
     }
 
     function ensureTicker() {
         if (!STATE.app || STATE.tickerBound) return;
         STATE.tickerBound = true;
-        STATE.app.ticker.add(() => {
+        STATE.app.ticker.add(function () {
             if (!STATE.enabled || !STATE.ready) return;
-            const dt = STATE.app.ticker.deltaMS / 1000;
-            for (const rec of STATE.viewByKey.values()) {
-                updateOne(rec, dt);
+            var dt = STATE.app.ticker.deltaMS / 1000;
+            for (var rec of STATE.viewByKey.values()) {
+                if (rec.view && rec.view.update) rec.view.update(dt);
             }
+            // Update board card glows every frame (resolves DOM classes)
+            updateBoardGlows();
         });
-    }
-
-    // Rect cache: avoid getBoundingClientRect every frame (throttle ~100ms)
-    let _rectCacheDirty = true;
-    const RECT_CACHE_INTERVAL = 100;
-    window.addEventListener('resize', () => { _rectCacheDirty = true; });
-    window.addEventListener('scroll', () => { _rectCacheDirty = true; }, true);
-
-    function updateOne(rec, dt) {
-        const host = rec.host;
-        const view = rec.view;
-        if (!host || !view || !view.container) return;
-
-        if (!isHostVisible(host)) {
-            view.container.visible = false;
-            view.setHovered(false);
-            view.update(dt);
-            host.classList.remove('pixi-board-ready');
-            return;
-        }
-
-        const now = performance.now();
-        if (_rectCacheDirty || !rec._cachedRect || (now - (rec._cachedRectTime || 0)) > RECT_CACHE_INTERVAL) {
-            rec._cachedRect = host.getBoundingClientRect();
-            rec._cachedRectTime = now;
-            _rectCacheDirty = false;
-        }
-        const rect = rec._cachedRect;
-        if (rect.width <= 1 || rect.height <= 1) {
-            view.container.visible = false;
-            view.setHovered(false);
-            view.update(dt);
-            host.classList.remove('pixi-board-ready');
-            return;
-        }
-
-        view.container.visible = true;
-        view.setLayout({
-            x: rect.left + rect.width * 0.5,
-            y: rect.top + rect.height * 0.5,
-            width: rect.width,
-            height: rect.height,
-            zIndex: Number(host.style.zIndex || 1) || 1,
-            hoverScale: 1.02
-        });
-
-        const hovered = host.matches(':hover');
-        const localX = STATE.mouseX - (rect.left + rect.width * 0.5);
-        const localY = STATE.mouseY - (rect.top + rect.height * 0.5);
-        view.setPointerLocal(localX, localY, hovered);
-        view.update(dt);
-        const tex = (view.__display && view.__display.texture) || view.__smallRT || null;
-        const ready = !!tex && tex.valid !== false;
-        host.classList.toggle('pixi-board-ready', ready);
-    }
-
-    function cleanupRemovedHosts() {
-        for (const [key, rec] of STATE.viewByKey.entries()) {
-            if (rec.host && rec.host.isConnected) continue;
-            if (rec.host) rec.host.classList.remove('pixi-board-host', 'pixi-board-ready');
-            rec.view.destroy();
-            STATE.viewByKey.delete(key);
-        }
     }
 
     async function ensureInit() {
@@ -193,123 +139,192 @@
         if (STATE.initializing) return false;
         if (!window.PIXI || !window.PixiCardView) return false;
 
+        var boardEl = document.querySelector('.game-board');
+        if (!boardEl || boardEl.offsetWidth === 0) return false;
+
         STATE.initializing = true;
         try {
-            const shared = await ensureSharedApp();
-            const app = shared.app;
-            if (!shared.boardRoot) {
-                shared.boardRoot = new PIXI.Container();
-                shared.boardRoot.sortableChildren = true;
-                shared.boardRoot.zIndex = 10;
-                app.stage.addChild(shared.boardRoot);
-            }
-            const root = shared.boardRoot;
+            STATE.boardEl = boardEl;
+            var w = boardEl.offsetWidth + PAD * 2;
+            var h = boardEl.offsetHeight + PAD * 2;
+            var dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-            window.PixiCardView.init({
-                app,
-                stage: root
+            var app = new PIXI.Application();
+            await app.init({
+                width: w,
+                height: h,
+                backgroundAlpha: 0,
+                antialias: true,
+                resolution: dpr,
+                autoDensity: true
             });
+
+            var cv = app.canvas;
+            cv.style.position = 'absolute';
+            cv.style.top = -PAD + 'px';
+            cv.style.left = -PAD + 'px';
+            cv.style.pointerEvents = 'none';
+            cv.style.zIndex = '5';
+            cv.classList.add('pixi-board-cards-canvas');
+
+            boardEl.insertBefore(cv, boardEl.firstChild);
+
+            app.stage.sortableChildren = true;
+            var root = new PIXI.Container();
+            root.sortableChildren = true;
+            app.stage.addChild(root);
+
+            window.PixiCardView.init({ app: app, stage: root });
 
             STATE.app = app;
             STATE.root = root;
             STATE.ready = true;
-            trackMouse();
             window.addEventListener('resize', resizeApp, { passive: true });
             ensureTicker();
             return true;
         } catch (err) {
+            console.error('[PixiBoardLayer] init error:', err);
             return false;
         } finally {
             STATE.initializing = false;
         }
     }
 
-    function getHostRecords() {
-        const records = [];
-        const hosts = Array.from(document.querySelectorAll('.card-slot .card'));
-        const keyCount = new Map();
-
-        for (let i = 0; i < hosts.length; i++) {
-            const host = hosts[i];
-            const slot = host.closest('.card-slot');
-            if (!slot) continue;
-            const data = host.__cardData || null;
-            if (!data) continue;
-
-            const slotKey = `${slot.dataset.owner || '?'}-${slot.dataset.row || '?'}-${slot.dataset.col || '?'}-${data.uid || data.id || i}`;
-            const n = keyCount.get(slotKey) || 0;
-            keyCount.set(slotKey, n + 1);
-            const key = `${slotKey}#${n}`;
-            records.push({ key, host, data, sig: cardVisualSig(data, host) });
+    // Get slot position relative to board element
+    function getSlotPos(slot) {
+        var x = 0, y = 0, cur = slot;
+        while (cur && cur !== STATE.boardEl) {
+            x += cur.offsetLeft;
+            y += cur.offsetTop;
+            cur = cur.offsetParent;
         }
-
-        return records;
+        return { x: x, y: y, w: slot.offsetWidth, h: slot.offsetHeight };
     }
 
-    function sync() {
+    // Build a visual signature for change detection
+    function cardSig(c) {
+        if (!c) return '';
+        var hp = c.currentHp != null ? c.currentHp : (c.hp || '');
+        var atk = c.atk || '';
+        var ab = Array.isArray(c.abilities) ? c.abilities.join(',') : '';
+        var markers = [
+            c.medusaGazeMarker || 0,
+            c.poisonCounters || 0,
+            c.entraveCounters || 0,
+            c.buffCounters || 0
+        ].join(',');
+        return [c.uid || c.id || '', c.name || '', c.image || '', c.type || '',
+                c.cost, atk, hp, ab, markers].join('|');
+    }
+
+    /**
+     * update(myField, oppField)
+     * Called from renderField() with field arrays.
+     * Each field is a 4×2 array (4 rows, 2 cols) of card objects or null.
+     */
+    function update(myField, oppField) {
         if (!STATE.enabled) return;
 
-        ensureInit().then((ok) => {
+        ensureInit().then(function (ok) {
             if (!ok || !STATE.ready || !STATE.root) return;
 
-            const hostRecords = getHostRecords();
-            const keep = new Set();
+            var keep = new Set();
 
-            for (const rec of hostRecords) {
-                keep.add(rec.key);
-                const existing = STATE.viewByKey.get(rec.key);
-                if (existing) {
-                    existing.host = rec.host;
-                    if (existing.sig !== rec.sig) {
+            // Process all slots
+            var allSlots = document.querySelectorAll('.card-slot');
+            for (var i = 0; i < allSlots.length; i++) {
+                var slot = allSlots[i];
+                var owner = slot.dataset.owner;
+                var row = Number(slot.dataset.row);
+                var col = Number(slot.dataset.col);
+
+                // Get card data from field arrays
+                var field = (owner === 'me') ? myField : oppField;
+                var card = (field && field[row]) ? field[row][col] : null;
+
+                var slotKey = owner + '-' + row + '-' + col;
+
+                if (!card) {
+                    // No card in this slot — remove if existing
+                    var existing = STATE.viewByKey.get(slotKey);
+                    if (existing) {
                         existing.view.destroy();
-                        const newView = window.createCard(rec.data, { domSourceEl: rec.host, inHand: false });
-                        STATE.root.addChild(newView.container);
-                        STATE.viewByKey.set(rec.key, {
-                            key: rec.key,
-                            host: rec.host,
-                            sig: rec.sig,
-                            view: newView
-                        });
-                    } else {
-                        existing.sig = rec.sig;
+                        STATE.viewByKey.delete(slotKey);
                     }
-                    rec.host.classList.add('pixi-board-host');
+                    // Remove glow too
+                    var oldGlow = STATE.glowByKey.get(slotKey);
+                    if (oldGlow) { oldGlow.destroy(); STATE.glowByKey.delete(slotKey); }
                     continue;
                 }
 
-                const view = window.createCard(rec.data, { domSourceEl: rec.host, inHand: false });
-                STATE.root.addChild(view.container);
-                STATE.viewByKey.set(rec.key, {
-                    key: rec.key,
-                    host: rec.host,
-                    sig: rec.sig,
-                    view
+                var sig = cardSig(card);
+                keep.add(slotKey);
+
+                var rec = STATE.viewByKey.get(slotKey);
+                if (rec) {
+                    if (rec.sig !== sig) {
+                        // Card changed — recreate
+                        rec.view.destroy();
+                        var newView = window.createCard(card, { inHand: false });
+                        STATE.root.addChild(newView.container);
+                        rec.view = newView;
+                        rec.sig = sig;
+                        rec.data = card;
+                    }
+                } else {
+                    // New card
+                    var view = window.createCard(card, { inHand: false });
+                    STATE.root.addChild(view.container);
+                    rec = { view: view, sig: sig, data: card };
+                    STATE.viewByKey.set(slotKey, rec);
+                }
+
+                // Position from slot DOM element (slot stays in DOM for click handling)
+                var pos = getSlotPos(slot);
+                rec.view.container.visible = true;
+                rec.view.setLayout({
+                    x: pos.x + pos.w * 0.5 + PAD,
+                    y: pos.y + pos.h * 0.5 + PAD,
+                    width: pos.w,
+                    height: pos.h,
+                    zIndex: Number(slot.style.zIndex || 1) || 1,
+                    hoverScale: 1.0
                 });
-                rec.host.classList.add('pixi-board-host');
             }
 
-            for (const [key, rec] of STATE.viewByKey.entries()) {
-                if (keep.has(key)) continue;
-                if (rec.host) rec.host.classList.remove('pixi-board-host', 'pixi-board-ready');
-                rec.view.destroy();
-                STATE.viewByKey.delete(key);
+            // Remove cards no longer on the field
+            for (var entry of STATE.viewByKey.entries()) {
+                if (keep.has(entry[0])) continue;
+                entry[1].view.destroy();
+                STATE.viewByKey.delete(entry[0]);
+                // Remove associated glow
+                var gl = STATE.glowByKey.get(entry[0]);
+                if (gl) { gl.destroy(); STATE.glowByKey.delete(entry[0]); }
             }
-
-            cleanupRemovedHosts();
         });
+    }
+
+    // Legacy sync — now routes through update using current state
+    function sync() {
+        if (typeof state === 'undefined' || !state) return;
+        var myField = state.me ? state.me.field : [];
+        var oppField = state.opponent ? state.opponent.field : [];
+        update(myField, oppField);
     }
 
     function setEnabled(value) {
         STATE.enabled = !!value;
         if (!STATE.ready || !STATE.app) return;
-
         STATE.app.canvas.style.display = STATE.enabled ? '' : 'none';
         if (!STATE.enabled) {
-            for (const rec of STATE.viewByKey.values()) {
-                if (rec.host) rec.host.classList.remove('pixi-board-host', 'pixi-board-ready');
+            for (var rec of STATE.viewByKey.values()) {
                 rec.view.destroy();
             }
             STATE.viewByKey.clear();
+            for (var gl of STATE.glowByKey.values()) {
+                gl.destroy();
+            }
+            STATE.glowByKey.clear();
         } else {
             sync();
         }
@@ -320,8 +335,14 @@
     }
 
     window.PixiBoardLayer = {
-        sync,
-        setEnabled,
-        isEnabled
+        sync: sync,
+        update: update,
+        setEnabled: setEnabled,
+        isEnabled: isEnabled,
+        getApp: function () { return STATE.app; },
+        getRoot: function () { return STATE.root; },
+        getBoardEl: function () { return STATE.boardEl; },
+        isReady: function () { return STATE.ready; },
+        ensureInit: ensureInit
     };
 })();

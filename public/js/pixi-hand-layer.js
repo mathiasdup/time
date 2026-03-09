@@ -1,57 +1,37 @@
 /**
- * Pixi hand overlay layer.
+ * Pixi hand layer — FULL PIXI, self-contained.
  *
- * Keeps gameplay interactions on DOM cards, while rendering card visuals via Pixi.
- * This lets us migrate safely without rewriting drag/click logic immediately.
+ * Receives game state directly via onStateChange(state).
+ * Computes playability, layout, hover, selection internally.
+ * Click handling via document-level hit-test.
+ * No DOM card dependency.
  */
 (function () {
     'use strict';
 
-    const DEFAULT_ENABLED = (typeof window !== 'undefined' && window.ENABLE_PIXI_HAND_OVERLAY === true);
+    // ── Layout constants (match old CSS) ──
+    var CARD_W = 144, CARD_H = 192;
+    var OVERLAP = 56;
+    var SPACING = CARD_W - OVERLAP;         // 88px
+    var HAND_LEFT = 50;                     // 35px + 15px padding
+    var HAND_BOTTOM_OFFSET = 50;            // 50px below viewport
+    var HOVER_LIFT = 50;
+    var ANIM_SPEED = 12;
 
-    const STATE = {
-        enabled: DEFAULT_ENABLED,
+    var STATE = {
+        enabled: true,
         app: null,
         root: null,
-        viewByKey: new Map(),
         ready: false,
         initializing: false,
         tickerBound: false,
         mouseX: 0,
         mouseY: 0,
-        panel: null
+        cards: [],              // {uid, data, view, handIndex, playable, selected, hidden, hovered, ...}
+        committedSpells: []     // {commitId, data, view, ...}
     };
 
-    function cardVisualSig(data, host) {
-        const c = data || {};
-        const hp = c.currentHp ?? c.hp ?? '';
-        const atk = c.atk ?? '';
-        const ab = Array.isArray(c.abilities) ? c.abilities.join(',') : '';
-        const manaText = host?.querySelector?.('.arena-mana, .img-cost')?.textContent?.trim?.() || '';
-        const atkText = host?.querySelector?.('.arena-atk, .img-atk')?.textContent?.trim?.() || '';
-        const hpText = host?.querySelector?.('.arena-hp, .arena-armor, .img-hp')?.textContent?.trim?.() || '';
-        return [
-            c.uid || c.id || '',
-            c.name || '',
-            c.image || '',
-            c.type || '',
-            c.cost ?? '',
-            atk,
-            hp,
-            ab,
-            manaText,
-            atkText,
-            hpText
-        ].join('|');
-    }
-
-    function isHostVisible(host) {
-        if (!host || !host.isConnected) return false;
-        if (host.classList.contains('custom-dragging')) return false;
-        if (host.style.visibility === 'hidden') return false;
-        return true;
-    }
-
+    // ── Shared Pixi app ──
     function setCanvasStyle(canvas) {
         if (!canvas) return;
         canvas.style.position = 'fixed';
@@ -66,20 +46,20 @@
     function trackMouse() {
         if (trackMouse._bound) return;
         trackMouse._bound = true;
-        window.addEventListener('mousemove', (evt) => {
+        window.addEventListener('mousemove', function (evt) {
             STATE.mouseX = evt.clientX;
             STATE.mouseY = evt.clientY;
         }, { passive: true });
     }
 
     async function ensureSharedApp() {
-        let shared = window.__PixiCardOverlayShared;
+        var shared = window.__PixiCardOverlayShared;
         if (shared && shared.app && shared.ready) return shared;
         if (shared && shared.initPromise) return shared.initPromise;
 
         shared = shared || {};
-        shared.initPromise = (async () => {
-            const app = new PIXI.Application();
+        shared.initPromise = (async function () {
+            var app = new PIXI.Application();
             await app.init({
                 width: window.innerWidth,
                 height: window.innerHeight,
@@ -88,11 +68,9 @@
                 autoDensity: true,
                 resolution: Math.min(window.devicePixelRatio || 1, 2)
             });
-
             app.stage.sortableChildren = true;
             setCanvasStyle(app.canvas);
             document.body.appendChild(app.canvas);
-
             shared.app = app;
             shared.ready = true;
             return shared;
@@ -108,80 +86,6 @@
         setCanvasStyle(STATE.app.canvas);
     }
 
-    function ensureTicker() {
-        if (!STATE.app || STATE.tickerBound) return;
-        STATE.tickerBound = true;
-        STATE.app.ticker.add(() => {
-            if (!STATE.enabled || !STATE.ready) return;
-            const dt = STATE.app.ticker.deltaMS / 1000;
-            for (const rec of STATE.viewByKey.values()) {
-                updateOne(rec, dt);
-            }
-        });
-    }
-
-    // Rect cache: avoid getBoundingClientRect every frame (throttle ~100ms)
-    let _rectCacheDirty = true;
-    const RECT_CACHE_INTERVAL = 100;
-    window.addEventListener('resize', () => { _rectCacheDirty = true; });
-    window.addEventListener('scroll', () => { _rectCacheDirty = true; }, true);
-
-    function updateOne(rec, dt) {
-        const host = rec.host;
-        const view = rec.view;
-        if (!host || !view || !view.container) return;
-
-        if (!isHostVisible(host)) {
-            view.container.visible = false;
-            view.setHovered(false);
-            view.update(dt);
-            host.classList.remove('pixi-hand-ready');
-            return;
-        }
-
-        const now = performance.now();
-        if (_rectCacheDirty || !rec._cachedRect || (now - (rec._cachedRectTime || 0)) > RECT_CACHE_INTERVAL) {
-            rec._cachedRect = host.getBoundingClientRect();
-            rec._cachedRectTime = now;
-            _rectCacheDirty = false;
-        }
-        const rect = rec._cachedRect;
-        if (rect.width <= 1 || rect.height <= 1) {
-            view.container.visible = false;
-            view.setHovered(false);
-            view.update(dt);
-            host.classList.remove('pixi-hand-ready');
-            return;
-        }
-
-        view.container.visible = true;
-        view.setLayout({
-            x: rect.left + rect.width * 0.5,
-            y: rect.top + rect.height * 0.5,
-            width: rect.width,
-            height: rect.height,
-            zIndex: Number(host.style.zIndex || 1) || 1
-        });
-
-        const hovered = host.matches(':hover') || host.classList.contains('dragging') || host.classList.contains('selected');
-        const localX = STATE.mouseX - (rect.left + rect.width * 0.5);
-        const localY = STATE.mouseY - (rect.top + rect.height * 0.5);
-        view.setPointerLocal(localX, localY, hovered);
-        view.update(dt);
-        const tex = (view.__display && view.__display.texture) || view.__smallRT || null;
-        const ready = !!tex && tex.valid !== false;
-        host.classList.toggle('pixi-hand-ready', ready);
-    }
-
-    function cleanupRemovedHosts() {
-        for (const [key, rec] of STATE.viewByKey.entries()) {
-            if (rec.host && rec.host.isConnected) continue;
-            if (rec.host) rec.host.classList.remove('pixi-hand-host', 'pixi-hand-ready');
-            rec.view.destroy();
-            STATE.viewByKey.delete(key);
-        }
-    }
-
     async function ensureInit() {
         if (STATE.ready) return true;
         if (STATE.initializing) return false;
@@ -189,27 +93,23 @@
 
         STATE.initializing = true;
         try {
-            const shared = await ensureSharedApp();
-            const app = shared.app;
+            var shared = await ensureSharedApp();
+            var app = shared.app;
             if (!shared.handRoot) {
                 shared.handRoot = new PIXI.Container();
                 shared.handRoot.sortableChildren = true;
                 shared.handRoot.zIndex = 20;
                 app.stage.addChild(shared.handRoot);
             }
-            const root = shared.handRoot;
-
-            window.PixiCardView.init({
-                app,
-                stage: root
-            });
+            window.PixiCardView.init({ app: app, stage: shared.handRoot });
 
             STATE.app = app;
-            STATE.root = root;
+            STATE.root = shared.handRoot;
             STATE.ready = true;
             trackMouse();
             window.addEventListener('resize', resizeApp, { passive: true });
             ensureTicker();
+            setupClickHandler();
             return true;
         } catch (err) {
             return false;
@@ -218,104 +118,428 @@
         }
     }
 
-    function toHostRecords(panel) {
-        const records = [];
-        const hosts = Array.from(panel.querySelectorAll('.card:not(.committed-spell)'));
-        const keyCount = new Map();
-
-        for (let i = 0; i < hosts.length; i++) {
-            const host = hosts[i];
-            const data = host.__cardData || (host._dragData && host._dragData.card) || null;
-            if (!data) continue;
-            const base = String(data.uid || data.id || host.dataset.uid || `idx-${i}`);
-            const n = keyCount.get(base) || 0;
-            keyCount.set(base, n + 1);
-            const key = `${base}#${n}`;
-            records.push({ key, host, data, sig: cardVisualSig(data, host) });
-        }
-
-        return records;
+    // ── Ticker ──
+    function ensureTicker() {
+        if (!STATE.app || STATE.tickerBound) return;
+        STATE.tickerBound = true;
+        STATE.app.ticker.add(function () {
+            if (!STATE.enabled || !STATE.ready) return;
+            tickAll(STATE.app.ticker.deltaMS / 1000);
+        });
     }
 
-    function sync(panel) {
-        if (!STATE.enabled) return;
-        const p = panel || document.getElementById('my-hand');
-        if (!p) return;
-        STATE.panel = p;
+    // ── Playability computation (ported from renderHand) ──
+    function computePlayability(card, i, s) {
+        var me = s.me;
+        var energy = me.energy || 0;
 
-        ensureInit().then((ok) => {
-            if (!ok || !STATE.ready || !STATE.root) return;
+        // Effective cost (Hyrule discount, poison reduction)
+        var effectiveCost = card.cost;
+        var isHyrule = me.hero && me.hero.id === 'hyrule';
+        var spellsCast = me.spellsCastThisTurn || 0;
+        var hasHyruleDiscount = isHyrule && spellsCast === 1 && s.phase === 'planning';
+        if (hasHyruleDiscount && card.type === 'spell') {
+            effectiveCost = Math.max(0, card.cost - 1);
+        }
+        var totalPoison = me.totalPoisonCounters || 0;
+        if (card.poisonCostReduction && totalPoison > 0) {
+            effectiveCost = Math.max(0, effectiveCost - totalPoison);
+        }
 
-            const hostRecords = toHostRecords(p);
-            const keep = new Set();
+        // Base playability: enough mana + can play
+        var canPlayNow = (typeof canPlay === 'function') ? canPlay() : (s.phase === 'planning');
+        var playable = effectiveCost <= energy && canPlayNow;
 
-            for (const rec of hostRecords) {
-                keep.add(rec.key);
-                const existing = STATE.viewByKey.get(rec.key);
-                if (existing) {
-                    existing.host = rec.host;
-                    if (existing.sig !== rec.sig) {
-                        existing.view.destroy();
-                        const newView = window.createCard(rec.data, { domSourceEl: rec.host, inHand: true });
-                        STATE.root.addChild(newView.container);
-                        STATE.viewByKey.set(rec.key, {
-                            key: rec.key,
-                            host: rec.host,
-                            sig: rec.sig,
-                            view: newView
-                        });
+        // No valid slots for creatures/traps
+        if (playable && (card.type === 'creature' || card.type === 'trap')) {
+            if (typeof getValidSlots === 'function' && getValidSlots(card).length === 0) {
+                playable = false;
+            }
+        }
+
+        // Special summon conditions
+        if (playable && card.requiresGraveyardCreatures) {
+            var gravCreatures = (me.graveyard || []).filter(function (c) { return c.type === 'creature'; }).length;
+            if (gravCreatures < card.requiresGraveyardCreatures) playable = false;
+        }
+        if (playable && card.requiresGraveyardCreature) {
+            var cguids = (typeof committedGraveyardUids !== 'undefined') ? committedGraveyardUids : [];
+            var available = (me.graveyard || []).filter(function (c) {
+                return c.type === 'creature' && cguids.indexOf(c.uid || c.id) === -1;
+            });
+            if (available.length === 0) playable = false;
+        }
+        if (playable && card.sacrifice) {
+            if (typeof getValidSlots === 'function' && getValidSlots(card).length === 0) playable = false;
+        }
+        if (playable && card.targetSelfCreature) {
+            var hasCreature = me.field.some(function (row) { return row.some(function (c) { return c !== null; }); });
+            if (!hasCreature) playable = false;
+        }
+        if (playable && card.targetAnyCreature) {
+            var hasAny = me.field.some(function (r) { return r.some(function (c) { return c !== null; }); })
+                || (s.opponent && s.opponent.field.some(function (r) { return r.some(function (c) { return c !== null; }); }));
+            if (!hasAny) playable = false;
+        }
+
+        return { playable: playable, effectiveCost: effectiveCost };
+    }
+
+    // ── Hidden card detection ──
+    function isCardHidden(i, uid, hand) {
+        // Animation system hiding
+        if (typeof GameAnimations !== 'undefined') {
+            if (GameAnimations.shouldHideCard && GameAnimations.shouldHideCard('me', i)) return true;
+            if (GameAnimations.shouldHideCardByUid && GameAnimations.shouldHideCardByUid('me', uid)) return true;
+        }
+        // Pending bounce
+        if (typeof pendingBounce !== 'undefined' && pendingBounce && pendingBounce.owner === 'me') {
+            var pbUid = pendingBounce.targetUid || (pendingBounce.card && pendingBounce.card.uid) || null;
+            if (pbUid && uid && pbUid === uid) return true;
+            if (pendingBounce.expectAtEnd && i === hand.length - 1) return true;
+            if (pendingBounce.targetIndex != null && Number(pendingBounce.targetIndex) === i) return true;
+            if (pendingBounce.handIndex != null && Number(pendingBounce.handIndex) === i) return true;
+        }
+        return false;
+    }
+
+    // ── Layout computation ──
+    function computeHandLayout() {
+        var baseY = window.innerHeight + HAND_BOTTOM_OFFSET - CARD_H * 0.5;
+
+        for (var i = 0; i < STATE.cards.length; i++) {
+            var entry = STATE.cards[i];
+            var x = HAND_LEFT + CARD_W * 0.5 + i * SPACING;
+            var y = baseY;
+            if (entry.selected || entry.hovered) y -= HOVER_LIFT;
+            entry.targetX = x;
+            entry.targetY = y;
+            entry.zIndex = i + 1;
+        }
+
+        // Committed spells: after hand cards
+        var offset = STATE.cards.length;
+        for (var j = 0; j < STATE.committedSpells.length; j++) {
+            var cs = STATE.committedSpells[j];
+            cs.targetX = HAND_LEFT + CARD_W * 0.5 + (offset + j) * SPACING;
+            cs.targetY = baseY;
+            cs.zIndex = offset + j + 1;
+        }
+    }
+
+    // ── Tick ──
+    function tickAll(dt) {
+        var lerpFactor = Math.min(1, ANIM_SPEED * dt);
+        var halfW = CARD_W * 0.5;
+        var halfH = CARD_H * 0.5;
+
+        // Determine hovered card (rightmost = highest z wins)
+        var hoveredIdx = -1;
+        for (var h = STATE.cards.length - 1; h >= 0; h--) {
+            var he = STATE.cards[h];
+            if (he.hidden || !he.view) continue;
+            var hx = he.currentX != null ? he.currentX : he.targetX;
+            var hy = he.currentY != null ? he.currentY : he.targetY;
+            if (STATE.mouseX >= hx - halfW && STATE.mouseX <= hx + halfW &&
+                STATE.mouseY >= hy - halfH && STATE.mouseY <= hy + halfH) {
+                hoveredIdx = h;
+                break;
+            }
+        }
+
+        var layoutDirty = false;
+        for (var i = 0; i < STATE.cards.length; i++) {
+            var entry = STATE.cards[i];
+            if (!entry.view || !entry.view.container) continue;
+
+            var wasHovered = entry.hovered;
+            entry.hovered = (i === hoveredIdx);
+            if (entry.hovered !== wasHovered) layoutDirty = true;
+
+            // Lerp position
+            if (entry.currentX == null) entry.currentX = entry.targetX;
+            if (entry.currentY == null) entry.currentY = entry.targetY;
+            entry.currentX += (entry.targetX - entry.currentX) * lerpFactor;
+            entry.currentY += (entry.targetY - entry.currentY) * lerpFactor;
+
+            // Visibility
+            entry.view.container.visible = !entry.hidden;
+
+            // Update sprite
+            entry.view.setLayout({
+                x: entry.currentX,
+                y: entry.currentY,
+                width: CARD_W,
+                height: CARD_H,
+                zIndex: entry.hovered ? 100 : (entry.selected ? 101 : entry.zIndex)
+            });
+
+            var localX = STATE.mouseX - entry.currentX;
+            var localY = STATE.mouseY - entry.currentY;
+            entry.view.setPointerLocal(localX, localY, entry.hovered);
+            entry.view.update(dt);
+
+            // Glow (exact card-glow.js algorithm via PixiCardGlow)
+            if (window.PixiCardGlow) {
+                var glowLayers = null;
+                if (entry.playable) {
+                    if (entry.selected) {
+                        glowLayers = PixiCardGlow.ORANGE;
+                    } else if (entry.hovered) {
+                        glowLayers = PixiCardGlow.WHITE;
                     } else {
-                        existing.sig = rec.sig;
+                        glowLayers = PixiCardGlow.BLUE;
                     }
-                    rec.host.classList.add('pixi-hand-host');
-                    continue;
                 }
 
-                const view = window.createCard(rec.data, { domSourceEl: rec.host, inHand: true });
-                STATE.root.addChild(view.container);
-                STATE.viewByKey.set(rec.key, {
-                    key: rec.key,
-                    host: rec.host,
-                    sig: rec.sig,
-                    view
-                });
-                rec.host.classList.add('pixi-hand-host');
+                if (glowLayers) {
+                    if (!entry.glow) {
+                        entry.glow = PixiCardGlow.createGlow(CARD_W, CARD_H, STATE.root);
+                    }
+                    if (entry.glow) {
+                        entry.glow.setLayers(glowLayers);
+                        entry.glow.setHovered(entry.hovered);
+                        entry.glow.setPosition(entry.currentX, entry.currentY, entry.hovered ? 99 : (entry.selected ? 100 : entry.zIndex - 0.5));
+                        entry.glow.setVisible(!entry.hidden);
+                    }
+                } else {
+                    if (entry.glow) {
+                        entry.glow.setVisible(false);
+                    }
+                }
+            }
+        }
+
+        if (layoutDirty) computeHandLayout();
+
+        // Committed spells
+        for (var j = 0; j < STATE.committedSpells.length; j++) {
+            var cs = STATE.committedSpells[j];
+            if (!cs.view || !cs.view.container) continue;
+
+            if (cs.currentX == null) cs.currentX = cs.targetX;
+            if (cs.currentY == null) cs.currentY = cs.targetY;
+            cs.currentX += (cs.targetX - cs.currentX) * lerpFactor;
+            cs.currentY += (cs.targetY - cs.currentY) * lerpFactor;
+
+            cs.view.container.visible = true;
+            cs.view.setLayout({
+                x: cs.currentX,
+                y: cs.currentY,
+                width: CARD_W,
+                height: CARD_H,
+                zIndex: cs.zIndex
+            });
+            cs.view.update(dt);
+
+            // Committed spell glow (orange)
+            if (window.PixiCardGlow) {
+                if (!cs.glow) {
+                    cs.glow = PixiCardGlow.createGlow(CARD_W, CARD_H, STATE.root);
+                }
+                if (cs.glow) {
+                    cs.glow.setLayers(PixiCardGlow.ORANGE);
+                    cs.glow.setPosition(cs.currentX, cs.currentY, cs.zIndex - 0.5);
+                    cs.glow.setVisible(true);
+                }
+            }
+        }
+    }
+
+    // ── Click handling ──
+    function setupClickHandler() {
+        if (setupClickHandler._bound) return;
+        setupClickHandler._bound = true;
+
+        document.addEventListener('click', function (e) {
+            var hit = hitTest(e.clientX, e.clientY);
+            if (!hit) return;
+            e.stopPropagation();
+            e.preventDefault();
+            if (hit.type === 'card') {
+                if (typeof selectCard === 'function') selectCard(hit.index);
+            } else if (hit.type === 'committed') {
+                if (typeof showCardZoom === 'function') showCardZoom(hit.data);
+            }
+        }, true);
+
+        document.addEventListener('contextmenu', function (e) {
+            var hit = hitTest(e.clientX, e.clientY);
+            if (!hit) return;
+            e.stopPropagation();
+            e.preventDefault();
+            if (typeof showCardZoom === 'function') showCardZoom(hit.data);
+        }, true);
+    }
+
+    function hitTest(mx, my) {
+        var halfW = CARD_W * 0.5, halfH = CARD_H * 0.5;
+        for (var i = STATE.cards.length - 1; i >= 0; i--) {
+            var entry = STATE.cards[i];
+            if (entry.hidden) continue;
+            var cx = entry.currentX != null ? entry.currentX : entry.targetX;
+            var cy = entry.currentY != null ? entry.currentY : entry.targetY;
+            if (mx >= cx - halfW && mx <= cx + halfW && my >= cy - halfH && my <= cy + halfH) {
+                return { type: 'card', index: entry.handIndex, data: entry.data };
+            }
+        }
+        for (var j = STATE.committedSpells.length - 1; j >= 0; j--) {
+            var cs = STATE.committedSpells[j];
+            var csx = cs.currentX != null ? cs.currentX : cs.targetX;
+            var csy = cs.currentY != null ? cs.currentY : cs.targetY;
+            if (mx >= csx - halfW && mx <= csx + halfW && my >= csy - halfH && my <= csy + halfH) {
+                return { type: 'committed', data: cs.data };
+            }
+        }
+        return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  PUBLIC API
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * onStateChange(s) — called directly from render() / gameStateUpdate.
+     * Reads everything from game state, no DOM needed.
+     */
+    function onStateChange(s) {
+        if (!STATE.enabled || !s || !s.me) return;
+
+        var hand = s.me.hand || [];
+        var selIdx = -1;
+        if (typeof selected !== 'undefined' && selected && selected.fromHand && selected.idx != null) {
+            selIdx = selected.idx;
+        }
+        var committed = (typeof committedSpells !== 'undefined') ? committedSpells : [];
+
+        ensureInit().then(function (ok) {
+            if (!ok || !STATE.ready || !STATE.root) return;
+
+            // ── Reconcile hand cards ──
+            var oldByUid = new Map();
+            for (var k = 0; k < STATE.cards.length; k++) {
+                if (STATE.cards[k].uid) oldByUid.set(STATE.cards[k].uid, STATE.cards[k]);
             }
 
-            for (const [key, rec] of STATE.viewByKey.entries()) {
-                if (keep.has(key)) continue;
-                if (rec.host) rec.host.classList.remove('pixi-hand-host', 'pixi-hand-ready');
-                rec.view.destroy();
-                STATE.viewByKey.delete(key);
+            var newCards = [];
+            for (var i = 0; i < hand.length; i++) {
+                var card = hand[i];
+                var uid = card.uid || card.id || '';
+                var info = computePlayability(card, i, s);
+                var hidden = isCardHidden(i, uid, hand);
+                var existing = oldByUid.get(uid);
+
+                if (existing) {
+                    existing.data = card;
+                    existing.handIndex = i;
+                    existing.selected = (i === selIdx);
+                    existing.hidden = hidden;
+                    existing.playable = info.playable;
+                    existing.effectiveCost = info.effectiveCost;
+                    oldByUid.delete(uid);
+                    newCards.push(existing);
+                } else {
+                    var view = window.createCard(card, { inHand: true });
+                    STATE.root.addChild(view.container);
+                    newCards.push({
+                        uid: uid,
+                        data: card,
+                        view: view,
+                        handIndex: i,
+                        selected: (i === selIdx),
+                        hidden: hidden,
+                        playable: info.playable,
+                        effectiveCost: info.effectiveCost,
+                        hovered: false,
+                        targetX: 0, targetY: 0,
+                        currentX: null, currentY: null,
+                        zIndex: 1,
+                        glow: null
+                    });
+                }
             }
 
-            cleanupRemovedHosts();
+            // Destroy removed cards
+            for (var entry of oldByUid.values()) {
+                if (entry.glow) entry.glow.destroy();
+                if (entry.view) entry.view.destroy();
+            }
+            STATE.cards = newCards;
+
+            // ── Reconcile committed spells ──
+            var oldCsById = new Map();
+            for (var m = 0; m < STATE.committedSpells.length; m++) {
+                oldCsById.set(STATE.committedSpells[m].commitId, STATE.committedSpells[m]);
+            }
+
+            var newCs = [];
+            for (var j = 0; j < committed.length; j++) {
+                var cs = committed[j];
+                var csId = cs.commitId;
+                var existingCs = oldCsById.get(csId);
+                if (existingCs) {
+                    existingCs.data = cs.card;
+                    oldCsById.delete(csId);
+                    newCs.push(existingCs);
+                } else {
+                    var csView = window.createCard(cs.card, { inHand: false });
+                    STATE.root.addChild(csView.container);
+                    newCs.push({
+                        commitId: csId,
+                        data: cs.card,
+                        view: csView,
+                        targetX: 0, targetY: 0,
+                        currentX: null, currentY: null,
+                        zIndex: 1
+                    });
+                }
+            }
+
+            for (var csEntry of oldCsById.values()) {
+                if (csEntry.glow) csEntry.glow.destroy();
+                if (csEntry.view) csEntry.view.destroy();
+            }
+            STATE.committedSpells = newCs;
+
+            // Compute positions
+            computeHandLayout();
         });
+    }
+
+    // Legacy methods — kept for backward compat
+    function sync() { /* no-op */ }
+    function update(handCards, energy, opts) {
+        // Redirect to onStateChange if state is available
+        if (typeof state !== 'undefined' && state) {
+            onStateChange(state);
+        }
     }
 
     function setEnabled(value) {
         STATE.enabled = !!value;
         if (!STATE.ready || !STATE.app) return;
-
         STATE.app.canvas.style.display = STATE.enabled ? '' : 'none';
         if (!STATE.enabled) {
-            for (const rec of STATE.viewByKey.values()) {
-                if (rec.host) rec.host.classList.remove('pixi-hand-host', 'pixi-hand-ready');
-                rec.view.destroy();
+            for (var i = 0; i < STATE.cards.length; i++) {
+                if (STATE.cards[i].glow) STATE.cards[i].glow.destroy();
+                if (STATE.cards[i].view) STATE.cards[i].view.destroy();
             }
-            STATE.viewByKey.clear();
-        } else if (STATE.panel) {
-            sync(STATE.panel);
+            STATE.cards = [];
+            for (var j = 0; j < STATE.committedSpells.length; j++) {
+                if (STATE.committedSpells[j].view) STATE.committedSpells[j].view.destroy();
+            }
+            STATE.committedSpells = [];
         }
     }
 
-    function isEnabled() {
-        return STATE.enabled;
-    }
+    function isEnabled() { return STATE.enabled; }
 
     window.PixiHandLayer = {
-        sync,
-        setEnabled,
-        isEnabled
+        sync: sync,
+        update: update,
+        onStateChange: onStateChange,
+        setEnabled: setEnabled,
+        isEnabled: isEnabled,
+        hitTest: hitTest
     };
 })();

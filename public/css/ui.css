@@ -1,6 +1,39 @@
 ﻿/* ==================== UI / OVERLAYS ====================
    Cimeti\u00e8re popup, game over, preview, mulligan, card picker */
 
+/* ── Game Loading Overlay ── */
+.game-loading-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a14 100%);
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.4s ease;
+}
+.game-loading-overlay.hidden { display: none; }
+.game-loading-overlay.fade-out { opacity: 0; pointer-events: none; }
+.game-loading-content { text-align: center; }
+.game-loading-title {
+    font-family: 'Glacial Indifference', sans-serif;
+    font-size: 28px; font-weight: 700; color: #ffd700;
+    letter-spacing: 2px; margin-bottom: 24px;
+    text-transform: uppercase;
+}
+.game-loading-bar-track {
+    width: 320px; height: 8px; margin: 0 auto;
+    background: rgba(255,255,255,0.1); border-radius: 4px;
+    overflow: hidden;
+}
+.game-loading-bar-fill {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg, #ffd700, #ff8c00);
+    border-radius: 4px;
+    transition: width 0.2s ease;
+}
+.game-loading-status {
+    font-family: 'Glacial Indifference', sans-serif;
+    font-size: 14px; color: rgba(255,255,255,0.5);
+    margin-top: 14px;
+}
+
         /* Popup cimetiÃ¨re - style panneau bronze */
         .graveyard-popup {
             position: fixed;

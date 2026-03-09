@@ -498,6 +498,66 @@ function canTargetHero(spell, owner) {
     return false;
 }
 
+// ==================== ASSET PRELOAD ====================
+function _collectCardImageUrls(s) {
+    var urls = {};
+    function addCards(arr) {
+        if (!Array.isArray(arr)) return;
+        for (var i = 0; i < arr.length; i++) {
+            var c = arr[i];
+            if (c && c.image) urls['/cards/' + c.image] = true;
+        }
+    }
+    function addField(field) {
+        if (!Array.isArray(field)) return;
+        for (var r = 0; r < field.length; r++) addCards(field[r]);
+    }
+    if (s.me) { addCards(s.me.hand); addField(s.me.field); addCards(s.me.deck); }
+    if (s.opponent) { addField(s.opponent.field); }
+    return Object.keys(urls);
+}
+
+function _preloadAndStart(s) {
+    var urls = _collectCardImageUrls(s);
+    var overlay = document.getElementById('game-loading-overlay');
+    var bar = document.getElementById('game-loading-bar');
+    var status = document.getElementById('game-loading-status');
+
+    // Show loading overlay
+    overlay.classList.remove('hidden');
+
+    if (!window.PixiCardView || !window.PixiCardView.preloadAssets || urls.length === 0) {
+        // No preloader available, proceed immediately
+        overlay.classList.add('hidden');
+        _afterPreload(s);
+        return;
+    }
+
+    window.PixiCardView.preloadAssets(urls, function(loaded, total) {
+        var pct = Math.round((loaded / total) * 100);
+        bar.style.width = pct + '%';
+        status.textContent = 'Chargement... ' + loaded + '/' + total;
+    }, function() {
+        bar.style.width = '100%';
+        status.textContent = "C'est parti !";
+        // Brief pause to show 100%, then fade out
+        overlay.classList.add('fade-out');
+        setTimeout(function() {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('fade-out');
+            _afterPreload(s);
+        }, 400);
+    });
+}
+
+function _afterPreload(s) {
+    if (s.phase === 'mulligan') {
+        showModeSelector();
+    } else {
+        startGame();
+    }
+}
+
 function initSocket() {
     socket = io();
     if (window.PerfMon) window.PerfMon.attachSocket(socket);
@@ -529,12 +589,8 @@ function initSocket() {
         document.getElementById('lobby').classList.add('hidden');
         document.body.classList.remove('lobby-open');
 
-        // VÃ©rifier si on est en phase mulligan
-        if (s.phase === 'mulligan') {
-            showModeSelector();
-        } else {
-            startGame();
-        }
+        // Preload card art + fonts before showing game
+        _preloadAndStart(s);
     });
 
     socket.on('gameStateUpdate', (s) => {

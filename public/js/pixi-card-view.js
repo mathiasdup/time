@@ -1,1278 +1,853 @@
 /**
- * Pixi Card View Architecture
+ * pixi-card-view.js — GPU card renderer
  *
- * Goals:
- * - Compose card once into RenderTexture (art + frame + text + badges)
- * - Apply tilt/perspective on the baked texture (PerspectiveMesh when available)
- * - Keep glare/foil as GPU overlay (never re-render full card RT for it)
- * - Reuse one shared shadow texture for all cards
- * - Avoid per-card ticker (global ticker should drive all live cards)
+ * Reproduces the exact DOM/SVG card visuals using Canvas2D composition → PIXI.Texture.
+ * Cards are composed once at high resolution, then displayed as GPU sprites.
+ * SVG paths are drawn via Path2D for pixel-perfect match with the DOM SVG version.
+ *
+ * Draw order matches DOM z-index stacking:
+ *   z0:  Art image (clipped to inner rect)
+ *   z5:  Title bar (semi-transparent bg + text)
+ *   z5:  Text zone (semi-transparent bg + type/abilities/description)
+ *   z8:  Border frame (evenodd gradient path)
+ *   z8:  Stat orbs (ATK spiked circle, Riposte spiked diamond, HP circle)
+ *   z8:  Mana orb (gray circle + cost number)
+ *   z10: Rarity star
  */
 (function () {
     'use strict';
 
-    const DEFAULTS = {
-        cardWidth: 144,
-        cardHeight: 192,
-        rtScaleSmall: 2,
-        rtScaleLarge: 3,
-        useDomSnapshotSkin: true,
-        usePerspectiveMesh: false,
-        hiResCacheMax: 4,
-        destroyHiResOnPointerOut: true,
-        hoverScale: 1.12,
-        maxTiltDeg: 9,
-        tiltEase: 14,
-        scaleEase: 12
-    };
+    // ═══════════════════════════════════════════════════════════════
+    //  CONSTANTS
+    // ═══════════════════════════════════════════════════════════════
+    var CW = 144, CH = 192;
+    var VB_X = 10, VB_Y = 10, VB_W = 505, VB_H = 680;
+    var DEFAULT_RT_SCALE = 2;
 
-    const RUNTIME = {
-        app: null,
-        stage: null,
-        options: { ...DEFAULTS },
-        sharedShadowTexture: null,
-        sharedGlareTexture: null,
-        sharedIconCache: new Map(),
-        artTextureCache: new Map(),
-        hiResLru: [],
-        tickerAttached: false,
-        domSnapshotBlocked: false
-    };
+    // ═══════════════════════════════════════════════════════════════
+    //  RUNTIME STATE
+    // ═══════════════════════════════════════════════════════════════
+    var _app = null;
+    var _stage = null;
+    var _artCache = {};      // url -> HTMLImageElement
+    var _artLoading = {};    // url -> Promise
+    var _pathsReady = false;
+    var _fontsReady = false;
+    var _fontWaiters = [];
+    var _borderPath, _spikedCircle, _spikedDiamond, _spikedDiamondInner, _innerPath;
 
-    function clamp(value, min, max) {
-        return Math.max(min, Math.min(max, value));
+    // ═══════════════════════════════════════════════════════════════
+    //  PATH2D CACHE (lazy from SVG globals)
+    // ═══════════════════════════════════════════════════════════════
+    function ensurePaths() {
+        if (_pathsReady) return;
+        if (typeof CARD_SVG_BORDER_PATH === 'undefined') return;
+        _pathsReady = true;
+        _borderPath = new Path2D(CARD_SVG_BORDER_PATH);
+        _innerPath = new Path2D(CARD_SVG_INNER_PATH);
+        _spikedCircle = new Path2D(CARD_SVG_SPIKED_CIRCLE);
+        _spikedDiamond = new Path2D(CARD_SVG_SPIKED_DIAMOND);
+        _spikedDiamondInner = new Path2D(CARD_SVG_SPIKED_DIAMOND_INNER);
     }
 
-    function damp(current, target, rate, dt) {
-        const k = 1 - Math.exp(-rate * dt);
-        return current + (target - current) * k;
-    }
-
-    function getBlendAdd() {
-        return (window.PIXI && PIXI.BLEND_MODES && PIXI.BLEND_MODES.ADD) || 'add';
-    }
-
-    function resolveRenderer() {
-        if (RUNTIME.app && RUNTIME.app.renderer) return RUNTIME.app.renderer;
-        return null;
-    }
-
-    function tryAutoInitFromGlobals() {
-        if (RUNTIME.app && RUNTIME.app.renderer) return true;
-        if (window.CombatVFX && window.CombatVFX.app && window.CombatVFX.app.renderer) {
-            RUNTIME.app = window.CombatVFX.app;
-            RUNTIME.stage = window.CombatVFX.app.stage;
-            return true;
-        }
-        return false;
-    }
-
-    function ensureInitialized() {
-        if (!resolveRenderer()) {
-            tryAutoInitFromGlobals();
-        }
-        const renderer = resolveRenderer();
-        if (!renderer) {
-            throw new Error('PixiCardView is not initialized. Call PixiCardView.init({ app, stage }).');
-        }
-        if (!RUNTIME.sharedShadowTexture) {
-            RUNTIME.sharedShadowTexture = createSharedShadowTexture();
-        }
-        if (!RUNTIME.sharedGlareTexture) {
-            RUNTIME.sharedGlareTexture = createSharedGlareTexture();
-        }
-    }
-
-    function destroyTextureSafe(tex) {
-        if (!tex) return;
-        try {
-            tex.destroy(true);
-        } catch (err) {
-            // no-op
-        }
-    }
-
-    function createCanvasTextureFromGenerator(width, height, drawFn) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        drawFn(ctx, width, height);
-        return PIXI.Texture.from(canvas);
-    }
-
-    function createSharedShadowTexture() {
-        return createCanvasTextureFromGenerator(320, 120, (ctx, w, h) => {
-            const grad = ctx.createRadialGradient(w * 0.5, h * 0.5, 10, w * 0.5, h * 0.5, w * 0.45);
-            grad.addColorStop(0, 'rgba(0,0,0,0.48)');
-            grad.addColorStop(0.55, 'rgba(0,0,0,0.22)');
-            grad.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, w, h);
-        });
-    }
-
-    function createSharedGlareTexture() {
-        return createCanvasTextureFromGenerator(256, 256, (ctx, w, h) => {
-            const lg = ctx.createLinearGradient(0, 0, w, h);
-            lg.addColorStop(0, 'rgba(255,255,255,0.00)');
-            lg.addColorStop(0.35, 'rgba(255,255,255,0.36)');
-            lg.addColorStop(0.5, 'rgba(255,255,255,0.68)');
-            lg.addColorStop(0.65, 'rgba(255,255,255,0.36)');
-            lg.addColorStop(1, 'rgba(255,255,255,0.00)');
-            ctx.fillStyle = lg;
-            ctx.fillRect(0, 0, w, h);
-        });
-    }
-
-    function readCardArtPath(data) {
-        if (!data || !data.image) return null;
-        if (String(data.image).startsWith('/')) return data.image;
-        return `/cards/${data.image}`;
-    }
-
-    function normalizeCardData(input) {
-        const data = input || {};
-        return {
-            id: data.uid || data.id || `card-${Math.random().toString(36).slice(2)}`,
-            name: String(data.name || 'Card'),
-            image: data.image || null,
-            type: String(data.type || 'creature'),
-            abilities: Array.isArray(data.abilities) ? data.abilities : [],
-            cost: Number.isFinite(Number(data.cost)) ? Math.max(0, Math.floor(Number(data.cost))) : 0,
-            atk: Number.isFinite(Number(data.atk)) ? Math.max(0, Math.floor(Number(data.atk))) : 0,
-            hp: Number.isFinite(Number(data.currentHp ?? data.hp)) ? Math.max(0, Math.floor(Number(data.currentHp ?? data.hp))) : 0
+    // ═══════════════════════════════════════════════════════════════
+    //  ART IMAGE LOADER
+    // ═══════════════════════════════════════════════════════════════
+    function ensureFonts(cb) {
+        if (_fontsReady === true) { if (cb) cb(); return; }
+        if (cb) _fontWaiters.push(cb);
+        if (_fontsReady === 'loading') return;
+        _fontsReady = 'loading';
+        var done = function() {
+            _fontsReady = true;
+            var waiters = _fontWaiters.splice(0);
+            for (var i = 0; i < waiters.length; i++) waiters[i]();
         };
+        // Force-load all weights used by Canvas2D
+        var loads = [
+            document.fonts.load('400 16px "Glacial Indifference"'),
+            document.fonts.load('500 16px "Glacial Indifference"'),
+            document.fonts.load('700 16px "Glacial Indifference"'),
+            document.fonts.load('800 16px "Glacial Indifference"'),
+            document.fonts.load('900 16px "Glacial Indifference"')
+        ];
+        Promise.all(loads).then(done).catch(done);
     }
 
-    function canUseDomSnapshotSkin() {
-        if (!RUNTIME.options.useDomSnapshotSkin) return false;
-        if (RUNTIME.domSnapshotBlocked) return false;
-        if (typeof window === 'undefined' || typeof document === 'undefined') return false;
-        if (window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN === false) return false;
-        if (typeof window.getComputedStyle !== 'function') return false;
-        return typeof XMLSerializer !== 'undefined';
-    }
-
-    function cloneWithInlineStyles(sourceRoot) {
-        if (!sourceRoot || sourceRoot.nodeType !== 1) return null;
-        const cloneRoot = sourceRoot.cloneNode(true);
-        const srcStack = [sourceRoot];
-        const dstStack = [cloneRoot];
-
-        while (srcStack.length) {
-            const src = srcStack.pop();
-            const dst = dstStack.pop();
-            if (!src || !dst || src.nodeType !== 1 || dst.nodeType !== 1) continue;
-
-            const cs = window.getComputedStyle(src);
-            let styleText = '';
-            for (let i = 0; i < cs.length; i++) {
-                const prop = cs[i];
-                styleText += `${prop}:${cs.getPropertyValue(prop)};`;
-            }
-            dst.setAttribute('style', styleText);
-            dst.style.animation = 'none';
-            dst.style.transition = 'none';
-            dst.style.transform = 'none';
-            dst.style.cursor = 'default';
-
-            const srcChildren = src.children || [];
-            const dstChildren = dst.children || [];
-            const count = Math.min(srcChildren.length, dstChildren.length);
-            for (let i = 0; i < count; i++) {
-                srcStack.push(srcChildren[i]);
-                dstStack.push(dstChildren[i]);
-            }
-        }
-
-        return cloneRoot;
-    }
-
-    function buildDomSnapshotMarkup(sourceEl, width, height) {
-        if (!canUseDomSnapshotSkin() || !sourceEl || sourceEl.nodeType !== 1) return null;
-        const clone = cloneWithInlineStyles(sourceEl);
-        if (!clone) return null;
-
-        clone.classList.remove('pixi-hand-host', 'pixi-board-host', 'custom-dragging');
-        clone.querySelectorAll('.card-glow-canvas').forEach((el) => el.remove());
-
-        clone.style.width = `${Math.max(1, Math.round(width))}px`;
-        clone.style.height = `${Math.max(1, Math.round(height))}px`;
-        clone.style.margin = '0';
-        clone.style.left = '0';
-        clone.style.top = '0';
-        clone.style.position = 'relative';
-        clone.style.opacity = '1';
-        clone.style.visibility = 'visible';
-        clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-
-        const serializer = new XMLSerializer();
-        return serializer.serializeToString(clone);
-    }
-
-    function composeDomSnapshotTextureAsync(markup, width, height, scale) {
-        return new Promise((resolve, reject) => {
-            try {
-                if (!markup) {
-                    reject(new Error('missing-markup'));
-                    return;
-                }
-
-                const W = Math.max(1, Math.round(width));
-                const H = Math.max(1, Math.round(height));
-                const r = Math.max(1, Number(scale) || 1);
-                const pxW = Math.max(1, Math.round(W * r));
-                const pxH = Math.max(1, Math.round(H * r));
-
-                const svg = [
-                    `<svg xmlns="http://www.w3.org/2000/svg" width="${pxW}" height="${pxH}" viewBox="0 0 ${W} ${H}">`,
-                    `<foreignObject x="0" y="0" width="${W}" height="${H}">`,
-                    markup,
-                    '</foreignObject>',
-                    '</svg>'
-                ].join('');
-
-                const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                img.decoding = 'async';
-
-                img.onload = () => {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = pxW;
-                        canvas.height = pxH;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) {
-                            URL.revokeObjectURL(url);
-                            reject(new Error('canvas-context'));
-                            return;
-                        }
-                        ctx.clearRect(0, 0, pxW, pxH);
-                        ctx.drawImage(img, 0, 0, pxW, pxH);
-
-                        // Some browsers can silently produce a blank foreignObject render.
-                        // Detect an all-transparent output and keep the fallback RT instead.
-                        let hasVisiblePixel = false;
-                        try {
-                            const sampleCols = 8;
-                            const sampleRows = 8;
-                            const stepX = Math.max(1, Math.floor(pxW / sampleCols));
-                            const stepY = Math.max(1, Math.floor(pxH / sampleRows));
-                            for (let sy = 0; sy < pxH && !hasVisiblePixel; sy += stepY) {
-                                for (let sx = 0; sx < pxW; sx += stepX) {
-                                    const a = ctx.getImageData(sx, sy, 1, 1).data[3];
-                                    if (a > 0) {
-                                        hasVisiblePixel = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        } catch (sampleErr) {
-                            const sn = String(sampleErr?.name || '');
-                            const sm = String(sampleErr?.message || '');
-                            if (/securityerror/i.test(sn) || /tainted/i.test(sm)) {
-                                URL.revokeObjectURL(url);
-                                reject(new Error('tainted-dom-snapshot'));
-                                return;
-                            }
-                            hasVisiblePixel = true;
-                        }
-                        if (!hasVisiblePixel) {
-                            URL.revokeObjectURL(url);
-                            reject(new Error('blank-dom-snapshot'));
-                            return;
-                        }
-
-                        URL.revokeObjectURL(url);
-                        resolve(PIXI.Texture.from(canvas));
-                    } catch (err) {
-                        URL.revokeObjectURL(url);
-                        reject(err);
-                    }
-                };
-
-                img.onerror = (err) => {
-                    URL.revokeObjectURL(url);
-                    reject(err || new Error('snapshot-image-error'));
-                };
-
-                img.src = url;
-            } catch (err) {
-                reject(err);
-            }
-        });
-    }
-
-    function requestTexture(url, onLoaded) {
+        function loadArt(url, onLoaded) {
         if (!url) return null;
-        let entry = RUNTIME.artTextureCache.get(url);
-        if (!entry) {
-            entry = { texture: null, listeners: new Set(), loading: false };
-            RUNTIME.artTextureCache.set(url, entry);
+        if (_artCache[url]) {
+            if (onLoaded) setTimeout(function () { onLoaded(_artCache[url]); }, 0);
+            return _artCache[url];
         }
-        if (entry.texture) return entry.texture;
-        if (onLoaded) entry.listeners.add(onLoaded);
-        if (!entry.loading) {
-            entry.loading = true;
-            PIXI.Assets.load(url).then((tex) => {
-                entry.texture = tex;
-                entry.loading = false;
-                for (const fn of entry.listeners) {
-                    try {
-                        fn(tex);
-                    } catch (err) {
-                        // no-op
-                    }
-                }
-                entry.listeners.clear();
-            }).catch(() => {
-                entry.loading = false;
-            });
+        if (!_artLoading[url]) {
+            _artLoading[url] = [];
+            var img = new Image();
+            img.onload = function () {
+                _artCache[url] = img;
+                var cbs = _artLoading[url] || [];
+                delete _artLoading[url];
+                for (var i = 0; i < cbs.length; i++) cbs[i](img);
+            };
+            img.onerror = function () {
+                delete _artLoading[url];
+            };
+            img.src = url;
         }
+        if (onLoaded) _artLoading[url].push(onLoaded);
         return null;
     }
 
-    function unlistenTexture(url, fn) {
-        if (!url || !fn) return;
-        const entry = RUNTIME.artTextureCache.get(url);
-        if (!entry || !entry.listeners) return;
-        entry.listeners.delete(fn);
+    // ═══════════════════════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════════════════════
+    function toNum(v) {
+        var n = Number(v);
+        return isFinite(n) ? n : null;
     }
 
-    function getTypeLine(data) {
-        if (data.type === 'spell') return 'Spell';
-        if (data.type === 'trap') return 'Trap';
-        if (data.abilities.includes('shooter')) return 'Creature - Shooter';
-        if (data.abilities.includes('fly')) return 'Creature - Flying';
-        return 'Creature - Melee';
+    function statColor(current, base, defaultColor) {
+        var c = toNum(current), b = toNum(base);
+        if (c === null || b === null) return defaultColor || '#e5e5e5';
+        if (c > b) return '#7fff7f';
+        if (c < b) return '#790606';
+        return defaultColor || '#e5e5e5';
     }
 
-    function getAbilitiesLine(data) {
-        if (!data.abilities.length) return '';
-        const maxItems = 4;
-        return data.abilities.slice(0, maxItems).join(', ');
-    }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+    function damp(cur, tgt, rate, dt) { return cur + (tgt - cur) * (1 - Math.exp(-rate * dt)); }
 
-    function drawRoundRectPath2D(ctx, x, y, w, h, r) {
-        const rr = Math.max(0, Math.min(r, Math.min(w, h) * 0.5));
-        ctx.beginPath();
-        ctx.moveTo(x + rr, y);
-        ctx.arcTo(x + w, y, x + w, y + h, rr);
-        ctx.arcTo(x + w, y + h, x, y + h, rr);
-        ctx.arcTo(x, y + h, x, y, rr);
-        ctx.arcTo(x, y, x + w, y, rr);
-        ctx.closePath();
-    }
-
-    function extractArtSourceFromTexture(artTexture) {
-        if (!artTexture) return null;
-        const tex = artTexture;
-        const src = tex.source || tex.baseTexture || null;
-        if (src) {
-            if (src.resource && src.resource.source) return src.resource.source;
-            if (src.source) return src.source;
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: ART (SVG viewBox space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawArt(ctx, artImg) {
+        if (!artImg) {
+            // Dark fallback when art not loaded
+            ctx.save();
+            var grad = ctx.createLinearGradient(262, 10, 262, 690);
+            grad.addColorStop(0, '#2a2a3a');
+            grad.addColorStop(1, '#1a1a25');
+            ctx.fillStyle = grad;
+            ctx.fill(_innerPath);
+            ctx.restore();
+            return;
         }
-        if (tex.baseTexture && tex.baseTexture.resource && tex.baseTexture.resource.source) {
-            return tex.baseTexture.resource.source;
-        }
-        return null;
-    }
-
-    function buildCardCompositionContainer(cardData, artTexture, opts) {
-        const W = opts.cardWidth;
-        const H = opts.cardHeight;
-
-        const root = new PIXI.Container();
-
-        const bg = new PIXI.Graphics();
-        bg.roundRect(0, 0, W, H, 11);
-        bg.fill({ color: 0x1d1d23 });
-        root.addChild(bg);
-
-        if (artTexture) {
-            const art = new PIXI.Sprite(artTexture);
-            const artAreaH = Math.floor(H * 0.62);
-            const sx = W / artTexture.width;
-            const sy = artAreaH / artTexture.height;
-            const scale = Math.max(sx, sy);
-            art.scale.set(scale);
-            art.x = (W - artTexture.width * scale) * 0.5;
-            art.y = (artAreaH - artTexture.height * scale) * 0.5;
-
-            const artMask = new PIXI.Graphics();
-            artMask.roundRect(4, 4, W - 8, artAreaH - 2, 8);
-            artMask.fill({ color: 0xffffff });
-            root.addChild(artMask);
-            art.mask = artMask;
-            root.addChild(art);
-        }
-
-        const frame = new PIXI.Graphics();
-        frame.roundRect(0, 0, W, H, 11);
-        frame.stroke({ color: 0x3f3c38, width: 3 });
-        root.addChild(frame);
-
-        const nameBand = new PIXI.Graphics();
-        nameBand.roundRect(8, Math.floor(H * 0.56), W - 16, 20, 6);
-        nameBand.fill({ color: 0x000000, alpha: 0.68 });
-        root.addChild(nameBand);
-
-        const nameText = new PIXI.Text({
-            text: cardData.name,
-            style: {
-                fontFamily: 'Bree Serif, serif',
-                fontSize: 11,
-                fontWeight: '700',
-                fill: 0xffffff
-            }
-        });
-        nameText.anchor.set(0.5);
-        nameText.position.set(W * 0.5, Math.floor(H * 0.56) + 10);
-        root.addChild(nameText);
-
-        const textZone = new PIXI.Graphics();
-        textZone.roundRect(8, Math.floor(H * 0.67), W - 16, Math.floor(H * 0.23), 6);
-        textZone.fill({ color: 0x020202, alpha: 0.62 });
-        root.addChild(textZone);
-
-        const typeText = new PIXI.Text({
-            text: getTypeLine(cardData),
-            style: {
-                fontFamily: 'Quicksand, sans-serif',
-                fontSize: 9,
-                fill: 0xd9d9d9
-            }
-        });
-        typeText.anchor.set(0.5, 0);
-        typeText.position.set(W * 0.5, Math.floor(H * 0.67) + 3);
-        root.addChild(typeText);
-
-        const abilitiesLine = getAbilitiesLine(cardData);
-        if (abilitiesLine) {
-            const abilitiesText = new PIXI.Text({
-                text: abilitiesLine,
-                style: {
-                    fontFamily: 'Quicksand, sans-serif',
-                    fontSize: 9,
-                    fill: 0xffd774,
-                    fontWeight: '700',
-                    wordWrap: true,
-                    wordWrapWidth: W - 24
-                }
-            });
-            abilitiesText.anchor.set(0.5, 0);
-            abilitiesText.position.set(W * 0.5, Math.floor(H * 0.67) + 16);
-            root.addChild(abilitiesText);
-        }
-
-        const manaBadge = new PIXI.Graphics();
-        manaBadge.circle(16, 16, 13);
-        manaBadge.fill({ color: 0x2f9bff });
-        manaBadge.stroke({ color: 0x102744, width: 2 });
-        root.addChild(manaBadge);
-
-        const manaText = new PIXI.Text({
-            text: String(cardData.cost),
-            style: {
-                fontFamily: 'Merriweather Sans, sans-serif',
-                fontSize: 13,
-                fontWeight: '800',
-                fill: 0xffffff
-            }
-        });
-        manaText.anchor.set(0.5);
-        manaText.position.set(16, 16);
-        root.addChild(manaText);
-
-        if (cardData.type === 'creature') {
-            const atkBadge = new PIXI.Graphics();
-            atkBadge.circle(15, H - 15, 13);
-            atkBadge.fill({ color: 0x2fbd5f });
-            atkBadge.stroke({ color: 0x173823, width: 2 });
-            root.addChild(atkBadge);
-
-            const atkText = new PIXI.Text({
-                text: String(cardData.atk),
-                style: {
-                    fontFamily: 'Merriweather Sans, sans-serif',
-                    fontSize: 13,
-                    fontWeight: '800',
-                    fill: 0xffffff
-                }
-            });
-            atkText.anchor.set(0.5);
-            atkText.position.set(15, H - 15);
-            root.addChild(atkText);
-
-            const hpBadge = new PIXI.Graphics();
-            hpBadge.circle(W - 15, H - 15, 13);
-            hpBadge.fill({ color: 0xd24b47 });
-            hpBadge.stroke({ color: 0x4a1715, width: 2 });
-            root.addChild(hpBadge);
-
-            const hpText = new PIXI.Text({
-                text: String(cardData.hp),
-                style: {
-                    fontFamily: 'Merriweather Sans, sans-serif',
-                    fontSize: 13,
-                    fontWeight: '800',
-                    fill: 0xffffff
-                }
-            });
-            hpText.anchor.set(0.5);
-            hpText.position.set(W - 15, H - 15);
-            root.addChild(hpText);
-        }
-
-        return root;
-    }
-
-    function composeCardFallbackTexture(cardData, scale, artTexture) {
-        const renderer = resolveRenderer();
-        const W = RUNTIME.options.cardWidth;
-        const H = RUNTIME.options.cardHeight;
-        if (renderer && typeof renderer.generateTexture === 'function') {
-            let composeContainer = null;
-            try {
-                composeContainer = buildCardCompositionContainer(cardData, artTexture, RUNTIME.options);
-                const tex = renderer.generateTexture({
-                    target: composeContainer,
-                    frame: new PIXI.Rectangle(0, 0, W, H),
-                    resolution: Math.max(1, Number(scale) || 1)
-                });
-                composeContainer.destroy({ children: true });
-                return tex;
-            } catch (_) {
-                if (composeContainer) {
-                    try { composeContainer.destroy({ children: true }); } catch (_) { /* no-op */ }
-                }
-            }
-        }
-
-        const r = Math.max(1, Number(scale) || 1);
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(W * r));
-        canvas.height = Math.max(1, Math.round(H * r));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return PIXI.Texture.WHITE;
-        }
-
-        ctx.setTransform(r, 0, 0, r, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-
-        const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-        bgGrad.addColorStop(0, '#2a2a33');
-        bgGrad.addColorStop(1, '#1a1a20');
-        drawRoundRectPath2D(ctx, 0, 0, W, H, 11);
-        ctx.fillStyle = bgGrad;
-        ctx.fill();
-
-        const artAreaH = Math.floor(H * 0.62);
         ctx.save();
-        drawRoundRectPath2D(ctx, 4, 4, W - 8, artAreaH - 2, 8);
-        ctx.clip();
-        // Security-safe fallback (no drawImage) to avoid tainted-canvas tex upload failures.
-        const artGrad = ctx.createLinearGradient(0, 0, 0, artAreaH);
-        artGrad.addColorStop(0, '#44424f');
-        artGrad.addColorStop(1, '#2d2b33');
-        ctx.fillStyle = artGrad;
-        ctx.fillRect(0, 0, W, artAreaH);
+        var clip = new Path2D();
+        clip.roundRect(21, 20, 483, 660, 4);
+        ctx.clip(clip);
+        // Cover mode: xMidYMin slice (same as SVG preserveAspectRatio)
+        var imgW = artImg.naturalWidth || artImg.width;
+        var imgH = artImg.naturalHeight || artImg.height;
+        if (imgW > 0 && imgH > 0) {
+            var scale = Math.max(525 / imgW, 700 / imgH);
+            var dw = imgW * scale;
+            var dh = imgH * scale;
+            var dx = (525 - dw) / 2;
+            var dy = 0;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(artImg, dx, dy, dw, dh);
+        }
         ctx.restore();
+    }
 
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#3f3c38';
-        drawRoundRectPath2D(ctx, 0, 0, W, H, 11);
-        ctx.stroke();
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: BORDER FRAME (SVG viewBox space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawBorder(ctx, theme) {
+        var grad = ctx.createLinearGradient(10, 10, 515, 690);
+        grad.addColorStop(0, theme.borderDark);
+        grad.addColorStop(0.5, theme.borderLight);
+        grad.addColorStop(1, theme.borderDark);
+        ctx.fillStyle = grad;
+        ctx.fill(_borderPath, 'evenodd');
+        ctx.strokeStyle = theme.borderDark;
+        ctx.lineWidth = 0.5;
+        ctx.stroke(_borderPath);
+    }
 
-        drawRoundRectPath2D(ctx, 8, Math.floor(H * 0.56), W - 16, 20, 6);
-        ctx.fillStyle = 'rgba(0,0,0,0.68)';
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: STAT TEXT with shadow (SVG local space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawStatText(ctx, text, fontSize, color) {
+        ctx.font = 'bold ' + fontSize + 'px "Glacial Indifference", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = color;
+        // SVG dominant-baseline="central" ≈ alphabetic baseline shifted up by ~0.35em
+        var yOffset = fontSize * 0.36;
+        // Shadow: tight drop shadow matching SVG feDropShadow
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 1;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1;
+        ctx.fillText(String(text), 0, yOffset);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: CREATURE STATS (SVG viewBox space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawCreatureStats(ctx, card, fontsOk) {
+        var atkVal = toNum(card.atk) !== null ? toNum(card.atk) : 0;
+        var riposteVal = toNum(card.riposte) !== null ? toNum(card.riposte) : 0;
+        var hpVal = toNum(card.currentHp != null ? card.currentHp : card.hp) !== null
+            ? toNum(card.currentHp != null ? card.currentHp : card.hp) : 0;
+
+        var atkColor = card.isBuilding ? '#e5e5e5' : statColor(card.atk, card.baseAtk != null ? card.baseAtk : card.atk, '#e5e5e5');
+        var riposteColor = statColor(card.riposte, card.baseRiposte != null ? card.baseRiposte : card.riposte, '#e5e5e5');
+        var rawHp = card.currentHp != null ? card.currentHp : card.hp;
+        var baseHp = card.baseHp != null ? card.baseHp : card.hp;
+        var hpColor = statColor(rawHp, baseHp, '#efefef');
+
+        // ATK (Spiked Circle) — translate(450, 435) scale(0.34)
+        if (!card.isBuilding) {
+            ctx.save();
+            ctx.translate(450, 435);
+            ctx.scale(0.34, 0.34);
+            // Outer glow
+            ctx.fillStyle = 'rgba(221,221,221,0.459)';
+            ctx.fill(_spikedCircle);
+            // Inner circle with gradient
+            var starGrad = ctx.createLinearGradient(-95, -95, 95, 95);
+            starGrad.addColorStop(0, '#3a3a3a');
+            starGrad.addColorStop(1, '#1a1a1a');
+            ctx.fillStyle = starGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, 95, 0, Math.PI * 2);
+            ctx.fill();
+            if (fontsOk) drawStatText(ctx, atkVal, 170, atkColor);
+            ctx.restore();
+
+            // RIPOSTE (Spiked Diamond) — translate(450, 534) scale(0.36)
+            ctx.save();
+            ctx.translate(450, 534);
+            ctx.scale(0.36, 0.36);
+            ctx.fillStyle = 'rgba(221,221,221,0.459)';
+            ctx.fill(_spikedDiamond);
+            var starGrad2 = ctx.createLinearGradient(-108, -108, 108, 108);
+            starGrad2.addColorStop(0, '#3a3a3a');
+            starGrad2.addColorStop(1, '#1a1a1a');
+            ctx.fillStyle = starGrad2;
+            ctx.fill(_spikedDiamondInner);
+            if (fontsOk) drawStatText(ctx, riposteVal, 160, riposteColor);
+            ctx.restore();
+        }
+
+        // HP (Circle) — translate(450, 629) scale(0.34)
+        ctx.save();
+        ctx.translate(450, 629);
+        ctx.scale(0.34, 0.34);
+        ctx.fillStyle = 'rgba(221,221,221,0.459)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 116, 0, Math.PI * 2);
         ctx.fill();
+        var hpGrad;
+        if (card.isBuilding) {
+            hpGrad = ctx.createLinearGradient(-100, -100, 100, 100);
+            hpGrad.addColorStop(0, '#5a5e62');
+            hpGrad.addColorStop(0.5, '#44484c');
+            hpGrad.addColorStop(1, '#2e3236');
+        } else {
+            hpGrad = ctx.createLinearGradient(-100, -100, 100, 100);
+            hpGrad.addColorStop(0, '#f472b6');
+            hpGrad.addColorStop(0.5, '#e11d48');
+            hpGrad.addColorStop(1, '#be123c');
+        }
+        ctx.fillStyle = hpGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, 100, 0, Math.PI * 2);
+        ctx.fill();
+        if (fontsOk) drawStatText(ctx, hpVal, card.isBuilding ? 180 : 170, hpColor);
+        ctx.restore();
+    }
 
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 11px "Bree Serif", serif';
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: MANA ORB (SVG viewBox space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawMana(ctx, card, discountedCost) {
+        var cost = (discountedCost != null) ? discountedCost : card.cost;
+        var isDiscounted = (discountedCost != null);
+
+        ctx.save();
+        ctx.translate(68, 126);
+        // Outer stroke ring (r=32, stroke-width=8, stroke-opacity=0.52)
+        ctx.beginPath();
+        ctx.arc(0, 0, 36, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(209,209,209,0.52)';
+        ctx.fill();
+        // Inner fill
+        ctx.beginPath();
+        ctx.arc(0, 0, 32, 0, Math.PI * 2);
+        ctx.fillStyle = '#d1d1d1';
+        ctx.fill();
+        // Cost text
+        ctx.font = '900 58px "Glacial Indifference", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = isDiscounted ? '#4caf50' : '#292929';
+        ctx.fillText(String(cost != null ? cost : ''), 0, 58 * 0.36);
+        ctx.restore();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: TITLE BAR (display pixel space, ctx pre-scaled by rtScale)
+    // ═══════════════════════════════════════════════════════════════
+    function drawTitle(ctx, card, theme, s) {
+        s = s || 1;
+        var x = Math.round(CW * 0.02 * s);
+        var y = Math.round(CH * 0.01 * s);
+        var w = Math.round((CW - 2 * Math.round(CW * 0.02)) * s);
+        var padTop = 4 * s, padBot = 3 * s, padLR = 4 * s;
+
+        var bgColor = card.titleColor || 'rgba(43,43,43,0.4)';
+        ctx.fillStyle = bgColor;
+
+        var text = (card.name || '').toUpperCase();
+        var maxWidth = w - padLR * 2;
+        var fontSize = 8 * s;
+        ctx.font = '800 ' + fontSize + 'px "Glacial Indifference", sans-serif';
+        var m = ctx.measureText(text);
+        while (m.width > maxWidth && fontSize > 4 * s) {
+            fontSize -= 0.5 * s;
+            ctx.font = '800 ' + fontSize + 'px "Glacial Indifference", sans-serif';
+            m = ctx.measureText(text);
+        }
+        var lineH = fontSize * 1.2;
+        var barH = padTop + lineH + padBot;
+        ctx.fillRect(x, y, w, barH);
+
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(cardData.name || 'Card', W * 0.5, Math.floor(H * 0.56) + 10, W - 24);
+        ctx.fillStyle = theme.titleColor || '#e5e5e5';
+        if ('letterSpacing' in ctx) ctx.letterSpacing = Math.round(s) + 'px';
+        ctx.fillText(text, x + w / 2, y + padTop + lineH / 2);
+        if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    }
 
-        drawRoundRectPath2D(ctx, 8, Math.floor(H * 0.67), W - 16, Math.floor(H * 0.23), 6);
-        ctx.fillStyle = 'rgba(2,2,2,0.62)';
-        ctx.fill();
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: TEXT ZONE — in-hand only (display pixel space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawTextZone(ctx, card, theme, domEl, s) {
+        s = s || 1;
+        var x = Math.round(CW * 0.025 * s);
+        var y = Math.round(CH * 0.55 * s);
+        var w = Math.round((CW - Math.round(CW * 0.025) - Math.round(CW * 0.02)) * s);
+        var h = Math.round((CH - Math.round(CH * 0.01) - Math.round(CH * 0.55)) * s);
 
-        ctx.fillStyle = '#d9d9d9';
-        ctx.font = '9px "Quicksand", sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.fillText(getTypeLine(cardData), W * 0.5, Math.floor(H * 0.67) + 3, W - 24);
+        // Background
+        ctx.fillStyle = theme.darkBase + '0.8)';
+        ctx.fillRect(x, y, w, h);
 
-        const abilitiesLine = getAbilitiesLine(cardData);
-        if (abilitiesLine) {
-            ctx.fillStyle = '#ffd774';
-            ctx.font = '700 9px "Quicksand", sans-serif';
-            ctx.fillText(abilitiesLine, W * 0.5, Math.floor(H * 0.67) + 16, W - 24);
-        }
-
-        ctx.fillStyle = '#2f9bff';
+        // Border top
+        ctx.strokeStyle = theme.typeSep || 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = s;
         ctx.beginPath();
-        ctx.arc(16, 16, 13, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#102744';
-        ctx.lineWidth = 2;
+        ctx.moveTo(x, y + 0.5 * s);
+        ctx.lineTo(x + w, y + 0.5 * s);
         ctx.stroke();
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '800 13px "Merriweather Sans", sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(cardData.cost ?? 0), 16, 16);
 
-        if (cardData.type === 'creature') {
-            ctx.fillStyle = '#2fbd5f';
-            ctx.beginPath();
-            ctx.arc(15, H - 15, 13, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#173823';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '800 13px "Merriweather Sans", sans-serif';
-            ctx.fillText(String(cardData.atk ?? 0), 15, H - 15);
+        var textX = x + 3 * s;
+        var textW = w - 33 * s;
+        var curY = y + 2 * s;
 
-            ctx.fillStyle = '#d24b47';
-            ctx.beginPath();
-            ctx.arc(W - 15, H - 15, 13, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#4a1715';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(String(cardData.hp ?? 0), W - 15, H - 15);
+        // Type line — always use clean-encoded builder
+        var typeLine = buildTypeLine(card);
+        if (typeLine) {
+            ctx.font = '400 ' + (7 * s) + 'px "Glacial Indifference", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#efefef';
+            ctx.fillText(typeLine, textX, curY);
+            curY += 9 * s;
         }
 
-        return PIXI.Texture.from(canvas);
-    }
+        // Separator gradient line
+        var sepGrad = ctx.createLinearGradient(textX, 0, textX + textW, 0);
+        sepGrad.addColorStop(0, 'transparent');
+        sepGrad.addColorStop(0.5, theme.typeSep || 'rgba(255,255,255,0.25)');
+        sepGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = sepGrad;
+        ctx.fillRect(textX, curY, textW, s);
+        curY += 4 * s;
 
-    function supportsPerspectiveMesh() {
-        if (!RUNTIME.options.usePerspectiveMesh) return false;
-        return typeof PIXI.PerspectiveMesh === 'function';
-    }
-
-    function createPerspectiveDisplay(texture) {
-        if (supportsPerspectiveMesh()) {
-            return new PIXI.PerspectiveMesh({
-                texture
-            });
-        }
-        return new PIXI.Sprite(texture);
-    }
-
-    function setPerspectiveCornersCompat(mesh, corners) {
-        if (!mesh) return false;
-
-        if (typeof mesh.setCorners === 'function') {
-            mesh.setCorners(
-                corners.tl.x, corners.tl.y,
-                corners.tr.x, corners.tr.y,
-                corners.br.x, corners.br.y,
-                corners.bl.x, corners.bl.y
-            );
-            return true;
-        }
-
-        if (typeof mesh.setCorner === 'function') {
-            const byName = [
-                ['topLeft', corners.tl],
-                ['topRight', corners.tr],
-                ['bottomRight', corners.br],
-                ['bottomLeft', corners.bl]
-            ];
-            try {
-                for (const [name, p] of byName) {
-                    mesh.setCorner(name, p.x, p.y);
-                }
-                return true;
-            } catch (err) {
-                // Try numeric fallback.
+        // Abilities text (yellow) — always use our own clean-encoded names
+        var abilitiesText = buildAbilitiesText(card);
+        if (abilitiesText) {
+            ctx.font = '900 ' + (8 * s) + 'px "Glacial Indifference", sans-serif';
+            ctx.fillStyle = '#f3b712';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            var abLines = wrapText(ctx, abilitiesText, textW);
+            for (var ai = 0; ai < abLines.length; ai++) {
+                if (curY > y + h - 4 * s) break;
+                ctx.fillText(abLines[ai], textX, curY);
+                curY += 10 * s;
             }
-            const byIndex = [corners.tl, corners.tr, corners.br, corners.bl];
-            try {
-                for (let i = 0; i < byIndex.length; i++) {
-                    mesh.setCorner(i, byIndex[i].x, byIndex[i].y);
-                }
-                return true;
-            } catch (err) {
-                return false;
-            }
+            curY += 2 * s;
         }
 
-        return false;
-    }
-
-    function touchHiResLru(view) {
-        const list = RUNTIME.hiResLru;
-        const idx = list.indexOf(view);
-        if (idx >= 0) list.splice(idx, 1);
-        list.push(view);
-    }
-
-    function destroyHiResTexture(view) {
-        if (!view || !view.__largeRT) return;
-        const old = view.__largeRT;
-        view.__largeRT = null;
-        destroyTextureSafe(old);
-        const list = RUNTIME.hiResLru;
-        const idx = list.indexOf(view);
-        if (idx >= 0) list.splice(idx, 1);
-        if (view.__usingLarge) {
-            view.__usingLarge = false;
-            if (view.__display && view.__smallRT) {
-                view.__display.texture = view.__smallRT;
+        // Description text
+        var specialText = '';
+        if (domEl) {
+            var spEl = domEl.querySelector('.arena-special');
+            if (spEl) specialText = spEl.textContent || '';
+        }
+        if (!specialText && card.description) specialText = card.description;
+        if (specialText) {
+            ctx.font = '500 ' + (8 * s) + 'px "Glacial Indifference", sans-serif';
+            ctx.fillStyle = theme.textColor || '#d0d0d0';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            var spLines = wrapText(ctx, specialText, textW);
+            for (var si = 0; si < spLines.length; si++) {
+                if (curY > y + h - 4 * s) break;
+                ctx.fillText(spLines[si], textX, curY);
+                curY += 10 * s;
             }
         }
     }
 
-    function evictHiResIfNeeded() {
-        const max = Math.max(1, RUNTIME.options.hiResCacheMax | 0);
-        const list = RUNTIME.hiResLru;
-        while (list.length > max) {
-            const victim = list.shift();
-            if (!victim) continue;
-            if (victim.__isHovered) {
-                // Keep hovered card alive, move it to tail and continue.
-                list.push(victim);
-                if (list.length <= max) break;
-                continue;
-            }
-            destroyHiResTexture(victim);
-        }
-    }
-
-    function buildCardApi(initialData, creationOpts) {
-        ensureInitialized();
-
-        const data = normalizeCardData(initialData);
-        const createOpts = creationOpts || {};
-        const opts = RUNTIME.options;
-        const cardWidth = opts.cardWidth;
-        const cardHeight = opts.cardHeight;
-        let domSnapshotMarkup = null;
-        if (canUseDomSnapshotSkin() && createOpts.domSourceEl && createOpts.domSourceEl.nodeType === 1) {
-            domSnapshotMarkup = buildDomSnapshotMarkup(createOpts.domSourceEl, cardWidth, cardHeight);
-        }
-
-        const container = new PIXI.Container();
-        container.eventMode = 'static';
-        container.sortableChildren = true;
-        container.hitArea = new PIXI.Rectangle(-cardWidth * 0.5, -cardHeight * 0.5, cardWidth, cardHeight);
-
-        const shadow = new PIXI.Sprite(RUNTIME.sharedShadowTexture);
-        shadow.anchor.set(0.5);
-        shadow.alpha = 0.56;
-        shadow.zIndex = 0;
-        container.addChild(shadow);
-
-        const smallArtPath = readCardArtPath(data);
-        const artTexture = requestTexture(smallArtPath, onArtTextureReady);
-        const smallRT = composeCardFallbackTexture(data, opts.rtScaleSmall, artTexture);
-        const display = createPerspectiveDisplay(smallRT);
-        display.zIndex = 10;
-        display.eventMode = 'none';
-        container.addChild(display);
-
-        const glare = new PIXI.Sprite(RUNTIME.sharedGlareTexture);
-        glare.anchor.set(0.5);
-        glare.blendMode = getBlendAdd();
-        glare.alpha = 0;
-        glare.tint = 0xffffff;
-        glare.eventMode = 'none';
-        glare.zIndex = 20;
-        container.addChild(glare);
-
-        // Subtle foil tint layer, still overlay-only and fully GPU-side.
-        const foil = new PIXI.Sprite(PIXI.Texture.WHITE);
-        foil.anchor.set(0.5);
-        foil.alpha = 0.0;
-        foil.tint = 0x88c8ff;
-        foil.blendMode = getBlendAdd();
-        foil.eventMode = 'none';
-        foil.zIndex = 21;
-        container.addChild(foil);
-
-        const state = {
-            x: 0,
-            y: 0,
-            width: cardWidth,
-            height: cardHeight,
-            baseScale: 1,
-            zIndex: 0,
-            hoverScale: opts.hoverScale,
-            isHovered: false,
-            px: 0,
-            py: 0,
-            nx: 0,
-            ny: 0,
-            targetTiltXDeg: 0,
-            targetTiltYDeg: 0,
-            curTiltXDeg: 0,
-            curTiltYDeg: 0,
-            curScale: 1
-        };
-
-        let destroyed = false;
-        let largeRT = null;
-        let usingLarge = false;
-        let pendingArtRecompose = false;
-        let domSmallToken = 0;
-        let domLargeToken = 0;
-
-        function scheduleDomSnapshot(kind, scale) {
-            if (!domSnapshotMarkup || destroyed) return;
-            const token = (kind === 'large') ? (++domLargeToken) : (++domSmallToken);
-            composeDomSnapshotTextureAsync(domSnapshotMarkup, cardWidth, cardHeight, scale).then((tex) => {
-                if (destroyed) {
-                    destroyTextureSafe(tex);
-                    return;
-                }
-                if (kind === 'large') {
-                    if (token !== domLargeToken) {
-                        destroyTextureSafe(tex);
-                        return;
-                    }
-                    const oldLarge = largeRT;
-                    largeRT = tex;
-                    api.__largeRT = tex;
-                    if (usingLarge) {
-                        display.texture = tex;
-                    }
-                    destroyTextureSafe(oldLarge);
-                    return;
-                }
-                if (token !== domSmallToken) {
-                    destroyTextureSafe(tex);
-                    return;
-                }
-                const oldSmall = api.__smallRT;
-                api.__smallRT = tex;
-                if (!usingLarge) {
-                    display.texture = tex;
-                }
-                destroyTextureSafe(oldSmall);
-            }).catch((err) => {
-                const msg = String(err?.message || err || '');
-                if (/tainted-dom-snapshot/i.test(msg)) {
-                    RUNTIME.domSnapshotBlocked = true;
-                    if (typeof window !== 'undefined') {
-                        window.ENABLE_PIXI_DOM_SNAPSHOT_SKIN = false;
-                    }
-                    // This card instance must exit snapshot mode and continue
-                    // with normal art-based composition.
-                    domSnapshotMarkup = null;
-                    domSmallToken += 1;
-                    domLargeToken += 1;
-                    pendingArtRecompose = true;
-                }
-                // Keep fallback texture if snapshot generation fails.
-            });
-        }
-
-        function refreshDomSnapshotFromElement(sourceEl) {
-            if (!canUseDomSnapshotSkin() || !sourceEl || sourceEl.nodeType !== 1) return false;
-            const markup = buildDomSnapshotMarkup(sourceEl, cardWidth, cardHeight);
-            if (!markup) return false;
-            domSnapshotMarkup = markup;
-            scheduleDomSnapshot('small', opts.rtScaleSmall);
-            if (largeRT || usingLarge) {
-                scheduleDomSnapshot('large', opts.rtScaleLarge);
-            }
-            return true;
-        }
-
-        function onArtTextureReady() {
-            if (destroyed) return;
-            if (domSnapshotMarkup) return;
-            // Recompose once when art is loaded (still not per-frame).
-            pendingArtRecompose = true;
-        }
-
-        function recomposeTexturesIfNeeded() {
-            if (!pendingArtRecompose || destroyed) return;
-            if (domSnapshotMarkup) return;
-            pendingArtRecompose = false;
-            const loadedArt = requestTexture(smallArtPath, onArtTextureReady);
-            if (!loadedArt) return;
-
-            const newSmall = composeCardFallbackTexture(data, opts.rtScaleSmall, loadedArt);
-            const oldSmall = api.__smallRT;
-            api.__smallRT = newSmall;
-            if (!usingLarge) {
-                display.texture = newSmall;
-            }
-            destroyTextureSafe(oldSmall);
-
-            if (largeRT) {
-                const newLarge = composeCardFallbackTexture(data, opts.rtScaleLarge, loadedArt);
-                const oldLarge = largeRT;
-                largeRT = newLarge;
-                api.__largeRT = newLarge;
-                if (usingLarge) {
-                    display.texture = newLarge;
-                }
-                destroyTextureSafe(oldLarge);
-            }
-        }
-
-        function ensureLargeTexture() {
-            if (destroyed) return;
-            if (!largeRT) {
-                const loadedArt = requestTexture(smallArtPath, onArtTextureReady);
-                largeRT = composeCardFallbackTexture(data, opts.rtScaleLarge, loadedArt);
-                api.__largeRT = largeRT;
-                if (domSnapshotMarkup) {
-                    scheduleDomSnapshot('large', opts.rtScaleLarge);
-                }
-            }
-            usingLarge = true;
-            api.__usingLarge = true;
-            display.texture = largeRT;
-            touchHiResLru(api);
-            evictHiResIfNeeded();
-        }
-
-        function releaseLargeTexture() {
-            if (!largeRT) return;
-            if (opts.destroyHiResOnPointerOut) {
-                destroyTextureSafe(largeRT);
-                largeRT = null;
-                api.__largeRT = null;
-                domLargeToken += 1;
-            }
-            usingLarge = false;
-            api.__usingLarge = false;
-            display.texture = api.__smallRT;
-
-            const list = RUNTIME.hiResLru;
-            const idx = list.indexOf(api);
-            if (idx >= 0) list.splice(idx, 1);
-        }
-
-        function applyLayoutAndPerspective() {
-            const w = state.width * state.baseScale * state.curScale;
-            const h = state.height * state.baseScale * state.curScale;
-
-            container.position.set(state.x, state.y);
-            container.zIndex = state.zIndex;
-            container.hitArea = new PIXI.Rectangle(-w * 0.5, -h * 0.5, w, h);
-
-            shadow.position.set(0, h * 0.44 + 6);
-            shadow.width = w * 0.92;
-            shadow.height = h * 0.34;
-
-            glare.position.set(0, 0);
-            glare.width = w * 1.05;
-            glare.height = h * 1.05;
-            foil.position.set(0, 0);
-            foil.width = w;
-            foil.height = h;
-
-            const tx = clamp(state.curTiltXDeg / opts.maxTiltDeg, -1, 1);
-            const ty = clamp(state.curTiltYDeg / opts.maxTiltDeg, -1, 1);
-            const dx = ty * w * 0.07;
-            const dy = tx * h * 0.07;
-
-            const topLeft = { x: -dx, y: +dy };
-            const topRight = { x: w - dx, y: -dy };
-            const bottomRight = { x: w + dx, y: h - dy };
-            const bottomLeft = { x: +dx, y: h + dy };
-
-            const usedPerspective = setPerspectiveCornersCompat(display, {
-                tl: topLeft,
-                tr: topRight,
-                br: bottomRight,
-                bl: bottomLeft
-            });
-
-            if (usedPerspective) {
-                display.position.set(-w * 0.5, -h * 0.5);
-                display.skew.set(0, 0);
-                display.rotation = 0;
-                display.width = w;
-                display.height = h;
+    function wrapText(ctx, text, maxWidth) {
+        var words = text.split(/\s+/);
+        var lines = [];
+        var current = '';
+        for (var i = 0; i < words.length; i++) {
+            var test = current ? current + ' ' + words[i] : words[i];
+            if (ctx.measureText(test).width > maxWidth && current) {
+                lines.push(current);
+                current = words[i];
             } else {
-                // Fallback if PerspectiveMesh is not available.
-                display.position.set(0, 0);
-                display.anchor && display.anchor.set(0.5);
-                display.width = w;
-                display.height = h;
-                display.skew.set(ty * 0.07, -tx * 0.07);
-                display.rotation = ty * 0.04;
+                current = test;
             }
+        }
+        if (current) lines.push(current);
+        return lines;
+    }
 
-            // Overlay shading reacts to pointer and tilt, but card RT is untouched.
-            const hover = state.isHovered ? 1 : 0;
-            glare.alpha = hover * (0.16 + Math.abs(state.nx) * 0.18 + Math.abs(state.ny) * 0.08);
-            glare.rotation = state.nx * 0.18 + state.ny * 0.05;
-            glare.x = state.nx * w * 0.06;
-            glare.y = state.ny * h * 0.04;
+    // ═══════════════════════════════════════════════════════════════
+    //  DRAW: RARITY STAR (display pixel space)
+    // ═══════════════════════════════════════════════════════════════
+    function drawRarity(ctx, card, s) {
+        s = s || 1;
+        var rarityMap = (typeof _RARITY_MAP !== 'undefined') ? _RARITY_MAP : { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'mythic', 5: 'platinum' };
+        var rarityClass = rarityMap[card.edition] || 'common';
+        var rarity = (typeof CARD_RARITIES !== 'undefined') ? CARD_RARITIES[rarityClass] : null;
+        if (!rarity) return;
 
-            foil.alpha = hover * (0.03 + Math.abs(state.ny) * 0.04);
-            foil.tint = state.nx >= 0 ? 0x9fd8ff : 0xffe4a3;
+        ctx.save();
+        ctx.font = (8 * s) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = rarity.color;
+        ctx.shadowColor = rarity.glow + '0.6)';
+        ctx.shadowBlur = 6 * s;
+        ctx.fillText('\u2726', CW * s / 2, CH * 0.98 * s);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  TEXT HELPERS (fallback when no DOM element available)
+    // ═══════════════════════════════════════════════════════════════
+    function buildTypeLine(card) {
+        var isSpell = card.type === 'spell';
+        var isTrap = card.type === 'trap';
+        if (isTrap) return 'Pi\u00e8ge';
+        if (isSpell) {
+            if (card.spellSpeed !== undefined) return 'Sort - Vitesse ' + card.spellSpeed;
+            if (card.spellType) {
+                var m = { offensif: 'Offensif', 'defensif': 'D\u00e9fensif', hybride: 'Hybride' };
+                return 'Sort - ' + (m[card.spellType] || card.spellType);
+            }
+            return 'Sort';
+        }
+        if (card.isBuilding) {
+            var t = 'B\u00e2timent';
+            if (card.creatureType && typeof _CREATURE_TYPE_NAMES !== 'undefined' && _CREATURE_TYPE_NAMES[card.creatureType])
+                t += ' - ' + _CREATURE_TYPE_NAMES[card.creatureType];
+            return t;
+        }
+        var combatType = 'M\u00eal\u00e9e';
+        if (card.combatType === 'shooter' || (card.abilities && card.abilities.indexOf('shooter') >= 0)) combatType = 'Tireur';
+        else if (card.combatType === 'fly' || (card.abilities && card.abilities.indexOf('fly') >= 0)) combatType = 'Volant';
+        var line = 'Cr\u00e9ature - ' + combatType;
+        if (card.creatureType && typeof _CREATURE_TYPE_NAMES !== 'undefined' && _CREATURE_TYPE_NAMES[card.creatureType])
+            line += ' - ' + _CREATURE_TYPE_NAMES[card.creatureType];
+        return line;
+    }
+
+    // Own ability names map with clean Unicode escapes (bypasses double-encoded game-render.js)
+    var _PIXI_ABILITY_NAMES = {
+        haste: 'C\u00e9l\u00e9rit\u00e9', superhaste: 'Superc\u00e9l\u00e9rit\u00e9', intangible: 'Intangible',
+        trample: 'Pi\u00e9tinement', power: 'Puissance', immovable: 'Immobile', wall: 'Mur',
+        regeneration: 'R\u00e9g\u00e9n\u00e9ration', protection: 'Protection',
+        spellBoost: 'Sort renforc\u00e9', enhance: 'Am\u00e9lioration', bloodthirst: 'Soif de sang',
+        melody: 'M\u00e9lodie', camouflage: 'Camouflage', lethal: 'Toucher mortel',
+        spectral: 'Spectral', poison: 'Poison', untargetable: 'Inciblable', entrave: 'Entrave',
+        lifelink: 'Lien vital', lifedrain: 'Drain de vie', dissipation: 'Dissipation',
+        antitoxin: 'Antitoxine', soinToxique: 'Soin toxique', unsacrificable: 'Non sacrifiable',
+        provocation: 'Provocation', deflexion: 'D\u00e9flexion', cleave: 'Frappe large'
+    };
+
+    function buildAbilitiesText(card) {
+        if (!card.abilities || !card.abilities.length) return '';
+        var names = _PIXI_ABILITY_NAMES;
+        var parts = [];
+        for (var i = 0; i < card.abilities.length; i++) {
+            var a = card.abilities[i];
+            if (a === 'shooter' || a === 'fly') continue;
+            var n = names[a] || a;
+            // Append numeric value if available
+            if (a === 'cleave' && card.cleaveX) n += ' ' + card.cleaveX;
+            else if (a === 'power' && card.powerX) n += ' ' + card.powerX;
+            else if (a === 'regeneration' && card.regenerationX) n += ' ' + card.regenerationX;
+            else if (a === 'spellBoost' && card.spellBoostAmount) n += ' ' + card.spellBoostAmount;
+            else if (a === 'enhance' && card.enhanceAmount) n += ' ' + card.enhanceAmount;
+            else if (a === 'bloodthirst' && card.bloodthirstAmount) n += ' ' + card.bloodthirstAmount;
+            else if (a === 'poison' && card.poisonX) n += ' ' + card.poisonX;
+            else if (a === 'entrave' && card.entraveX) n += ' ' + card.entraveX;
+            else if (a === 'lifedrain' && card.lifedrainX) n += ' ' + card.lifedrainX;
+            else if (a === 'lifelink' && card.lifelinkX) n += ' ' + card.lifelinkX;
+            parts.push(n);
+        }
+        if (card.sacrifice) parts.push('Sacrifice ' + card.sacrifice);
+        return parts.join(', ');
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  COMPOSE CARD → Canvas
+    // ═══════════════════════════════════════════════════════════════
+    function composeCard(card, rtScale, inHand, artImg, domEl) {
+        ensurePaths();
+        if (!_pathsReady) return null;
+        var fontsOk = (_fontsReady === true);
+
+
+        var theme = (typeof CARD_THEMES !== 'undefined' && CARD_THEMES[card.faction])
+            ? CARD_THEMES[card.faction]
+            : (typeof CARD_THEMES !== 'undefined' ? CARD_THEMES.black : {
+                borderDark: '#3a3a4a', borderLight: '#7a7a8a', border: '#5a5a6a',
+                titleColor: '#e5e5e5', textColor: '#c0bcc8',
+                darkBase: 'rgba(8,6,12,', typeSep: 'rgba(167,139,250,0.25)'
+            });
+
+        var isSpell = card.type === 'spell';
+        var isTrap = card.type === 'trap';
+        var noStats = isSpell || isTrap;
+
+        var cw = Math.ceil(CW * rtScale);
+        var ch = Math.ceil(CH * rtScale);
+        var canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // ── Layer z0: Art (SVG viewBox space) ──
+        ctx.save();
+        ctx.scale(cw / VB_W, ch / VB_H);
+        ctx.translate(-VB_X, -VB_Y);
+        drawArt(ctx, artImg);
+        ctx.restore();
+
+        // ── Layer z5: Title bar (display pixel space) — in-hand only ──
+        if (inHand && fontsOk) {
+            ctx.save();
+            drawTitle(ctx, card, theme, rtScale);
+            ctx.restore();
         }
 
-        function onPointerMove(evt) {
+        // ── Layer z5: Text zone (display pixel space) — in-hand only ──
+        if (inHand && fontsOk) {
+            ctx.save();
+            drawTextZone(ctx, card, theme, domEl, rtScale);
+            ctx.restore();
+        }
+
+        // ── Layer z8: Border frame (SVG viewBox space) ──
+        ctx.save();
+        ctx.scale(cw / VB_W, ch / VB_H);
+        ctx.translate(-VB_X, -VB_Y);
+        drawBorder(ctx, theme);
+
+        // ── Layer z8: Stats (SVG viewBox space) ──
+        if (!noStats) {
+            drawCreatureStats(ctx, card, fontsOk);
+        }
+
+        // ── Layer z8: Mana orb (SVG viewBox space) — in-hand only ──
+        if (inHand && fontsOk) {
+            drawMana(ctx, card);
+        }
+        ctx.restore();
+
+        // ── Layer z10: Rarity star (display pixel space) — in-hand only ──
+        if (inHand && fontsOk) {
+            ctx.save();
+            drawRarity(ctx, card, rtScale);
+            ctx.restore();
+        }
+
+        return canvas;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CARD API — buildCardApi(data, options) → card controller
+    // ═══════════════════════════════════════════════════════════════
+    function buildCardApi(initialData, creationOpts) {
+        var data = initialData || {};
+        var opts = creationOpts || {};
+        var inHand = !!opts.inHand;
+        var domEl = opts.domSourceEl || null;
+        var rtScale = opts.rtScale || DEFAULT_RT_SCALE;
+
+        // Art URL
+        var artUrl = data.image ? ('/cards/' + data.image) : null;
+        var artImg = artUrl ? (_artCache[artUrl] || null) : null;
+
+        // Compose initial texture (may have dark art fallback if image not cached yet)
+        var cardCanvas = composeCard(data, rtScale, inHand, artImg, domEl);
+        var texture = cardCanvas ? PIXI.Texture.from(cardCanvas) : PIXI.Texture.WHITE;
+
+        // Container
+        var container = new PIXI.Container();
+        container.sortableChildren = true;
+
+        // Sprite
+        var sprite = new PIXI.Sprite(texture);
+        sprite.anchor.set(0.5);
+        sprite.width = CW;
+        sprite.height = CH;
+        sprite.zIndex = 10;
+        container.addChild(sprite);
+
+
+        // State
+        var state = {
+            x: 0, y: 0, width: CW, height: CH,
+            zIndex: 1, hoverScale: 1.02,
+            isHovered: false, curScale: 1,
+            px: 0, py: 0
+        };
+        var destroyed = false;
+
+        // Load art async and recompose
+        if (artUrl && !artImg) {
+            loadArt(artUrl, function (img) {
+                if (destroyed || !img) return;
+                artImg = img;
+                recompose();
+            });
+        }
+
+        // Ensure fonts are loaded, then recompose
+        if (_fontsReady !== true) {
+            ensureFonts(function() {
+                if (!destroyed) recompose();
+            });
+        }
+
+        function recompose() {
             if (destroyed) return;
-            const p = evt.getLocalPosition(container);
-            state.px = p.x;
-            state.py = p.y;
-            const halfW = state.width * 0.5;
-            const halfH = state.height * 0.5;
-            state.nx = clamp(p.x / halfW, -1, 1);
-            state.ny = clamp(p.y / halfH, -1, 1);
-            state.targetTiltXDeg = -state.ny * opts.maxTiltDeg;
-            state.targetTiltYDeg = state.nx * opts.maxTiltDeg;
+            var newCanvas = composeCard(data, rtScale, inHand, artImg, domEl);
+            if (!newCanvas) return;
+            var oldTex = texture;
+            texture = PIXI.Texture.from(newCanvas);
+            sprite.texture = texture;
+            sprite.width = CW;
+            sprite.height = CH;
+            if (oldTex && oldTex !== PIXI.Texture.WHITE) {
+                try { oldTex.destroy(true); } catch (e) { /* no-op */ }
+            }
         }
 
-        function onPointerOver() {
-            if (destroyed) return;
-            state.isHovered = true;
-            api.__isHovered = true;
-            ensureLargeTexture();
-        }
+        // API
+        var api = {
+            container: container,
+            __smallRT: texture,
 
-        function onPointerOut() {
-            if (destroyed) return;
-            state.isHovered = false;
-            api.__isHovered = false;
-            state.targetTiltXDeg = 0;
-            state.targetTiltYDeg = 0;
-            state.nx = 0;
-            state.ny = 0;
-            releaseLargeTexture();
-        }
-
-        container.on('pointermove', onPointerMove);
-        container.on('pointerover', onPointerOver);
-        container.on('pointerout', onPointerOut);
-
-        const api = {
-            container,
-            __smallRT: smallRT,
-            __largeRT: null,
-            __display: display,
-            __usingLarge: false,
-            __isHovered: false,
-
-            /**
-             * Called by one global ticker, not by per-card ticker.
-             * dt should be in seconds.
-             */
-            update(dt) {
-                if (destroyed) return;
-
-                recomposeTexturesIfNeeded();
-
-                const stepDt = Math.max(0.001, dt);
-                state.curTiltXDeg = damp(state.curTiltXDeg, state.targetTiltXDeg, opts.tiltEase, stepDt);
-                state.curTiltYDeg = damp(state.curTiltYDeg, state.targetTiltYDeg, opts.tiltEase, stepDt);
-                const targetScale = state.isHovered ? state.hoverScale : 1;
-                state.curScale = damp(state.curScale, targetScale, opts.scaleEase, stepDt);
-
-                applyLayoutAndPerspective();
+            setLayout: function (next) {
+                if (!next) return;
+                state.x = next.x != null ? next.x : state.x;
+                state.y = next.y != null ? next.y : state.y;
+                state.width = next.width != null ? next.width : state.width;
+                state.height = next.height != null ? next.height : state.height;
+                state.zIndex = next.zIndex != null ? next.zIndex : state.zIndex;
+                state.hoverScale = next.hoverScale != null ? next.hoverScale : state.hoverScale;
+                container.zIndex = state.zIndex;
             },
 
-            /**
-             * Layout setter for board/hand systems.
-             * This is cheap and does not trigger texture recomposition.
-             */
-            setLayout(next) {
-                if (!next || destroyed) return;
-                if (next.x !== undefined) state.x = Number(next.x) || 0;
-                if (next.y !== undefined) state.y = Number(next.y) || 0;
-                if (next.width !== undefined) state.width = Math.max(8, Number(next.width) || opts.cardWidth);
-                if (next.height !== undefined) state.height = Math.max(8, Number(next.height) || opts.cardHeight);
-                if (next.scale !== undefined) state.baseScale = Math.max(0.05, Number(next.scale) || 1);
-                if (next.zIndex !== undefined) state.zIndex = Number(next.zIndex) || 0;
-                if (next.hoverScale !== undefined) state.hoverScale = Math.max(1, Number(next.hoverScale) || opts.hoverScale);
-                applyLayoutAndPerspective();
+            setPointerLocal: function (localX, localY, hovered) {
+                state.px = localX;
+                state.py = localY;
+                state.isHovered = !!hovered;
             },
 
-            /**
-             * External interaction bridge (for DOM-hosted cards with Pixi overlay).
-             * localX/localY are coordinates in card-local space centered at (0,0).
-             */
-            setPointerLocal(localX, localY, hovered) {
+            setHovered: function (v) {
+                state.isHovered = !!v;
+            },
+
+            update: function (dt) {
                 if (destroyed) return;
-                const lx = Number(localX) || 0;
-                const ly = Number(localY) || 0;
-                state.px = lx;
-                state.py = ly;
-                const halfW = state.width * 0.5;
-                const halfH = state.height * 0.5;
-                state.nx = clamp(lx / halfW, -1, 1);
-                state.ny = clamp(ly / halfH, -1, 1);
-                state.targetTiltXDeg = -state.ny * opts.maxTiltDeg;
-                state.targetTiltYDeg = state.nx * opts.maxTiltDeg;
-                const shouldHover = !!hovered;
-                if (shouldHover !== state.isHovered) {
-                    state.isHovered = shouldHover;
-                    api.__isHovered = shouldHover;
-                    if (shouldHover) ensureLargeTexture();
-                    else releaseLargeTexture();
+                // Position
+                // Glow pulse animation
+                container.position.set(state.x, state.y);
+                // Scale: smooth hover animation
+                var targetScale = state.isHovered ? state.hoverScale : 1.0;
+                var sx = state.width / CW;
+                var sy = state.height / CH;
+                state.curScale = damp(state.curScale, targetScale, 12, dt);
+                container.scale.set(sx * state.curScale, sy * state.curScale);
+            },
+
+            refresh: function (newData, newDomEl) {
+                if (destroyed) return;
+                data = newData || data;
+                domEl = newDomEl || domEl;
+                var newArtUrl = data.image ? ('/cards/' + data.image) : null;
+                if (newArtUrl && newArtUrl !== artUrl) {
+                    artUrl = newArtUrl;
+                    artImg = _artCache[artUrl] || null;
+                    if (!artImg) {
+                        loadArt(artUrl, function (img) {
+                            if (destroyed || !img) return;
+                            artImg = img;
+                            recompose();
+                        });
+                    }
                 }
+                recompose();
             },
 
-            setHovered(hovered) {
+            refreshDomSnapshotFromElement: function (el) {
                 if (destroyed) return;
-                const shouldHover = !!hovered;
-                if (shouldHover === state.isHovered) return;
-                state.isHovered = shouldHover;
-                api.__isHovered = shouldHover;
-                if (shouldHover) ensureLargeTexture();
-                else releaseLargeTexture();
+                domEl = el || domEl;
+                recompose();
             },
 
-            refreshDomSnapshotFromElement(sourceEl) {
-                if (destroyed) return false;
-                return refreshDomSnapshotFromElement(sourceEl);
-            },
-
-            destroy() {
+            destroy: function () {
                 if (destroyed) return;
                 destroyed = true;
-                domSmallToken += 1;
-                domLargeToken += 1;
-
-                unlistenTexture(smallArtPath, onArtTextureReady);
-
-                container.off('pointermove', onPointerMove);
-                container.off('pointerover', onPointerOver);
-                container.off('pointerout', onPointerOut);
-
-                destroyHiResTexture(api);
-                destroyTextureSafe(api.__smallRT);
-                api.__smallRT = null;
-
-                if (container.parent) {
-                    container.parent.removeChild(container);
-                }
                 container.destroy({ children: true });
+                if (texture && texture !== PIXI.Texture.WHITE) {
+                    try { texture.destroy(true); } catch (e) { /* no-op */ }
+                }
             }
         };
 
-        applyLayoutAndPerspective();
-        if (domSnapshotMarkup) {
-            scheduleDomSnapshot('small', opts.rtScaleSmall);
-        }
+        // Alias for compatibility check in pixi-board-layer.js
+        Object.defineProperty(api, '__display', {
+            get: function () { return sprite; }
+        });
+
         return api;
     }
 
-    function createLiveCardTableController(options) {
-        const cfg = options || {};
-        const app = cfg.app;
-        const stage = cfg.stage || (app ? app.stage : null);
-        if (!app || !stage) {
-            throw new Error('createLiveCardTableController requires { app, stage }.');
-        }
+    // ═══════════════════════════════════════════════════════════════
+    //  LIVE CARD TABLE CONTROLLER
+    // ═══════════════════════════════════════════════════════════════
+    function createLiveCardTableController(stage) {
+        var liveCards = new Map();
+        var tickerBound = false;
 
-        init({ app, stage, options: cfg.options || {} });
-
-        const liveCards = new Map();
-        let tickerBound = false;
-        let tickerFn = null;
-
-        function bindGlobalTicker() {
-            if (tickerBound) return;
+        function bindTicker() {
+            if (tickerBound || !_app) return;
             tickerBound = true;
-            tickerFn = () => {
-                const dtSec = app.ticker.deltaMS / 1000;
-                for (const cardView of liveCards.values()) {
-                    cardView.update(dtSec);
+            _app.ticker.add(function () {
+                var dt = _app.ticker.deltaMS / 1000;
+                for (var rec of liveCards.values()) {
+                    rec.update(dt);
                 }
-            };
-            app.ticker.add(tickerFn);
-        }
-
-        function unbindGlobalTicker() {
-            if (!tickerBound || !tickerFn) return;
-            app.ticker.remove(tickerFn);
-            tickerFn = null;
-            tickerBound = false;
+            });
         }
 
         return {
-            liveCards,
-
-            /**
-             * Example sync API:
-             * - cardModels: [{ uid, ...cardData }]
-             * - layoutFn(model, index): { x, y, width, height, zIndex, scale }
-             */
-            sync(cardModels, layoutFn) {
-                const models = Array.isArray(cardModels) ? cardModels : [];
-                const keep = new Set();
-
-                for (let i = 0; i < models.length; i++) {
-                    const model = models[i];
-                    const uid = model.uid || model.id || `idx-${i}`;
+            liveCards: liveCards,
+            sync: function (cardModels, layoutFn) {
+                var models = Array.isArray(cardModels) ? cardModels : [];
+                var keep = new Set();
+                for (var i = 0; i < models.length; i++) {
+                    var model = models[i];
+                    var uid = model.uid || model.id || 'idx-' + i;
                     keep.add(uid);
-
-                    let cardView = liveCards.get(uid);
+                    var cardView = liveCards.get(uid);
                     if (!cardView) {
                         cardView = buildCardApi(model);
                         liveCards.set(uid, cardView);
                         stage.addChild(cardView.container);
                     }
-
-                    const layout = typeof layoutFn === 'function'
-                        ? (layoutFn(model, i) || null)
-                        : null;
-                    if (layout) {
-                        cardView.setLayout(layout);
-                    }
+                    var layout = (typeof layoutFn === 'function') ? layoutFn(model, i) : null;
+                    if (layout) cardView.setLayout(layout);
                 }
-
-                for (const [uid, cardView] of liveCards.entries()) {
-                    if (keep.has(uid)) continue;
-                    cardView.destroy();
-                    liveCards.delete(uid);
+                for (var entry of liveCards.entries()) {
+                    if (keep.has(entry[0])) continue;
+                    entry[1].destroy();
+                    liveCards.delete(entry[0]);
                 }
-
-                bindGlobalTicker();
+                bindTicker();
             },
-
-            destroy() {
-                for (const cardView of liveCards.values()) {
-                    cardView.destroy();
-                }
+            destroy: function () {
+                for (var v of liveCards.values()) v.destroy();
                 liveCards.clear();
-                unbindGlobalTicker();
             }
         };
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  INIT & PUBLIC API
+    // ═══════════════════════════════════════════════════════════════
     function init(cfg) {
-        const conf = cfg || {};
+        var conf = cfg || {};
         if (!conf.app || !conf.app.renderer) {
             throw new Error('PixiCardView.init expects an initialized PIXI.Application.');
         }
-        RUNTIME.app = conf.app;
-        RUNTIME.stage = conf.stage || conf.app.stage;
-        RUNTIME.options = {
-            ...DEFAULTS,
-            ...(conf.options || {})
-        };
-        ensureInitialized();
+        _app = conf.app;
+        _stage = conf.stage || conf.app.stage;
+        ensurePaths();
         return api;
     }
 
-    const api = {
-        init,
+    // ═══════════════════════════════════════════════════════════════
+    //  ASSET PRELOADER — bulk-load art + fonts before game starts
+    // ═══════════════════════════════════════════════════════════════
+    function preloadAssets(imageUrls, onProgress, onDone) {
+        var total = imageUrls.length + 1; // +1 for fonts
+        var loaded = 0;
+        function tick() {
+            loaded++;
+            if (onProgress) onProgress(loaded, total);
+            if (loaded >= total && onDone) onDone();
+        }
+        // Fonts
+        ensureFonts(tick);
+        // Images
+        if (imageUrls.length === 0) return;
+        for (var i = 0; i < imageUrls.length; i++) {
+            (function(url) {
+                if (_artCache[url]) { tick(); return; }
+                loadArt(url, function() { tick(); });
+            })(imageUrls[i]);
+        }
+    }
+
+    var api = {
+        init: init,
         createCard: buildCardApi,
-        createLiveCardTableController
+        createLiveCardTableController: createLiveCardTableController,
+        preloadAssets: preloadAssets
     };
 
-    // Deliverable API name requested by user.
     window.createCard = function createCard(data, options) {
         return api.createCard(data, options);
     };
 
     window.PixiCardView = api;
+
+    // Eagerly start font preloading as soon as script loads
+    ensureFonts();
 })();

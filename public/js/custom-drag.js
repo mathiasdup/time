@@ -56,20 +56,46 @@ const CustomDrag = (function() {
         const container = document.createElement('div');
         container.className = 'drag-ghost-container';
 
-        // Créer la carte via makeCard (version terrain = léger)
-        let cardEl;
+        // Use Pixi card renderer if available, else fallback to makeCard
         const card = data.card || data;
-        if (typeof makeCard === 'function') {
-            cardEl = makeCard(card, false);
-        } else {
-            // Fallback: clone simple
-            cardEl = sourceEl.cloneNode(true);
+        let ghostContent;
+
+        if (window.createCard && window.PIXI) {
+            // Render via Pixi card view, extract canvas as image
+            const tmpView = window.createCard(card, { inHand: false });
+            // The card sprite's texture contains the rendered canvas
+            const tex = tmpView.container.children[0] && tmpView.container.children[0].texture;
+            if (tex && tex.source && tex.source.resource) {
+                const srcCanvas = tex.source.resource;
+                const img = document.createElement('canvas');
+                img.width = srcCanvas.width;
+                img.height = srcCanvas.height;
+                img.getContext('2d').drawImage(srcCanvas, 0, 0);
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.borderRadius = '4px';
+                ghostContent = img;
+            }
+            tmpView.destroy();
         }
-        cardEl.classList.add('drag-ghost-card');
-        cardEl.classList.remove('dragging', 'selected', 'can-attack', 'just-played', 'shake');
-        // Retirer les event listeners en clonant
-        const cleanCard = cardEl.cloneNode(true);
-        container.appendChild(cleanCard);
+
+        if (!ghostContent) {
+            // Fallback to DOM makeCard
+            let cardEl;
+            if (typeof makeCard === 'function') {
+                cardEl = makeCard(card, false);
+            } else {
+                cardEl = sourceEl.cloneNode(true);
+            }
+            cardEl.classList.add('drag-ghost-card');
+            cardEl.classList.remove('dragging', 'selected', 'can-attack', 'just-played', 'shake');
+            ghostContent = cardEl.cloneNode(true);
+            if (typeof autoFitCardName === 'function') {
+                autoFitCardName(ghostContent);
+            }
+        }
+
+        container.appendChild(ghostContent);
 
         // Positionner sur la carte source, taille = slot visuel (--card-w × --card-h × gameScale)
         const rect = cachedRect || sourceEl.getBoundingClientRect();
@@ -97,11 +123,6 @@ const CustomDrag = (function() {
         `;
 
         document.body.appendChild(container);
-
-        // Re-fit le nom de la carte (la taille a changé par rapport à la main)
-        if (typeof autoFitCardName === 'function') {
-            autoFitCardName(cleanCard);
-        }
 
         return container;
     }

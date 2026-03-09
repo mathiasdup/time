@@ -156,6 +156,10 @@ function startGame() {
     if (typeof CardGlow !== 'undefined') CardGlow.init();
     // Initialiser les slots Pixi (remplace les SVG DOM par du GPU)
     if (typeof PixiBoardSlots !== 'undefined') PixiBoardSlots.init();
+    // Initialiser les renderers deck/grave Pixi
+    if (typeof PixiDeckRenderer !== 'undefined') PixiDeckRenderer.init();
+    if (typeof PixiGraveRenderer !== 'undefined') PixiGraveRenderer.init();
+    if (typeof PixiHeroRenderer !== 'undefined') PixiHeroRenderer.init(state.me.hero, state.opponent.hero);
     log('🎮 Tour 1 - Partie lancée !', 'phase');
     // Pas de popup "Phase de repositionnement" au tour 1 car pas de créatures
 }

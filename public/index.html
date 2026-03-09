@@ -70,6 +70,17 @@
         </div>
     </div>
     
+    <!-- Game Loading Overlay -->
+    <div class="game-loading-overlay hidden" id="game-loading-overlay">
+        <div class="game-loading-content">
+            <div class="game-loading-title">Chargement</div>
+            <div class="game-loading-bar-track">
+                <div class="game-loading-bar-fill" id="game-loading-bar"></div>
+            </div>
+            <div class="game-loading-status" id="game-loading-status">Chargement des ressources...</div>
+        </div>
+    </div>
+
     <!-- Card Zoom Overlay -->
     <div class="card-zoom-overlay hidden" id="card-zoom-overlay">
         <div class="card-zoom-container" id="card-zoom-container"></div>
@@ -499,12 +510,19 @@
     <script src="/js/animations.js"></script>
     <script src="/js/combat-vfx.js"></script>
 <script src="/js/combat-animation.js"></script>
-    <script src="/js/card-glow.js"></script>
+    <!-- card-glow.js disabled: all glows now handled by pixi-card-glow.js -->
+    <script>window.CardGlow={init:function(){},markDirty:function(){},hideForResolution:function(){},showAfterResolution:function(){},_perfStats:function(){return{}}};</script>
     <script src="/js/pixi-card-view.js"></script>
+    <script src="/js/pixi-card-glow.js"></script>
     <script src="/js/pixi-hand-layer.js"></script>
     <script src="/js/pixi-board-layer.js"></script>
+    <script src="/js/pixi-opp-hand-layer.js"></script>
     <script src="/js/pixi-board-slots.js"></script>
-    <script src="/js/custom-drag.js"></script>
+    <script src="/js/pixi-deck-renderer.js"></script>
+    <script src="/js/pixi-grave-renderer.js"></script>
+    <script src="/js/pixi-hero-renderer.js"></script>
+    <!-- custom-drag.js disabled: drag & drop replaced by click-based Pixi interaction -->
+    <script>window.CustomDrag={makeDraggable:function(){},setCallbacks:function(){},getDropTargetAt:function(){return null}};</script>
     <!-- Log filter (silences noisy debug prefixes, set window.DEBUG_LOGS=true to restore) -->
     <script src="/js/log-filter.js"></script>
     <!-- Systèmes centralisés (chargés avant game modules) -->
