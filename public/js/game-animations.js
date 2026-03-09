@@ -21,7 +21,11 @@ function _refreshCssVars() {
     if (Number.isFinite(gs) && gs > 0) _cssGameScale = gs;
 }
 try { _refreshCssVars(); } catch(e) {}
-window.addEventListener("resize", _refreshCssVars);
+var _refreshRaf = 0;
+window.addEventListener("resize", function() {
+    if (_refreshRaf) return;
+    _refreshRaf = requestAnimationFrame(function() { _refreshRaf = 0; _refreshCssVars(); });
+});
 
 // === DEBUG: Snapshot DOM main adverse ===
 function _oppHandDomSnap(label) {
@@ -397,7 +401,7 @@ function _setTrapWarningMode(active) {
     const prev = battlefield.classList.contains('trap-warning-mode');
     battlefield.classList.toggle('trap-warning-mode', next);
     if (prev !== next && typeof CardGlow !== 'undefined') {
-        CardGlow.markDirty();
+        CardGlow.markDirty(true);
     }
 }
 
@@ -407,7 +411,7 @@ function _clearTrapTargetWarnings(reason = 'manual') {
     document.querySelectorAll('.card-slot .card.spell-hover-target').forEach((el) => {
         el.classList.remove('spell-hover-target');
     });
-    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty(true);
     trapWarningState.active = false;
     trapWarningState.waitingDamage = false;
     trapWarningState.targetKeys = new Set();
@@ -439,7 +443,7 @@ function _applyTrapTargetWarnings(targets, options = {}) {
         applied++;
     }
 
-    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty(true);
     trapWarningState.active = applied > 0;
     trapWarningState.waitingDamage = waitForDamage && applied > 0;
     trapWarningState.targetKeys = keys;
@@ -590,6 +594,7 @@ function queueAnimation(type, data) {
     if (type === 'poisonApply' && data.row !== undefined && data.col !== undefined) {
         const paOwner = data.player === myNum ? 'me' : 'opp';
         const paSlotKey = paOwner + '-' + data.row + '-' + data.col;
+            if (window.PerfMon) window.PerfMon.evt('combat:poison', paSlotKey);
         if (!window._pendingPoisonSlots) window._pendingPoisonSlots = new Set();
         window._pendingPoisonSlots.add(paSlotKey);
     }
@@ -1133,7 +1138,7 @@ async function processAnimationQueue(processorId = null) {
             return;
         }
 
-        if (animationQueue[0].type === 'damage') {
+        if (animationQueue[0].type === 'damage') { if (window.PerfMon) window.PerfMon.evt('batch:damage', 'x' + (function(){ let n=0; for(let i=0;i<animationQueue.length&&animationQueue[i].type==='damage';i++)n++; return n; })());
             const damageBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'damage') {
                 damageBatch.push(animationQueue.shift().data);
@@ -1173,7 +1178,7 @@ async function processAnimationQueue(processorId = null) {
                     ..._debugSlotState(dmgOwner, d.row, d.col)
                 });
             }
-            render();
+            for (const _d of damageBatch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); };
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
             _resolveTrapWarningByDamageBatch(damageBatch);
             processAnimationQueue(processorId);
@@ -1181,7 +1186,7 @@ async function processAnimationQueue(processorId = null) {
         }
 
         // Regrouper les animations de dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts de sort consÃƒÆ’Ã‚Â©cutives en batch
-        if (animationQueue[0].type === 'spellDamage') {
+        if (animationQueue[0].type === 'spellDamage') { if (window.PerfMon) window.PerfMon.evt('batch:spellDmg');
             const spellDamageBatch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'spellDamage') {
                 spellDamageBatch.push(animationQueue.shift().data);
@@ -1220,14 +1225,14 @@ async function processAnimationQueue(processorId = null) {
                     animatingSlots.delete(sdSlotKey);
                 }
             }
-            render(); // Mettre ÃƒÆ’Ã‚Â  jour les stats visuellement aprÃƒÆ’Ã‚Â¨s dÃƒÆ’Ã‚Â©blocage des slots
+            for (const _d of spellDamageBatch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); };
             await new Promise(resolve => setTimeout(resolve, ANIMATION_DELAYS.damage));
             processAnimationQueue(processorId);
             return;
         }
 
         // Regrouper les animations poisonDamage consÃƒÆ’Ã‚Â©cutives (jouÃƒÆ’Ã‚Â©es en parallÃƒÆ’Ã‚Â¨le)
-        if (animationQueue[0].type === 'poisonDamage') {
+            if (animationQueue[0].type === 'poisonDamage') { window._poisonBatchActive = true; if (window.PerfMon) window.PerfMon.evt('batch:poison');
             const batch = [];
             while (animationQueue.length > 0 && animationQueue[0].type === 'poisonDamage') {
                 batch.push(animationQueue.shift().data);
@@ -1251,6 +1256,7 @@ async function processAnimationQueue(processorId = null) {
             _perfRecordBatchQueueWait(batch);
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handlePoisonDamage(data)));
+            window._poisonBatchActive = false;
             _perfRecordAnimationStep(_perfStepStart, batch.length);
             for (const d of batch) {
                 const owner = d.player === myNum ? 'me' : 'opp';
@@ -1313,7 +1319,7 @@ async function processAnimationQueue(processorId = null) {
             await Promise.all(batch.map(data => handleHeroHealAnim(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
             lifestealHeroHealInProgress = false;
-            render();
+            renderPartial({heroHp: true});
             if (window.DEBUG_LOGS) console.log("[EVEQUE-DBG] post-heroHeal render()", { stateMe: state?.me?.hp, stateOpp: state?.opponent?.hp, domMe: document.querySelector('#me-hp .hero-hp-number')?.textContent, domOpp: document.querySelector('#opp-hp .hero-hp-number')?.textContent, lockedMe: RenderLock.isLocked('heroHp', 'me'), lockedOpp: RenderLock.isLocked('heroHp', 'opp'), lockedAll: RenderLock.isLocked('heroHp', 'all') });
             processAnimationQueue(processorId);
             return;
@@ -1337,7 +1343,7 @@ async function processAnimationQueue(processorId = null) {
             await Promise.all(batch.map(data => handleLifestealAnim(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
             lifestealHeroHealInProgress = false;
-            render();
+            for (const _d of batch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); } renderPartial({heroHp: true});
             processAnimationQueue(processorId);
             return;
         }
@@ -1359,7 +1365,7 @@ async function processAnimationQueue(processorId = null) {
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handleRegenAnim(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
-            render();
+            for (const _d of batch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); };
             processAnimationQueue(processorId);
             return;
         }
@@ -1381,7 +1387,7 @@ async function processAnimationQueue(processorId = null) {
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handlePowerBuff(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
-            render();
+            for (const _d of batch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); };
             processAnimationQueue(processorId);
             return;
         }
@@ -1403,7 +1409,7 @@ async function processAnimationQueue(processorId = null) {
             const _perfStepStart = _perfNowMs();
             await Promise.all(batch.map(data => handleHealOnDeathAnim(data)));
             _perfRecordAnimationStep(_perfStepStart, batch.length);
-            render();
+            for (const _d of batch) { const _o = _d.player === myNum ? "me" : "opp"; updateSlotStats(_o, _d.row, _d.col); } renderPartial({heroHp: true});
             processAnimationQueue(processorId);
             return;
         }
@@ -1411,7 +1417,7 @@ async function processAnimationQueue(processorId = null) {
         const { type, data } = animationQueue.shift();
         const delay = ANIMATION_DELAYS[type] || ANIMATION_DELAYS.default;
         if (typeof window !== 'undefined') {
-            window.__activeAnimType = type;
+            window.__activeAnimType = type; if (window.PerfMon) window.PerfMon.evt("anim", type + (data.row !== undefined ? " @" + (data.player === myNum ? "me" : "opp") + "-" + data.row + "-" + data.col : ""));
             window.__activeAnimData = data || null;
         }
         if (typeof window.visTrace === 'function') {
@@ -1481,7 +1487,7 @@ async function processAnimationQueue(processorId = null) {
                     ..._debugSlotState(owner, Number(rr), Number(cc))
                 });
             }
-            render(); // Mettre ÃƒÆ’Ã‚Â  jour les stats visuellement aprÃƒÆ’Ã‚Â¨s l'attaque (dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts mutuels simultanÃƒÆ’Ã‚Â©s)
+            for (const _sk of data._attackerSlots) { const [_o, _r, _c] = String(_sk).split("-"); updateSlotStats(_o, Number(_r), Number(_c)); } renderPartial({heroHp: true});
         }
 
         // DÃƒÆ’Ã‚Â©bloquer les slots de dÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¢ts aprÃƒÆ’Ã‚Â¨s l'animation
@@ -1498,7 +1504,7 @@ async function processAnimationQueue(processorId = null) {
             );
             if (!hasPendingBlock) {
                 animatingSlots.delete(dmgSlotKey);
-                render(); // Mettre ÃƒÆ’Ã‚Â  jour les stats visuellement aprÃƒÆ’Ã‚Â¨s dÃƒÆ’Ã‚Â©blocage du slot
+                updateSlotStats(dmgOwner, data.row, data.col);
             } else {
             }
         }
@@ -1508,7 +1514,7 @@ async function processAnimationQueue(processorId = null) {
             const lsOwner = data.player === myNum ? 'me' : 'opp';
             const lsSlotKey = `${lsOwner}-${data.row}-${data.col}`;
             animatingSlots.delete(lsSlotKey);
-            render();
+            updateSlotStats(lsOwner, data.row, data.col);
         }
 
         // DÃƒÆ’Ã‚Â©bloquer le slot aprÃƒÆ’Ã‚Â¨s l'animation healOnDeath et mettre ÃƒÆ’Ã‚Â  jour le rendu
@@ -1516,7 +1522,7 @@ async function processAnimationQueue(processorId = null) {
             const hodOwner = data.player === myNum ? 'me' : 'opp';
             const hodSlotKey = `${hodOwner}-${data.row}-${data.col}`;
             animatingSlots.delete(hodSlotKey);
-            render();
+            updateSlotStats(hodOwner, data.row, data.col); renderPartial({heroHp: true});
         }
 
         // DÃƒÆ’Ã‚Â©bloquer le slot aprÃƒÆ’Ã‚Â¨s l'animation regen et mettre ÃƒÆ’Ã‚Â  jour le rendu
@@ -1524,17 +1530,17 @@ async function processAnimationQueue(processorId = null) {
             const regenOwner = data.player === myNum ? 'me' : 'opp';
             const regenSlotKey = `${regenOwner}-${data.row}-${data.col}`;
             animatingSlots.delete(regenSlotKey);
-            render();
+            updateSlotStats(regenOwner, data.row, data.col);
         }
 
         if (type === 'heroHeal') {
             lifestealHeroHealInProgress = false;
-            render();
+            renderPartial({heroHp: true});
         }
 
         // AprÃƒÆ’Ã‚Â¨s powerBuff, forcer render() pour synchroniser l'ATK depuis l'ÃƒÆ’Ã‚Â©tat serveur
         if (type === 'powerBuff') {
-            render();
+            { const _pbO = data.player === myNum ? "me" : "opp"; updateSlotStats(_pbO, data.row, data.col); };
         }
 
         if (type === 'combatEnd') {
@@ -1649,6 +1655,7 @@ async function executeAnimationAsync(type, data) {
 case 'deflexion': {
             const dfOwner = data.player === myNum ? 'me' : 'opp';
             const dfSlotKey = dfOwner + '-' + data.row + '-' + data.col;
+            if (window.PerfMon) window.PerfMon.evt('combat:deflexion', dfSlotKey);
             const dfSlot = getSlot(dfOwner, data.row, data.col);
             if (dfSlot) {
                 // Shatter the runic ring
@@ -1738,13 +1745,13 @@ case 'deflexion': {
         case 'heroHeal':
             await handleHeroHealAnim(data);
             break;
-        case 'combatRowStart':
+        case 'combatRowStart': if (window.PerfMon) window.PerfMon.evt('combatRow', 'row'+data.row);
             // Retirer le glow violet de toutes les cartes prÃƒÆ’Ã‚Â©cÃƒÆ’Ã‚Â©dentes
             document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
                 c.dataset.inCombat = 'false';
                 c.dataset.hasAttacked = 'true';
             });
-            CardGlow.markDirty();
+            CardGlow.markDirty(true);
             // Marquer uniquement les cartes qui vont combattre
             if (data.activeSlots) {
                 for (const s of data.activeSlots) {
@@ -1754,16 +1761,16 @@ case 'deflexion': {
                     if (card) card.dataset.inCombat = 'true';
                 }
             }
-            CardGlow.markDirty();
+            CardGlow.markDirty(true);
             // Laisser le glow apparaÃƒÆ’Ã‚Â®tre avant l'animation suivante
             await new Promise(r => setTimeout(r, 50));
             break;
-        case 'combatEnd':
+        case 'combatEnd': if (window.PerfMon) window.PerfMon.evt('combatEnd');
             document.querySelectorAll('.card[data-in-combat="true"]').forEach(c => {
                 c.dataset.inCombat = 'false';
                 c.dataset.hasAttacked = 'true';
             });
-            CardGlow.markDirty();
+            CardGlow.markDirty(true);
             break;
         case 'powerBuff':
             await handlePowerBuff(data);
@@ -1869,6 +1876,7 @@ async function handlePowerBuff(data) {
 async function handlePixiAttack(data) {
     const attackerOwner = data.attacker === myNum ? 'me' : 'opp';
     const targetOwner = data.targetPlayer === myNum ? 'me' : 'opp';
+    if (window.PerfMon) { var _ct = data.combatType||'solo'; var _ad = (data.row !== undefined) ? attackerOwner+'-'+data.row+'-'+data.col+' vs '+targetOwner+'-'+data.targetRow+'-'+data.targetCol : _ct; window.PerfMon.evt('combat:attack', _ad); }
     const attackEventTs = data._queuedAt;
     _debugHpSeq('attack-handler-start', {
         combatType: data.combatType || null,
@@ -1907,6 +1915,7 @@ async function handlePixiAttack(data) {
         const attack2TargetOwner = data.attack2.targetPlayer === myNum ? 'me' : 'opp';
 
         await CombatAnimations.animateParallelAttacks({
+            // EVT logged at handler entry
             attack1: {
                 attackerOwner: attack1Owner,
                 attackerRow: data.attack1.row,
@@ -1990,6 +1999,8 @@ async function handlePixiAttack(data) {
 }
 
 async function handlePixiDamage(data) {
+    const _dmgOwner = data.player === myNum ? 'me' : 'opp';
+    if (window.PerfMon) window.PerfMon.evt('combat:dmg', _dmgOwner + '-' + data.row + '-' + data.col);
     const owner = data.player === myNum ? 'me' : 'opp';
     
     // Si les griffures ont dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â© affichÃƒÆ’Ã‚Â©es par l'animation de combat, skip
@@ -2135,7 +2146,7 @@ async function handlePoisonDamage(data) {
 
     // DÃƒÆ’Ã‚Â©bloquer le slot et rafraÃƒÆ’Ã‚Â®chir le rendu
     animatingSlots.delete(slotKey);
-    render();
+    updateSlotStats(owner, data.row, data.col);
     _debugHpSeq('poison-handler-end', {
         amount: data?.amount ?? null,
         ..._debugSlotState(owner, data.row, data.col)
@@ -2143,6 +2154,7 @@ async function handlePoisonDamage(data) {
 }
 
 async function handlePixiHeroHit(data) {
+    if (window.PerfMon) window.PerfMon.evt('combat:heroHit', (data.player === myNum ? 'me' : 'opp'));
     const owner = data.defender === myNum ? 'me' : 'opp';
 
     // Bloquer render() pour les HP pendant l'animation
@@ -2892,6 +2904,7 @@ async function animateBurn(data) {
  * Phase 2 - Fly to Graveyard (500ms) : vol vers le cimetiÃƒÆ’Ã‚Â¨re avec perspective tilt
  */
 async function animateDeathToGraveyard(data) {
+    if (window.PerfMon) window.PerfMon.evt('combat:death', (data.player === myNum ? 'me' : 'opp') + '-' + data.row + '-' + data.col);
     const owner = data.player === myNum ? 'me' : 'opp';
     const ownerKey = owner;
     const deathSlotKey = `${owner}-${data.row}-${data.col}`;
@@ -3924,6 +3937,7 @@ async function animateSpellReveal(card, casterPlayerNum, startRect = null) {
 }
 
 async function animateSpell(data) {
+    if (window.PerfMon) window.PerfMon.evt('combat:spell', data.cardName || '?');
     if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] animateSpell entry", { caster: data.caster, myNum, spell: data.spell?.name, time: performance.now().toFixed(1) });
     let startRect = null;
     _oppHandDomSnap("spell:entry:" + (data.spell ? data.spell.name : "?"));
@@ -4580,7 +4594,7 @@ function animateTrapPlace(data) {
             paintFacedownTrap();
             setTimeout(() => {
                 animatingTrapSlots.delete(trapKey);
-                render();
+                renderPartial({traps: true});
                 resolve();
             }, 420);
         }
@@ -4633,7 +4647,7 @@ function animateTrapPlace(data) {
             }).catch(() => {
                 paintFacedownTrap();
                 animatingTrapSlots.delete(trapKey);
-                render();
+                renderPartial({traps: true});
                 resolve();
             });
         } else {
@@ -5023,7 +5037,7 @@ async function animateTrap(data) {
             if (gy) updateGraveDisplay(owner, gy);
         }
         addCardToGraveyardPopup(owner, data.trap);
-        render();
+        renderPartial({grave: true});
     }, consumeDelay);
 
     // Do not clear here: keep warning active until consume sequence ends.
@@ -5417,7 +5431,7 @@ async function animateBounceToHand(data) {
             });
         }
 
-        render();
+        renderPartial({field: true});
 
         // Fallback resolver: if no extra render occurs, resolve target from current DOM.
         let pollCount = 0;
@@ -5535,7 +5549,7 @@ async function animateBounceToHand(data) {
                 // State/target can arrive slightly after the fly: keep pending marker for next render pass.
                 pendingBounce.completed = true;
                 pendingBounce.wrapper = wrapper;
-                render();
+                renderPartial({hand: true});
             }
             animatingSlots.delete(slotKey);
         };
@@ -5603,7 +5617,7 @@ async function animateBounceToHand(data) {
             targetCard.style.visibility = 'visible';
             if (pendingBounce && pendingBounce.owner === owner) pendingBounce = null;
             animatingSlots.delete(slotKey);
-            render();
+            renderPartial({hand: true});
         }
         return;
     }
@@ -5754,7 +5768,7 @@ async function animateBounceToHand(data) {
                 };
             });
         }
-        render();
+        renderPartial({field: true});
 
         // Fallback actif: si aucun render supplementaire ne survient,
         // resoudre la cible depuis le DOM pour garantir le fly vers la main.
@@ -6350,7 +6364,7 @@ async function animateBounceToHand(data) {
     }
     animatingSlots.delete(slotKey);
     // render() gÃƒÂ¨re la rÃƒÂ©vÃƒÂ©lation finale (pendingBounce.completed) et le cleanup visuel.
-    render();
+    renderPartial({hand: true, field: true});
 }
 
 // === Animation Graveyard Return (Goule tenace) ===
@@ -7165,7 +7179,7 @@ function animateSummon(data) {
             if ((hasStateCard && uidMatches) || (performance.now() - t0) > maxWait) {
                 if (wrapperEl && wrapperEl.isConnected) wrapperEl.remove();
                 animatingSlots.delete(slotKey);
-                render();
+                renderPartial({field: true});
                 if (typeof window.visTrace === 'function') {
                     window.visTrace('summon:slot:release', {
                         owner,
@@ -7648,7 +7662,7 @@ function animateTrapSummon(data) {
                 const arrived = !!field?.[data.row]?.[data.col];
                 if (arrived || (performance.now() - waitStart) > waitMax) {
                     animatingSlots.delete(slotKey);
-                    render();
+                    updateSlotStats(owner, data.row, data.col);
                     resolve();
                 } else {
                     requestAnimationFrame(waitForState);
@@ -7759,7 +7773,7 @@ function animateReanimate(data) {
                         const tempEl = slot.querySelector('.card');
                         if (tempEl) tempEl.dataset.uid = stateCard.uid || '';
                     }
-                    render();
+                    renderPartial({field: true});
                     if (isFlying) {
                         const newCardEl = slot.querySelector('.card.flying-creature');
                         if (newCardEl) {
@@ -7821,7 +7835,7 @@ function animateMove(data) {
     }
 
     // Forcer render() AVANT de bloquer les slots (pour afficher les mises ÃƒÆ’Ã‚Â  jour en attente, ex: poison)
-    render();
+    renderPartial({field: true});
 
     // Bloquer les deux slots (origine et destination)
     animatingSlots.add(fromKey);
@@ -7873,7 +7887,7 @@ function animateMove(data) {
         // pour ÃƒÆ’Ã‚Â©viter un flash sans jeton buff
         animatingSlots.delete(fromKey);
         animatingSlots.delete(toKey);
-        render();
+        renderPartial({field: true});
         movingCard.remove();
         resolve();
     }, 600);

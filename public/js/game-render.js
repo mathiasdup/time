@@ -239,6 +239,7 @@ function updateGraveTooltip(side, graveyard, graveyardCount) {
 
 function renderDelta(d) {
     if (!state || !d) { render(); return; }
+    if (window.PerfMon) window.PerfMon.evt('renderDelta', d.fieldChanges ? d.fieldChanges.length + 'f' : '0f');
     if (d.full || d.phaseChanged) { render(); return; }
 
     const me = state.me, opp = state.opponent;
@@ -328,7 +329,8 @@ function renderDelta(d) {
     }
 
     // Field: only re-render if any slots changed
-    if (d.fieldChanges && d.fieldChanges.length > 0) {
+    // Skip field render during poison batch to prevent layout jumps
+    if (d.fieldChanges && d.fieldChanges.length > 0 && !window._poisonBatchActive) {
         const activeShieldKeys = new Set();
         const activeCamoKeys = new Set();
         const activeDeflexionKeys = new Set();
@@ -364,6 +366,7 @@ function renderDelta(d) {
 
 function render() {
     if (!state) return;
+    if (window.PerfMon) window.PerfMon.evt('render', state.phase);
     const __perfRenderStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
     const me = state.me, opp = state.opponent;
@@ -536,6 +539,226 @@ function render() {
 }
 
 // _monitorBattlefield supprimé  boucle RAF inutile (branches vides) qui forçait getBoundingClientRect à 60fps
+
+// ==================== RENDER PARTIEL ====================
+// Met à jour UNIQUEMENT les zones spécifiées — évite de recréer tout le DOM.
+// Usage: renderPartial({ field: true, heroHp: true })
+// Zones: field, heroHp, mana, hand, oppHand, deck, grave, traps, vfxSync
+function renderPartial(opts) {
+    if (!state || !opts) return;
+    if (window.PerfMon) window.PerfMon.evt('renderPartial', Object.keys(opts).join('+'));
+    const me = state.me, opp = state.opponent;
+    const dom = _getDomEls();
+
+    if (opts.heroHp) {
+        const hpBlockedMe = RenderLock.isLocked('heroHp', 'all') || RenderLock.isLocked('heroHp', 'me');
+        const hpBlockedOpp = RenderLock.isLocked('heroHp', 'all') || RenderLock.isLocked('heroHp', 'opp');
+        if (!hpBlockedMe && dom.meHpNum) {
+            const v = Math.max(0, Math.floor(Number(me.hp) || 0));
+            dom.meHpNum.textContent = String(v);
+        }
+        if (!hpBlockedOpp && dom.oppHpNum) {
+            const v = Math.max(0, Math.floor(Number(opp.hp) || 0));
+            dom.oppHpNum.textContent = String(v);
+        }
+    }
+
+    if (opts.mana) {
+        if (dom.meManaPill) {
+            _initManaPill(dom.meManaPill);
+            dom.meManaPill._mCur.textContent = me.energy;
+            dom.meManaPill._mMax.textContent = me.maxEnergy;
+            dom.meManaPill.classList.toggle('empty', me.energy <= 0);
+        }
+        if (dom.oppManaPill) {
+            _initManaPill(dom.oppManaPill);
+            dom.oppManaPill._mCur.textContent = opp.energy;
+            dom.oppManaPill._mMax.textContent = opp.maxEnergy;
+            dom.oppManaPill.classList.toggle('empty', opp.energy <= 0);
+        }
+    }
+
+    if (opts.deck) {
+        if (dom.meDeckTooltip) dom.meDeckTooltip.textContent = me.deckCount + (me.deckCount > 1 ? ' cartes' : ' carte');
+        if (dom.oppDeckTooltip) dom.oppDeckTooltip.textContent = opp.deckCount + (opp.deckCount > 1 ? ' cartes' : ' carte');
+        updateDeckDisplay('me', me.deckCount);
+        updateDeckDisplay('opp', opp.deckCount);
+    }
+
+    if (opts.grave) {
+        if (!RenderLock.isLocked('grave', 'me')) {
+            updateGraveTooltip('me', me.graveyard, me.graveyardCount || 0);
+            updateGraveTopCard('me', me.graveyard);
+            updateGraveDisplay('me', me.graveyard);
+        }
+        if (!RenderLock.isLocked('grave', 'opp')) {
+            updateGraveTooltip('opp', opp.graveyard, opp.graveyardCount || 0);
+            updateGraveTopCard('opp', opp.graveyard);
+            updateGraveDisplay('opp', opp.graveyard);
+        }
+    }
+
+    if (opts.field) {
+        const activeShieldKeys = new Set();
+        const activeCamoKeys = new Set();
+        const activeDeflexionKeys = new Set();
+        renderField('me', me.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
+        renderField('opp', opp.field, activeShieldKeys, activeCamoKeys, activeDeflexionKeys);
+        _syncPixiBoard();
+        if (opts.vfxSync !== false) {
+            CombatVFX.syncShields(activeShieldKeys);
+            CombatVFX.syncCamouflages(activeCamoKeys);
+            CombatVFX.syncDeflexions(activeDeflexionKeys);
+        }
+    }
+
+    if (opts.traps) {
+        renderTraps();
+    }
+
+    if (opts.hand) {
+        renderHand(me.hand, me.energy);
+    }
+
+    if (opts.oppHand) {
+        renderOppHand(opp.handCount, opp.oppHand);
+    }
+
+    if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
+}
+
+// ── Ultra-light single-slot update (HP/ATK/markers only) ──
+// Used during resolution animations instead of renderPartial({field:true})
+// to avoid scanning all 16 slots when only 1-2 changed.
+function updateSlotStats(owner, row, col) {
+    if (!state) return;
+    const fieldData = owner === 'me' ? state.me.field : state.opponent.field;
+    const card = fieldData[row]?.[col];
+    if (!card) return;
+    const slotKey = `${owner}-${row}-${col}`;
+    if (RenderLock.isLocked('slot', slotKey)) return;
+    const slot = getSlot(owner, row, col);
+    if (!slot) return;
+    const el = slot.querySelector('.card');
+    if (!el || el.dataset.uid !== card.uid) return;
+    el.__cardData = card;
+
+    // ── HP ──
+    const hpEl = el._cHp || (el._cHp = el.querySelector('.arena-armor') || el.querySelector('.arena-hp') || el.querySelector('.img-hp'));
+    if (hpEl) {
+        let hpVal = _toFiniteNumberOrNull(card.currentHp ?? card.hp);
+        if (hpVal === null) {
+            const fb = parseInt(hpEl.textContent || '', 10);
+            hpVal = Number.isFinite(fb) ? fb : 0;
+        }
+        const poisonOv = RenderLock.getOverride('slot', slotKey);
+        if (poisonOv && poisonOv.hp !== undefined) {
+            const ovUidMismatch = !!(poisonOv.uid && card.uid && poisonOv.uid !== card.uid);
+            const ovAge = typeof poisonOv.updatedAt === 'number' ? (Date.now() - poisonOv.updatedAt) : 0;
+            const staleConsumed = poisonOv.consumed && ovAge > 2600;
+            if (ovUidMismatch || (poisonOv.consumed && hpVal <= poisonOv.hp) || staleConsumed) {
+                RenderLock.clearOverride('slot', slotKey);
+            } else {
+                hpVal = poisonOv.hp;
+            }
+        }
+        if (state.phase === 'resolution' && hpVal <= 0) {
+            const domHp = parseInt(hpEl.textContent || '', 10);
+            hpVal = (Number.isFinite(domHp) && domHp > 0) ? domHp : 1;
+        }
+        const hpStr = String(hpVal);
+        // Anti-flicker: respect visualDmgHp
+        const visualDmgHp = el.dataset.visualDmgHp;
+        const visualDmgSetAt = parseInt(el.dataset.visualDmgSetAt || '0', 10);
+        const visualDmgExpired = visualDmgHp !== undefined && visualDmgSetAt > 0 && (Date.now() - visualDmgSetAt > 1800);
+        if (visualDmgHp !== undefined && hpVal > parseInt(visualDmgHp) && !visualDmgExpired) {
+            // keep visual damage
+        } else {
+            if (visualDmgHp !== undefined) delete el.dataset.visualDmgHp;
+            if (el.dataset.visualDmgSetAt !== undefined) delete el.dataset.visualDmgSetAt;
+            if (hpEl.textContent !== hpStr) hpEl.textContent = hpStr;
+            if (!card.isBuilding) {
+                const baseHp = _toFiniteNumberOrNull(card.baseHp ?? card.hp);
+                if (baseHp !== null) {
+                    hpEl.classList.toggle('boosted', hpVal > baseHp);
+                    hpEl.classList.toggle('reduced', hpVal < baseHp);
+                }
+            }
+        }
+    }
+
+    // ── ATK ──
+    if (!card.isBuilding && !(RenderLock.getOverride('slot', slotKey)?.atk !== undefined)) {
+        const atkEl = el._cAtk || (el._cAtk = el.querySelector('.arena-atk') || el.querySelector('.img-atk'));
+        if (atkEl) {
+            let atkVal = _toFiniteNumberOrNull(card.atk);
+            if (atkVal === null) {
+                const fb = parseInt(atkEl.textContent || '', 10);
+                atkVal = Number.isFinite(fb) ? fb : 0;
+            }
+            const atkStr = String(atkVal);
+            if (atkEl.textContent !== atkStr) atkEl.textContent = atkStr;
+            const baseAtk = _toFiniteNumberOrNull(card.baseAtk ?? card.atk);
+            if (baseAtk !== null) {
+                atkEl.classList.toggle('boosted', atkVal > baseAtk);
+                atkEl.classList.toggle('reduced', atkVal < baseAtk);
+            }
+        }
+    }
+
+    // ── Classes d'etat ──
+    const isJustPlayed = card.turnsOnField === 0 && !card.canAttack;
+    el.classList.toggle('just-played', isJustPlayed);
+    el.classList.toggle('can-attack', !!card.canAttack);
+    el.classList.toggle('petrified', !!card.petrified);
+    el.classList.toggle('melody-locked', !!card.melodyLocked);
+
+    // ── Markers (gaze, poison, entrave, buff) ──
+    _updateMarker(el, card, 'gaze', card.medusaGazeMarker || 0);
+    _updateMarker(el, card, 'poison',
+        (window._pendingPoisonSlots && window._pendingPoisonSlots.has(slotKey)) ? 0 : (card.poisonCounters || 0));
+    _updateMarker(el, card, 'entrave', card.entraveCounters || 0);
+    _updateMarker(el, card, 'buff', card.buffCounters || 0);
+    _stackMarkers(el, card);
+}
+
+// Helper: update a single marker on a card element
+function _updateMarker(el, card, type, count) {
+    const cacheKey = '_c' + type.charAt(0).toUpperCase() + type.slice(1);
+    let marker = el[cacheKey] || (el[cacheKey] = el.querySelector('.' + type + '-marker'));
+    if (count > 0 && !marker) {
+        marker = document.createElement('div');
+        marker.className = type + '-marker marker-pop';
+        marker.innerHTML = (type !== 'buff')
+            ? `<div class="${type}-border"></div><span class="${type}-count">${count}</span>`
+            : `<span class="buff-count">${count}</span>`;
+        el.appendChild(marker);
+        el[cacheKey] = marker;
+    } else if (count > 0 && marker) {
+        const countEl = marker.querySelector('.' + type + '-count');
+        if (countEl && countEl.textContent !== String(count)) {
+            countEl.textContent = count;
+            countEl.classList.remove('marker-bump');
+            void countEl.offsetWidth;
+            countEl.classList.add('marker-bump');
+        }
+    } else if (count === 0 && marker) {
+        marker.remove();
+        el[cacheKey] = null;
+    }
+}
+
+// Helper: stack markers vertically
+function _stackMarkers(el, card) {
+    const markerBase = 2;
+    let idx = 0;
+    const gaze = el._cGaze, poison = el._cPoison, entrave = el._cEntrave, buff = el._cBuff;
+    if (gaze && (card.medusaGazeMarker || 0) > 0) gaze.style.top = `${markerBase + idx++ * 28}px`;
+    if (poison && (card.poisonCounters || 0) > 0) poison.style.top = `${markerBase + idx++ * 28}px`;
+    if (entrave && (card.entraveCounters || 0) > 0) entrave.style.top = `${markerBase + idx++ * 28}px`;
+    if (buff && (card.buffCounters || 0) > 0) buff.style.top = `${markerBase + idx++ * 28}px`;
+}
+
 
 function updateDeckDisplay(owner, deckCount) {
     const dom = _getDomEls();
@@ -1191,10 +1414,12 @@ function fitArenaName(el, _retries) {
     const minSize = originalSize * 0.35;
     if (size < minSize) size = minSize;
     el.style.fontSize = size + 'px';
+    // Vérification unique : re-mesurer et ajuster si le ratio était imprécis
     el.style.overflow = 'visible';
     el.style.width = 'max-content';
-    while (el.offsetWidth > maxW && size > minSize) {
-        size -= 0.3;
+    const verifyW = el.offsetWidth;
+    if (verifyW > maxW && size > minSize) {
+        size = Math.max(minSize, size * (maxW / verifyW));
         el.style.fontSize = size + 'px';
     }
     el.style.overflow = '';

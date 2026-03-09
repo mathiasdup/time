@@ -46,7 +46,6 @@ function _getCachedTextSprite(app, label, style) {
 class GameVFXSystem {
     constructor() {
         this.app = null;
-        this.shieldApp = null;       // App PixiJS séparée pour les boucliers (z-index bas)
         this.container = null;       // Effets ponctuels (explosions, impacts)
         this.shieldLayer = null;     // Couche persistante pour les boucliers
         this.initialized = false;
@@ -84,31 +83,15 @@ class GameVFXSystem {
             this.container = new PIXI.Container();
             this.app.stage.addChild(this.container);
 
-            // Canvas séparé pour les boucliers (z-index bas, juste au-dessus du board)
-            this.shieldApp = new PIXI.Application();
-            await this.shieldApp.init({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                backgroundAlpha: 0,
-                antialias: true,
-                resolution: pixiRes,
-                autoDensity: true,
-            });
-
-            this.shieldApp.canvas.style.position = 'fixed';
-            this.shieldApp.canvas.style.top = '0';
-            this.shieldApp.canvas.style.left = '0';
-            this.shieldApp.canvas.style.pointerEvents = 'none';
-            this.shieldApp.canvas.style.zIndex = '100';
-            document.body.appendChild(this.shieldApp.canvas);
-
+            // Shield/camo/deflexion layer — added BEFORE vfx container so it renders behind
             this.shieldLayer = new PIXI.Container();
-            this.shieldApp.stage.addChild(this.shieldLayer);
+            this.app.stage.addChildAt(this.shieldLayer, 0);
 
-            // Stop shieldApp auto-rendering — we render manually only when shields/camo exist
-            this.shieldApp.ticker.stop();
-
-            window.addEventListener('resize', () => this.handleResize());
+            let _vfxResizeRaf = 0;
+            window.addEventListener('resize', () => {
+                if (_vfxResizeRaf) return;
+                _vfxResizeRaf = requestAnimationFrame(() => { _vfxResizeRaf = 0; this.handleResize(); });
+            });
             this.app.ticker.add(() => this.update());
 
             this._syncStageTransform();
@@ -123,21 +106,18 @@ class GameVFXSystem {
         if (this.app) {
             this.app.renderer.resize(window.innerWidth, window.innerHeight);
         }
-        if (this.shieldApp) {
-            this.shieldApp.renderer.resize(window.innerWidth, window.innerHeight);
-        }
         this._syncStageTransform();
     }
 
     /** Synchronise les stages PIXI avec le zoom/position du game-scaler
      *  Le main app utilise directement les coordonnées viewport (pas de transform sur le stage).
-     *  Le shieldApp utilise un transform pour que les boucliers/camo se positionnent en espace scaler. */
+     *  Le shieldLayer utilise un transform pour que les boucliers/camo se positionnent en espace scaler. */
     _syncStageTransform() {
         const { rect: sRect, zoom } = this._getScalerInfo();
         // Main app : PAS de transform — les effets reçoivent des coords viewport directement
-        if (this.shieldApp) {
-            this.shieldApp.stage.scale.set(zoom);
-            this.shieldApp.stage.position.set(sRect.left, sRect.top);
+        if (this.shieldLayer) {
+            this.shieldLayer.scale.set(zoom);
+            this.shieldLayer.position.set(sRect.left, sRect.top);
         }
     }
 
@@ -189,21 +169,49 @@ class GameVFXSystem {
     }
 
 
+    /** Ensure the main app ticker is running and canvas visible (call before adding work) */
+    _ensureTickerRunning() {
+        if (this.app && !this.app.ticker.started) {
+            this.app.ticker.start();
+            // Show canvas — was hidden to remove from GPU compositing pipeline
+            if (this.app.canvas) this.app.canvas.style.display = '';
+        }
+    }
+
+    /** Hide a canvas to remove it from the GPU compositing pipeline entirely */
+    _hideCanvas(canvas) {
+        if (canvas && canvas.style.display !== 'none') {
+            canvas.style.display = 'none';
+        }
+    }
+
     /** Push effect into activeEffects */
     _pushEffect(effect) {
+        this._ensureTickerRunning();
         this.activeEffects.push(effect);
     }
 
     update() {
-        // Fast path: keep ticker alive but skip work when nothing is active.
-        if (
-            this.activeEffects.length === 0 &&
-            this.activeShields.size === 0 &&
-            this.activeCamouflages.size === 0 &&
-            this.activeDeflexions.size === 0 &&
-            !this._shakeActive
-        ) {
+        // Nothing active → stop ticker + hide canvases to remove from GPU compositing
+        const hasMainWork = this.activeEffects.length > 0 || this._shakeActive;
+        const hasShieldWork = this.activeShields.size > 0 || this.activeCamouflages.size > 0 || this.activeDeflexions.size > 0;
+
+        if (!hasMainWork && !hasShieldWork) {
+            if (this.app && this.app.ticker.started) {
+                this.app.ticker.stop();
+                this._hideCanvas(this.app.canvas);
+            }
             return;
+        }
+
+        // Overlay-only mode (shields/camo/deflexion sans VFX combat) : cap à 15fps
+        // Le canvas plein écran WebGL à 60fps pour de la fumée statique est trop cher
+        if (!hasMainWork && hasShieldWork) {
+            const now = performance.now();
+            if (this._lastOverlayFrame && (now - this._lastOverlayFrame) < 66) return; // ~15fps
+            this._lastOverlayFrame = now;
+        } else {
+            this._lastOverlayFrame = 0;
         }
 
         // Increment frame ID to invalidate per-frame caches (_getScalerInfo)
@@ -245,10 +253,6 @@ class GameVFXSystem {
         this.updateCamouflages();
         this.updateDeflexions();
 
-        // Render shieldApp manually only when there are shields or camouflages
-        if (this.shieldApp && (this.activeShields.size > 0 || this.activeCamouflages.size > 0 || this.activeDeflexions.size > 0)) {
-            this.shieldApp.render();
-        }
     }
 
     // ==================== MÉTHODES UTILITAIRES VFX ====================
@@ -3475,6 +3479,7 @@ class GameVFXSystem {
         });
         container.addChild(runeText);
 
+        this._ensureTickerRunning();
         this.activeShields.set(slotKey, {
             container,
             element,
@@ -3526,8 +3531,8 @@ class GameVFXSystem {
                 rect = this._getElementCenter(element);
                 shield._cachedRect = rect;
             }
-            const stagePos = this.shieldApp.stage.position;
-            const stageScale = this.shieldApp.stage.scale.x;
+            const stagePos = this.shieldLayer.position;
+            const stageScale = this.shieldLayer.scale.x;
             const p = { x: (rect.x - stagePos.x) / stageScale, y: (rect.y - stagePos.y) / stageScale };
 
             // Bob vertical subtil (3s cycle, ±3px)
@@ -3964,7 +3969,7 @@ class GameVFXSystem {
         effectContainer.position.set(x, y);
         this.container.addChild(effectContainer);
 
-        const duration = 2800;
+        const duration = 1800;
         const effect = {
             container: effectContainer,
             finished: false,
@@ -3974,263 +3979,169 @@ class GameVFXSystem {
 
         const maxR = Math.max(w, h) * 0.7;
 
-        // --- Glow de fond (halo doux) ---
+        // --- Glow de fond (halo doux) — pré-dessiné une fois ---
         const glowBg = new PIXI.Graphics();
         glowBg.circle(0, 0, maxR * 1.5);
         glowBg.fill({ color: 0x7a5af0, alpha: 0.15 });
         glowBg.alpha = 0;
         effectContainer.addChild(glowBg);
 
-        // --- Portail rotatif (3 anneaux concentriques) ---
-        const portalRings = [];
-        for (let i = 0; i < 3; i++) {
-            const ring = new PIXI.Graphics();
-            ring.alpha = 0;
-            effectContainer.addChild(ring);
-            portalRings.push({ gfx: ring, offset: i * (Math.PI * 2 / 3), baseR: maxR * (0.7 + i * 0.2) });
-        }
+        // --- Portail rotatif (1 seul anneau, rotation via container) ---
+        const portalGfx = new PIXI.Graphics();
+        const portalContainer = new PIXI.Container();
+        portalContainer.addChild(portalGfx);
+        portalContainer.alpha = 0;
+        effectContainer.addChild(portalContainer);
+        // Dessiner l'anneau une seule fois
+        const portalR = maxR * 0.9;
+        portalGfx.circle(0, 0, portalR);
+        portalGfx.stroke({ color: 0x7a5af0, width: 2.5, alpha: 0.7 });
+        portalGfx.circle(0, 0, portalR * 0.85);
+        portalGfx.stroke({ color: 0xb090ff, width: 1.5, alpha: 0.4 });
 
-        // --- Energy lines (6 lignes convergentes) ---
-        const energyGfx = new PIXI.Graphics();
-        effectContainer.addChild(energyGfx);
-
-        // --- 12 particules convergentes (violet/bleu) ---
+        // --- 8 particules convergentes (pré-dessinées via texture partagée) ---
+        const particleTex = _getParticleCircleTex(this.app);
         const particles = [];
-        for (let i = 0; i < 12; i++) {
-            const gfx = new PIXI.Graphics();
-            const size = 1.5 + Math.random() * 2.5;
-            gfx.circle(0, 0, size);
-            const colors = [0xb090ff, 0x60a0ff, 0x9a7aff, 0xc0a0ff];
-            gfx.fill({ color: colors[i % colors.length], alpha: 0.9 });
-            gfx.alpha = 0;
-            const angle = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+        for (let i = 0; i < 8; i++) {
+            const spr = new PIXI.Sprite(particleTex);
+            spr.anchor.set(0.5);
+            spr.tint = [0xb090ff, 0x60a0ff, 0x9a7aff, 0xc0a0ff][i % 4];
+            spr.alpha = 0;
+            const angle = (i / 8) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
             const dist = maxR * (1.2 + Math.random() * 0.6);
             particles.push({
-                gfx, angle, dist,
+                spr, angle, dist,
                 startX: Math.cos(angle) * dist,
                 startY: Math.sin(angle) * dist,
                 speed: 0.8 + Math.random() * 0.4,
-                drag: 0.94 + Math.random() * 0.03,
             });
-            effectContainer.addChild(gfx);
+            effectContainer.addChild(spr);
         }
 
-        // --- Flash central ---
+        // --- Flash central (pré-dessiné) ---
         const flash = new PIXI.Graphics();
+        flash.circle(0, 0, 40);
+        flash.fill({ color: 0xFFFFFF, alpha: 0.5 });
+        flash.circle(0, 0, 24);
+        flash.fill({ color: 0x7a5af0, alpha: 0.3 });
         flash.alpha = 0;
         effectContainer.addChild(flash);
 
-        // --- Sparks d'apparition (burst au moment du flash) ---
+        // --- Sparks (pré-créés, cachés) ---
         const sparks = [];
-        let sparksCreated = false;
-
-        // --- Shimmer doré (particules finales) ---
-        const shimmerContainer = new PIXI.Container();
-        effectContainer.addChild(shimmerContainer);
-
-        const portalRotation = { angle: 0 };
+        for (let i = 0; i < 10; i++) {
+            const spr = new PIXI.Sprite(particleTex);
+            spr.anchor.set(0.5);
+            spr.tint = [0xffffff, 0xffd700, 0xc0a0ff][i % 3];
+            spr.alpha = 0;
+            spr.scale.set(0.8 + Math.random() * 1.2);
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 5;
+            sparks.push({
+                spr, angle, speed,
+                x: 0, y: 0,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 0.5 + Math.random() * 0.5,
+                maxLife: 0.5 + Math.random() * 0.5,
+                gravity: 0.3 + Math.random() * 0.3,
+                active: false,
+            });
+            effectContainer.addChild(spr);
+        }
 
         const animate = () => {
             if (effect.finished) return;
-            const now = performance.now();
-            const elapsed = now - effect.startTime;
-            const t = elapsed / duration; // 0 → 1 sur 2800ms
-            if (t >= 1) { effect.finished = true; return; }
+            const elapsed = performance.now() - effect.startTime;
+            if (elapsed >= duration) { effect.finished = true; return; }
 
-            const tMs = elapsed; // temps en ms
+            const tMs = elapsed;
 
-            // === Phase 0: 0-400ms — Energy gathering ===
-            if (tMs < 400) {
-                const p = tMs / 400;
+            // === Phase 0: 0-300ms — Energy gathering ===
+            if (tMs < 300) {
+                const p = tMs / 300;
                 glowBg.alpha = p * 0.4;
 
-                // Particules convergent lentement
                 for (const part of particles) {
                     const conv = p * 0.15 * part.speed;
                     const ease = 1 - Math.pow(1 - conv, 3);
-                    part.gfx.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
-                    part.gfx.alpha = Math.min(p * 2, 0.6);
-                    part.gfx.scale.set(0.3 + p * 0.4);
+                    part.spr.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
+                    part.spr.alpha = Math.min(p * 2, 0.6);
+                    part.spr.scale.set(0.3 + p * 0.4);
                 }
 
-                // Portail commence à apparaître
-                portalRotation.angle += 0.02;
-                for (let i = 0; i < portalRings.length; i++) {
-                    const r = portalRings[i];
-                    const radius = r.baseR * (0.3 + p * 0.3);
-                    const arcLen = Math.PI * 2 * p * 0.3;
-                    r.gfx.clear();
-                    r.gfx.arc(0, 0, radius, r.offset + portalRotation.angle, r.offset + portalRotation.angle + arcLen);
-                    r.gfx.stroke({ color: 0x7a5af0, width: 2, alpha: p * 0.5 });
-                    r.gfx.alpha = 1;
-                }
+                portalContainer.alpha = p * 0.5;
+                portalContainer.rotation += 0.02;
             }
 
-            // === Phase 1: 400-800ms — Portal opens ===
-            else if (tMs < 800) {
-                const p = (tMs - 400) / 400;
+            // === Phase 1: 300-600ms — Portal opens ===
+            else if (tMs < 600) {
+                const p = (tMs - 300) / 300;
                 glowBg.alpha = 0.4 + p * 0.4;
 
-                // Particules convergent plus fort
                 for (const part of particles) {
                     const conv = (0.15 + p * 0.55) * part.speed;
                     const ease = 1 - Math.pow(1 - Math.min(conv, 1), 3);
-                    part.gfx.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
-                    part.gfx.alpha = 0.6 + p * 0.3;
-                    part.gfx.scale.set(0.7 + p * 0.3);
+                    part.spr.position.set(part.startX * (1 - ease), part.startY * (1 - ease));
+                    part.spr.alpha = 0.6 + p * 0.3;
+                    part.spr.scale.set(0.7 + p * 0.3);
                 }
 
-                // Portail grandit et tourne
-                portalRotation.angle += 0.04;
-                for (let i = 0; i < portalRings.length; i++) {
-                    const r = portalRings[i];
-                    const radius = r.baseR * (0.6 + p * 0.4);
-                    const arcLen = Math.PI * 2 * (0.3 + p * 0.7);
-                    r.gfx.clear();
-                    r.gfx.arc(0, 0, radius, r.offset + portalRotation.angle * (1 + i * 0.3), r.offset + portalRotation.angle * (1 + i * 0.3) + arcLen);
-                    r.gfx.stroke({ color: i === 0 ? 0x7a5af0 : (i === 1 ? 0xb090ff : 0xffffff), width: 3 - i, alpha: (0.5 + p * 0.4) * (1 - i * 0.15) });
-                    r.gfx.alpha = 1;
-                }
-
-                // Energy lines convergentes
-                energyGfx.clear();
-                for (let i = 0; i < 6; i++) {
-                    const a = portalRotation.angle * 3 + i * Math.PI / 3;
-                    const len = maxR * 2.5 * (1 - p * 0.3);
-                    energyGfx.moveTo(Math.cos(a) * len, Math.sin(a) * len);
-                    energyGfx.lineTo(Math.cos(a) * 15, Math.sin(a) * 15);
-                    energyGfx.stroke({ color: 0x9a7aff, width: 1 + p, alpha: 0.3 * p });
-                }
+                portalContainer.alpha = 0.5 + p * 0.5;
+                portalContainer.rotation += 0.04;
+                portalContainer.scale.set(0.6 + p * 0.4);
             }
 
-            // === Phase 2: 800-1000ms — Flash & card materializes ===
-            else if (tMs < 1000) {
-                const p = (tMs - 800) / 200;
+            // === Phase 2: 600-800ms — Flash & card materializes ===
+            else if (tMs < 800) {
+                const p = (tMs - 600) / 200;
 
-                // Flash blanc éclatant
-                if (!sparksCreated) {
-                    sparksCreated = true;
-                    for (let i = 0; i < 30; i++) {
-                        const gfx = new PIXI.Graphics();
-                        const size = 1 + Math.random() * 3;
-                        const colors = [0xffffff, 0xffd700, 0xc0a0ff];
-                        gfx.star(0, 0, 4, size, size * 0.4);
-                        gfx.fill({ color: colors[Math.floor(Math.random() * 3)], alpha: 1 });
-                        const angle = Math.random() * Math.PI * 2;
-                        const speed = 2 + Math.random() * 5;
-                        sparks.push({
-                            gfx, angle, speed,
-                            x: 0, y: 0,
-                            vx: Math.cos(angle) * speed,
-                            vy: Math.sin(angle) * speed,
-                            life: 0.5 + Math.random() * 0.5,
-                            maxLife: 0.5 + Math.random() * 0.5,
-                            gravity: 0.3 + Math.random() * 0.3,
-                            rotSpeed: (Math.random() - 0.5) * 5,
-                        });
-                        effectContainer.addChild(gfx);
-                    }
+                // Activer les sparks une seule fois
+                if (!sparks[0].active) {
+                    for (const s of sparks) s.active = true;
                 }
 
-                const flashAlpha = 0.7 * (1 - p);
-                const flashScale = 30 + p * 20;
-                flash.clear();
-                flash.circle(0, 0, flashScale);
-                flash.fill({ color: 0xFFFFFF, alpha: flashAlpha * 0.5 });
-                flash.circle(0, 0, flashScale * 0.6);
-                flash.fill({ color: 0x7a5af0, alpha: flashAlpha * 0.3 });
-                flash.alpha = 1;
-
+                flash.alpha = 0.7 * (1 - p);
+                flash.scale.set(0.75 + p * 0.5);
                 glowBg.alpha = 0.8 - p * 0.3;
+                portalContainer.alpha = 1 - p * 0.5;
 
-                // Portail se réduit
-                for (let i = 0; i < portalRings.length; i++) {
-                    const r = portalRings[i];
-                    r.gfx.alpha = 1 - p * 0.5;
-                }
-                energyGfx.alpha = 1 - p;
-
-                // Particules disparaissent
                 for (const part of particles) {
-                    part.gfx.alpha = Math.max(0, 0.9 - p * 2);
+                    part.spr.alpha = Math.max(0, 0.9 - p * 2);
                 }
             }
 
-            // === Phase 3: 1000-1500ms — Card settles, sparks fly ===
-            else if (tMs < 1500) {
-                const p = (tMs - 1000) / 500;
-
+            // === Phase 3: 800-1200ms — Card settles, sparks fly ===
+            else if (tMs < 1200) {
+                const p = (tMs - 800) / 400;
                 flash.alpha = 0;
                 glowBg.alpha = 0.5 * (1 - p);
-                energyGfx.alpha = 0;
-
-                // Portail disparaît
-                for (const r of portalRings) {
-                    r.gfx.alpha = Math.max(0, 0.5 * (1 - p * 2));
-                }
-
-                // Particules convergentes disparues
-                for (const part of particles) {
-                    part.gfx.alpha = 0;
-                }
+                portalContainer.alpha = Math.max(0, 0.5 * (1 - p * 2));
+                for (const part of particles) part.spr.alpha = 0;
             }
 
-            // === Phase 4: 1500-2800ms — Idle shimmer ===
+            // === Phase 4: 1200-1800ms — Fade out ===
             else {
-                const p = (tMs - 1500) / 1300;
-
-                glowBg.alpha = (0.1 + Math.sin(tMs * 0.004) * 0.05) * (1 - p);
-                for (const r of portalRings) r.gfx.alpha = 0;
-                energyGfx.alpha = 0;
+                const p = (tMs - 1200) / 600;
+                glowBg.alpha = 0.1 * (1 - p);
+                portalContainer.alpha = 0;
                 flash.alpha = 0;
-                for (const part of particles) part.gfx.alpha = 0;
-
-                // Shimmer doré sur les bords (rare)
-                if (Math.random() < 0.15 * (1 - p)) {
-                    const edge = Math.floor(Math.random() * 4);
-                    let px, py;
-                    const hw = w / 2, hh = h / 2;
-                    if (edge === 0) { px = -hw + Math.random() * w; py = -hh; }
-                    else if (edge === 1) { px = hw; py = -hh + Math.random() * h; }
-                    else if (edge === 2) { px = -hw + Math.random() * w; py = hh; }
-                    else { px = -hw; py = -hh + Math.random() * h; }
-                    const sg = new PIXI.Graphics();
-                    sg.circle(0, 0, 1 + Math.random() * 1.5);
-                    sg.fill({ color: 0xffd700, alpha: 0.5 });
-                    sg.position.set(px, py);
-                    shimmerContainer.addChild(sg);
-                    const startTime = now;
-                    const shimmerLife = 600 + Math.random() * 400;
-                    const vy = -(0.3 + Math.random() * 0.3);
-                    const shimmerTick = () => {
-                        const age = performance.now() - startTime;
-                        if (age > shimmerLife || effect.finished) { sg.destroy(); return; }
-                        sg.y += vy;
-                        sg.alpha = 0.5 * (1 - age / shimmerLife);
-                        requestAnimationFrame(shimmerTick);
-                    };
-                    requestAnimationFrame(shimmerTick);
-                }
+                for (const part of particles) part.spr.alpha = 0;
             }
 
-            // === Update sparks (all phases after creation) ===
-            for (let i = sparks.length - 1; i >= 0; i--) {
-                const s = sparks[i];
-                const dt = 1 / 60;
+            // === Update sparks ===
+            const dt = 1 / 60;
+            for (const s of sparks) {
+                if (!s.active) continue;
                 s.life -= dt;
-                if (s.life <= 0) {
-                    s.gfx.destroy();
-                    sparks.splice(i, 1);
-                    continue;
-                }
+                if (s.life <= 0) { s.spr.alpha = 0; continue; }
                 s.vx *= 0.95;
                 s.vy *= 0.95;
                 s.vy += s.gravity * dt;
                 s.x += s.vx;
                 s.y += s.vy;
-                s.gfx.position.set(s.x, s.y);
-                s.gfx.rotation += s.rotSpeed * dt;
-                s.gfx.alpha = Math.max(0, s.life / s.maxLife);
+                s.spr.position.set(s.x, s.y);
+                s.spr.alpha = Math.max(0, s.life / s.maxLife);
             }
 
         };
@@ -4400,6 +4311,7 @@ class GameVFXSystem {
             });
         }
 
+        this._ensureTickerRunning();
         this.activeCamouflages.set(slotKey, {
             container, element, startTime: performance.now(),
             particles, domOverlay, smokeMask, smokeContainer, baseTime,
@@ -4504,6 +4416,7 @@ class GameVFXSystem {
         container.addChild(maskGfx);
         container.mask = maskGfx;
 
+        this._ensureTickerRunning();
         this.activeDeflexions.set(slotKey, {
             container,
             element,
@@ -4643,8 +4556,8 @@ class GameVFXSystem {
                 def._cachedRect = rect;
             }
             // Position directly using viewport coords, accounting for stage transform
-            const stagePos = this.shieldApp.stage.position;
-            const stageScale = this.shieldApp.stage.scale.x;
+            const stagePos = this.shieldLayer.position;
+            const stageScale = this.shieldLayer.scale.x;
             const px = (rect.x - stagePos.x) / stageScale;
             const py = (rect.y - stagePos.y) / stageScale;
             container.position.set(px, py);
@@ -4726,8 +4639,8 @@ class GameVFXSystem {
                 camo._cachedRect = rect;
             }
             const { zoom } = this._getScalerInfo();
-            const stagePos2 = this.shieldApp.stage.position;
-            const stageScale2 = this.shieldApp.stage.scale.x;
+            const stagePos2 = this.shieldLayer.position;
+            const stageScale2 = this.shieldLayer.scale.x;
             const pp = { x: (rect.x - stagePos2.x) / stageScale2, y: (rect.y - stagePos2.y) / stageScale2 };
             const sw = rect.width / zoom;
             const sh = rect.height / zoom;
@@ -6757,10 +6670,12 @@ class GameVFXSystem {
      * @param duration  durée max en ms
      */
     screenShake(intensity = 14, decay = 0.86, duration = 400) {
+        return; // Désactivé — on garde uniquement les floating damage numbers
         const scaler = document.getElementById('game-scaler');
         if (!scaler) return;
         // Prendre le max d'intensité si un shake est déjà en cours
         if (this._shakeActive && intensity <= this._shakeIntensity) return;
+        this._ensureTickerRunning();
         // Cancel old RAF loop if running (prevents zombie loops)
         if (this._shakeRafId) cancelAnimationFrame(this._shakeRafId);
         // Store pre-shake scaler rect so _toScaler/updateShields/updateCamouflages

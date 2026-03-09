@@ -682,7 +682,8 @@ if (typeof window !== 'undefined' && typeof window.PerfMon === 'undefined') {
             recordAnimationQueueWait,
             recordAnimationStep,
             recordResolutionLog,
-            flush
+            flush,
+            evt: function() {} // noop — replaced by perf-monitor.js with real trail
         };
     })();
 }

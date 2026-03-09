@@ -59,8 +59,14 @@ function _cancelPendingResolutionStateRender() {
 }
 
 function _renderFromStateUpdate(phase) {
+    if (window.PerfMon) window.PerfMon.evt("stateUpdate", phase);
     // Clear pending death markers only on phase change (resolution end = deaths fully processed)
     if (window._pendingDeathSlots && phase !== 'resolution') window._pendingDeathSlots.clear();
+    // Hide/show glow canvases immediately on phase change (not dependent on glow loop timing)
+    if (typeof CardGlow !== 'undefined') {
+        if (phase === 'resolution') CardGlow.hideForResolution();
+        else CardGlow.showAfterResolution();
+    }
     // Fallback debug: window.FORCE_FULL_RENDER = true pour désactiver le delta render
     if (window.FORCE_FULL_RENDER) {
         _cancelPendingResolutionStateRender();
@@ -72,7 +78,7 @@ function _renderFromStateUpdate(phase) {
     const hasDiff = typeof StateDiff !== 'undefined';
     const prev = hasDiff ? StateDiff.getPrev() : null;
 
-    if (phase !== 'resolution' || !prev) {
+    if (!prev) {
         _cancelPendingResolutionStateRender();
         render();
         if (hasDiff) StateDiff.remember(state);
@@ -261,7 +267,7 @@ function _applyClientPoisonApply(anim, context = 'unknown') {
             after,
             target: _hpTraceSlot(playerNum, row, col)
         });
-        if (!window._poisonRenderRaf) { window._poisonRenderRaf = requestAnimationFrame(() => { window._poisonRenderRaf = 0; render(); }); }
+        if (!window._poisonRenderRaf) { window._poisonRenderRaf = requestAnimationFrame(() => { window._poisonRenderRaf = 0; renderPartial({field: true}); }); }
     }
 }
 
@@ -310,11 +316,6 @@ function _traceBuffApplyPayload(context, data) {
 function setupCustomDrag() {
     CustomDrag.setCallbacks({
         canDrag: () => canPlay(),
-
-        arrowMode: (data) => {
-            return data.source === 'hand' && data.card &&
-                   (data.card.type === 'spell' || data.card.type === 'trap');
-        },
 
         dragStart: (data, sourceEl) => {
             hideCardPreview();
@@ -674,7 +675,7 @@ function initSocket() {
             startGame();
         }
 
-        _renderFromStateUpdate(s.phase);
+        if (window.PerfMon) window.PerfMon.evt("gameState", s.phase + " T" + (s.turn||"?")); _renderFromStateUpdate(s.phase);
         updatePhaseDisplay();
         if (typeof window.visTrace === 'function') {
             const nextSig = typeof window.visBuildStateSig === 'function' ? window.visBuildStateSig(state) : null;
@@ -796,7 +797,7 @@ function initSocket() {
                 isAnimating: (typeof isAnimating !== 'undefined') ? !!isAnimating : false,
             });
         }
-        if (window.PerfMon) window.PerfMon.onNewTurn(d.turn);
+        if (window.PerfMon) { window.PerfMon.onNewTurn(d.turn); window.PerfMon.evt('newTurn', 'T'+d.turn); }
         // Mettre a jour le numero de tour immediatement.
         // Garder la phase courante jusqu'a la fin des animations pour eviter un render "planning" premature.
         if (state) {
@@ -870,6 +871,7 @@ function initSocket() {
 
         log(`ðŸŽ® Tour ${d.turn} â€” âš¡${d.maxEnergy} Ã©nergie`, 'phase');
 
+        if (window.PerfMon) window.PerfMon.evt("newTurn:render");
         // Forcer un render maintenant que les animations sont terminÃ©es et l'UI rÃ©initialisÃ©e
         // (le gameStateUpdate a dÃ©jÃ  mis phase='planning', mais canPlay() bloquait pendant les animations)
         render();
@@ -949,7 +951,7 @@ function initSocket() {
             });
         }
         // Forcer un render aprÃ¨s dÃ©blocage pour mettre Ã  jour l'affichage
-        if (!window._unblockRaf) { window._unblockRaf = requestAnimationFrame(() => { window._unblockRaf = 0; render(); }); }
+        if (!window._unblockRaf) { window._unblockRaf = requestAnimationFrame(() => { window._unblockRaf = 0; renderPartial({field: true}); }); }
     });
 
     // Le serveur demande au client de confirmer que sa queue d'animations est vide

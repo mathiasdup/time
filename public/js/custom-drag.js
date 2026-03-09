@@ -11,7 +11,6 @@ const CustomDrag = (function() {
     let dragState = null;
     let ghostEl = null;
     let isDraggingFlag = false;
-    let isArrowMode = false;
     let rafId = null;
     let lastHoverTarget = null;
 
@@ -31,7 +30,6 @@ const CustomDrag = (function() {
     let onDragEnd = null;
     let onDrop = null;
     let canDragCheck = null;
-    let arrowModeCheck = null;
 
     // ==========================================
     // Configuration
@@ -238,16 +236,7 @@ const CustomDrag = (function() {
                 const cardInSlot = target.element.querySelector('.card');
                 if (cardInSlot) cardInSlot.classList.remove('spell-hover-target');
             }
-
-            // Tilt de la flèche si survol d'une cible valide
-            if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-                ArrowTargeting.setTiltTarget(isValid);
-            }
         } else {
-            // Pas de cible sous le curseur — désactiver le tilt
-            if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-                ArrowTargeting.setTiltTarget(false);
-            }
         }
 
         // Reset global zone style si on la quitte
@@ -270,7 +259,7 @@ const CustomDrag = (function() {
         // Drop instantané : le ghost disparaît, la carte apparaît dans le slot via render()
         // Ne pas restaurer la visibilité de la carte source — évite un flash dans la main
         if (dragState && dragState.sourceEl) {
-            dragState.sourceEl.classList.remove('custom-dragging', 'arrow-dragging');
+            dragState.sourceEl.classList.remove('custom-dragging');
             dragState.sourceEl = null; // cleanup() ne restaurera pas visibility
         }
         cleanup();
@@ -312,7 +301,7 @@ const CustomDrag = (function() {
         destroyGhost();
 
         if (dragState && dragState.sourceEl) {
-            dragState.sourceEl.classList.remove('custom-dragging', 'arrow-dragging');
+            dragState.sourceEl.classList.remove('custom-dragging');
             dragState.sourceEl.style.visibility = '';
         }
         if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
@@ -330,7 +319,6 @@ const CustomDrag = (function() {
 
         dragState = null;
         isDraggingFlag = false;
-        isArrowMode = false;
         lastHoverTarget = null;
         tiltX = 0;
         tiltY = 0;
@@ -405,23 +393,7 @@ const CustomDrag = (function() {
             // Premier mouvement significatif — démarrer le drag
             isDraggingFlag = true;
 
-            // Vérifier si on utilise le mode flèche (sorts/pièges)
-            if (arrowModeCheck && arrowModeCheck(dragState.data)) {
-                isArrowMode = true;
-
-                // La carte se lève mais reste en place
-                dragState.sourceEl.classList.add('arrow-dragging');
-                if (typeof CardGlow !== 'undefined') CardGlow.markDirty();
-
-                // Activer la flèche WebGL depuis le haut de la carte
-                if (typeof ArrowTargeting !== 'undefined') {
-                    ArrowTargeting.init();
-                    const rect = dragState.sourceEl.getBoundingClientRect();
-                    ArrowTargeting.activate(rect.left + rect.width / 2, rect.top);
-                }
-            } else {
-                isArrowMode = false;
-
+            {
                 // Mode classique : créer le ghost (taille slot)
                 ghostEl = createGhost(dragState.data, dragState.sourceEl, dragState.originRect);
 
@@ -452,27 +424,12 @@ const CustomDrag = (function() {
 
         dragState.hasMoved = true;
 
-        // Mettre à jour la flèche si mode arrow
-        if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-            ArrowTargeting.updateEnd(e.clientX, e.clientY);
-        }
+        // Feedback de hover
+        updateHoverFeedback(e.clientX, e.clientY);
 
-        // Feedback de hover — utiliser la pointe de la flèche en mode arrow
-        if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-            const tip = ArrowTargeting.getTipPos();
-            updateHoverFeedback(tip.x, tip.y);
-        } else {
-            updateHoverFeedback(e.clientX, e.clientY);
-        }
-
-        // Callback de mouvement — passer la position de la pointe en mode arrow
+        // Callback de mouvement
         if (onDragMove) {
-            if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-                const tip = ArrowTargeting.getTipPos();
-                onDragMove(tip.x, tip.y, dragState.data);
-            } else {
-                onDragMove(e.clientX, e.clientY, dragState.data);
-            }
+            onDragMove(e.clientX, e.clientY, dragState.data);
         }
     }
 
@@ -491,32 +448,13 @@ const CustomDrag = (function() {
             return;
         }
 
-        // Trouver la cible — utiliser la pointe de la flèche en mode arrow
-        let detectX = e.clientX, detectY = e.clientY;
-        if (isArrowMode && typeof ArrowTargeting !== 'undefined') {
-            const tip = ArrowTargeting.getTipPos();
-            detectX = tip.x;
-            detectY = tip.y;
-        }
-        const target = getDropTargetAt(detectX, detectY);
+        // Trouver la cible
+        const target = getDropTargetAt(e.clientX, e.clientY);
 
         let dropAccepted = false;
 
         if (target && onDrop) {
             dropAccepted = onDrop(dragState.data, target, dragState.sourceEl);
-        }
-
-        // Mode flèche : pas de ghost, pas d'animation snap/return
-        if (isArrowMode) {
-            if (typeof ArrowTargeting !== 'undefined') {
-                ArrowTargeting.deactivate();
-            }
-            const savedData = dragState ? { ...dragState.data } : null;
-            cleanup();
-            if (onDragEnd) {
-                onDragEnd(savedData, dropAccepted);
-            }
-            return;
         }
 
         // Mode classique avec ghost
@@ -543,12 +481,7 @@ const CustomDrag = (function() {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
 
-            if (isArrowMode) {
-                if (typeof ArrowTargeting !== 'undefined') ArrowTargeting.deactivate();
-                const savedData = dragState ? { ...dragState.data } : null;
-                cleanup();
-                if (onDragEnd) onDragEnd(savedData, false);
-            } else {
+            {
                 const savedData = dragState ? { ...dragState.data } : null;
                 animateReturn(() => {
                     if (onDragEnd) onDragEnd(savedData, false);
@@ -562,12 +495,7 @@ const CustomDrag = (function() {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
 
-            if (isArrowMode) {
-                if (typeof ArrowTargeting !== 'undefined') ArrowTargeting.deactivate();
-                const savedData = dragState ? { ...dragState.data } : null;
-                cleanup();
-                if (onDragEnd) onDragEnd(savedData, false);
-            } else {
+            {
                 const savedData = dragState ? { ...dragState.data } : null;
                 animateReturn(() => {
                     if (onDragEnd) onDragEnd(savedData, false);
@@ -604,13 +532,12 @@ const CustomDrag = (function() {
         /**
          * Configure les callbacks
          */
-        setCallbacks({ dragStart, dragMove, dragEnd, drop, canDrag, arrowMode }) {
+        setCallbacks({ dragStart, dragMove, dragEnd, drop, canDrag }) {
             onDragStart = dragStart;
             onDragMove = dragMove;
             onDragEnd = dragEnd;
             onDrop = drop;
             canDragCheck = canDrag;
-            arrowModeCheck = arrowMode || null;
         },
 
         /**
@@ -620,10 +547,7 @@ const CustomDrag = (function() {
             if (isDraggingFlag) {
                 document.removeEventListener('mousemove', handleMouseMove);
                 document.removeEventListener('mouseup', handleMouseUp);
-                if (isArrowMode) {
-                    if (typeof ArrowTargeting !== 'undefined') ArrowTargeting.deactivate();
-                    cleanup();
-                } else {
+                {
                     animateReturn();
                 }
             } else {

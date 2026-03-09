@@ -49,7 +49,7 @@ const CardGlow = (() => {
         { spread: 1,   alpha: 1.0,  lineW: 1.5, color: '#ffffff' },
     ];
 
-    const NUM_CTRL = 36; // Points de contrôle (léger pour Canvas 2D)
+    const NUM_CTRL = 18; // Points de contrôle (réduit de 36 — le blur masque la différence)
     const GLOW_MARGIN = 1;
 
     // ── Outer border path (SVG coords, first sub-path of CARD_SVG_BORDER_PATH) ──
@@ -87,6 +87,7 @@ const CardGlow = (() => {
 
     // ── Cache DOM : recalculé uniquement quand dirty ──
     let _dirty = true;
+    let _glowHidden = false; // true when canvases are hidden during resolution
     let _cachedTargets = []; // { el, layers, borderW, borderR }
 
     // ── Périmètre helpers ──
@@ -172,6 +173,39 @@ const CardGlow = (() => {
         // Keep normal glow behavior for non-target cards even in trap warning mode.
         const trapWarningMode = false && !!battlefieldEl && battlefieldEl.classList.contains('trap-warning-mode');
 
+        // Build a map of previous targets by element for fast lookup & canvas reuse
+        const prevByEl = new Map();
+        for (const prev of _cachedTargets) {
+            prevByEl.set(prev.el, prev);
+        }
+
+        // Reuse canvas/ctx/_sized/_positioned from a previous target or from an existing DOM canvas
+        function reuseCanvasState(target) {
+            const prev = prevByEl.get(target.el);
+            if (prev && prev._canvas && prev._canvas.isConnected) {
+                target._canvas = prev._canvas;
+                target._ctx = prev._ctx;
+                target._sized = prev._sized;
+                target._positioned = prev._positioned;
+                target._cw = prev._cw;
+                target._ch = prev._ch;
+                target._dpr = prev._dpr;
+                target._canvasW = prev._canvasW;
+                target._canvasH = prev._canvasH;
+            } else {
+                // Check if the card element already has a glow canvas child (survived across phases)
+                const existing = target.el.querySelector('.card-glow-canvas');
+                if (existing) {
+                    target._canvas = existing;
+                    target._ctx = existing.getContext('2d');
+                    // Keep _sized true if dimensions haven't changed
+                    target._sized = true;
+                    target._positioned = true;
+                }
+            }
+            return target;
+        }
+
         // Cartes en main (playable, pas committed, pas cachée par custom-dragging)
         // Cache borderW/borderR par élément pour éviter getComputedStyle à chaque frame
         function getCachedBorder(el) {
@@ -186,16 +220,15 @@ const CardGlow = (() => {
         for (const cardEl of playableCards) {
             if (cardEl.classList.contains('committed') || cardEl.classList.contains('custom-dragging')) {
                 const existing = cardEl.querySelector('.card-glow-canvas');
-                if (existing) existing.remove();
+                if (existing) existing.style.display = 'none';
                 continue;
             }
-            const isDragging = cardEl.classList.contains('arrow-dragging');
             const isHovered = cardEl.matches(':hover');
             const { borderW, borderR } = getCachedBorder(cardEl);
             const isSelected = cardEl.classList.contains('selected');
-            const layers = (isDragging || isSelected) ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
+            const layers = isSelected ? LAYER_CONFIGS_ORANGE : isHovered ? LAYER_CONFIGS_WHITE : LAYER_CONFIGS_BLUE;
             const isArena = cardEl.classList.contains('arena-style');
-            newTargets.push({ el: cardEl, layers, borderW, borderR, isArena });
+            newTargets.push(reuseCanvasState({ el: cardEl, layers, borderW, borderR, isArena }));
             activeEls.add(cardEl);
         }
 
@@ -206,7 +239,7 @@ const CardGlow = (() => {
             const { borderW, borderR } = getCachedBorder(cardEl);
             const isArena = cardEl.classList.contains('arena-style');
             if (window.DEBUG_LOGS) console.log("[SPELL-GLOW] CardGlow painting orange on committed-spell", { time: performance.now().toFixed(1) });
-            newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+            newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
             activeEls.add(cardEl);
         }
 
@@ -215,7 +248,7 @@ const CardGlow = (() => {
         if (ghostCard) {
             const { borderW, borderR } = getCachedBorder(ghostCard);
             const isArena = ghostCard.classList.contains('arena-style');
-            newTargets.push({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+            newTargets.push(reuseCanvasState({ el: ghostCard, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
             activeEls.add(ghostCard);
         }
 
@@ -225,7 +258,7 @@ const CardGlow = (() => {
             for (const cardEl of trapTargetCards) {
                 const { borderW, borderR } = getCachedBorder(cardEl);
                 const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
                 activeEls.add(cardEl);
             }
         } else {
@@ -235,7 +268,7 @@ const CardGlow = (() => {
                 if (activeEls.has(cardEl)) continue;
                 const { borderW, borderR } = getCachedBorder(cardEl);
                 const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena });
+                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_ORANGE, borderW, borderR, isArena }));
                 activeEls.add(cardEl);
             }
 
@@ -246,7 +279,7 @@ const CardGlow = (() => {
                 const { borderW, borderR } = getCachedBorder(cardEl);
                 const isArena = cardEl.classList.contains('arena-style');
                 const isHover = cardEl.closest('.card-slot')?.matches(':hover');
-                newTargets.push({ el: cardEl, layers: isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR, isArena });
+                newTargets.push(reuseCanvasState({ el: cardEl, layers: isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE, borderW, borderR, isArena }));
                 activeEls.add(cardEl);
             }
 
@@ -258,7 +291,7 @@ const CardGlow = (() => {
                 const isHoverTarget = heroEl.classList.contains('hero-hover-target');
                 const isHover = heroEl.matches(':hover');
                 const layers = isHoverTarget ? LAYER_CONFIGS_ORANGE : (isHover ? LAYER_CONFIGS_ORANGE : LAYER_CONFIGS_BLUE);
-                newTargets.push({ el: heroEl, layers, borderW, borderR, isArena: true });
+                newTargets.push(reuseCanvasState({ el: heroEl, layers, borderW, borderR, isArena: true }));
                 activeEls.add(heroEl);
             }
 
@@ -268,7 +301,7 @@ const CardGlow = (() => {
                 if (activeEls.has(cardEl)) continue;
                 const { borderW, borderR } = getCachedBorder(cardEl);
                 const isArena = cardEl.classList.contains('arena-style');
-                newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR, isArena });
+                newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_PURPLE, borderW, borderR, isArena }));
                 activeEls.add(cardEl);
             }
 
@@ -280,34 +313,57 @@ const CardGlow = (() => {
                     if (activeEls.has(cardEl)) continue; // déjà ciblé ou en combat
                     const { borderW, borderR } = getCachedBorder(cardEl);
                     const isArena = cardEl.classList.contains('arena-style');
-                    newTargets.push({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR, isArena });
+                    newTargets.push(reuseCanvasState({ el: cardEl, layers: LAYER_CONFIGS_GREEN, borderW, borderR, isArena }));
                     activeEls.add(cardEl);
                 }
             }
         }
 
-        // Nettoyer les canvas orphelins — iterate previous targets instead of full DOM query
+        // Hide canvases on cards that lost glow status but remain in the DOM.
+        // Don't remove — they'll be reused if the card becomes a target again.
+        // Cards removed from DOM take their canvas children with them automatically.
         for (const prev of _cachedTargets) {
-            if (!activeEls.has(prev.el)) {
-                const c = prev.el.querySelector('.card-glow-canvas');
-                if (c) c.remove();
+            if (!activeEls.has(prev.el) && prev._canvas && prev._canvas.isConnected) {
+                prev._canvas.style.display = 'none';
             }
         }
 
         _cachedTargets = newTargets;
     }
 
-    // ── Boucle d'animation (20fps cap) ──
+    // ── Boucle d'animation (10fps cap) ──
 
-    const FRAME_INTERVAL = 1000 / 20; // 20fps — fluide visuellement, 2× moins de CPU
+    const FRAME_INTERVAL = 1000 / 10; // 10fps
     let _lastFrameTime = 0;
 
     function update(timestamp) {
-        animId = requestAnimationFrame(update);
-
-        // Cap à 20fps : skip si le delta est trop court
-        if (timestamp - _lastFrameTime < FRAME_INTERVAL) return;
+        // Cap à 10fps : skip si le delta est trop court
+        if (timestamp - _lastFrameTime < FRAME_INTERVAL) {
+            animId = requestAnimationFrame(update);
+            return;
+        }
         _lastFrameTime = timestamp;
+
+        // Pendant la résolution, retirer les canvas glow du render tree (display:none).
+        // visibility:hidden ne suffit pas — Chrome compositor garde les layers.
+        if (typeof state !== 'undefined' && state && state.phase === 'resolution') {
+            if (!_glowHidden) {
+                _glowHidden = true;
+                document.querySelectorAll('.card-glow-canvas').forEach(c => {
+                    c.style.display = 'none';
+                });
+            }
+            animId = requestAnimationFrame(update);
+            return;
+        }
+        // Sortie de résolution : remettre les canvas et forcer redraw
+        if (_glowHidden) {
+            _glowHidden = false;
+            _dirty = true;
+            document.querySelectorAll('.card-glow-canvas').forEach(c => {
+                c.style.display = '';
+            });
+        }
 
         const dt = lastTime ? (timestamp - lastTime) / 1000 : (FRAME_INTERVAL / 1000);
         lastTime = timestamp;
@@ -318,11 +374,19 @@ const CardGlow = (() => {
             rebuildTargets();
         }
 
+        // Si aucune cible, arrêter la boucle — elle redémarrera via markDirty()
+        if (_cachedTargets.length === 0) {
+            animId = null;
+            return;
+        }
+
+        animId = requestAnimationFrame(update);
+
         // Mettre à jour le glow hover à chaque frame (pas besoin de rebuild complet)
         for (const target of _cachedTargets) {
             // Cartes en main : hover blanc / selected orange
             if (target.el.closest('.my-hand') && target.el.classList.contains('playable')
-                && !target.el.classList.contains('arrow-dragging')) {
+                ) {
                 const isSelTarget = target.el.classList.contains('selected');
                 const handHasSel = target.el.closest('.has-selection');
                 target.layers = isSelTarget ? LAYER_CONFIGS_ORANGE
@@ -355,7 +419,14 @@ const CardGlow = (() => {
             let glowCanvas = target._canvas;
             if (!glowCanvas || !glowCanvas.isConnected) {
                 glowCanvas = cardEl.querySelector('.card-glow-canvas');
-                if (!glowCanvas) {
+                if (glowCanvas) {
+                    // Reuse existing canvas — preserve dimensions if already sized
+                    target._canvas = glowCanvas;
+                    target._ctx = glowCanvas.getContext('2d');
+                    // _sized stays as-is (true if carried over, undefined/false if new target)
+                    if (!target._sized) target._sized = false;
+                    if (!target._positioned) target._positioned = false;
+                } else {
                     glowCanvas = document.createElement('canvas');
                     glowCanvas.className = 'card-glow-canvas';
                     glowCanvas.style.cssText = `
@@ -364,10 +435,10 @@ const CardGlow = (() => {
                         pointer-events: none;
                     `;
                     cardEl.appendChild(glowCanvas);
+                    target._canvas = glowCanvas;
+                    target._ctx = glowCanvas.getContext('2d');
+                    target._sized = false;
                 }
-                target._canvas = glowCanvas;
-                target._ctx = glowCanvas.getContext('2d');
-                target._sized = false; // forcer le recalcul des dimensions
             }
 
             // Mettre à jour le positionnement (une seule fois quand dirty ou pas encore fait)
@@ -452,13 +523,47 @@ const CardGlow = (() => {
         document.querySelectorAll('.card-glow-canvas').forEach(c => c.remove());
         _cachedTargets = [];
         _dirty = true;
+        _glowHidden = false;
         elapsed = 0;
         lastTime = 0;
     }
 
-    function markDirty() {
+    function markDirty(force) {
+        // Pendant la résolution, ignorer les markDirty sauf force=true
+        // (les targets glow ne changent pas entre les steps d'animation)
+        if (!force && typeof state !== 'undefined' && state && state.phase === 'resolution') {
+            return;
+        }
         _dirty = true;
+        // Relancer la boucle si elle était arrêtée (0 targets précédemment)
+        if (!animId) {
+            animId = requestAnimationFrame(update);
+        }
     }
 
-    return { init, destroy, markDirty };
+    function _perfStats() {
+        return { targets: _cachedTargets.length, running: !!animId };
+    }
+
+    function hideForResolution() {
+        if (_glowHidden) return;
+        _glowHidden = true;
+        document.querySelectorAll('.card-glow-canvas').forEach(c => {
+            c.style.display = 'none';
+        });
+    }
+
+    function showAfterResolution() {
+        if (!_glowHidden) return;
+        _glowHidden = false;
+        _dirty = true;
+        document.querySelectorAll('.card-glow-canvas').forEach(c => {
+            c.style.display = '';
+        });
+        if (!animId) {
+            animId = requestAnimationFrame(update);
+        }
+    }
+
+    return { init, destroy, markDirty, hideForResolution, showAfterResolution, _perfStats };
 })();

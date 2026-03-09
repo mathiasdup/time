@@ -154,6 +154,8 @@ function startGame() {
     render();
     // Initialiser le glow PixiJS derrière les cartes jouables
     if (typeof CardGlow !== 'undefined') CardGlow.init();
+    // Initialiser les slots Pixi (remplace les SVG DOM par du GPU)
+    if (typeof PixiBoardSlots !== 'undefined') PixiBoardSlots.init();
     log('🎮 Tour 1 - Partie lancée !', 'phase');
     // Pas de popup "Phase de repositionnement" au tour 1 car pas de créatures
 }

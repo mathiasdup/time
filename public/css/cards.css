@@ -52,25 +52,6 @@
             visibility: hidden;
         }
 
-        /* === Arrow Targeting Mode (sorts/pieges) === */
-        #gl-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-            z-index: 9999;
-        }
-        .my-hand .card.arrow-dragging {
-            transform: translateY(-50px) scale(1) !important;
-            z-index: 1000 !important;
-            border: 2px solid #252525 !important;
-            pointer-events: none;
-            overflow: visible;
-        }
-        .my-hand .card.arena-style.arrow-dragging[class*="faction-"] {
-            border: none !important;
-        }
-
         /* Cartes avec image de fond (ancien systeme template) */
         /* Template original: 636x934 pixels */
         .card.has-image {
